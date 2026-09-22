@@ -373,6 +373,18 @@ public:
                     const auto shot = UiAudit::env ("ZATI_SHOT");
                     if (shot.isNotEmpty())
                     {
+                        //  Y LA TINTA ANTES DE LA FOTO cuando se piden los
+                        //  contornos. La lamina pinta en rojo la banda vacia
+                        //  que `UiAudit::mideTinta` encuentra, y esa medida la
+                        //  hace `dump`, que corre DESPUES: sin esto la lamina
+                        //  saldria con los contornos y sin una sola banda
+                        //  marcada, o sea sin lo que se ha venido a ver. Es la
+                        //  misma figura que el `celdas.clear()` que estuvo en
+                        //  `paint()` un rato: el orden de las dos pasadas es
+                        //  parte de la medida.
+                        if (UiAudit::contornosOn())
+                            UiAudit::mideTodaLaTinta (*c2);
+
                         const double s = UiAudit::env ("ZATI_SHOT_SCALE").getDoubleValue();
                         UiAudit::snapshot (*c2, shot, s > 0.05 ? (float) s : 1.0f);
                     }

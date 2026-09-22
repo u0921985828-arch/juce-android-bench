@@ -1697,6 +1697,18 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
 //  promete es el mismo dibujo sobre el mismo fondo.
 void MainComponent::paintOverChildren (juce::Graphics& g)
 {
+    //  LOS CONTORNOS DE DIAGNOSTICO, y AQUI y no en `paint`: `paint` del padre
+    //  corre ANTES que el de los hijos, asi que un contorno dibujado alli
+    //  quedaria debajo de todas las tapas y no se veria ni uno. Esta es la
+    //  unica pasada que corre cuando ya esta todo pintado.
+    //
+    //  Y delante del `caraLista`, que devuelve antes de tiempo en cuanto la
+    //  cara esta lista: dejarlo detras habria dado una lamina en blanco en las
+    //  cincuenta y cuatro fichas y contornos solo en la portada del arranque.
+    //  Ver UiAudit::contornos, que es un `if` que sale cuando la variable no
+    //  esta puesta.
+    UiAudit::contornos (g, *this);
+
     if (caraLista) return;
 
     pintaPortada (g);

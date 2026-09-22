@@ -2018,6 +2018,596 @@ int main()
                      db23 < kPliegue23 ? "OK" : zatiFalla());
     }
 
+    //  ===================================================================
+    //  EL PLIEGUE DE LOS EFECTOS, que es la mitad que nunca se pregunto.
+    //  ===================================================================
+    //
+    //  LAS VOCES pasaron siete fases de calidad y acabaron con 4x y un
+    //  diezmador de 513 taps -rechazo -123.3 dB-. A LOS EFECTOS no se les
+    //  pregunto nunca, y `grep -rl Diezmador Source/` lo dice en una linea:
+    //  `Sintes.cpp`, `Kits.h`, la cabecera y este fichero. Ni un efecto. O
+    //  sea que los treinta corren a 1x, y cinco de ellos son no lineales o
+    //  discontinuos -DRV con su tanh, BIT con su retencion, FLD plegando,
+    //  OCT rectificando y RNG multiplicando- mas el soft-clip del master.
+    //
+    //  UN TONO NO BASTA PARA JUZGAR UN DISTORSIONADOR, y esa es toda la
+    //  diferencia con la sonda de voces de arriba. Ahi cualquier cosa que no
+    //  fuera el tono era pliegue; aqui los ARMONICOS del tono son el efecto
+    //  -DRV existe para hacerlos-, asi que lo que se mide es lo que NO es ni
+    //  el tono ni un armonico suyo. Eso solo puede haber llegado por el
+    //  espejo de Nyquist, y ese es el numero.
+    //
+    //  EL TONO SE ELIGE PARA QUE LOS DOS CONJUNTOS NO SE PISEN. Con 5000 Hz
+    //  a 48 kHz los armonicos caen en 5k, 10k, 15k y 20k, y los pliegues de
+    //  los armonicos 6 a 9 en 18k, 13k, 8k y 3k: ninguno coincide. Con 6000
+    //  -el primero que se probo- el sexto armonico es 36k, que se refleja en
+    //  12k, que ES el segundo armonico: el pliegue se esconde DENTRO de lo
+    //  legitimo y la sonda diria que no hay ninguno. Es el mismo fallo que
+    //  el +12 y el +24 de la sonda de voces, donde la delta salia entera y
+    //  el interpolador no llegaba a correr.
+    {
+        //  Goertzel, igual que arriba y por la misma razon: treinta bins de
+        //  una FFT de 320 000 muestras cuestan mas que treinta Goertzel.
+        auto power = [] (const float* d, int n, double sr, double hz)
+        {
+            const double w = 2.0 * juce::MathConstants<double>::pi * hz / sr;
+            const double c = 2.0 * std::cos (w);
+            double s1 = 0.0, s2 = 0.0;
+            for (int i = 0; i < n; ++i) { const double s0 = d[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+            return s1 * s1 + s2 * s2 - c * s1 * s2;
+        };
+
+        auto tonoPlano = [] (double sr, double seg, float hz, float amp)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * seg);
+            sb->buffer.setSize (2, n);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i,
+                        amp * std::sin (juce::MathConstants<float>::twoPi * hz * (float) i / (float) sr));
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        constexpr double kSr  = 48000.0;
+        constexpr double kTono = 5000.0;
+
+        //  Devuelve el peor NO-armonico en dB por debajo del tono de salida.
+        //  `fx` negativo es el camino seco, que es el suelo de la sonda.
+        auto pliegueFx = [&] (int fx, float p0, float p1, float nivel, double& peorHz)
+        {
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kSr, 512); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.setPadGain (0, 1.0f);
+            if (fx >= 0)
+            {
+                e.setFxParam (0, fx, 0, p0);
+                e.setFxParam (0, fx, 1, p1);
+                e.setFxParam (0, fx, 2, 1.0f);          // MIX al maximo
+                e.setCanalSend (0, fx, 1.0f);
+            }
+            e.publishSample (0, tonoPlano (kSr, 2.0, (float) kTono, nivel));
+
+            juce::AudioBuffer<float> b (2, 512);
+            //  El envio tarda 20 ms en cruzarse con el seco: se deja asentar
+            //  ANTES de disparar, igual que en el barrido de efectos de mas
+            //  abajo, y no se descartan bloques despues.
+            for (int i = 0; i < 30; ++i) { b.clear(); e.renderNextBlock (b, 0, 512); }
+            e.postNoteOn (0, 1.0f);
+
+            constexpr int kBloques = 60;
+            juce::AudioBuffer<float> cap (1, 512 * kBloques);
+            for (int blk = 0; blk < kBloques; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 512);
+                cap.copyFrom (0, blk * 512, b, 0, 0, 512);
+            }
+            //  Sin el ataque: solo el regimen. Los efectos con cola -REV, DLY-
+            //  siguen llenandose, y por eso la ventana empieza tarde.
+            const float* d = cap.getReadPointer (0) + 512 * 20;
+            const int n = 512 * 40;
+
+            const double tono = power (d, n, kSr, kTono);
+            double peor = 0.0; peorHz = 0.0;
+            for (double hz = 200.0; hz < 23000.0; hz += 100.0)
+            {
+                //  Se salta el tono, sus armonicos y sus faldas. 400 Hz de
+                //  falda es lo mismo que usa la sonda de voces: el tono de la
+                //  muestra no es una raya, porque la nota dura 40 bloques y la
+                //  ventana de Goertzel no es infinita.
+                bool suyo = false;
+                for (double k = 1.0; k * kTono < 24000.0; k += 1.0)
+                    if (std::abs (hz - k * kTono) < 400.0) { suyo = true; break; }
+                if (suyo) continue;
+                const double p = power (d, n, kSr, hz);
+                if (p > peor) { peor = p; peorHz = hz; }
+            }
+            return 10.0 * std::log10 (juce::jmax (1.0e-15, peor) / juce::jmax (1.0e-15, tono));
+        };
+
+        //  EL SUELO DE LA SONDA, y va PRIMERO porque sin el las cifras de
+        //  abajo no significan nada: lo que mide el camino seco es lo que la
+        //  ventana, el reproductor y el maquetado del tono meten por su
+        //  cuenta, y ningun efecto puede salir mejor que eso.
+        double hzSeco = 0.0;
+        const double dbSeco = pliegueFx (-1, 0.0f, 0.0f, 0.5f, hzSeco);
+        std::printf ("%-34s seco: %+.1f dB en %.0f Hz   (suelo de la sonda)\n",
+                     "pliegue de efectos", dbSeco, hzSeco);
+
+        //  LOS CINCO NO LINEALES Y EL DISCONTINUO, cada uno con su mando a
+        //  fondo, que es donde un efecto pliega. A medias no prueba nada: un
+        //  DRV al 10 % es casi lineal y saldria limpio sin que eso diga nada
+        //  del DRV que alguien va a usar.
+        //  TRES Y NO CINCO, Y LOS DOS QUE FALTAN SE DICEN CON SU CIFRA.
+        //
+        //  Esta sonda solo puede juzgar a un efecto cuyo CONTRATO sea «la
+        //  misma nota con armonicos encima». RNG y OCT no lo tienen, y las dos
+        //  primeras corridas lo cantaron:
+        //
+        //    · **RNG: +95.4 dB**, noventa y cinco decibelios de «pliegue» POR
+        //      ENCIMA del tono. No hay pliegue: un modulador en anillo saca la
+        //      suma y la diferencia -5000 +- 1200 son 3800 y 6200- y eso ES el
+        //      efecto. Para juzgarlo habria que declarar legitimos todos los
+        //      |k*5000 +- m*1200|, que con k y m hasta cinco son veinticinco
+        //      rayas repartidas por la banda: no queda sitio donde mirar.
+        //    · **OCT: +68.7 dB** con la rejilla de 5000, y **+48.1 dB en
+        //      20500 Hz** despues de cambiarla a 2500 -su octavo grave-. Dos
+        //      razones, las dos de fondo: su ventana de grano reparte bandas
+        //      laterales que no caen en ninguna rejilla, y con el MIX al
+        //      maximo el tono original YA NO ESTA, asi que el denominador de
+        //      la razon se desploma y cualquier cosa sale enorme.
+        //
+        //  Las dos necesitan otra pregunta -cual, se vera- y lo que NO se hace
+        //  es dejarlas en la tabla con un numero que se lee como un defecto y
+        //  no lo es. Se quedan dichas aqui con lo que midieron.
+        //  EL LISTON ES **LO MEDIDO MAS TRES DECIBELIOS**, que es el patron de
+        //  esta casa leido en el sentido que toca: aqui menos es mejor, asi que
+        //  el margen se suma. Las cifras de la derecha son de la corrida que
+        //  cerro esta tanda, con el sobremuestreo de `Sobre2x.h` ya puesto en
+        //  DRV y en FLD:
+        //
+        //      DRV   1x: -19.8 dB en 13 000 Hz  ->  2x: **-35.6** en 21 000
+        //      FLD   1x: -12.8 dB en 13 000 Hz  ->  2x: **-27.2** en 21 000
+        //      BIT   1x: -21.7 dB en 21 000 Hz  ->  sin tocar, a proposito
+        //
+        //  Quince coma ocho decibelios en DRV y catorce coma cuatro en FLD, y
+        //  el resto que queda se ha ido a 21 kHz: un media banda tiene su
+        //  transicion centrada en la mitad de la banda del doble -24 kHz-, asi
+        //  que lo que sobrevive vive pegado a Nyquist y no en medio del
+        //  espectro, que es donde se oye.
+        //
+        //  BIT NO SE SOBREMUESTREA y su liston se escribe con su cifra de 1x
+        //  por lo mismo: decimar ES el efecto. Ver la cabecera de `Sobre2x.h`.
+        struct Caso { int fx; const char* nombre; float p0, p1; double tope; };
+        const Caso casos[] =
+        {
+            { AudioEngine::kFxDrv, "DRV drive a tope",   1.00f, 18000.0f, -32.6 },
+            { AudioEngine::kFxFld, "FLD pliegue a tope", 1.00f, 18000.0f, -24.2 },
+            { AudioEngine::kFxBit, "BIT 4 bits",         4.00f,     1.0f, -18.7 },
+        };
+
+        for (const auto& c : casos)
+        {
+            double hz = 0.0;
+            const double db = pliegueFx (c.fx, c.p0, c.p1, 0.5f, hz);
+            std::printf ("%-34s %-20s %+.1f dB en %.0f Hz   (tope %+.1f)   %s\n",
+                         "pliegue de efectos", c.nombre, db, hz, c.tope,
+                         db < c.tope ? "OK" : zatiFalla());
+        }
+
+        //  Y EL SOFT-CLIP DEL MASTER. Su comentario dice que por debajo de
+        //  -0.5 dBFS es transparente; eso es una afirmacion medible y no
+        //  estaba medida. Se empuja por encima con el tono al 1.4, que son
+        //  +2.9 dBFS antes de doblar.
+        {
+            double hz = 0.0;
+            const double db = pliegueFx (-1, 0.0f, 0.0f, 1.4f, hz);
+            std::printf ("%-34s %-20s %+.1f dB en %.0f Hz\n",
+                         "pliegue de efectos", "master a +2.9 dBFS", db, hz);
+        }
+    }
+
+    //  ===================================================================
+    //  LA SUMA DE TREINTA Y DOS CANALES, Y EL SATURADOR DEL MASTER
+    //  ===================================================================
+    //
+    //  `Cpu.cpp` y el resto de este fichero ejercitan DIECISEIS pads, que era
+    //  el numero cuando `kNumCanales` valia dieciseis. Vale treinta y dos
+    //  desde hace cuatro tandas y nadie ha vuelto a mirar la suma: lo que se
+    //  mide con la mitad de los canales es la mitad de la maquina.
+    //
+    //  Y EL COMENTARIO DEL SATURADOR ES UNA AFIRMACION MEDIBLE que no estaba
+    //  medida: *«por debajo de -0.5 dBFS es matematicamente transparente - la
+    //  rama no hace absolutamente nada»*. Eso no se comprueba mirando el
+    //  espectro y diciendo que se ve limpio: se comprueba corriendo el MISMO
+    //  bloque con el saturador puesto y quitado -`setSafetyLimiter`- y
+    //  pidiendo que las dos salidas sean IGUALES BIT A BIT. Una afirmacion de
+    //  identidad se mide con una identidad; cualquier otra cosa es un parecido.
+    {
+        constexpr double kSr   = 48000.0;
+        constexpr double kTono = 5000.0;
+        constexpr int    kBlk  = 512;
+        constexpr int    kCap  = 40;          // bloques capturados
+
+        auto power = [] (const float* d, int n, double sr, double hz)
+        {
+            const double w = 2.0 * juce::MathConstants<double>::pi * hz / sr;
+            const double c = 2.0 * std::cos (w);
+            double s1 = 0.0, s2 = 0.0;
+            for (int i = 0; i < n; ++i) { const double s0 = d[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+            return s1 * s1 + s2 * s2 - c * s1 * s2;
+        };
+
+        auto tonoPlano = [] (double sr, double seg, float hz, float amp)
+        {
+            auto* sb = new SampleBuffer();
+            const int n = (int) (sr * seg);
+            sb->buffer.setSize (2, n);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < n; ++i)
+                    sb->buffer.setSample (c, i,
+                        amp * std::sin (juce::MathConstants<float>::twoPi * hz * (float) i / (float) sr));
+            sb->sourceSampleRate = sr;
+            return SampleBuffer::Ptr (sb);
+        };
+
+        //  TREINTA Y DOS CANALES CON EL MISMO TONO, y esto es deliberado: con
+        //  treinta y dos tonos distintos la suma es un acorde y lo que el
+        //  saturador anade se confunde con las sumas y diferencias de los
+        //  tonos entre si. Con UNO solo, el saturador es la unica cosa no
+        //  lineal que hay en el camino y todo armonico que aparezca es suyo.
+        auto sumaDe32 = [&] (float porPad, bool limitador, std::vector<float>& salida)
+        {
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (kSr, kBlk);
+            e.setPolyphony (AudioEngine::kNumCanales * 2, 2);
+            e.setSafetyLimiter (limitador);
+            for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+            {
+                e.setPadCanal (c, c);
+                e.setCanalGain (c, 1.0f);
+                e.setPadGain (c, 1.0f);
+                e.publishSample (c, tonoPlano (kSr, 2.0, (float) kTono, porPad));
+            }
+            juce::AudioBuffer<float> b (2, kBlk);
+            for (int i = 0; i < 20; ++i) { b.clear(); e.renderNextBlock (b, 0, kBlk); }
+            for (int c = 0; c < AudioEngine::kNumCanales; ++c) e.postNoteOn (c, 1.0f);
+
+            salida.assign ((size_t) (kBlk * kCap), 0.0f);
+            for (int blk = 0; blk < kCap; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kBlk);
+                for (int i = 0; i < kBlk; ++i)
+                    salida[(size_t) (blk * kBlk + i)] = b.getSample (0, i);
+            }
+        };
+
+        //  Cuanto de la salida NO es el tono ni un armonico suyo, y cuanto son
+        //  los armonicos: los dos numeros, porque el saturador mete armonicos
+        //  a proposito -es lo que lo hace saturacion y no corte- y pliegue sin
+        //  querer.
+        auto armonicosYPliegue = [&] (const std::vector<float>& x, double& armDb, double& aliDb)
+        {
+            const float* d = x.data() + kBlk * 10;
+            const int n = (int) x.size() - kBlk * 10;
+            const double f = power (d, n, kSr, kTono);
+            double arm = 0.0;
+            for (double k = 2.0; k * kTono < 23500.0; k += 1.0)
+                arm += power (d, n, kSr, k * kTono);
+            double ali = 0.0;
+            for (double hz = 200.0; hz < 23000.0; hz += 100.0)
+            {
+                bool suyo = false;
+                for (double k = 1.0; k * kTono < 24000.0; k += 1.0)
+                    if (std::abs (hz - k * kTono) < 400.0) { suyo = true; break; }
+                if (! suyo) ali = juce::jmax (ali, power (d, n, kSr, hz));
+            }
+            armDb = 10.0 * std::log10 (juce::jmax (1.0e-15, arm) / juce::jmax (1.0e-15, f));
+            aliDb = 10.0 * std::log10 (juce::jmax (1.0e-15, ali) / juce::jmax (1.0e-15, f));
+        };
+
+        auto pico = [] (const std::vector<float>& x)
+        {
+            float p = 0.0f;
+            for (float v : x) p = juce::jmax (p, std::abs (v));
+            return p;
+        };
+
+        //  1. POR DEBAJO DEL UMBRAL: las dos salidas, iguales bit a bit.
+        //
+        //     `porPad` se elige para que el pico quede POR DEBAJO de 0.944 con
+        //     los treinta y dos sumados, y se COMPRUEBA -no se supone-: si el
+        //     pico se pasara, la identidad de abajo estaria midiendo dos
+        //     caminos que si son distintos y saldria roja por la razon
+        //     equivocada.
+        {
+            std::vector<float> con, sin;
+            sumaDe32 (0.020f, true,  con);
+            sumaDe32 (0.020f, false, sin);
+            const float pc = pico (sin);
+            int distintos = 0;
+            for (size_t i = 0; i < con.size(); ++i)
+                if (con[i] != sin[i]) ++distintos;
+            const bool bajo = pc < 0.944f;
+            std::printf ("%-34s bajo el umbral: pico %.4f, %d muestras distintas de %d   %s\n",
+                         "suma de 32 canales", pc, distintos, (int) con.size(),
+                         (bajo && distintos == 0) ? "OK" : zatiFalla());
+            if (! bajo)
+                std::printf ("   (el pico se paso del umbral: la identidad de arriba no medía lo que dice)\n");
+        }
+
+        //  2. POR ENCIMA: cuanto doblega y que mete al doblar.
+        {
+            std::vector<float> con, sin;
+            sumaDe32 (0.060f, true,  con);
+            sumaDe32 (0.060f, false, sin);
+            double armC = 0.0, aliC = 0.0, armS = 0.0, aliS = 0.0;
+            armonicosYPliegue (con, armC, aliC);
+            armonicosYPliegue (sin, armS, aliS);
+            std::printf ("%-34s sobre el umbral: pico %.4f -> %.4f   armonicos %+.1f -> %+.1f dB   "
+                         "no-armonico %+.1f -> %+.1f dB\n",
+                         "suma de 32 canales", pico (sin), pico (con), armS, armC, aliS, aliC);
+            //  EL NO-FINITO SI SE JUZGA YA, porque no necesita liston: una
+            //  suma de treinta y dos canales no puede sacar un NaN ni un
+            //  infinito, y si lo saca la app se queda muda hasta reiniciar.
+            bool finita = true;
+            for (float v : con) if (! std::isfinite (v)) { finita = false; break; }
+            std::printf ("%-34s sobre el umbral: la salida es finita   %s\n",
+                         "suma de 32 canales", finita ? "OK" : zatiFalla());
+        }
+    }
+
+    //  ===================================================================
+    //  LOS EXTREMOS DE CADA MANDO DE CADA EFECTO
+    //  ===================================================================
+    //
+    //  Hay guardas puntuales -DLY y AMB tienen la suya- y ninguna regla
+    //  general. Lo que esto pregunta no es si el efecto suena bien en el
+    //  extremo, que es cuestion de gusto: es si `setFxParam` con un valor
+    //  hostil deja la maquina viva. Y los valores hostiles NO se sacan de la
+    //  tabla de rangos de la cara -eso seria preguntarle al mismo que los
+    //  escribe-: se le mandan los que un fichero de proyecto corrupto, una
+    //  automatizacion mal escalada o un `atof` de basura pueden traer.
+    {
+        constexpr double kSr  = 48000.0;
+        constexpr int    kBlk = 512;
+
+        const float hostiles[] =
+        {
+            0.0f, -1.0f, 1.0e9f, -1.0e9f, 1.0e-9f,
+            std::numeric_limits<float>::quiet_NaN(),
+            std::numeric_limits<float>::infinity(),
+            -std::numeric_limits<float>::infinity(),
+        };
+
+        int malos = 0, primero = -1, primerPar = -1;
+        float primerValor = 0.0f, peorPico = 0.0f;
+
+        for (int fx = 0; fx < AudioEngine::kNumFx; ++fx)
+            for (int par = 0; par < 3; ++par)
+                for (float v : hostiles)
+                {
+                    const auto monton_e = std::make_unique<AudioEngine>();
+                    AudioEngine& e = *monton_e; e.prepareToPlay (kSr, kBlk); e.setPolyphony (8, 2);
+                    enCanalCero (e);
+                    e.setPadGain (0, 1.0f);
+                    //  Los otros dos mandos en su valor de fabrica, que es lo
+                    //  que hace que el extremo sea de UNO y no de los tres a
+                    //  la vez: con los tres hostiles no se sabria cual fue.
+                    for (int q = 0; q < 3; ++q)
+                        e.setFxParam (0, fx, q, q == par ? v : AudioEngine::kFxDef[fx][q]);
+                    if (par != 2) e.setFxParam (0, fx, 2, 1.0f);
+                    e.setCanalSend (0, fx, 1.0f);
+                    e.publishSample (0, makeSample (kSr, 0.5, 440.0f, false));
+
+                    juce::AudioBuffer<float> b (2, kBlk);
+                    for (int i = 0; i < 4; ++i) { b.clear(); e.renderNextBlock (b, 0, kBlk); }
+                    e.postNoteOn (0, 1.0f);
+
+                    bool mal = false; float pico = 0.0f;
+                    for (int blk = 0; blk < 24; ++blk)
+                    {
+                        b.clear(); e.renderNextBlock (b, 0, kBlk);
+                        for (int ch = 0; ch < 2; ++ch)
+                            for (int i = 0; i < kBlk; ++i)
+                            {
+                                const float s = b.getSample (ch, i);
+                                if (! std::isfinite (s)) mal = true;
+                                else pico = juce::jmax (pico, std::abs (s));
+                            }
+                    }
+                    //  EL TECHO ES EL DEL SATURADOR Y NO UN NUMERO NUEVO: la
+                    //  rama de `thresh` acota la salida en 1.0 por
+                    //  construccion, asi que cualquier cosa por encima quiere
+                    //  decir que la muestra se salto la guarda.
+                    if (pico > 1.0f) mal = true;
+                    peorPico = juce::jmax (peorPico, pico);
+                    if (mal && ++malos == 1) { primero = fx; primerPar = par; primerValor = v; }
+                }
+
+        std::printf ("%-34s %d combinaciones, %d malas, pico peor %.4f   %s\n",
+                     "extremos de los mandos",
+                     AudioEngine::kNumFx * 3 * (int) (sizeof (hostiles) / sizeof (hostiles[0])),
+                     malos, peorPico, malos == 0 ? "OK" : zatiFalla());
+        if (malos > 0)
+            std::printf ("   el primero: fx %d, mando %d, valor %g\n",
+                         primero, primerPar, (double) primerValor);
+    }
+
+    //  ===================================================================
+    //  LOS DENORMALS: QUE LA GUARDA SIRVA PARA ALGO
+    //  ===================================================================
+    //
+    //  `ScopedNoDenormals` esta puesto en `renderNextBlock` y nadie ha medido
+    //  nunca que cueste algo quitarlo. Una guarda que no se ha visto servir es
+    //  un comentario, que es la misma regla que la de las pruebas.
+    //
+    //  Y SE MIDE FUERA DEL MOTOR A PROPOSITO. Dentro no se puede: el `Scoped`
+    //  vive DENTRO de `renderNextBlock`, asi que desde aqui no hay forma de
+    //  correr el motor sin el. Lo que si se puede medir es la pregunta de
+    //  verdad -si los denormals cuestan algo EN ESTA MAQUINA- con la misma
+    //  cuenta que hace una cola de reverb: un IIR cayendo hacia cero, que es
+    //  exactamente donde aparecen. Si sale gratis, la guarda sobra; si sale
+    //  cara, la guarda esta justificada y este numero lo dice.
+    {
+        constexpr int kN = 1 << 20;
+        std::vector<float> z ((size_t) kN, 0.0f);
+
+        auto cola = [&z] (bool guarda)
+        {
+            //  Un peine realimentado al 0.999 arrancado desde 1.0 y sin
+            //  entrada: a partir de cierto punto todas sus muestras son
+            //  denormales, que es el estado en el que una reverb pasa los
+            //  ultimos segundos de su cola.
+            const auto t0 = std::chrono::steady_clock::now();
+            {
+                std::unique_ptr<juce::ScopedNoDenormals> sc;
+                if (guarda) sc = std::make_unique<juce::ScopedNoDenormals>();
+                float y = 1.0f;
+                for (int i = 0; i < (int) z.size(); ++i) { y *= 0.999f; z[(size_t) i] = y; }
+            }
+            return std::chrono::duration<double, std::milli> (
+                       std::chrono::steady_clock::now() - t0).count();
+        };
+
+        //  Una vuelta en vacio para que la cache y la frecuencia del reloj no
+        //  se lleven la primera medida, que es la trampa de siempre.
+        cola (true); cola (false);
+        const double conG = cola (true);
+        const double sinG = cola (false);
+        std::printf ("%-34s %.2f ms con guarda, %.2f ms sin ella   (razon %.2fx)\n",
+                     "denormals en una cola", conG, sinG,
+                     sinG / juce::jmax (1.0e-6, conG));
+    }
+
+    //  ===================================================================
+    //  LA RESPUESTA EN FRECUENCIA, DEL AUDIO Y NO DEL DIBUJO
+    //  ===================================================================
+    //
+    //  `Tests/eq.py` mide la CURVA como lienzo -gestos en pixeles sobre
+    //  `EqCurve`- y `Analizador.h` es un visor. Ninguno de los dos mide lo que
+    //  sale por el altavoz. Y `Eq5::respuestaEnDb` no sirve como juez de si
+    //  mismo: sale de los MISMOS cinco coeficientes que `procesa`, asi que un
+    //  error en `recalcula` sale identico en los dos lados y la comparacion da
+    //  verde con las dos mitades equivocadas. Es literalmente lo que le paso a
+    //  `icono.py`, que dio verde dos veces con la mascara rota.
+    //
+    //  Asi que el tercer numero se escribe AQUI Y POR OTRO CAMINO: no se
+    //  copian los coeficientes del cookbook -eso seria transcribir, y una
+    //  transcripcion comparte las erratas-, se evalua el PROTOTIPO ANALOGICO
+    //  que esos coeficientes discretizan, con la frecuencia deformada por la
+    //  tangente que mete la transformada bilineal:
+    //
+    //      W = tan(w/2) / tan(w0/2)
+    //      campana:   |H|^2 = ((1-W^2)^2 + (A W / Q)^2)
+    //                       / ((1-W^2)^2 + (W / (A Q))^2)
+    //      paso alto: |H|^2 = W^4 / ((1-W^2)^2 + (W/Q)^2)
+    //      paso bajo: |H|^2 =  1  / ((1-W^2)^2 + (W/Q)^2)
+    //
+    //  Tres numeros por frecuencia -medido, dibujado, y la norma- y los tres
+    //  tienen que coincidir. Dos pueden mentir juntos; tres no.
+    {
+        constexpr double kSr = 48000.0;
+
+        //  Lo que SUENA: un seno por frecuencia, y la razon de amplitudes en
+        //  regimen. No una FFT de ruido: el ruido mete varianza donde hace
+        //  falta precision de decimas de dB, y un seno la da exacta.
+        auto medida = [] (Eq5& eq, double hz)
+        {
+            constexpr int kAsienta = 8192, kMide = 32768;
+            std::vector<float> x ((size_t) (kAsienta + kMide));
+            for (int i = 0; i < (int) x.size(); ++i)
+                x[(size_t) i] = (float) std::sin (2.0 * juce::MathConstants<double>::pi
+                                                    * hz * (double) i / kSr);
+            float* p = x.data();
+            float* const canales[1] = { p };
+            eq.procesa (canales, 1, 0, (int) x.size());
+            double se = 0.0;
+            for (int i = kAsienta; i < (int) x.size(); ++i)
+                se += (double) x[(size_t) i] * (double) x[(size_t) i];
+            //  La entrada es un seno de amplitud 1, o sea potencia 0.5, y por
+            //  eso el denominador no se mide: se sabe. Medirlo sobre la misma
+            //  ventana daria el mismo numero con ruido de redondeo encima.
+            return 10.0 * std::log10 (juce::jmax (1.0e-20, se / (double) kMide / 0.5));
+        };
+
+        //  La norma, por el prototipo analogico. `tipo` 1 campana, 3 paso
+        //  alto, 4 paso bajo -los mismos que `Eq5::Tipo`, y se pasan por
+        //  numero a proposito: importar el enum seria volver a atar la prueba
+        //  al fichero que juzga.
+        auto norma = [] (int tipo, double hz, double f0, double q, double dB)
+        {
+            const double w  = 2.0 * juce::MathConstants<double>::pi * hz / kSr;
+            const double w0 = 2.0 * juce::MathConstants<double>::pi * f0 / kSr;
+            const double W  = std::tan (w * 0.5) / std::tan (w0 * 0.5);
+            const double A  = std::pow (10.0, dB / 40.0);
+            const double u  = (1.0 - W * W) * (1.0 - W * W);
+            double m2 = 1.0;
+            if      (tipo == 1) m2 = (u + (A * W / q) * (A * W / q))
+                                   / (u + (W / (A * q)) * (W / (A * q)));
+            else if (tipo == 3) m2 = (W * W * W * W) / (u + (W / q) * (W / q));
+            else if (tipo == 4) m2 = 1.0 / (u + (W / q) * (W / q));
+            return 10.0 * std::log10 (juce::jmax (1.0e-20, m2));
+        };
+
+        struct Caso { int tipo; const char* nombre; double f0, q, dB; };
+        const Caso casos[] =
+        {
+            { 1, "campana +9 dB en 1 kHz",  1000.0, 0.70,  9.0 },
+            { 1, "campana -9 dB en 1 kHz",  1000.0, 0.70, -9.0 },
+            { 1, "campana estrecha 250 Hz",  250.0, 4.00,  6.0 },
+            { 3, "paso alto 200 Hz",         200.0, 0.70,  0.0 },
+            { 4, "paso bajo 4 kHz",         4000.0, 0.70,  0.0 },
+        };
+
+        const double sondas[] = { 40, 80, 160, 250, 400, 630, 1000,
+                                  1600, 2500, 4000, 6300, 10000, 16000 };
+
+        double peor = 0.0, peorDib = 0.0;
+        const char* quienPeor = "";  double hzPeor = 0.0;
+
+        for (const auto& c : casos)
+            for (double hz : sondas)
+            {
+                //  Un EQ NUEVO POR SONDA. Los biquads llevan estado, y medir
+                //  trece frecuencias seguidas sobre el mismo deja la cola de
+                //  la anterior dentro de la ventana de la siguiente: es el
+                //  mismo fallo que medir el estado de la corrida de antes.
+                Eq5 eq; eq.prepare (kSr); eq.reset();
+                //  Las otras cuatro bandas planas, que es lo que hace que lo
+                //  que se mide sea UNA banda y no la suma de cinco.
+                for (int b = 0; b < Eq5::kBands; ++b) eq.ponBanda (b, (float) (100.0 * (b + 1)), 0.0f);
+                eq.ponTipo  (2, c.tipo);
+                eq.ponQ     (2, (float) c.q);
+                eq.ponAncho (1.0f);
+                eq.ponBanda (2, (float) c.f0, (float) c.dB);
+                eq.refresca();
+
+                const double mide = medida (eq, hz);
+                const double dib  = (double) eq.respuestaEnDb ((float) hz);
+                const double nor  = norma (c.tipo, hz, c.f0, c.q, c.dB);
+
+                if (std::abs (mide - nor) > peor)
+                { peor = std::abs (mide - nor); quienPeor = c.nombre; hzPeor = hz; }
+                peorDib = juce::jmax (peorDib, std::abs (dib - nor));
+            }
+
+        //  TRES CENTESIMAS DE DECIBELIO, y el numero se deriva y no se desea:
+        //  la ventana de medida son 32768 muestras, o sea que una frecuencia
+        //  que no cae en un bin entero deja un resto de un ciclo, y eso son
+        //  0.01 dB de sesgo. Se pide tres veces eso. Un EQ que se aparte mas
+        //  que eso de su propio prototipo no es ese EQ.
+        constexpr double kEqDb = 0.03;
+        std::printf ("%-34s medido contra la norma: peor %.4f dB (%s a %.0f Hz)   %s\n",
+                     "respuesta del EQ", peor, quienPeor, hzPeor,
+                     peor < kEqDb ? "OK" : zatiFalla());
+        std::printf ("%-34s dibujado contra la norma: peor %.4f dB   %s\n",
+                     "respuesta del EQ", peorDib,
+                     peorDib < kEqDb ? "OK" : zatiFalla());
+    }
+
     //  EL TROCEADO POR GOLPES, contra un break del que se sabe la verdad.
     //
     //  No se puede medir un detector de golpes con una muestra de verdad,
@@ -4475,6 +5065,12 @@ int main()
         //  no dice nada mas — una curva que se sale lo hace en una banda, no en
         //  una columna suelta.
         constexpr int kMuestras = 17;
+        //  LISTON DE LA REGLA 1b, y es *lo medido mas margen* porque aqui menos
+        //  es mejor. Medido: FLT peor 0.11 dB, HPF peor 0.15 dB sobre las
+        //  diecisiete columnas. Medio decibelio deja mas del triple de holgura
+        //  para el transitorio del envio -20 ms de rampa- y sigue muy por
+        //  debajo de los 3.5 dB que da la rotura a proposito de la Q.
+        constexpr double kSvfDb = 0.50;
         auto columna = [] (int k) { return k * (FxVisor::kPuntos - 1) / (kMuestras - 1); };
 
         auto fila = [] (const char* nombre, double medio, double peor,
@@ -4542,6 +5138,114 @@ int main()
                     suma += d; peor = juce::jmax (peor, d); ++n;
                 }
                 fila (c.nombre, suma / juce::jmax (1, n), peor, 1.5, "dB");
+            }
+        }
+
+        //  ------------------------------------------------------------------
+        //  1b. Y LOS MISMOS DOS FILTROS CONTRA LA NORMA, que es otra pregunta.
+        //
+        //  Lo de arriba compara el DIBUJO con el MOTOR, y las dos mitades
+        //  pueden estar de acuerdo estando las dos mal: `FxVisor::muestrea`
+        //  saca el barrido de `AudioEngine::barridoDe` -la misma funcion que el
+        //  motor- y evalua el mismo SVF. Es la figura de `icono.py`, que dio
+        //  verde dos veces con la mascara rota porque las dos mitades leian el
+        //  mismo fichero.
+        //
+        //  Asi que aqui se escribe la respuesta DESDE EL PROTOTIPO ANALOGICO y
+        //  se transforma con la bilineal a mano, igual que se hizo con `Eq5`.
+        //  Un SVF TPT ES la bilineal del dos polos con preformado en su corte
+        //  -`juce_StateVariableTPTFilter.cpp:134` pone `g = tan (pi fc / fs)`-,
+        //  asi que con `W = tan (w/2) / tan (w0/2)`:
+        //
+        //      paso bajo   |H|^2 = 1      / ((1 - W^2)^2 + (W/Q)^2)
+        //      paso alto   |H|^2 = W^4    / ((1 - W^2)^2 + (W/Q)^2)
+        //
+        //  y `R2 = 1/resonancia` en esa misma linea es lo que dice que la
+        //  "resonancia" de JUCE es la Q de toda la vida y no 1/(2Q).
+        //
+        //  EL CORTE Y EL TIPO SE PREGUNTAN, no se juzgan: `barridoDe` es el
+        //  reparto del mando y esta medido en otro sitio. Lo que esta regla
+        //  pregunta es si el FILTRO, puesto en ese corte, responde como un dos
+        //  polos - que es lo que ni el dibujo ni la comparacion de arriba
+        //  pueden contestar -.
+        {
+            auto normaSvf = [] (bool alto, double hz, double f0, double q)
+            {
+                constexpr double kSr = 48000.0;
+                const double w  = 2.0 * juce::MathConstants<double>::pi * hz / kSr;
+                const double w0 = 2.0 * juce::MathConstants<double>::pi * f0 / kSr;
+                const double W  = std::tan (w * 0.5) / std::tan (w0 * 0.5);
+                const double u  = (1.0 - W * W) * (1.0 - W * W);
+                const double m2 = (alto ? (W * W * W * W) : 1.0) / (u + (W / q) * (W / q));
+                return 10.0 * std::log10 (juce::jmax (1.0e-30, m2));
+            };
+
+            //  Los dos casos son los MISMOS parametros de la tabla de arriba,
+            //  para que las dos reglas midan el mismo filtro y la diferencia
+            //  entre ellas sea la pregunta y no el montaje.
+            const auto barr = AudioEngine::barridoDe (-0.55f);
+            struct Caso { int fx; const char* nombre; float p0, p1; bool alto; double f0, q; };
+            const Caso casos[] = {
+                { AudioEngine::kFxFlt, "FLT: motor contra la norma", -0.55f, 1.6f,
+                  barr.alto, (double) barr.hz, 1.6 },
+                { AudioEngine::kFxHpf, "HPF: motor contra la norma", 800.0f, 2.2f,
+                  true, 800.0, 2.2 },
+            };
+
+            for (const auto& c : casos)
+            {
+                FxVisor::Curva curva {};
+                FxVisor::muestrea (c.fx, c.p0, c.p1, curva);
+
+                double suma = 0.0, peor = 0.0, peorDib = 0.0;
+                int    n = 0;
+                for (int k = 0; k < kMuestras; ++k)
+                {
+                    const int   i  = columna (k);
+                    const float hz = hzDe (i);
+                    //  La misma banda util que arriba y por la misma razon: por
+                    //  encima de 15 kHz la ventana mide su propio borde.
+                    if (hz > 15000.0f) continue;
+                    //  Y NO SE MIDE DONDE NO HAY SEÑAL. Un paso alto de Q 2.2 a
+                    //  800 Hz tiene -40 dB en 80 Hz: ahi lo que sale del motor
+                    //  es el suelo de la muestra y no el filtro, y comparar el
+                    //  suelo con la norma mide la muestra.
+                    const double esperado = normaSvf (c.alto, hz, c.f0, c.q);
+                    if (esperado < -24.0) continue;
+
+                    std::vector<float> seco, mojado;
+                    corre (-1,   0.0f, 0.0f, hz, 0.30f, seco);
+                    corre (c.fx, c.p0, c.p1, hz, 0.30f, mojado);
+
+                    const double medido = 20.0 * std::log10 (juce::jmax (1.0e-9, rms (mojado))
+                                                             / juce::jmax (1.0e-9, rms (seco)));
+                    const double d = std::abs (medido - esperado);
+                    suma += d; peor = juce::jmax (peor, d); ++n;
+                    peorDib = juce::jmax (peorDib, std::abs (dbDeAlto (curva[(size_t) i]) - esperado));
+                }
+
+                //  Y SE IMPRIME TAMBIEN EL DIBUJO CONTRA LA NORMA, que es lo
+                //  que hace que estas dos reglas no sean la misma leida dos
+                //  veces. La primera corrida las dio IGUALES a dos decimales
+                //  -0.02/0.11 y 0.03/0.15- y eso tenia dos explicaciones: que
+                //  la regla nueva no midiera nada, o que el dibujo YA fuera la
+                //  norma. Esta tercera cifra la separa: con el dibujo a
+                //  milesimas de la norma, restarle una u otra al motor da lo
+                //  mismo, y entonces la coincidencia es el resultado y no un
+                //  fallo. Es la misma cifra que cerro `Eq5` -0.0007 dB-.
+                //  ROTURA A PROPOSITO, HECHA: `setResonance (I.smReso * 1.5f)`
+                //  en las dos etapas -`AudioEngine.cpp`, FLT y HPF-. Sale
+                //  **FLT 2.16 dB y HPF 2.27 dB**, las dos FALLA, y la cifra
+                //  cuadra: la Q por uno y medio sube el pico en 20*log10(1.5) =
+                //  3.52 dB, y las diecisiete columnas estan repartidas en
+                //  logaritmo asi que ninguna cae justo en el corte. Lo que
+                //  ademas la rotura enseña es que `dibujo vs norma` se queda en
+                //  0.000: el dibujo no se movio, o sea que la regla nueva pilla
+                //  al MOTOR y no al visor.
+                std::printf ("%-34s motor vs norma   medio %.2f dB  peor %.2f dB (tope %.2f)"
+                             "   dibujo vs norma %.3f dB   %s\n",
+                             c.nombre, suma / juce::jmax (1, n), peor, kSvfDb, peorDib,
+                             peor <= kSvfDb ? "OK" : zatiFalla());
             }
         }
 

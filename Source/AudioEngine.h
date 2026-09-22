@@ -13,6 +13,7 @@
 #include "Dinamica.h"
 #include "Lfo.h"
 #include "Estereo.h"
+#include "Sobre2x.h"
 #include "MidiIo.h"
 
 // ============================================================================
@@ -3493,6 +3494,14 @@ private:
         float drvLp[2] { 0.0f, 0.0f };
         bool  drvWasActive = false;   // flanco de reactivacion: ver seccion 5b/3
 
+        //  Y EL SOBREMUESTREO DE LA SATURACION, uno por canal. Ver `Sobre2x.h`:
+        //  la sonda de pliegue midio DRV a tope en **-19.8 dB** de contenido no
+        //  armonico contra un suelo de -55.8, o sea treinta y seis decibelios de
+        //  alias metidos por evaluar un `tanh` a 1x. El paso bajo que va detras
+        //  no lo evita: llega tarde, cuando lo que estaba por encima de Nyquist
+        //  ya se doblo hacia dentro y quedo indistinguible de la señal.
+        Sobre2x::Estado drvOs[2];
+
         //  BIT: la retencion y la fase del diezmado.
         float crHold[2] { 0.0f, 0.0f };
         float crPhase = 0.0f;
@@ -3601,6 +3610,12 @@ private:
         float smFldPliegue = 0.0f, smFldTono = 20000.0f;
         float fldLp[2] { 0.0f, 0.0f };
         bool  fldWasActive = false;
+
+        //  Lo mismo que DRV y PEOR medido: **-12.8 dB**, que es el mas sucio de
+        //  los treinta. Tiene sentido que lo sea - un plegador tiene esquinas y
+        //  una esquina es ancho de banda infinito, mientras que el `tanh` de DRV
+        //  al menos es suave -.
+        Sobre2x::Estado fldOs[2];
 
         //  ROT: el cruce de la bocina y el tambor. El MISMO Linkwitz-Riley que
         //  ya usan WID y EXC, que es la tercera vez que sirve.

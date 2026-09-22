@@ -185,7 +185,19 @@ CENTS_ABS = 5.0
 #  octava. Heredado del 1.0 dB de la regla del pliegue, que a su vez es el JND
 #  de una banda critica. Un cuerpo que deriva es un cuerpo que al dar la vuelta
 #  pega un salto.
+#  DERIVA: el liston se escribe DESPUES de la primera corrida de la medida
+#  nueva -sonoridad de banda ancha, no maximo por bandas-, que es lo que manda
+#  esta casa. Ver el bloque de la regla.
 DERIVA_DB = 1.0
+
+#  LAS DOS QUE NO SE JUZGAN CON EL LISTON DE AFINACION, por su nombre y con su
+#  cifra. No es una excepcion de conveniencia: una campana es inarmonica por
+#  construccion y un acordeon son dos lengüetas desafinadas por nota, asi que
+#  el numero que sale de las dos es correcto y describe el instrumento.
+#  El tope propio existe para que la lista no sea un cheque en blanco: si
+#  CAMPANAS se va a treinta cents eso ya no es una campana.
+INARMONICAS = ("CAMPANAS", "ACORDEON")
+CENTS_INARM = 20.0
 
 #  CUADRE DEL LFO: `lfoHz * bucleSeg` entero, o exactamente 0 si se congelo.
 #  Cuatro veces mas estricto que el 0.02 de ciclos de la raiz, y se dice por
@@ -702,18 +714,46 @@ def main():
                 cerca = abs (abs0) < 10.0 and abs (abs12) < 10.0
                 print ("%-12s afina: raiz 0 %+.1f cents   la octava %+.1f cents%s"
                        % (etiq, abs0, rel, "" if cerca else "  (el pico no es el fundamental)"))
-                #  SE IMPRIME Y NO SE JUZGA, todavia. Ver el bloque de arriba:
-                #  la regla ha cambiado de metodo tres veces -parcial mas fuerte,
-                #  suma armonica, guardia a 25 y a 10 cents- y en las familias de
-                #  conjunto desafinado sigue sin poder separar «el instrumento
-                #  esta plano» de «el estimador se ha enganchado al saw de al
-                #  lado». Hasta que una rotura a proposito la haga fallar con la
-                #  cifra esperada no es una regla, es una linea que imprime un
-                #  numero, y esta casa no cuelga un veredicto de eso.
-                if cerca and (abs (rel) > CENTS_REL or abs (abs0) > CENTS_ABS):
-                    print ("   ojo: %s fuera de los listones de afinacion "
-                           "(relativo %.0f, absoluto %.0f) - sin veredicto"
-                           % (etiq, CENTS_REL, CENTS_ABS))
+                #  YA JUZGA, y lo que faltaba para poder hacerlo no era un
+                #  metodo mejor sino DECIR QUIEN NO CUENTA. La regla llevaba tres
+                #  tandas imprimiendo sin veredicto porque dos familias la hacian
+                #  cantar y ninguna de las dos es un fallo:
+                #
+                #    · **CAMPANAS +6.0 cents** en la octava, con la raiz clavada
+                #      en -4.0. Una campana es INARMONICA A PROPOSITO: su
+                #      segundo parcial no esta en el doble, esta por encima. El
+                #      numero es correcto y describe una campana.
+                #    · **ACORDEON -12.0 cents**, con la raiz en +5.0. Es un
+                #      conjunto desafinado de dos lengüetas por nota -eso es un
+                #      acordeon- y en la octava el estimador se engancha a la
+                #      otra de la pareja.
+                #
+                #  Escribirlas por su nombre no es aflojar la regla: es lo unico
+                #  que la convierte en regla para las OTRAS VEINTIDOS. Y se
+                #  escriben con su cifra medida para que si alguna se mueve de
+                #  verdad -CAMPANAS a +30 cents- la lista no la tape: por eso el
+                #  perdon tiene tope propio.
+                #
+                #  ROTURA A PROPOSITO, HECHA: `hz * 1.004f` en la llamada a
+                #  `rinde` de `Sintes.cpp` -+6.9 cents a todo-. Salen **CUATRO
+                #  FALLA de afinacion** -BAJOS +6, SUBS +8, PIANO ELEC +8,
+                #  ORGANOS +8 cents de raiz contra el tope de 5- y la octava se
+                #  queda en +-1, que es lo que tiene que pasar: un desafinado
+                #  global mueve las dos octavas por igual, asi que lo coge el
+                #  liston ABSOLUTO y no el relativo. Las que no cantan son las
+                #  que el guardia `cerca` deja fuera por no tener el pico en el
+                #  fundamental, y eso es la regla funcionando y no un agujero.
+                if not cerca:
+                    pass
+                elif etiq in INARMONICAS:
+                    if abs (rel) > CENTS_INARM or abs (abs0) > CENTS_INARM:
+                        fallos.append ("%s: afinacion %+.0f/%+.0f cents, y es de las "
+                                       "declaradas inarmonicas pero se pasa hasta de su "
+                                       "tope propio de %.0f" % (etiq, abs0, rel, CENTS_INARM))
+                elif abs (rel) > CENTS_REL or abs (abs0) > CENTS_ABS:
+                    fallos.append ("%s: afinacion fuera de liston, raiz %+.0f cents "
+                                   "(tope %.0f) y octava %+.0f cents (tope %.0f)"
+                                   % (etiq, abs0, CENTS_ABS, rel, CENTS_REL))
 
             #  LA DERIVA DENTRO DEL CUERPO: primer cuarto contra ultimo cuarto.
             #
@@ -721,8 +761,13 @@ def main():
             #  es la regla que lo comprueba desde fuera: si algo sigue cayendo
             #  ahi dentro, cada vuelta lo reinicia y eso es un «wah» a la
             #  velocidad del bucle.
-            if d["sostiene"] and z0:
-                cb = x[z0[0][4]:z0[0][5]]
+            #  Y SE MIDEN LAS CINCO RAICES, NO SOLO LA CENTRAL. Ver el bloque
+            #  de abajo: el SIGNO por raiz es lo unico que separa una envolvente
+            #  que cae de un batido lento, y con una sola raiz no hay signos que
+            #  comparar.
+            tendencias = []
+            for zr in (zc if d["sostiene"] else []):
+                cb = x[zr[4]:zr[5]]
                 #  LA VENTANA ES UNA VUELTA ENTERA DEL LFO, no un cuarto del
                 #  cuerpo. Con el cuarto, ORGANOS salia a **1.00 dB clavado en
                 #  el liston** y no era deriva: su leslie cuadra en seis vueltas
@@ -732,8 +777,8 @@ def main():
                 #  bucle- y un LFO no es una tendencia, es una oscilacion: con
                 #  una vuelta entera a cada lado se cancela sola.
                 q = len (cb) // 4
-                if len (z0[0]) >= 8 and z0[0][6] > 0.0 and z0[0][7] > 0.0:
-                    vueltas = max (1, int (round (z0[0][6] * z0[0][7])))
+                if len (zr) >= 8 and zr[6] > 0.0 and zr[7] > 0.0:
+                    vueltas = max (1, int (round (zr[6] * zr[7])))
                     q = len (cb) // vueltas
                 #  Y LA PRIMERA VENTANA NO EMPIEZA EN EL PRINCIPIO DEL CUERPO,
                 #  que es donde vive el FUNDIDO CRUZADO: hasta 150 ms en las
@@ -763,20 +808,136 @@ def main():
                     #  nada. Sin este suelo la regla acusaba de 8 a 15 dB a las
                     #  familias con LFO, que son las que mueven un filtro y por lo
                     #  tanto las que tienen huecos que se mueven.
-                    dif = max ((abs (a - b) for a, b in zip (ba, bb)
-                                if a > -40.0 or b > -40.0), default=0.0)
-                    print ("%-12s deriva: %.2f dB entre el primer cuarto y el ultimo" % (etiq, dif))
-                    #  SE IMPRIME Y NO SE JUZGA, todavia. `bandas` trunca a
-                    #  NFFT = 8192 muestras, asi que de una ventana de una vuelta
-                    #  de LFO -que en un cuerpo de un segundo son entre 6000 y
-                    #  16000- lo que entra en la FFT es solo el principio, y dos
-                    #  principios a distinta fase del LFO se diferencian en los 8
-                    #  a 15 dB que salen. La regla mide su ventana y no la deriva.
-                    #  Se arregla alineando las dos ventanas a la misma fase del
-                    #  LFO y en la tanda que viene, con su rotura.
-                    if dif > DERIVA_DB:
-                        print ("   ojo: %s deriva %.2f dB (liston %.1f) - sin veredicto"
-                               % (etiq, dif, DERIVA_DB))
+                    #  EL MAXIMO POR BANDAS SE RETIRA, y no por afinarlo mal.
+                    #
+                    #  Era `max` sobre las bandas que suenan, y daba nueve de
+                    #  veinticuatro familias por encima del liston -ACORDEON
+                    #  13.48, LEADS 12.55, CUERDAS 12.46, METALES 10.15,
+                    #  COLCHONES 8.08, COROS 7.53, VIENTOS 3.78, CANAS 2.15,
+                    #  CELLOS 1.56- con la sintesis INTACTA y ninguna de las
+                    #  nueve es un fallo. El diagnostico que estaba escrito aqui
+                    #  -«bandas trunca a 8192 y las dos ventanas ven fases
+                    #  distintas del LFO»- ES FALSO: `salta` y `fin - q` son los
+                    #  dos multiplos de `q`, o sea que las dos ventanas empiezan
+                    #  en la MISMA fase del LFO, y el truncado les quita el mismo
+                    #  trozo a las dos.
+                    #
+                    #  Lo que de verdad mueve esas cifras es el BATIMIENTO: las
+                    #  nueve son familias de conjunto desafinado, sus parciales
+                    #  laten con periodo de segundos -que no es multiplo de la
+                    #  vuelta del LFO- y un valle de batido hunde UNA banda
+                    #  treinta decibelios sin que el sonido cambie de nivel. O
+                    #  sea que es la regla del MAXIMO otra vez, la misma que
+                    #  `paneles.py` retiro con 124 hallazgos y ninguno real.
+                    #
+                    #  Y LO QUE LA REGLA QUERIA PREGUNTAR se puede preguntar sin
+                    #  el maximo: «una envolvente que sigue cayendo dentro del
+                    #  bucle» es una caida de NIVEL, no de una banda. La
+                    #  sonoridad de banda ancha es inmune al valle de batido
+                    #  -mueve el reparto entre bandas, no la suma- y es
+                    #  exactamente la magnitud que el oido llama «se apaga».
+                    #  Y NO DOS VENTANAS SINO TODAS, POR MINIMOS CUADRADOS.
+                    #
+                    #  Con las dos puntas la regla bajo de nueve hallazgos a dos
+                    #  -CUERDAS 2.05 dB y COLCHONES 1.61-, y esos dos seguian sin
+                    #  ser un fallo: siete sierras desafinadas BATEN tambien en
+                    #  potencia total -es lo que hace que un colchon respire- con
+                    #  periodo de segundos, o sea que dos puntas cualesquiera del
+                    #  cuerpo caen en fases distintas del batido y su diferencia
+                    #  es el batido, no la caida.
+                    #
+                    #  Una TENDENCIA se separa de una OSCILACION con la recta de
+                    #  minimos cuadrados sobre TODAS las vueltas: el batido, que
+                    #  da varias vueltas enteras dentro del cuerpo, se promedia a
+                    #  cero en el ajuste, y lo que queda en la pendiente es lo
+                    #  unico que de verdad «sigue cayendo». Se imprimen las dos
+                    #  cifras -la pendiente y el VAIVEN, que es el recorrido
+                    #  entre la vuelta mas fuerte y la mas floja- porque la
+                    #  segunda es la que explica la primera cuando alguien mire
+                    #  esto dentro de seis meses.
+                    #  LA VENTANA CORRE DE OCTAVO EN OCTAVO Y NO DE VUELTA EN
+                    #  VUELTA. Sigue durando una vuelta entera -que es lo que
+                    #  cancela el LFO, y eso no se toca- pero se solapa: con el
+                    #  salto de una vuelta salian TRES puntos en un cuerpo de un
+                    #  segundo, y una recta por tres puntos no promedia nada. Con
+                    #  el octavo salen del orden de treinta, y entonces el ajuste
+                    #  tiene con que separar la tendencia del vaiven.
+                    ls = []
+                    for a in range (salta, fin - q + 1, max (1, q // 8)):
+                        v = loudness (cb[a:a + q])
+                        if v > 1e-9: ls.append (20.0 * math.log10 (v))
+                    if len (ls) < 3: continue
+                    m  = (len (ls) - 1) / 2.0
+                    sxx = sum ((i - m) ** 2 for i in range (len (ls)))
+                    my  = sum (ls) / len (ls)
+                    sxy = sum ((i - m) * (v - my) for i, v in enumerate (ls))
+                    #  La pendiente se dice en dB DE PUNTA A PUNTA del cuerpo, que
+                    #  es la magnitud que alguien puede oir, y no en dB por vuelta.
+                    tendencias.append (((sxy / sxx if sxx > 0 else 0.0) * (len (ls) - 1),
+                                        max (ls) - min (ls), zr[0]))
+
+            #  EL VEREDICTO ES EL SIGNO, Y ESO ES LO QUE HACIA FALTA.
+            #
+            #  Llegado aqui la medida ya va por su tercera forma. Las dos
+            #  primeras se retiraron con su cifra:
+            #
+            #    1. MAXIMO POR BANDAS: nueve de veinticuatro familias por encima
+            #       del liston con la sintesis intacta -ACORDEON 13.48, LEADS
+            #       12.55, CUERDAS 12.46, METALES 10.15...- y ninguna un fallo.
+            #       Un valle de batido hunde UNA banda treinta decibelios sin
+            #       mover el nivel. Es la regla del maximo de `paneles.py`, que
+            #       se retiro con 124 hallazgos y ninguno real.
+            #    2. SONORIDAD DE BANDA ANCHA ENTRE DOS PUNTAS: bajo a dos
+            #       -CUERDAS 2.05, COLCHONES 1.61- pero dos puntas cualesquiera
+            #       caen en fases distintas del batido lento, asi que su resta
+            #       sigue siendo el batido.
+            #    3. RECTA DE MINIMOS CUADRADOS sobre una ventana de una vuelta
+            #       de LFO corriendo de octavo en octavo: **veintidos familias
+            #       por debajo de 0.38 dB** y dos arriba, CUERDAS 2.63 y
+            #       COLCHONES 2.32. Un orden de magnitud de separacion, que es
+            #       justo lo que `limites.py` NO encontro y por lo que alli no
+            #       hay veredicto.
+            #
+            #  Pero una recta sobre un cuerpo de un segundo tampoco distingue una
+            #  envolvente que cae de MEDIO PERIODO de un batido de dos segundos
+            #  -siete sierras a cinco cents de 220 Hz baten a 0.6 Hz-. Lo que si
+            #  los distingue es el SIGNO EN LAS CINCO RAICES: el batido va con la
+            #  frecuencia, asi que cada raiz lo coge en una fase distinta y los
+            #  signos salen mezclados; una envolvente que no se congelo cae en
+            #  las cinco, siempre hacia abajo. Por eso la regla pide las dos
+            #  cosas -tamaño Y unanimidad- y no solo el tamaño.
+            if tendencias:
+                peor = max (abs (t) for t, _, _ in tendencias)
+                vv   = max (v for _, v, _ in tendencias)
+                baja = all (t < 0.0 for t, _, _ in tendencias)
+                sube = all (t > 0.0 for t, _, _ in tendencias)
+                print ("%-12s deriva: %.2f dB de tendencia (vaiven %.2f) en %d raices, "
+                       "signos %s" % (etiq, peor, vv, len (tendencias),
+                                      "".join ("-" if t < 0 else "+" for t, _, _ in tendencias)))
+                #  ROTURA A PROPOSITO, HECHA, y con DOS intentos que se cuentan
+                #  porque el primero enseña algo:
+                #
+                #    · Quitar la congelacion -pasarle `-1.0f` a `rinde` en vez
+                #      del punto de bucle- NO la hace cantar: cero FALLA. No es
+                #      que la regla no sirva, es que en el punto de bucle las
+                #      envolventes YA estan asentadas, asi que congelarlas o no
+                #      da casi la misma cola. Buen dato: dice que la congelacion
+                #      no es lo unico que sostiene ese contrato.
+                #    · La rampa explicita -bajar el cuerpo 3 dB de principio a
+                #      fin- que ES el fenomeno que la regla busca: canta en
+                #      **DOCE familias**, todas las que sostienen, con **1.33 a
+                #      2.09 dB** y los cinco signos unanimes en todas. Sale por
+                #      debajo de los 3 porque las ventanas no cubren el cuerpo
+                #      entero -se salta el fundido de delante-, y lo que prueba
+                #      la rotura no es el tamaño sino la UNANIMIDAD: con la
+                #      sintesis intacta no hay una sola familia con los cinco
+                #      signos iguales.
+                if peor > DERIVA_DB and (baja or sube):
+                    fallos.append ("%s: el cuerpo deriva %.2f dB de sonoridad dentro del "
+                                   "bucle en las %d raices y SIEMPRE en el mismo sentido "
+                                   "(liston %.1f): algo sigue moviendose ahi dentro y cada "
+                                   "vuelta lo reinicia"
+                                   % (etiq, peor, len (tendencias), DERIVA_DB))
 
             #  Y EL TERCER NUMERO: NINGUN ESCALON ENTRE CAPAS CONTIGUAS.
             #

@@ -145,6 +145,7 @@ AudioEngine::AudioEngine()
     for (auto& I : ins)
     {
         I.drvLp[0] = I.drvLp[1] = 0.0f;   I.drvWasActive = false;
+        I.drvOs[0].limpia(); I.drvOs[1].limpia();
         I.crHold[0] = I.crHold[1] = 0.0f; I.crPhase = 0.0f; I.crWasActive = false;
     }
 }
@@ -166,6 +167,13 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
 {
     systemSampleRate = (sampleRate > 0.0) ? sampleRate : 44100.0;
     maxBlock         = (maxBlockSize > 0) ? maxBlockSize : 512;
+
+    //  LA TABLA DEL SOBREMUESTREADOR SE HACE AQUI Y NO EN EL BUCLE. Dentro hay
+    //  `sin`, `sqrt` y la serie de Bessel, que es exactamente la clase de cosa
+    //  que no entra en el hilo de audio. `prepara()` se protege sola con un
+    //  `listo`, asi que los cambios de ruta - que vuelven a pasar por aqui - no
+    //  la recalculan.
+    Sobre2x::prepara();
 
     //  The record buffer, allocated here and never in the callback. This is
     //  the only moment it can safely change size: JUCE calls prepareToPlay
@@ -319,6 +327,7 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         for (auto& fila : I.rotAlta) for (auto& st : fila) st = {};
         for (auto& fila : I.rotBaja) for (auto& st : fila) st = {};
         I.fldLp[0] = I.fldLp[1] = 0.0f;
+        I.fldOs[0].limpia(); I.fldOs[1].limpia();
         for (auto& c : I.repVent) c.assign ((size_t) (systemSampleRate * kRepMaxSeg) + 4, 0.0f);
         I.repLargo = (int) (systemSampleRate * 0.125);
         I.repEscritas = 0; I.repLee = 0.0f; I.repFaseAnt = 0.0f;
@@ -2161,7 +2170,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  Se limpia AL ENTRAR y no al preparar, porque cambiar un envio
                 //  no pasa por prepareToPlay.
                 const bool drvNow = live (2);
-                if (drvNow && ! I.drvWasActive) { I.drvLp[0] = I.drvLp[1] = 0.0f; }
+                //  El anillo del sobremuestreador entra en la MISMA limpieza que
+                //  `drvLp`, y por la misma razon: veintitres muestras guardadas de
+                //  hace diez segundos son veintitres muestras de continua colandose
+                //  por el filtro de bajar en cuanto el bus revive.
+                if (drvNow && ! I.drvWasActive)
+                    { I.drvLp[0] = I.drvLp[1] = 0.0f; I.drvOs[0].limpia(); I.drvOs[1].limpia(); }
                 I.drvWasActive = drvNow;
 
                 if (drvNow)
@@ -2178,9 +2192,18 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     {
                         float* w = fxBus[busIdx (kFxDrv)].getWritePointer (ch, startSample);
                         float lp = I.drvLp[ch];
+                        auto& os = I.drvOs[ch];
                         for (int i = 0; i < numSamples; ++i)
                         {
-                            lp += a * (saturaDe (w[i], dr) - lp);
+                            //  EL `tanh` SE EVALUA A 2x Y EL TONO SIGUE A 1x, y
+                            //  ese reparto es el arreglo entero: lo que ensucia es
+                            //  la no linealidad, no el polo. Bajar tambien el paso
+                            //  bajo al doble no quitaria un solo decibelio de alias
+                            //  y costaria el doble de multiplicaciones.
+                            const float sat = Sobre2x::paso (os, w[i],
+                                                  [dr] (float v) noexcept
+                                                  { return saturaDe (v, dr); });
+                            lp += a * (sat - lp);
                             w[i] = lp;
                         }
                         I.drvLp[ch] = lp;
@@ -3186,7 +3209,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     I.smFldPliegue += kBlockG * (pl - I.smFldPliegue);
                     I.smFldTono    += kBlockG * (to - I.smFldTono);
 
-                    if (vivo && ! I.fldWasActive) I.fldLp[0] = I.fldLp[1] = 0.0f;
+                    if (vivo && ! I.fldWasActive)
+                        { I.fldLp[0] = I.fldLp[1] = 0.0f;
+                          I.fldOs[0].limpia(); I.fldOs[1].limpia(); }
                     I.fldWasActive = vivo;
 
                     if (vivo)
@@ -3202,9 +3227,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         for (int ch = 0; ch < chans; ++ch)
                         {
                             float* w = fxBus[busIdx (kFxFld)].getWritePointer (ch, startSample);
+                            auto& os = I.fldOs[ch];
                             for (int i = 0; i < numSamples; ++i)
                             {
-                                const float y = pliega (w[i], g);
+                                const float y = Sobre2x::paso (os, w[i],
+                                                    [g] (float v) noexcept
+                                                    { return pliega (v, g); });
                                 I.fldLp[ch] += cLp * (y - I.fldLp[ch]);
                                 w[i] = I.fldLp[ch];
                             }
@@ -4309,6 +4337,33 @@ void AudioEngine::setFxParam (int canal, int fx, int par, float v) noexcept
     //  salian identicos, con el cuarto en 0.000000 en los dos.
     if (! juce::isPositiveAndBelow (fx, kNumFx)
         || ! juce::isPositiveAndBelow (par, kNumParFx)) return;
+
+    //  Y UN NO-FINITO NO ENTRA, que es la guarda que faltaba y costaba un
+    //  SEGMENTATION FAULT. Medido: `setFxParam (canal, kFxDly, 0, NaN)` mata
+    //  la app. El camino entero, que es corto: `dlyTime` se guarda tal cual;
+    //  el bloque lo pasa por `juce::jlimit (1.0f, sr-1, t)` y **jlimit no
+    //  atrapa un NaN** -son dos comparaciones y las dos son falsas con NaN,
+    //  asi que devuelve el NaN intacto-; el suavizado lo arrastra a
+    //  `smDlySamp`; y `juce::dsp::DelayLine::setDelay` convierte eso a un
+    //  indice entero, que con NaN es basura, y `popSample` lee fuera del
+    //  array. No es un ruido raro: es la app cerrandose.
+    //
+    //  Y LA CASA YA LO SABIA A MEDIAS. Cuatro lineas debajo de ese `jlimit`
+    //  esta escrito *«se pregunta por lo finito porque comparar con NaN
+    //  siempre es falso»*, y era para la REALIMENTACION. La misma frase valia
+    //  para el tiempo y nadie la aplico ahi: la regla estaba dicha y no puesta.
+    //
+    //  SE ATRAPA EN LA PUERTA Y NO EN CADA ETAPA. Por aqui entran los noventa
+    //  parametros -la cara, la automatizacion, el fichero de proyecto y los
+    //  presets-, asi que un `isfinite` aqui cubre los treinta efectos; el
+    //  mismo arreglo repartido por las etapas serian noventa sitios donde
+    //  acordarse. Cuesta una comparacion por movimiento de mando, que es cosa
+    //  del hilo de mensajes y no del de audio.
+    //
+    //  Y un no-finito no se guarda como cero, que seria inventarse un valor:
+    //  se DESCARTA, o sea que el mando se queda donde estaba. Un fichero
+    //  corrupto no puede mover un mando a ningun sitio.
+    if (! std::isfinite (v)) return;
 
     //  `fxParamDe` es quien sabe que un envio ignora el canal, asi que aqui no
     //  hay una segunda copia de esa condicion.

@@ -6,6 +6,7 @@
 #include "Zati.h"
 #include <algorithm>
 #include <chrono>
+#include <functional>
 #include <typeinfo>
 #include <vector>
 
@@ -412,6 +413,195 @@ namespace UiAudit
     inline std::vector<Celda> celdas;
     inline void celda (const juce::String& quien, int pide, int da)
     { if (enabled()) celdas.push_back ({ quien, pide, da }); }
+
+    //  LO QUE HAY DENTRO DE UNA CAJA, MEDIDO EN LA TINTA Y NO EN LA ARITMETICA.
+    //
+    //  Todas las reglas de geometria de esta casa le preguntan al MAQUETADO:
+    //  `TARJETA` compara el pedido con el tope, `SOBRA` compara lo pedido con
+    //  lo colocado, `MARCO`/`AJENO`/`VACIO` comparan rectangulos con
+    //  rectangulos. Las cinco leen el mismo numero, asi que si el maquetado
+    //  miente de forma coherente -pide 500 y coloca 490- ninguna se entera:
+    //  preguntan al que miente.
+    //
+    //  Eso es literalmente lo que paso. La ficha del pad dejaba diez pixeles de
+    //  aire muerto DENTRO del panel de abajo, 412x915/es/pads se mide 1980
+    //  veces por barrido, y salio verde hasta que lo enseno la foto de un
+    //  telefono. Y la regla que lo caza -`SOBRA`- esta escrita A MANO para UNA
+    //  ficha: la publica `padSheet` porque yo la escribi ahi, y las otras
+    //  cincuenta y cuatro no publican nada.
+    //
+    //  Esto pregunta lo mismo sin escribirlo cincuenta y cinco veces: donde
+    //  acabo la TINTA. `recogeRotulos` ya pinta la app entera sobre una imagen
+    //  para recoger los rotulos, asi que la foto ya esta hecha y solo hacia
+    //  falta no tirarla. Cuesta un recorrido de pixeles en C++ -milisegundos- y
+    //  no obliga a decodificar PNG en Python, que ahi es un bucle por byte
+    //  (`Tests/costuras.py:106`) y sobre 495 capturas no se acaba nunca.
+    //
+    //  LO QUE SE MIDE ES LA BANDA VACIA MAS ALTA de dentro de la caja, y no el
+    //  aire de los cuatro lados: el hueco del pad no estaba en un filo sino
+    //  ENTRE las dos filas, y un aire de filo lo tiene cualquier panel por
+    //  `panelAireY`. Con su altura y donde empieza, para poder senalar.
+    //
+    //  Y EL FONDO NO SE LE PASA, SE MIDE. Escribir aqui el color con el que
+    //  `pintaPaneles` rellena seria la prueba repitiendo la constante del
+    //  codigo -el fallo que `Tests/icono.py` cometio dos veces con la mascara
+    //  del lanzador-, y ademas se rompe sola el dia que una carcasa mueva el
+    //  token. Se toma el color MAS FRECUENTE de dentro de la caja, que en un
+    //  panel es el relleno porque un panel es sobre todo hueco entre controles.
+    //
+    //  LO QUE ESTA REGLA NO PUEDE VER, y se escribe para que nadie lo
+    //  descubra otra vez: una caja tan llena que su color mas frecuente sea el
+    //  de un control y no el del fondo. Entonces la banda vacia sale en cero y
+    //  esta caja no dice nada. Es un fallo hacia el silencio, que es el peor,
+    //  y por eso la rotura a proposito de `Tests/limites.py` NO vale hecha en
+    //  una ficha cualquiera: tiene que salir con la cifra de la ficha del pad,
+    //  que es la unica de la que ya se sabe la respuesta.
+    struct Tinta { juce::String quien; int x, y, w, h; int dw, dh;
+                   int hx, hy, hw, hh, area; };
+    inline std::vector<Tinta> tintas;
+
+    //  El lienzo de `recogeRotulos`, guardado en vez de tirado. Vive aqui y no
+    //  en la funcion porque `dump` lo necesita DESPUES de que la pasada de
+    //  pintado termine, y volver a pintar por segunda vez seria otra foto que
+    //  podria no ser la misma -un visor con temporizador ya ha cambiado-.
+    inline juce::Image lienzo;
+
+    //  El radio de la esquina de un panel: dentro de ese cuadrado la esquina es
+    //  chasis y no relleno, asi que cuenta como tinta y taparia la medida. Se
+    //  excluye de los dos extremos de cada fila, junto con dos pixeles de filo
+    //  y suavizado -`drawRoundedRectangle` a 1 px sobre `reduced (0.5f)`-.
+    inline void mideTinta (const juce::String& quien, juce::Rectangle<int> caja, int radio)
+    {
+        if (! enabled() || ! lienzo.isValid()) return;
+
+        //  EL FILO VA CON NOMBRE Y NO CON UN DOS, y no es cosmetica: hay
+        //  cuatro tokens de `Metrics` que valen dos -`keyAir`, `aireTapa`,
+        //  `centraDedo`, `panelAireY`- y `Tests/maqueta.py` canta cualquier
+        //  literal de aire que ya tenga token. Ninguno de esos cuatro significa
+        //  esto: esto es el GROSOR DE LA LINEA que `drawRoundedRectangle`
+        //  pinta sobre `reduced (0.5f)` mas su suavizado, o sea una propiedad
+        //  del dibujo del panel y no una medida de maquetado. Ponerle el nombre
+        //  de uno de ellos seria callar la regla mintiendo.
+        constexpr int kFilo = 2;
+        const auto dentro = caja.getIntersection (lienzo.getBounds())
+                                .reduced (juce::jmax (kFilo, radio), kFilo);
+        if (dentro.getWidth() < 4 || dentro.getHeight() < 4) return;
+
+        const juce::Image::BitmapData px (lienzo, juce::Image::BitmapData::readOnly);
+
+        //  EL FONDO SE VOTA EN EL BORDE Y NO EN EL INTERIOR, y esto costo una
+        //  medida entera que decia lo contrario de lo que pasaba.
+        //
+        //  Votando TODO el interior, la caja de PROYECTOS -`setGrupos[0]`,
+        //  355x58- salia con un hueco de 296x38, el 60.8 % de la caja, la peor
+        //  de las cincuenta y cinco fichas en las nueve pantallas. Y no habia
+        //  hueco: ese rectangulo es el interior de la caja de escribir el
+        //  nombre, que estaba vacia porque no hay ningun proyecto. Medido:
+        //  relleno del panel (27,74,79) en 7706 pixeles contra interior del
+        //  editor (8,25,28) en 11248. El control ES MAS GRANDE que el fondo
+        //  que lo rodea, asi que gana la votacion, y entonces la regla llama
+        //  hueco al control y tinta al fondo: da la vuelta a la respuesta.
+        //
+        //  El borde no tiene esa duda. Un panel es un rectangulo relleno con
+        //  el contenido metido para dentro; el anillo de dos pixeles justo por
+        //  dentro de su filo es relleno POR CONSTRUCCION. Se vota ahi -y se
+        //  vota, no se toma un pixel, porque un rotulo que llegue al filo
+        //  ensucia un trozo del anillo pero no su mayoria-.
+        //
+        //  RGB de 16 bits -5/6/5- para que la tabla quepa y para que dos tonos
+        //  a un paso de distancia no se partan el voto: el relleno es un color
+        //  plano y el suavizado de sus bordes lo rodea de vecinos a un bit.
+        std::vector<int> voto (1 << 16, 0);
+        int modo = 0, mejor = -1;
+        const auto vota = [&] (int x, int y)
+        {
+            const auto c = px.getPixelColour (x, y);
+            const int k = ((c.getRed() >> 3) << 11) | ((c.getGreen() >> 2) << 5) | (c.getBlue() >> 3);
+            if (++voto[(size_t) k] > mejor) { mejor = voto[(size_t) k]; modo = k; }
+        };
+        for (int d = 0; d < kFilo; ++d)
+        {
+            for (int x = dentro.getX(); x < dentro.getRight(); ++x)
+            {
+                vota (x, dentro.getY() + d);
+                vota (x, dentro.getBottom() - 1 - d);
+            }
+            for (int y = dentro.getY(); y < dentro.getBottom(); ++y)
+            {
+                vota (dentro.getX() + d, y);
+                vota (dentro.getRight() - 1 - d, y);
+            }
+        }
+
+        const int fr = (modo >> 11) << 3, fg = ((modo >> 5) & 63) << 2, fb = (modo & 31) << 3;
+
+        //  EL HUECO ES UN RECTANGULO, Y NO UNA BANDA NI UNA COLUMNA.
+        //
+        //  Empezo midiendo la fila vacia mas alta, y eso se comio el fallo que
+        //  lo motivo: la celda de CHOKE deja medio renglon vacio A LA DERECHA,
+        //  y por encima de ella hay una fila -CINTA/NORMALIZAR- que llega al
+        //  filo. Ninguna fila entera esta vacia y ninguna columna entera esta
+        //  vacia, asi que las dos medidas daban cuatro pixeles y el hueco que
+        //  se ve es de doscientos por cuarenta. Medir un eje es media regla.
+        //
+        //  Se busca el RECTANGULO VACIO MAS GRANDE, que es el histograma de
+        //  siempre: por cada fila, cuantos pixeles vacios lleva encima cada
+        //  columna, y el rectangulo mayor bajo ese perfil con una pila. Cuesta
+        //  un recorrido por pixel, igual que contarlos.
+        //
+        //  Un pixel esta vacio si no se aparta del fondo mas de ocho niveles.
+        //  Ocho y no cero porque el suavizado de un filo cercano tiñe a sus
+        //  vecinos un par de niveles, y con cero cada sombra seria tinta y el
+        //  hueco saldria en cero SIEMPRE: una regla que no falla nunca.
+        const int an = dentro.getWidth(), al = dentro.getHeight();
+        std::vector<int> alto ((size_t) an, 0), pila;
+        int mejorArea = 0, hx = 0, hy = 0, hw = 0, hh = 0;
+
+        for (int y = 0; y < al; ++y)
+        {
+            for (int x = 0; x < an; ++x)
+            {
+                const auto c = px.getPixelColour (dentro.getX() + x, dentro.getY() + y);
+                const bool vacio = std::abs ((int) c.getRed()   - fr) <= 8
+                                && std::abs ((int) c.getGreen() - fg) <= 8
+                                && std::abs ((int) c.getBlue()  - fb) <= 8;
+                alto[(size_t) x] = vacio ? alto[(size_t) x] + 1 : 0;
+            }
+
+            pila.clear();
+            for (int x = 0; x <= an; ++x)
+            {
+                const int h = (x < an) ? alto[(size_t) x] : 0;
+                int izq = x;
+                while (! pila.empty() && alto[(size_t) pila.back()] >= h)
+                {
+                    const int i = pila.back(); pila.pop_back();
+                    const int base = pila.empty() ? 0 : pila.back() + 1;
+                    const int area = alto[(size_t) i] * (x - base);
+                    if (area > mejorArea)
+                    {
+                        mejorArea = area;
+                        hw = x - base;  hh = alto[(size_t) i];
+                        hx = dentro.getX() + base;
+                        hy = dentro.getY() + y - hh + 1;
+                    }
+                    izq = base;
+                }
+                juce::ignoreUnused (izq);
+                if (x < an) pila.push_back (x);
+            }
+        }
+        //  Y SE PUBLICA EL INTERIOR MEDIDO -`dw`, `dh`- y no solo la caja.
+        //  Sin el, la regla de Python tendria que restarle el borde por su
+        //  cuenta, o sea escribir `Metrics::sm` otra vez en otro fichero: la
+        //  prueba repitiendo la constante del codigo, que es como `icono.py`
+        //  dio verde dos veces con la mascara rota. Con el interior publicado,
+        //  un panel VACIO DEL TODO vale exactamente 1.0 y el liston sale de la
+        //  aritmetica en vez de elegirse a ojo.
+        tintas.push_back ({ quien, caja.getX(), caja.getY(), caja.getWidth(), caja.getHeight(),
+                            dentro.getWidth(), dentro.getHeight(),
+                            hx, hy, hw, hh, mejorArea });
+    }
 
     struct VuRot { juce::String texto; int pide, tiene; };
     inline std::vector<VuRot> vuRotulos;
@@ -1212,15 +1402,122 @@ namespace UiAudit
         if (b.getWidth() < 1 || b.getHeight() < 1) return;
         rotulos.clear();
         paneles.clear();
+        tintas.clear();
         midiendo = true;
-        juce::Image img (juce::Image::ARGB, b.getWidth(), b.getHeight(), true);
-        { juce::Graphics g (img); root.paintEntireComponent (g, true); }
+        //  Y LA IMAGEN SE GUARDA EN VEZ DE TIRARSE. Es la unica foto que esta
+        //  pasada hace, y `mideTinta` la necesita DESPUES de que el pintado
+        //  termine -hasta entonces no hay lista de paneles que recorrer-.
+        //  Pintar una segunda vez para medirla seria otra foto, y una ficha con
+        //  un visor que late no da dos veces la misma. Ver UiAudit::Tinta.
+        lienzo = juce::Image (juce::Image::ARGB, b.getWidth(), b.getHeight(), true);
+        { juce::Graphics g (lienzo); root.paintEntireComponent (g, true); }
         midiendo = false;
+    }
+
+    //  EL EFECTO QUE REVELA LOS LIMITES, y por que es de banco y no de la app.
+    //
+    //  Las medidas de esta casa contestan con un numero, y un numero dice
+    //  CUANTO pero no ENSENA. La ficha del pad la encontro una foto de un
+    //  telefono porque a la vista habia una losa con un agujero, y ninguna de
+    //  las once reglas podia dibujarla. Esto pinta encima de lo ya pintado el
+    //  contorno de cada caja -tarjeta, panel, fila y control con dedo- para que
+    //  las cincuenta y cinco fichas se puedan MIRAR de una vez.
+    //
+    //  Y NO RECALCULA NADA. Los rectangulos salen de los vectores que este
+    //  mismo fichero ya llena durante el maquetado y el pintado; si los
+    //  recalculara seria un segundo maquetado, y dos maquetados son dos
+    //  respuestas -que es la figura del `438` escrito a mano contra la funcion
+    //  que coloca-. Lo que se dibuja es lo que se midio, o no vale de nada.
+    //
+    //  DETRAS DE SU VARIABLE Y FUERA DEL CAMINO NORMAL. `Tests/cpu.py` cuenta
+    //  pixeles repintados y no llamadas, asi que una linea de mas en el pintado
+    //  de cada fotograma se nota: con `ZATI_CONTORNOS` vacio esto es un `if`
+    //  que sale. No viaja a lo que se instala como una funcion que alguien
+    //  pueda encender: no hay interruptor en AJUSTES, a peticion.
+    inline bool contornosOn()
+    {
+        static const bool v = env ("ZATI_CONTORNOS").isNotEmpty();
+        return v;
+    }
+
+    //  Un contorno de un pixel y un tono por tipo. Sin relleno y sin sombra: lo
+    //  que se quiere ver es lo que hay DEBAJO, y un velo encima lo escondería
+    //  igual que lo esconde no tener contorno.
+    inline void contornos (juce::Graphics& g, juce::Component& root)
+    {
+        if (! contornosOn()) return;
+
+        const auto traza = [&g] (juce::Rectangle<int> r, juce::Colour c, float grosor)
+        {
+            if (r.getWidth() < 1 || r.getHeight() < 1) return;
+            g.setColour (c);
+            g.drawRect (r, (int) grosor);
+        };
+
+        //  Los controles primero y el resto encima: una tapa dentro de un panel
+        //  tiene que dejar ver el filo del panel, y no al reves.
+        std::function<void (juce::Component&)> anda = [&] (juce::Component& c)
+        {
+            for (int i = 0; i < c.getNumChildComponents(); ++i)
+                if (auto* h = c.getChildComponent (i))
+                {
+                    if (! h->isVisible()) continue;
+                    const auto r = root.getLocalArea (h, h->getLocalBounds());
+                    traza (r.toNearestInt(), juce::Colour (0x5500a0ff), 1.0f);
+                    anda (*h);
+                }
+        };
+        anda (root);
+
+        for (const auto& f : filas)
+            traza ({ f.dadaX, f.y, f.dadaR - f.dadaX, 2 }, juce::Colour (0xaaffcc00), 1.0f);
+
+        for (const auto& p : paneles)
+            traza ({ p.x, p.y, p.w, p.h }, juce::Colour (0xcc00ff88), 1.0f);
+
+        for (const auto& t : tarjetas)
+            if (t.w > 0 && t.h > 0)
+                traza ({ t.x, t.y, t.w, t.h }, juce::Colour (0xddff3355), 2.0f);
+
+        //  Y LA BANDA VACIA, RELLENA, que es la unica que se pinta maciza: es
+        //  lo que se ha venido a ver. Rojo translucido sobre lo que no tiene
+        //  dueño. Si aqui no hay nada rojo, la ficha llena lo que pidio.
+        for (const auto& t : tintas)
+            if (t.area > 0)
+            {
+                g.setColour (juce::Colour (0x44ff0000));
+                g.fillRect (juce::Rectangle<int> (t.hx, t.hy, t.hw, t.hh));
+            }
+    }
+
+    //  LA PASADA DE TINTA ENTERA, y vive fuera de `dump` porque la piden DOS:
+    //  el volcado -que la imprime- y la lamina de contornos, que la pinta. La
+    //  foto sale antes que el volcado (`Main.cpp`), asi que si esto viviera
+    //  dentro de `dump` la lamina saldria con las bandas vacias sin marcar y
+    //  seria una lamina que no enseña lo que se ha venido a ver.
+    //
+    //  El radio es el de la esquina con la que `pintaPaneles` redondea
+    //  (`Metrics::sm`); una tarjeta se dibuja con esquinas cuadradas, asi que
+    //  ahi no hay esquina que excluir.
+    inline void mideTodaLaTinta (juce::Component& root)
+    {
+        recogeRotulos (root);
+
+        for (const auto& p : paneles)
+            mideTinta (p.nombre.isNotEmpty() ? p.nombre : juce::String ("panel"),
+                       { p.x, p.y, p.w, p.h }, Metrics::sm);
+        for (size_t i = 0; i < tarjetas.size(); ++i)
+        {
+            const auto& t = tarjetas[i];
+            if (t.w > 0 && t.h > 0)
+                mideTinta ("tarjeta[" + juce::String ((int) i) + "]",
+                           { t.x, t.y, t.w, t.h }, 0);
+        }
     }
 
     inline void dump (juce::Component& root)
     {
-        recogeRotulos (root);
+        mideTodaLaTinta (root);
         std::cout << "{\"root\":1,\"w\":" << root.getWidth() << ",\"h\":" << root.getHeight()
                   //  EL LADO QUE LA APP DICE QUE DIBUJA. Lo publica ella y no
                   //  lo escribe el script: escrito en los dos sitios, el banco
@@ -1295,6 +1592,15 @@ namespace UiAudit
         for (const auto& c : celdas)
             std::cout << "{\"celda\":\"" << c.quien.toRawUTF8() << "\""
                       << ",\"pide\":" << c.pide << ",\"da\":" << c.da << "}" << std::endl;
+
+        for (const auto& t : tintas)
+            std::cout << "{\"tinta\":\"" << t.quien.toRawUTF8() << "\""
+                      << ",\"x\":" << t.x << ",\"y\":" << t.y
+                      << ",\"w\":" << t.w << ",\"h\":" << t.h
+                      << ",\"dw\":" << t.dw << ",\"dh\":" << t.dh
+                      << ",\"hx\":" << t.hx << ",\"hy\":" << t.hy
+                      << ",\"hw\":" << t.hw << ",\"hh\":" << t.hh
+                      << ",\"area\":" << t.area << "}" << std::endl;
 
         for (const auto& v : vus)
             std::cout << "{\"vu\":1,\"que\":\"" << v.que << "\""
