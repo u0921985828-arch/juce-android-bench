@@ -1783,7 +1783,13 @@ void MainComponent::resized()
         //  Y LA PREGUNTA SE HACE UNA VEZ Y EN UN SITIO. Estaba escrita aqui a
         //  pelo, asi que el presupuesto la usaba y el reparto de la celda de
         //  abajo no se enteraba de que CHOKE tenia la fila para el solo.
-        const bool chokeSolo = padChokeSolo (anchoFila3);
+        //  Y ES UN NUMERO -cuantas tapas acompañan a CHOKE-, no un si/no.
+        //  Ver MainComponent::padChokeAcompanan para los 213 px muertos que
+        //  dejaba el reparto por porcentaje en 412x915.
+        const int  chokeAcomp = padChokeAcompanan (anchoFila3);
+        //  `filaExtra` es lo unico que el presupuesto necesita saber: si algo
+        //  baja a un renglon propio. Baja NORMALIZAR sola, o las dos tapas.
+        const bool filaExtra  = chokeAcomp < 2;
         //  EL PEDIDO DE SONIDO LO DICE LA MISMA FUNCION QUE LO COLOCA.
         //
         //  Era `438 + secH + 2 * panelAireY`, con el desglose en el comentario
@@ -2100,8 +2106,11 @@ void MainComponent::resized()
             //  `chokeCeldaPide` es lo que pide, y es el MISMO numero con el que
             //  se decidio bajarlo de fila: si no caben tres celdas de ese ancho,
             //  se baja; y abajo se le da ese ancho, no el que sobre.
-            const int w3 = chokeSolo ? juce::jmin (chokeCeldaPide, r3.getWidth())
-                                     : r3.getWidth() * 32 / 100;
+            //  Y AHORA EN LAS DOS RAMAS, no solo cuando va solo. El
+            //  `32 / 100` de la rama compartida era el mismo defecto por el
+            //  otro lado: en 915x412 daba 254 px a un estribo que dice "off" y
+            //  pide 134. Un control mide lo que pide, acompañado tambien.
+            const int w3 = juce::jmin (chokeCeldaPide, r3.getWidth());
             //  Sin recorte vertical: la fila mide Metrics::hit justo, que es
             //  el dedo minimo, y quitarle 3 arriba y 3 abajo dejaba tres
             //  controles de 34 px que el banco saca como TOUCH. Encima hay 16
@@ -2137,22 +2146,43 @@ void MainComponent::resized()
             //  olvida: en arabe el borde de entrada es el DERECHO -FILAS lo mide
             //  asi a proposito- y morder por la izquierda habria dado por bueno
             //  en tres idiomas lo que se rechaza en el cuarto.
+            //  EL RECTANGULO QUE ESTA FILA RECIBIO, apuntado ANTES de morderlo.
+            //  Ver la publicacion de `UiAudit::fila` mas abajo.
+            const auto filaDada = r3;
             auto celdaChoke = Lang::takeStart (r3, w3);
-            auto chokeCell = chokeSolo ? celdaChoke
-                                       : celdaChoke.withTrimmedRight (Metrics::aireTapa);
+            //  EL AIRE A LA HERMANA SE QUITA POR EL LADO DONDE ESTA LA
+            //  HERMANA, y en arabe ese lado es el IZQUIERDO.
+            //
+            //  Era `withTrimmedRight` fijo, la misma mitad que se olvida que
+            //  `Lang::takeStart` arregla dos lineas mas arriba: con la celda
+            //  mordida por el filo derecho, en arabe los dos pixeles se
+            //  quitaban del filo EXTERIOR de la fila -CHOKE quedaba dos px
+            //  dentro del borde del panel- y CHOKE y CINTA se tocaban. Lo saco
+            //  la regla `FILA` en cuanto esta fila empezo a publicarse: en
+            //  412x915/ar «recibio 0..347 y ocupa 0..345». Tres tandas con
+            //  este codigo y nadie lo habia visto, porque la unica rama donde
+            //  pasaba era la compartida y en arabe no se mira una foto.
+            auto chokeCell = celdaChoke;
+            if (chokeAcomp > 0)
+                Lang::takeEnd (chokeCell, Metrics::aireTapa);
             //  LO QUE PIDE CONTRA LO QUE SE LE DA, publicado por quien lo sabe.
             //  Ver Tests/expo.py, regla SOBRA.
             //
-            //  Y SOLO EN LA RAMA DE LA FILA PROPIA, que es donde la pregunta
-            //  significa algo. Cuando los tres comparten renglon, la celda es
-            //  un TERCIO REPARTIDO -en 915x412 son 254 px contra los 134 que
-            //  pide- y eso no es quedarse lo que sobra: es el reparto de una
-            //  fila de tres, y de que la fila se llene ya se ocupa `FILA`.
-            //  Publicarlo en las dos ramas sacaba un hallazgo por cada pantalla
-            //  apaisada con la maqueta correcta, que es como esta casa ya se
-            //  comio 644 hallazgos de una regla equivocada.
-            if (chokeSolo)
-                UiAudit::celda ("choke", chokeCeldaPide, chokeCell.getWidth());
+            //  Y EN TODAS LAS RAMAS DESDE QUE LA CELDA PIDE LO MISMO EN TODAS.
+            //  Estaba dentro de un `if (chokeSolo)` porque en la rama
+            //  compartida la celda era un TERCIO REPARTIDO -254 px en 915x412
+            //  contra los 134 que pide- y publicarlo sacaba un hallazgo por
+            //  pantalla apaisada. Eso no era una exencion: era la regla
+            //  diciendo la verdad sobre un reparto que estaba mal, y callarla
+            //  fue tapar el segundo lado del mismo fallo durante tres tandas.
+            //  Ahora las dos ramas dan `chokeCeldaPide` y la regla mide las
+            //  once pantallas.
+            //
+            //  Se mide `celdaChoke` y no `chokeCell`: los `Metrics::aireTapa`
+            //  que la segunda se quita son el aire A LA HERMANA, o sea algo que
+            //  pasa DENTRO de la celda, y contarlos como deficit sacaria un
+            //  hallazgo de 2 px en cada pantalla donde el reparto es correcto.
+            UiAudit::celda ("choke", chokeCeldaPide, celdaChoke.getWidth());
             //  JUCE stacks a slider's +/- buttons whenever the space left for
             //  them is taller than it is wide, and on a narrow screen the
             //  readout was eating enough of the cell to trigger exactly that -
@@ -2181,18 +2211,50 @@ void MainComponent::resized()
             //  pixeles de losa por encima de MODO, dentro de la fila de mandos.
             //  Es el mismo fallo que `ensureDirectory` - lo que importa no es
             //  lo que devuelve la orden sino donde acabo el rectangulo.
+            //  LA FILA SE LLENA DE IZQUIERDA A DERECHA Y LO QUE NO CABE BAJA.
+            //
+            //  `chokeAcomp` dice cuantas tapas se quedan con CHOKE, y las que
+            //  sobran son las de la cola del array: con dos, la fila es CHOKE +
+            //  CINTA + NORMALIZAR y no baja nadie; con una, CINTA se queda y
+            //  NORMALIZAR ocupa un renglon entero; con ninguna, bajan las dos.
+            //  La que se queda es la corta y la que baja es la larga, que es la
+            //  que mas partido le saca a un renglon propio.
             int gBajo = inner.getY();
-            if (chokeSolo)
+            if (chokeAcomp > 0)
+                layoutModuleBar (r3, r3b, 0, chokeAcomp);
+            //  Y LA FILA SE PUBLICA COMO FILA.
+            //
+            //  `FILA` -Tests/expo.py- es la regla que tenia que haber cazado
+            //  los 213 px muertos de esta fila y no los cazo por un motivo
+            //  tonto: nadie se la daba. La publica `layoutModuleBar`, que es
+            //  quien coloca las filas de tapas de la app, y esta fila no pasa
+            //  entera por ahi porque la celda de CHOKE se recorta a mano antes.
+            //  O sea que la unica fila de la app maquetada a medias era
+            //  tambien la unica sin la regla que mide si se llena. Con esto,
+            //  el fallo de la foto sale como «la fila y=628 recibio 33..380 y
+            //  ocupa 33..167» - 213 px, el numero exacto - y en arabe por el
+            //  filo contrario, que es donde `takeStart` muerde.
+            //
+            //  Se publica en TODAS las ramas, incluida la de CHOKE sin
+            //  compañia: esa deja hueco de verdad, asi que si alguna pantalla
+            //  llega a ella tiene que cantar. Ninguna de las once del barrido
+            //  lo hace -la mas estrecha, 225 px, aun da para CINTA- pero una
+            //  rama exenta es una rama que nadie mide.
+            {
+                juce::Rectangle<int> puesta = chokeSlider.getBounds();
+                for (int i = 0; i < chokeAcomp; ++i)
+                    if (r3b[i]->isVisible() && ! r3b[i]->getBounds().isEmpty())
+                        puesta = puesta.getUnion (r3b[i]->getBounds());
+                UiAudit::fila (filaDada, puesta);
+            }
+            if (filaExtra)
             {
                 inner.removeFromTop (Metrics::xs);
                 gBajo = inner.getY();
-                layoutModuleBar (inner.removeFromTop (Metrics::hit), r3b, 0, 2);
+                layoutModuleBar (inner.removeFromTop (Metrics::hit),
+                                 r3b + chokeAcomp, 0, 2 - chokeAcomp);
             }
-            else
-            {
-                layoutModuleBar (r3, r3b, 0, 2);
-            }
-            padGrupos.add (chokeSolo
+            padGrupos.add (filaExtra
                              ? filaBaja.getUnion (juce::Rectangle<int> (inner.getX(), gBajo,
                                                                         inner.getWidth(),
                                                                         inner.getY() - gBajo))

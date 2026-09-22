@@ -786,8 +786,9 @@ private:
     //  alto de la pagina y al colocar la fila- que tienen que
     //  contestar lo mismo.
     bool padMuestraWraps (int rowWidth) const;
-    //  Y LA DE CHOKE. Ver altoContenidoPadSonido y chokeCeldaPide.
-    bool padChokeSolo (int rowWidth) const;
+    //  Y LA DE CHOKE, QUE NO ES UN SI/NO SINO UN NUMERO: cuantas de las dos
+    //  tapas caben en su fila. Ver padChokeAcompanan y chokeCeldaPide.
+    int  padChokeAcompanan (int rowWidth) const;
     bool setTabsFit (int rowWidth) const;
     bool padRowFits (int rowWidth, std::initializer_list<const juce::TextButton*> bs) const;
     //  El reparto apretado de EL PAD, decidido en resized() y necesario en

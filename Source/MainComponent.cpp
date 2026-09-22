@@ -7048,26 +7048,65 @@ int MainComponent::altoContenidoElPad (int ancho) const
 //  El orden es el del maquetado, renglon por renglon: la banda de subtitulo,
 //  las tres filas de mandos, el aire que el panel de abajo se come por arriba,
 //  la fila de CHOKE con su rotulo, y -cuando los tres no caben juntos- el
-//  renglon propio al que bajan MODO y NORMALIZAR.
+//  renglon propio al que baja lo que no cupo: NORMALIZAR sola, o las dos tapas
+//  si ni CINTA cabia. Un renglon cueste lo que cueste, uno o dos que bajen.
 int MainComponent::altoContenidoPadSonido (int ancho) const
 {
     return Metrics::bandaSubtitulo
          + 3 * ZatiLookAndFeel::kKnobRow
          + Metrics::panelAireY
          + ZatiLookAndFeel::kKnobName + Metrics::hit
-         + (padChokeSolo (ancho) ? Metrics::xs + Metrics::hit : 0);
+         + (padChokeAcompanan (ancho) < 2 ? Metrics::xs + Metrics::hit : 0);
 }
 
-//  ¿SE VA CHOKE SOLO A SU FILA?
+//  ¿CUANTAS TAPAS ACOMPAÑAN A CHOKE EN SU FILA? Dos, una, o ninguna.
 //
 //  La misma figura que `padSourceWraps` y `padMuestraWraps`: se pregunta al
 //  presupuestar el alto y al colocar la fila, y las dos tienen que contestar lo
 //  mismo. Estaba escrita a pelo en `resized()`, asi que el presupuesto la
 //  llamaba y el reparto de la celda no.
-bool MainComponent::padChokeSolo (int rowWidth) const
+//
+//  ERA UN SI/NO REPARTIDO POR PORCENTAJE -32 % para CHOKE, 68 % para las dos
+//  tapas- y los dos numeros estaban mal por el mismo motivo, que es el de la
+//  tanda 9: un control no mide un porcentaje de la fila, mide LO QUE PIDE.
+//
+//  POR ABAJO bajaba a CHOKE de fila sin necesidad. En 412x915 la fila mide
+//  347, el 32 % son 111 y CHOKE pide 134, asi que se iba a un renglon propio
+//  donde ocupaba 134 de 347 -el 39 %- y dejaba 213 px muertos a su derecha:
+//  el hueco de 211x63 que `UiAudit::tinta` saca como el MAYOR de
+//  `padGrupos[0]`, area 13293. Es la queja «tiene que ser realista del 0 % al
+//  100 %», y estaba señalada en rojo sobre la foto.
+//
+//  Preguntando por lo que pide, el resto son 347 - 134 = 213 px para dos tapas
+//  que piden 120 en castellano, 108 en ingles, 94 en arabe y 81 en chino:
+//  caben, y la fila es UNA. Igual en 412x480 (339), 393x851 (329), 360x640
+//  (299) y 344x882 (284, el mas justo: 150 de resto contra 120): cinco de las
+//  seis pantallas que partian la fila dejan de partirla, y la pagina se acorta
+//  Metrics::xs + Metrics::hit = 44 px en todas ellas.
+//
+//  POR ARRIBA se pasaba. En la tableta de 800x1280 la fila mide 704 y el 32 %
+//  son 223 px de estribo para un rotulo que dice "off"; en 915x412 son 254.
+//  Es el MISMO defecto de los 347 que la tanda 9 arreglo en la rama de la fila
+//  propia y dejo en pie en la compartida, porque alli se leia como reparto de
+//  una fila de tres y no como quedarse lo que sobra.
+//
+//  Y LA RESPUESTA ES UN NUMERO Y NO UN SI/NO por la pantalla mas estrecha que
+//  alguien vende: en 280x653 la fila mide 225 y el resto son 91 px. Las dos
+//  tapas no caben -piden 110 en arabe con el aire de `padRowFits`- pero CINTA
+//  si (65), asi que la fila es CHOKE + CINTA y solo NORMALIZAR baja a un
+//  renglon propio, que ocupa entero. Ninguna rama deja un resto vacio, que es
+//  exactamente lo que se pidio.
+int MainComponent::padChokeAcompanan (int rowWidth) const
 {
-    return ! padRowFits (rowWidth * 68 / 100, { &modeButton, &normButton })
-         || rowWidth * 32 / 100 < chokeCeldaPide;
+    //  El resto es la fila menos lo que CHOKE pide, sin restar aire: el que
+    //  separa a CHOKE de su vecina sale de DENTRO de su celda
+    //  -`withTrimmedRight (Metrics::aireTapa)`- y no del sitio de las tapas.
+    //  Restarlo aqui tambien seria contarlo dos veces, que es como esta casa
+    //  se comio los 28 px de `sheetInnerW` en esta misma pregunta.
+    const int resto = rowWidth - chokeCeldaPide;
+    if (padRowFits (resto, { &modeButton, &normButton })) return 2;
+    if (padRowFits (resto, { &modeButton }))              return 1;
+    return 0;
 }
 
 //  ¿CABEN LAS TRES PALABRAS DE FUENTE EN UNA FILA?
