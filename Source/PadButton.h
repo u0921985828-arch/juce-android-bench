@@ -297,7 +297,7 @@ public:
         //  gained depth the two would read as belonging to different machines.
         const float lift = ZatiLookAndFeel::kCapLift;
         auto r = getLocalBounds().toFloat().reduced (0.5f).withTrimmedBottom (lift);
-        const float rad = 3.0f;   // square, not rounded — matches the flat button caps
+        const float rad = Metrics::radio;   // square, not rounded — matches the flat button caps
 
         if (down) r = r.translated (0.0f, lift);
 

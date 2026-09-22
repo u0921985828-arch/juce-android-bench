@@ -959,8 +959,29 @@ namespace UiAudit
         {
             r.has  = true;
             r.text = l->getText();
-            r.needW = juce::GlyphArrangement::getStringWidth (l->getFont(), r.text);
-            r.haveW = (float) l->getWidth() - 4.0f;
+
+            //  LA FUENTE Y EL BORDE CON LOS QUE SE VA A DIBUJAR, no los que la
+            //  Label guarda. `LookAndFeel_V2::drawLabel` no usa `getFont()` de
+            //  la etiqueta: pide `getLabelFont (label)`, que aqui devuelve el
+            //  mono de `Metrics::fValue` — 13 px — mientras `getFont()` sigue
+            //  siendo el sans de 15 que JUCE le pone al construirla y que
+            //  nadie ha tocado nunca. Y el hueco util no son cuatro pixeles
+            //  menos sino DIEZ: el borde por defecto de una Label es
+            //  {1, 5, 1, 5} y `drawLabel` se lo resta antes de escribir.
+            //
+            //  Los dos errores se tapaban el uno al otro -el sans de 15 pide
+            //  de mas, los cuatro pixeles perdonan de mas- y el resultado es
+            //  que ninguna caja de cifra de esta app se ha medido nunca de
+            //  verdad. Se vio en 280x653: la caja de PATRON salia de 16 px
+            //  para un «P1» que el banco decia que pedia 16.4 y que dibujado
+            //  mide 12, o sea la prueba mandaba ensanchar una caja que cabia
+            //  y callaba en las que no. *Medir con otra fuente es responder
+            //  «cabe» a una pregunta que no se ha hecho*, que es lo que ya
+            //  decia el comentario de la rama de las tapas dos lineas arriba.
+            auto& laf = l->getLookAndFeel();
+            r.needW = juce::GlyphArrangement::getStringWidth (laf.getLabelFont (*l), r.text);
+            r.haveW = (float) laf.getLabelBorderSize (*l)
+                                 .subtractedFrom (l->getLocalBounds()).getWidth();
         }
 
         return r;

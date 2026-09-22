@@ -7060,8 +7060,19 @@ int MainComponent::altoContenidoPadSonido (int ancho) const
          //  su propio mando. Pedirlo aqui es lo que separa un hueco de un
          //  recorte: sin estos dieciseis, `sheetFromBottom` se los quita a lo
          //  ultimo que se maqueta y en silencio.
+         //
+         //  Y de esos ocho el rotulo se comia cuatro: su banda se dibuja
+         //  `kKnobNameGap` por encima del mando y la celda solo se reservaba el
+         //  rotulo pelado, asi que entre la chapa de una fila y la palabra de
+         //  la siguiente se veian CUATRO. Lo cobra placeKnobRow, no un numero
+         //  mas grande aqui.
          + 2 * Metrics::sm
-         + Metrics::panelAireY
+         //  Y EL HUECO ENTRE LA ULTIMA FILA DE MANDOS Y LA LOSA DE ABAJO.
+         //  `panelAireY` es lo que el panel se expande, no lo que separa: con
+         //  el solo, la chapa de ABIERTO acababa en 618 y el panel empezaba en
+         //  618 - cero de aire, y lo que se leia como hueco era el escalon de
+         //  color. Ver el reparto en MainComponent_Layout.
+         + Metrics::sm + Metrics::panelAireY
          + ZatiLookAndFeel::kKnobName + Metrics::hit
          + (padChokeAcompanan (ancho) < 2 ? Metrics::xs + Metrics::hit : 0);
 }
@@ -7774,9 +7785,9 @@ void MainComponent::pintaPaneles (juce::Graphics& g,
                                   ? juce::String (nombre) + "[" + juce::String (i) + "]"
                                   : juce::String());
         g.setColour (relleno);
-        g.fillRoundedRectangle (caja.toFloat(), (float) Metrics::sm);
+        g.fillRoundedRectangle (caja.toFloat(), Metrics::radio);
         g.setColour (filo);
-        g.drawRoundedRectangle (caja.toFloat().reduced (0.5f), (float) Metrics::sm, Metrics::filo);
+        g.drawRoundedRectangle (caja.toFloat().reduced (0.5f), Metrics::radio, Metrics::filo);
     }
 }
 
@@ -7802,7 +7813,7 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     //  does the work - they say "this is a panel of an instrument" with four
     //  lines and no texture at all.
     const auto card = sheetBounds.toFloat();
-    constexpr float rad = 2.0f;
+    constexpr float rad = Metrics::radio;
 
     //  El bloque bajo la tarjeta, como el de cualquier tapa: oscuro. Escrito
     //  con la tinta salia crema en LACA y hueso en GRAFITO - una tarjeta con

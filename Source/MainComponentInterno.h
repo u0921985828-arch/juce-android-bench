@@ -815,13 +815,25 @@ namespace
 //  So the band is stated once, as a rectangle, and the text is centred in
 //  it. Symmetric by construction rather than by arithmetic that has to be
 //  redone correctly at each of the places that needs it.
+inline juce::Rectangle<int> bandAbove (juce::Rectangle<int> r, int bandH,
+                                       int gapToTop, int sideBleed = 0)
+{
+    return { r.getX() - sideBleed,
+             r.getY() - gapToTop - bandH,
+             r.getWidth() + 2 * sideBleed,
+             bandH };
+}
+
+//  Y LA MISMA SOBRE UN RECTANGULO Y NO SOBRE UN COMPONENTE, porque hay rotulos
+//  que nombran a DOS. «MODO» manda CINTA y NORMALIZAR y se pintaba centrado
+//  sobre `modeButton` a secas: medido en 412x915, su tinta caia en 202..222
+//  -centro 212, que es el centro de CINTA- cuando la pareja va de 175 a 372 y
+//  su centro es 273. Sesenta y un pixeles. Leido, «MODO» nombraba a CINTA y
+//  NORMALIZAR se quedaba sin nombre: «no se donde esta, o sea que indica».
 inline juce::Rectangle<int> bandAbove (const juce::Component& c, int bandH,
                                        int gapToTop, int sideBleed = 0)
 {
-    return { c.getX() - sideBleed,
-             c.getY() - gapToTop - bandH,
-             c.getWidth() + 2 * sideBleed,
-             bandH };
+    return bandAbove (c.getBounds(), bandH, gapToTop, sideBleed);
 }
 
 //  El mapa de fuentes del arbol, leido de una vez antes de cargar nada.

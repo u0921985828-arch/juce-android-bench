@@ -156,7 +156,7 @@ public:
         //  El cristal, como el del espectro y el de la rejilla: la curva es un
         //  instrumento de lectura y se lee sobre fondo hundido.
         g.setColour (ZatiColours::screenBg);
-        g.fillRoundedRectangle (r, 3.0f);
+        g.fillRoundedRectangle (r, Metrics::radio);
 
         auto dentro = r.reduced (2.0f);
         if (dentro.getWidth() < 8.0f || dentro.getHeight() < 8.0f) return;

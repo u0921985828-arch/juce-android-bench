@@ -706,30 +706,58 @@ namespace Metrics
     //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
     //  que NO es el mismo por los cuatro lados.
     //
-    //  A lo ancho el panel no expande NADA, y esa es la correccion. Tenia
-    //  `halfGap` «como cualquier celda vecina», y la frase escondia que un
-    //  panel no tiene celda vecina a los lados: tiene el MARGEN DE LA TARJETA.
-    //  Los grupos ocupan el ancho del contenido, asi que expandir cuatro
-    //  pixeles sacaba la losa cuatro pixeles FUERA del margen -medido en
-    //  412x915, ficha del pad: tarjeta 17..396, contenido 33..380 y panel
-    //  29..384, o sea a DOCE del filo contra los dieciseis de todo lo demas- y
-    //  no era un caso sino la regla: 225 de 225 paneles con exactamente esa
-    //  holgura. Es la queja «el area donde esta el otro color no es el
-    //  correcto, por los lados tiene que tener mas aire sino queda feo».
+    //  ESTE NUMERO HA VALIDO YA TRES COSAS y las dos primeras eran la misma
+    //  equivocacion por los dos lados. Fue `halfGap` «como cualquier celda
+    //  vecina», y la frase escondia que un panel no tiene celda vecina a los
+    //  lados: tiene el MARGEN DE LA TARJETA. Los grupos ocupan el ancho del
+    //  contenido, asi que expandir cuatro pixeles sacaba la losa cuatro FUERA
+    //  del margen -medido en 412x915, ficha del pad: tarjeta 17..396, contenido
+    //  33..380 y panel 29..384, o sea a DOCE del filo contra los dieciseis de
+    //  todo lo demas, y no un caso sino 225 de 225 paneles-.
     //
-    //  Con cero, la losa cae EXACTAMENTE en la columna de contenido y se
-    //  alinea con las tapas, los mandos y las pestanas de su ficha, a los
-    //  mismos dieciseis del filo. No cuesta un pixel de ancho a nadie, que es
-    //  lo que sí costaba subir el margen. Ver `Tests/paneles.py`, regla FILO. A lo alto SI hay algo: entre grupo y
-    //  grupo la maqueta deja exactamente `Metrics::sm`, asi que dos paneles
-    //  con `halfGap` arriba y abajo se comen los ocho pixeles enteros y quedan
-    //  TOCANDOSE - que se lee igual que no dibujar ninguno, y es el intento
-    //  fallido que ya esta contado en la ficha del secuenciador. El aire
-    //  vertical es la MITAD del horizontal por esa razon y no por gusto, y sale
-    //  de `sm` en vez de estar escrito a mano: el dia que la separacion entre
-    //  grupos cambie, esto la sigue.
-    static constexpr int panelAireX = 0;
+    //  Se puso a CERO y la losa cayo clavada en la columna de contenido... y
+    //  encima de sus propios hijos: en la misma pantalla la fila de CHOKE
+    //  ocupa 33..380 y el panel tambien, asi que «off» y «NORMALIZAR» nacian
+    //  PEGADOS al filo del color, sin un pixel de fondo alrededor. La queja es
+    //  la misma de antes -«por los lados tiene que tener mas aire sino queda
+    //  feo»- y el aire que faltaba resulto ser el de DENTRO, no el de fuera.
+    //  Alinear la losa con el margen era condicion necesaria y se leyo como
+    //  suficiente.
+    //
+    //  Asi que vuelve a ser una expansion, ahora con su nombre correcto: es el
+    //  RELLENO del panel, el fondo que se ve entre el filo y lo primero que
+    //  lleva dentro. Y para que crecer por dentro no lo saque otra vez del
+    //  margen, quien paga es el CONTENIDO: las filas de un grupo se colocan
+    //  metidas `panelSangria` y el panel las expande de vuelta, con lo que su
+    //  filo cae CLAVADO en la columna de contenido - 33..380 en 412x915, los
+    //  mismos dieciseis del filo que las pestanas, el titulo y los mandos.
+    //
+    //  A lo alto SI hay algo distinto: entre grupo y grupo la maqueta deja
+    //  exactamente `Metrics::sm`, asi que dos paneles con `halfGap` arriba y
+    //  abajo se comen los ocho pixeles enteros y quedan TOCANDOSE - que se lee
+    //  igual que no dibujar ninguno, y es el intento fallido que ya esta
+    //  contado en la ficha del secuenciador. El aire vertical es la MITAD del
+    //  horizontal por esa razon y no por gusto, y sale de `sm` en vez de estar
+    //  escrito a mano: el dia que la separacion entre grupos cambie, lo sigue.
+    static constexpr int panelAireX = sm;
     static constexpr int panelAireY = sm / 4;
+
+    //  LO QUE UNA FILA DE GRUPO SE METE PARA QUE EL PANEL QUEPA A SU ALREDEDOR.
+    //
+    //  Es `panelAireX` y nada mas, y el hecho de que sea el mismo numero es el
+    //  contrato: la fila se mete lo que el panel va a expandir, asi que el filo
+    //  del panel acaba exactamente donde habria acabado la fila sin meterse -en
+    //  la columna de contenido- y el relleno sale del ancho de la fila y no del
+    //  margen de la tarjeta.
+    //
+    //  Se probo `halfGap + panelAireX`, para que el filo cayera en la columna
+    //  VISIBLE de los mandos -37..376 y no 33..380, porque `placeKnobRow` le
+    //  quitaba `halfGap` a cada celda por los dos lados-. Se descarto por caro
+    //  y porque el problema era otro: esos cuatro pixeles eran aire de vecino
+    //  puesto en un filo que no tiene vecino. Arreglado en `placeKnobRow`, la
+    //  columna de mandos ya llega a 33..380 sola y la sangria no tiene que
+    //  pagar nada por alinearse con ella.
+    static constexpr int panelSangria = panelAireX;
 
     //  Y CUANTO SE SEPARA DEL FONDO. Es el numero que Tests/skins.py vigila
     //  como PANEL_ALPHA contra el mismo liston que el hueco de una celda, asi
@@ -756,6 +784,31 @@ namespace Metrics
     //  entero, y el filo no era lo que sobraba de aquel: era el radio.
     static constexpr float filo     = 1.0f;
     static constexpr float filoFoco = 1.6f;
+
+    //  ...Y EL RADIO, QUE ES LO QUE SOBRABA DE AQUEL CAMBIO.
+    //
+    //  Misma figura que el filo y peor: el chasis tenia CUATRO radios para la
+    //  misma cosa -una caja con borde- y ninguno salia de la tabla. El panel de
+    //  grupo se redondeaba a OCHO, los dos platos de la cara a cuatro, una tapa
+    //  a tres y la tarjeta de una ficha a dos. Contados en el arbol: 2.0f x24,
+    //  3.0f x20, 4.0f x4 y 1.5f x3, cada uno escrito el dia que se escribio su
+    //  pintor. Es la queja «los bordes y los filos no son iguales entre si»:
+    //  no es el grosor -ese ya se unifico- es la esquina, y se ve porque dos de
+    //  esas superficies estan una DENTRO de la otra en la misma pantalla.
+    //
+    //  Y el ocho del panel era `Metrics::sm`, o sea un token de ESPACIADO usado
+    //  como radio. Que es el fallo entero en una linea: cuando no hay token
+    //  para algo se coge el que suena parecido, y a partir de ahi mover el aire
+    //  entre filas cambiaria la esquina de las losas de las 55 fichas.
+    //
+    //  DOS Y NO UNO, por lo mismo que el filo son dos: una caja del chasis y lo
+    //  que va DENTRO de ella no pueden llevar la misma esquina o la de dentro
+    //  se ve mas redonda que la de fuera a igualdad de numero. Tres y dos, que
+    //  son los dos valores que ya estaban en 44 de los 51 sitios, asi que casi
+    //  nada se mueve: la tapa y la chapa se quedan como estan y lo que cambia
+    //  es el plato (4 a 3), la tarjeta (2 a 3) y el panel (8 a 3).
+    static constexpr float radio     = 3.0f;   // una tarjeta, un plato, una tapa
+    static constexpr float radioChip = 2.0f;   // la chapa de una cifra, una celda
 
     static constexpr float panelHondura = 0.16f;
 
@@ -1046,18 +1099,17 @@ public:
     //  holds nothing but words: the status line, the section names in the
     //  sheets, the label over a control.
     static constexpr int kTextPad   = 3;
-    static constexpr int kCtrlPlate = 86;   // CTRL 1-3 and their readouts
     static constexpr int kCtrlName  = 16;   // ...of which the name above
     static constexpr int kCtrlChip  = 18;   // ...and the readout below. The rest is knob.
+    //  EL DIAL, que hasta ahora era «lo que sobre». `kCtrlPlate` valia 86 a
+    //  secas y el mando salia de restarle el nombre, la chapa y el hueco que
+    //  `getSliderLayout` se lleva: 86 - 16 - 22 - 4 = 44. Escrito asi, cada
+    //  vez que uno de esos cuatro se movia el dial encogia en silencio -que es
+    //  justo lo que iba a pasar al dar aire al conjunto- y nadie lo veia
+    //  porque el numero de arriba no cambiaba. Ahora el dial es el dato y el
+    //  plato la suma, que es el orden que dice la verdad.
+    static constexpr int kCtrlDial  = 44;   // el circulo que se agarra
 
-    //  Y LOS MISMOS TRES NUMEROS PARA LA FICHA DEL PAD, que los tenia escritos
-    //  a mano - 86 en tres sitios, 16 en cuatro, 34 en dos y 64 en uno. La
-    //  regla de la casa es que un numero de maquetado vive aqui o en Metrics,
-    //  y no por pulcritud: la fila de mandos de la cara y la de la ficha son
-    //  LA MISMA proporcion - nombre, dial, numero - y con el numero repetido
-    //  en cinco sitios se separaron sin que nadie lo decidiera.
-    static constexpr int kKnobRow   = kCtrlPlate;   // mando + nombre + numero
-    static constexpr int kKnobName  = kCtrlName;    // ...de los cuales el nombre
     //  Y LOS OTROS DOS NUMEROS DEL TITULO DE UN MANDO, que estaban escritos a
     //  mano en los CUATRO pintores que lo dibujan. `bandAbove (c, alto, hueco,
     //  desborde)` recibia `(kKnobName, 2, 6)` en tres sitios -la curva del EQ,
@@ -1070,8 +1122,52 @@ public:
     //  El DESBORDE existe porque el rotulo es mas ancho que su mando -«GANANCIA»
     //  pide mas que el dial- y sin el se truncaba; no es aire, es sitio para la
     //  palabra, y por eso no sale de la escala de espaciado.
-    static constexpr int kKnobNameGap   = 2;
+    //
+    //  Y EL HUECO, CUATRO, no dos. «Todo el conjunto» aprieta, dicho mirando la ficha del
+    //  pad: medido en 412x915 el rotulo quedaba a 2 px de su dial, el dial a 4
+    //  de su chapa y la chapa a 6 del rotulo de la fila de abajo. Tres huecos
+    //  de un digito para tres cosas distintas: lo que se lee no es un mando
+    //  con su nombre y su numero, es un bloque. El nombre se separa lo que
+    //  dice la escala -`xs`- y no lo que cupo.
+    static constexpr int kKnobNameGap   = Metrics::xs;
     static constexpr int kKnobNameBleed = 6;
+    //  Y EL HUECO DE ABAJO, que era `halfGap` escrito dentro de
+    //  `getSliderLayout` y CERO en la fila de la cara -alli los tres mandos
+    //  llevan NoTextBox y la celda se parte a mano, asi que el dial acababa
+    //  donde empezaba la chapa-. Un mismo conjunto con dos huecos distintos
+    //  segun quien lo maquetase. Ocho, que es `sm`, y en los dos sitios.
+    static constexpr int kKnobChipGap   = Metrics::sm;
+    //  EL PLATO ES LA SUMA DE LO QUE LLEVA, no un numero redondo del que se
+    //  resta. 16 + 4 + 44 + 8 + 22 = 94, ocho mas que los 86 de antes, y esos
+    //  ocho son exactamente el aire que se ha dado: si manana el dial cambia o
+    //  la chapa engorda, el plato lo sabe.
+    static constexpr int kCtrlPlate = kCtrlName + kKnobNameGap + kCtrlDial
+                                    + kKnobChipGap + Metrics::readout;
+
+    //  Y LOS MISMOS TRES NUMEROS PARA LA FICHA DEL PAD, que los tenia escritos
+    //  a mano - 86 en tres sitios, 16 en cuatro, 34 en dos y 64 en uno. La
+    //  regla de la casa es que un numero de maquetado vive aqui o en Metrics,
+    //  y no por pulcritud: la fila de mandos de la cara y la de la ficha son
+    //  LA MISMA proporcion - nombre, dial, numero - y con el numero repetido
+    //  en cinco sitios se separaron sin que nadie lo decidiera.
+    //  LO QUE UN ROTULO NO ESCRIBE DE SU PROPIO ANCHO, y lo que la base le
+    //  guarda a la pista de un deslizador. Los dos son ajenos -uno es el
+    //  borde por defecto de una `juce::Label`, {1, 5, 1, 5}, que `drawLabel`
+    //  resta antes de escribir; el otro es el recorte mudo de
+    //  `LookAndFeel_V2::getSliderLayout`, que corta la caja de texto a
+    //  `ancho - 30` sin avisar- y los dos hay que contarlos donde se REPARTE
+    //  un renglon entre dos deslizadores.
+    //
+    //  Sin ellos la cuenta sale por el filo y se descubre en el idioma mas
+    //  ancho: en 280x653/ar el renglon PATRON|LARGO da 209 px, a mitades
+    //  cada uno se lleva 104, la caja de LARGO sale de 71 -no de los 88 que
+    //  pidio- y «مازورة واحدة» pide 75.3 sobre 61 utiles. Cuatro corridas
+    //  de SQUEEZE por dos numeros que nadie habia escrito.
+    static constexpr int kRotuloMargen = 10;
+    static constexpr int kPistaMin     = 30;
+
+    static constexpr int kKnobRow   = kCtrlPlate;   // mando + nombre + numero
+    static constexpr int kKnobName  = kCtrlName;    // ...de los cuales el nombre
     //  CUARENTA, no 34. Una regla de recorte es un deslizador horizontal de
     //  ancho completo y 34 px de alto: cuatro por debajo del dedo minimo, y
     //  el banco las cazo las cuatro -START, END, SUAVE IN y SUAVE OUT- con el
@@ -1262,7 +1358,7 @@ public:
             case juce::Slider::TextBoxLeft:   layout.sliderBounds.removeFromLeft   (Metrics::gap); break;
             case juce::Slider::TextBoxRight:  layout.sliderBounds.removeFromRight  (Metrics::gap); break;
             case juce::Slider::TextBoxAbove:  layout.sliderBounds.removeFromTop    (Metrics::halfGap); break;
-            case juce::Slider::TextBoxBelow:  layout.sliderBounds.removeFromBottom (Metrics::halfGap); break;
+            case juce::Slider::TextBoxBelow:  layout.sliderBounds.removeFromBottom (kKnobChipGap); break;
             case juce::Slider::NoTextBox:
             default: break;
         }
@@ -1288,7 +1384,7 @@ public:
         const auto track = juce::Rectangle<float> ((float) x, (float) y + (float) h * 0.5f - 2.0f,
                                                    (float) w, 4.0f);
         g.setColour (s.findColour (juce::Slider::backgroundColourId));
-        g.fillRoundedRectangle (track, 2.0f);
+        g.fillRoundedRectangle (track, Metrics::radioChip);
 
         const float centre = (float) x + (float) w * 0.5f;
         g.setColour (s.findColour (juce::Slider::trackColourId));
@@ -1587,7 +1683,7 @@ public:
         //  read as a phone app; a hard offset reads as an object that was
         //  screen-printed, which is the whole C40 idea.
         const float lift = kCapLift;
-        const float rad  = 3.0f;                                  // drawn, not rounded off
+        const float rad  = Metrics::radio;                        // drawn, not rounded off
         const bool  on   = b.getToggleState();
 
         //  Ver capaDe: el blanco del dedo es el componente entero y la tapa se

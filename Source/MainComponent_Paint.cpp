@@ -144,7 +144,7 @@ void MainComponent::paint (juce::Graphics& g)
         //  stays white on white however many lines are drawn on it.
         auto pp = padPlateArea.toFloat();
         g.setColour (ZatiColours::plate);
-        g.fillRoundedRectangle (pp, 4.0f);
+        g.fillRoundedRectangle (pp, Metrics::radio);
         //  UN FILO Y NO DOS. Los dos platos de la cara llevaban DOS lineas
         //  concentricas sobre la misma caja -el filo en `reduced (0.5f)` y un
         //  "labio de luz" blanco al 55 % en `reduced (1.6f)`-, o sea un bisel de
@@ -155,7 +155,7 @@ void MainComponent::paint (juce::Graphics& g)
         //  parrafos mas arriba se subio a proposito para que se viera- asi que
         //  la segunda linea no separaba nada: engordaba.
         g.setColour (ZatiColours::plateEdge);
-        g.drawRoundedRectangle (pp.reduced (0.5f), 4.0f, Metrics::filo);
+        g.drawRoundedRectangle (pp.reduced (0.5f), Metrics::radio, Metrics::filo);
 
     }
 
@@ -166,9 +166,9 @@ void MainComponent::paint (juce::Graphics& g)
     {
         auto cp = ctrlPlateArea.toFloat();
         g.setColour (ZatiColours::plate);
-        g.fillRoundedRectangle (cp, 4.0f);
+        g.fillRoundedRectangle (cp, Metrics::radio);
         g.setColour (ZatiColours::plateEdge);
-        g.drawRoundedRectangle (cp.reduced (0.5f), 4.0f, Metrics::filo);
+        g.drawRoundedRectangle (cp.reduced (0.5f), Metrics::radio, Metrics::filo);
 
     }
 
@@ -360,9 +360,9 @@ void MainComponent::paint (juce::Graphics& g)
         //  dirt. Three pixels of frame say the same thing and hand the other
         //  two back to the glass.
         g.setColour (ZatiColours::knobBody2);
-        g.fillRoundedRectangle (r.expanded (3.0f), 3.0f);
+        g.fillRoundedRectangle (r.expanded (3.0f), Metrics::radio);
         g.setColour (ZatiColours::knobEdge.withAlpha (0.7f));
-        g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), 3.0f, Metrics::filo);
+        g.drawRoundedRectangle (r.expanded (3.0f).reduced (0.5f), Metrics::radio, Metrics::filo);
     }
 
     // 3. Header: the wordmark, the open project, and a printed colour band
@@ -565,7 +565,7 @@ void MainComponent::paint (juce::Graphics& g)
             auto chip = juce::Rectangle<int> (r.getX() - 2, r.getBottom() + 2, r.getWidth() + 4,
                                               ZatiLookAndFeel::kCtrlChip - 4);
             g.setColour (ZatiColours::screenBg);
-            g.fillRoundedRectangle (chip.toFloat(), 2.0f);
+            g.fillRoundedRectangle (chip.toFloat(), Metrics::radioChip);
             g.setColour (touched ? ZatiColours::lcdFg : ZatiColours::lcdFg.withAlpha (0.8f));
             g.setFont (ZatiColours::monoFont (Metrics::fLabel, true));
             g.drawText (macroReadout (i), chip, juce::Justification::centred);
@@ -598,7 +598,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     if (area.isEmpty()) return;
 
     g.setColour (ZatiColours::screenBg);
-    g.fillRoundedRectangle (area.toFloat(), 3.0f);
+    g.fillRoundedRectangle (area.toFloat(), Metrics::radio);
     auto inner = area.reduced (ZatiLookAndFeel::kAir, 7);
 
     auto* dev = deviceManager.getCurrentAudioDevice();
@@ -866,9 +866,9 @@ void MainComponent::paintBusy (juce::Graphics& g)
     //  Opaca del todo: al 94% se leia el tempo por debajo del rotulo, y dos
     //  textos superpuestos es exactamente lo que esta barra viene a evitar.
     g.setColour (ZatiColours::screenBg);
-    g.fillRoundedRectangle (r, 2.0f);
+    g.fillRoundedRectangle (r, Metrics::radio);
     g.setColour (ZatiColours::lcdFg.withAlpha (0.30f));
-    g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, Metrics::filo);
+    g.drawRoundedRectangle (r.reduced (0.5f), Metrics::radio, Metrics::filo);
 
     auto in = busyBar.getLocalBounds().reduced (Metrics::sm, Metrics::halfGap);
 
@@ -895,7 +895,7 @@ void MainComponent::paintBusy (juce::Graphics& g)
     if (bar.getWidth() < 8) return;
 
     g.setColour (ZatiColours::lcdFg.withAlpha (0.16f));
-    g.fillRoundedRectangle (bar.toFloat(), 1.5f);
+    g.fillRoundedRectangle (bar.toFloat(), Metrics::radioChip);
 
     if (busyProgress >= 0.0f)
     {
@@ -904,7 +904,7 @@ void MainComponent::paintBusy (juce::Graphics& g)
         //  el acento es casi negro, y una barra casi negra sobre el cristal
         //  oscuro es una barra que no se ve. Cada superficie con su tinta.
         g.setColour (ZatiColours::lcdFg);
-        g.fillRoundedRectangle (done.toFloat(), 1.5f);
+        g.fillRoundedRectangle (done.toFloat(), Metrics::radioChip);
     }
     else
     {
@@ -916,7 +916,7 @@ void MainComponent::paintBusy (juce::Graphics& g)
         const float ease = 0.5f - 0.5f * std::cos (t * juce::MathConstants<float>::twoPi);
         const float x   = (float) bar.getX() + ease * ((float) bar.getWidth() - w);
         g.setColour (ZatiColours::lcdFg);
-        g.fillRoundedRectangle (x, (float) bar.getY(), w, (float) bar.getHeight(), 1.5f);
+        g.fillRoundedRectangle (x, (float) bar.getY(), w, (float) bar.getHeight(), Metrics::radioChip);
     }
 }
 
@@ -1978,8 +1978,17 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             name (anchoSlider);
             name (chokeSlider);
 
-            //  Same band, one pixel lower: the third row insets its cells by 3.
-            g.drawText (T ("MODO"), bandAbove (modeButton, ZatiLookAndFeel::kKnobName, ZatiLookAndFeel::kKnobNameGap, ZatiLookAndFeel::kKnobNameBleed), juce::Justification::centred);
+            //  MODO NOMBRA LAS DOS TAPAS, no la primera de las dos. Ver
+            //  bandAbove: centrado sobre `modeButton` la palabra caia en el
+            //  centro de CINTA -212 de tinta medida contra 273 que es el centro
+            //  de la pareja- y NORMALIZAR quedaba sin rotulo. Se centra sobre la
+            //  UNION, y solo cuando comparten renglon: `chokeAcomp` puede bajar
+            //  NORMALIZAR a una fila propia, y entonces la union seria una caja
+            //  alta cuyo centro no esta sobre ninguna de las dos.
+            auto grupoModo = modeButton.getBounds();
+            if (normButton.isVisible() && normButton.getY() == modeButton.getY())
+                grupoModo = grupoModo.getUnion (normButton.getBounds());
+            g.drawText (T ("MODO"), bandAbove (grupoModo, ZatiLookAndFeel::kKnobName, ZatiLookAndFeel::kKnobNameGap, ZatiLookAndFeel::kKnobNameBleed), juce::Justification::centred);
         }
         else if (padPage == padPageTrim)
         {
@@ -2022,12 +2031,12 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                 //  be picked, not to be looked at.
                 const bool on = (i == sel);
                 g.setColour (Zati::colour (i).withAlpha (on ? 1.0f : 0.38f));
-                g.fillRoundedRectangle (cell, 2.0f);
+                g.fillRoundedRectangle (cell, Metrics::radioChip);
 
                 if (on)
                 {
                     g.setColour (ZatiColours::ink.withAlpha (0.75f));
-                    g.drawRoundedRectangle (cell.reduced (0.5f), 2.0f, Metrics::filoFoco);
+                    g.drawRoundedRectangle (cell.reduced (0.5f), Metrics::radioChip, Metrics::filoFoco);
                 }
             }
         }
@@ -2653,7 +2662,7 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
         //  que leerse sobre cualquiera de las cuatro carcasas, asi que se elige
         //  el color del sistema y no un gris.
         g.setColour (ZatiColours::accent);
-        g.drawRoundedRectangle (foco.toFloat().expanded (2.0f), 3.0f, Metrics::filoFoco);
+        g.drawRoundedRectangle (foco.toFloat().expanded (2.0f), Metrics::radio, Metrics::filoFoco);
     }
 
     //  EL NUMERO DEL PASO, junto al control y no dentro: dentro taparia
@@ -2854,9 +2863,9 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         const juce::String txt = textoPreset (fam, pre);
 
         g.setColour (ZatiColours::screenBg);
-        g.fillRoundedRectangle (vstPreArea.toFloat(), 3.0f);
+        g.fillRoundedRectangle (vstPreArea.toFloat(), Metrics::radio);
         g.setColour (ZatiColours::lcdDim);
-        g.drawRoundedRectangle (vstPreArea.toFloat().reduced (0.5f), 3.0f, Metrics::filo);
+        g.drawRoundedRectangle (vstPreArea.toFloat().reduced (0.5f), Metrics::radio, Metrics::filo);
 
         g.setColour (ZatiColours::lcdFg);
         g.setFont (fuentePreset());
@@ -2914,7 +2923,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
                 auto celda = caja.removeFromLeft (w).reduced (Metrics::aireTapaDensa, 0);
                 const bool on = (i == viva);
                 g.setColour (on ? ZatiColours::accent : ZatiColours::groove (0.34f));
-                g.fillRoundedRectangle (celda.toFloat(), 2.0f);
+                g.fillRoundedRectangle (celda.toFloat(), Metrics::radioChip);
                 g.setColour (on ? ZatiColours::textOn (ZatiColours::accent)
                                 : ZatiColours::inkDim);
                 g.setFont (ZatiColours::monoFont (Metrics::fMeta, on));
@@ -2983,7 +2992,7 @@ void MainComponent::paintXySheetContent (juce::Graphics& g)
     //  van a los pads, que es justo lo que este panel no puede hacer.
     const auto card = xyPanel.getLocalBounds().toFloat();
     if (card.isEmpty()) return;
-    constexpr float rad = 2.0f;
+    constexpr float rad = Metrics::radio;
 
     g.setColour (ZatiColours::groove (0.55f));
     g.fillRoundedRectangle (card.translated (0.0f, 4.0f).withTrimmedBottom (4.0f), rad);

@@ -62,9 +62,9 @@ public:
         //  que se mira mientras se toca, igual que el LCD, y comparte su tinta
         //  para que se lea como el mismo material y no como un widget pegado.
         g.setColour (ZatiColours::screenBg);
-        g.fillRoundedRectangle (r, 3.0f);
+        g.fillRoundedRectangle (r, Metrics::radio);
         g.setColour (ZatiColours::ink.withAlpha (0.85f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, Metrics::filo);
+        g.drawRoundedRectangle (r.reduced (0.5f), Metrics::radio, Metrics::filo);
 
         auto in = r.reduced (kInset);
 

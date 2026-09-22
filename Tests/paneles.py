@@ -93,9 +93,34 @@ def tokens():
     #  a cero -para que la losa dejara de cruzar el margen de la tarjeta- esta
     #  prueba habria seguido midiendo contra un 4 que ya no existe, que es
     #  exactamente la forma de mentir que su propia cabecera dice evitar.
-    px = re.search (r'int\s+panelAireX\s*=\s*(\d+)', src)
-    if px is None: sys.exit ("no encuentro Metrics::panelAireX")
-    halfGap = int (px.group (1))
+    #
+    #  Y SE LEE TAMBIEN CUANDO NO ES UNA CIFRA. La segunda version pedia
+    #  `(\d+)` y el dia que `panelAireX` paso de `0` a `sm` -el relleno del
+    #  panel, tanda 14- la prueba entera murio con «no encuentro
+    #  Metrics::panelAireX» en vez de medir. Un lector que solo entiende el
+    #  numero literal obliga a escribir el numero literal, que es justo lo que
+    #  esta casa no hace: los tokens se derivan unos de otros. Se resuelve
+    #  contra la escala, que es de donde salen todos.
+    escala = {"xs": None, "sm": sm, "md": None, "lg": None, "xl": None}
+    e = re.search (r'int\s+xs\s*=\s*(\d+),\s*sm\s*=\s*(\d+),\s*md\s*=\s*(\d+),'
+                   r'\s*lg\s*=\s*(\d+),\s*xl\s*=\s*(\d+)', src)
+    if e is None: sys.exit ("no encuentro la escala de Metrics")
+    for k, v in zip (("xs", "sm", "md", "lg", "xl"), e.groups()):
+        escala[k] = int (v)
+    escala["gap"]     = escala["sm"]
+    escala["halfGap"] = escala["sm"] // 2
+
+    def valor (nombre):
+        m2 = re.search (r'int\s+' + nombre + r'\s*=\s*([A-Za-z0-9_ /*+-]+);', src)
+        if m2 is None: sys.exit ("no encuentro Metrics::" + nombre)
+        expr = m2.group (1).strip()
+        for k in sorted (escala, key=len, reverse=True):
+            expr = re.sub (r'\b' + k + r'\b', str (escala[k]), expr)
+        if not re.fullmatch (r'[0-9 /*+-]+', expr):
+            sys.exit ("no se resolver Metrics::" + nombre + " = " + expr)
+        return int (eval (expr))
+
+    halfGap = valor ("panelAireX")
     #  Y `lg`, que es el aire que la casa deja en el filo de una tarjeta. Sale
     #  de la misma linea de cinco tokens que `sm`.
     l = re.search (r'int\s+xs\s*=\s*\d+,\s*sm\s*=\s*\d+,\s*md\s*=\s*\d+,\s*lg\s*=\s*(\d+)', src)
@@ -196,7 +221,29 @@ def juzga (rows, tag, lang):
                             f"{quien} [{px},{px+pw}] no cubre [{izq},{der}]"))
             continue
 
-        #  1 bis. QUE NO PISE LO QUE NO ENVUELVE.
+        #  1 bis. QUE EL COLOR SE VEA ALREDEDOR DE LO QUE ENVUELVE.
+        #
+        #     La losa se pintaba EXACTAMENTE sobre el rectangulo que el
+        #     maquetado cerro, y ese rectangulo es la fila entera: medido en
+        #     412x915, ficha del pad, la fila de CHOKE ocupa 33..380 y el panel
+        #     tambien, asi que «off» y «NORMALIZAR» nacian tocando el filo del
+        #     color, sin un pixel de fondo alrededor. Es la queja «por los lados
+        #     tiene que tener mas aire sino queda feo» - la misma frase que la
+        #     tanda anterior leyo como margen contra la tarjeta, arreglo por
+        #     fuera y dejo igual por dentro.
+        #
+        #     Y no la podia ver ninguna de las que ya habia, que es lo que la
+        #     justifica: FUERA pregunta si un control SE SALE del panel y no se
+        #     salia; FILO pregunta por el margen contra la tarjeta y estaba
+        #     bien; FILAS compara las filas ENTRE SI y todas empezaban igual
+        #     -pegadas, pero igual-. El aire de dentro no lo media nadie.
+        relIzq, relDer = izq - px, (px + pw) - der
+        if min (relIzq, relDer) < AIRE_X:
+            fallos.append (("RELLENO", tag,
+                            f"{quien} deja {relIzq}/{relDer} px de relleno y el "
+                            f"token pide {AIRE_X}"))
+
+        #  1 ter. QUE NO PISE LO QUE NO ENVUELVE.
         #
         #     Esta es la queja «sigue habiendo ese error de diseno en pad
         #     settings» y estuvo meses a la vista. Un panel se dibuja ALREDEDOR
@@ -229,7 +276,7 @@ def juzga (rows, tag, lang):
                             f"{c.get ('path', c.get ('kind', '?'))} en "
                             f"{c['x']},{c['y']} de {c['w']}x{c['h']}"))
 
-        #  1 ter. QUE NO SE SALGA DEL MARCO DE SU FICHA.
+        #  1 quater. QUE NO SE SALGA DEL MARCO DE SU FICHA.
         #
         #     La otra mitad de la misma tanda: un panel puede caber en la
         #     ventana -asi que OFFSCREEN no lo ve- y aun asi salirse del hueco
@@ -246,7 +293,7 @@ def juzga (rows, tag, lang):
                                 f"{quien} [{px},{py},{px+pw},{py+ph}] se sale del marco "
                                 f"[{mx},{my},{mx+mw},{my+mh}]"))
 
-        #  1 quater. QUE POR LOS LADOS DEJE EL AIRE DEL FILO.
+        #  1 quinquies. QUE POR LOS LADOS DEJE EL AIRE DEL FILO.
         #
         #     Caber dentro de la tarjeta no es estar bien puesto. `MARCO` mide
         #     lo primero -si el panel se SALE- y por eso dejaba pasar la queja
@@ -443,7 +490,7 @@ def main():
     porclase = defaultdict (list)
     for kind, tag, que in todos: porclase[kind].append ((tag, que))
 
-    for kind in ("CRASH", "VACIO", "FUERA", "AJENO", "MARCO", "FILAS", "PEGADOS"):
+    for kind in ("CRASH", "VACIO", "FUERA", "RELLENO", "AJENO", "MARCO", "FILO", "FILAS", "PEGADOS"):
         if not porclase[kind]: continue
         print (f"\n{kind}  ({len (porclase[kind])})")
         #  Uno por texto distinto: el mismo panel torcido sale en 28 corridas y

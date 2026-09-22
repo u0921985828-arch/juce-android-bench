@@ -134,12 +134,43 @@ void MainComponent::layoutModuleBar (juce::Rectangle<int> row, juce::TextButton*
     const auto dada = row;
     row = row.expanded (Metrics::aireTapa, 0);
 
-    const int spare = juce::jmax (0, row.getWidth() - total);
+    //  Y EL REPARTO ES PROPORCIONAL EN LAS DOS DIRECCIONES.
+    //
+    //  Era `need[i] + sobra * need[i] / total`, con `sobra = jmax (0, ancho -
+    //  total)`: reparte de sobra cuando la fila da de si y NO HACE NADA cuando
+    //  no da. Ahi cada tapa se llevaba su `need` entero por orden y la ULTIMA
+    //  se quedaba con lo que quedase, que podia ser nada. Medido en
+    //  640x360/ar/sec: la fila de PLAY / TAP / VACIAR recibe 85 px, PLAY se
+    //  lleva 58..105, TAP 109..140 y VACIAR sale en **144..144** — una tapa de
+    //  ANCHO CERO, que el banco caza dos veces a la vez: `CERO` por medir cero
+    //  y `FILA` porque la fila entonces ocupa 58..140 de los 58..143 que se le
+    //  dieron. Cuarenta y nueve casos.
+    //
+    //  Y el `jmax (24, w)` era el que remataba: subir a 24 a las primeras es
+    //  quitarselo a la ultima, que es la que no tiene a quien quitarselo. Es
+    //  EXACTAMENTE el fallo que el suelo del dedo de mas arriba ya se cuida de
+    //  no cometer -«forzarlo cuando no cabe convierte un ancho corto en la
+    //  ULTIMA tapa en un ancho negativo»- escrito dos parrafos mas abajo en la
+    //  misma funcion. Un suelo que se paga con el ancho del vecino no es un
+    //  suelo: es un traslado.
+    //
+    //  Con el corte proporcional los dos casos son la misma cuenta -cada tapa
+    //  ocupa hasta `ancho * (lo que piden ella y las de su izquierda) / total`-
+    //  y la ultima llega al filo por construccion, que es lo que la regla FILA
+    //  pide. Cuando no cabe, todas encogen a la vez y drawFittedText aprieta,
+    //  que es lo que esta casa ya decidio que prefiere a un rotulo cortado.
+    const int ancho = row.getWidth();
+    int pedidoHasta = 0, x0 = 0;
     for (int i = 0; i < kMods; ++i)
     {
-        const int w = need[i] + spare * need[i] / juce::jmax (1, total);
-        mb[i]->setBounds ((i < kMods - 1 ? row.removeFromLeft (juce::jmax (24, w)) : row)
-                              .reduced (Metrics::aireTapa, vInset));
+        pedidoHasta += need[i];
+        const int x1 = (i == kMods - 1)
+                         ? ancho
+                         : (int) ((juce::int64) ancho * pedidoHasta / juce::jmax (1, total));
+        mb[i]->setBounds (row.withX (row.getX() + x0)
+                             .withWidth (juce::jmax (1, x1 - x0))
+                             .reduced (Metrics::aireTapa, vInset));
+        x0 = x1;
     }
 
     {
@@ -947,8 +978,17 @@ void MainComponent::resized()
                 //  The plate keeps its height and the two labels give theirs
                 //  up, so the knob inside grows by ten pixels without the section
                 //  taking one from the pads.
-                cell.removeFromTop (ZatiLookAndFeel::kCtrlName);
-                cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip);
+                //  Y EL HUECO DEL CONJUNTO, igual que en la ficha del pad: el
+                //  rotulo se aparta con su `kKnobNameGap` y la chapa con su
+                //  `kKnobChipGap`. Aqui los tres mandos llevan NoTextBox y la
+                //  celda se parte a mano, asi que `getSliderLayout` no pasa
+                //  por ellos y el dial acababa CLAVADO donde empieza la cifra
+                //  -cero px- mientras el mismo conjunto en la ficha tenia
+                //  cuatro. Dos huecos distintos para la misma figura.
+                cell.removeFromTop (ZatiLookAndFeel::kCtrlName
+                                    + ZatiLookAndFeel::kKnobNameGap);
+                cell.removeFromBottom (ZatiLookAndFeel::kCtrlChip
+                                       + ZatiLookAndFeel::kKnobChipGap);
                 mk[i]->setBounds (cell.reduced (Metrics::margenPlato, 0));
             }
         }
@@ -1732,14 +1772,39 @@ void MainComponent::resized()
         eqBandaSheet.sheetBounds = {};
     }
 
+    //  EL AIRE DE VECINO SE DA DONDE HAY VECINO.
+    //
+    //  Esto era `cell.reduced (halfGap, 0)` para las tres celdas por igual, y
+    //  «las celdas vecinas toman halfGap cada una» es la regla de la casa - pero
+    //  la primera celda no tiene vecina por la izquierda ni la ultima por la
+    //  derecha, y ahi los cuatro pixeles no separan de nada: metian la columna
+    //  de mandos cuatro px dentro de la columna de contenido. Medido en
+    //  412x915, ficha del pad: las tapas, el titulo y las pestanas van de 33 a
+    //  380 y los mandos de 37 a 376, o sea la unica fila de la ficha que no
+    //  empezaba donde las demas.
+    //
+    //  Salio buscando otra cosa -donde tenia que caer el filo del panel de
+    //  grupo, «que llegue igual que los mandos»- y resulto que lo torcido eran
+    //  los mandos. Entre celdas siguen quedando los mismos ocho pixeles.
     auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks, int n = 3)
     {
         const int w = row.getWidth() / juce::jmax (1, n);
         for (int i = 0; i < n; ++i)
         {
             auto cell = (i < n - 1 ? row.removeFromLeft (w) : row);
-            cell.removeFromTop (ZatiLookAndFeel::kKnobName);   // gap for knob name
-            ks[i]->setBounds (cell.reduced (Metrics::halfGap, 0));
+            //  Y EL RENGLON QUE SE APARTA ES EL ROTULO **MAS SU HUECO**. Se
+            //  quitaban 16 -el rotulo pelado- y `bandAbove` dibuja la palabra
+            //  a `kKnobNameGap` POR ENCIMA del mando, o sea cuatro px mas
+            //  arriba de donde la celda se los reservo: la banda se metia en
+            //  el aire de la fila anterior y el hueco que se veia entre una
+            //  chapa y el rotulo de debajo era 8 - 4 = 4, no los 8 que pedia
+            //  el reparto. Reservando los dos, la banda cae EXACTAMENTE en lo
+            //  apartado y el aire entre filas es el que se escribio.
+            cell.removeFromTop (ZatiLookAndFeel::kKnobName
+                                + ZatiLookAndFeel::kKnobNameGap);
+            if (i > 0)     cell.removeFromLeft  (Metrics::halfGap);
+            if (i < n - 1) cell.removeFromRight (Metrics::halfGap);
+            ks[i]->setBounds (cell);
         }
     };
 
@@ -1753,9 +1818,10 @@ void MainComponent::resized()
         //  ver el desglose de cada bloque mas abajo.
         const int sheetInnerW = anchoTarjetaInterior (full.getWidth());
         //  Lo que pide cada pagina, sumado y no probado:
-        //  SONIDO  = titulo+pestanas+margenes (116) + secH + 86 + 86 + 86 + 56 + 8
+        //  SONIDO  = titulo+pestanas+margenes (116) + secH + 3*kKnobRow (94)
+        //            + 2*sm de aire entre filas + sm+panelAireY + 56 + 8
         //  RECORTE = 116 + secH + 34+4+34+8 + hit + 8 + 180 de onda
-        //  EL PAD  = 116 + 3*secH + 2*86 + 2*hit + 3*sm + chip
+        //  EL PAD  = 116 + 3*secH + 2*kKnobRow + 2*hit + 3*sm + chip
         //  sheetFromBottom recorta si no cabe, y de eso se ocupa el reparto.
         //  116 son el titulo, las pestanas y los margenes de la tarjeta; el
         //  resto lo dice altoContenidoElPad, que es la MISMA funcion con la que
@@ -1853,10 +1919,23 @@ void MainComponent::resized()
         //  lo ultimo colocado: llamarlo DESPUES del aire de separacion metia
         //  ese aire dentro del panel y los dejaba tocandose otra vez.
         padGrupos.clear();
+        //  ABRE Y CIERRA UN GRUPO, y la sangria va en la pareja y no en cada
+        //  fila.
+        //
+        //  `abre` mete `inner` los `panelSangria` que el panel va a expandir de
+        //  vuelta y devuelve la y por donde empieza el grupo; `cierra` lo
+        //  publica y devuelve el ancho. Sin esto las filas de un grupo ocupan
+        //  la columna de contenido entera y el panel se pinta clavado encima
+        //  de ellas: medido en 412x915, ficha del pad, la fila de CHOKE ocupa
+        //  33..380 y el panel tambien, o sea «off» y «NORMALIZAR» tocando el
+        //  filo del color. Ver `Metrics::panelSangria` y la regla RELLENO de
+        //  Tests/paneles.py.
+        auto abre = [&inner] { inner.reduce (Metrics::panelSangria, 0); return inner.getY(); };
         auto cierra = [this, &inner] (int y0)
         {
             if (inner.getY() > y0)
                 padGrupos.add ({ inner.getX(), y0, inner.getWidth(), inner.getY() - y0 });
+            inner.expand (Metrics::panelSangria, 0);
         };
 
         if (padPage == padPageRig)
@@ -1898,7 +1977,7 @@ void MainComponent::resized()
             //  se pueden repasar los dieciseis sin cerrar nada. Aqui queda la
             //  puerta, que ademas devuelve 86 px de alto a la pagina mas
             //  apretada de la ficha.
-            const int gEnvios = inner.getY();
+            const int gEnvios = abre();
             padSectionArea[0] = inner.removeFromTop (secH);   // pintado: ENVIOS
             {
                 //  Las dos puertas de este pad: a donde va -ENVIOS- y que toca
@@ -1948,7 +2027,7 @@ void MainComponent::resized()
                 //  de alto, asi que lo que sobra es exactamente lo que a lo
                 //  otro le falta - y dos titulos de seccion con sus dos filas
                 //  cuestan 138 px de alto para decir lo mismo que una.
-                const int gPad = inner.getY();
+                const int gPad = abre();
                 padSectionArea[1] = inner.removeFromTop (secH);   // pintado: EL PAD
                 padSectionArea[2] = {};
                 auto rr = inner.removeFromTop (Metrics::hit);
@@ -1959,7 +2038,7 @@ void MainComponent::resized()
             }
             else
             {
-                const int gCorte = inner.getY();
+                const int gCorte = abre();
                 padSectionArea[1] = inner.removeFromTop (secH);   // pintado: CORTE
                 {
                     auto rr = inner.removeFromTop (Metrics::hit);
@@ -1969,7 +2048,7 @@ void MainComponent::resized()
                 cierra (gCorte);
                 inner.removeFromTop (Metrics::sm);
 
-                const int gFuente = inner.getY();
+                const int gFuente = abre();
                 padSectionArea[2] = inner.removeFromTop (secH);   // pintado: FUENTE
                 //  Tres formas de poner un sonido en un pad: cortar uno que ya
                 //  tienes, grabar la sala, o imprimir lo que la maquina esta
@@ -2025,12 +2104,28 @@ void MainComponent::resized()
         //  salian de 37 px. Es el mismo fallo que el TEMPO del secuenciador y
         //  se arregla igual - se reserva lo que no puede encoger y los mandos,
         //  que SI pueden (tienen suelo de 60), se reparten el resto.
-        auto filaBaja = inner.removeFromBottom (ZatiLookAndFeel::kKnobName + Metrics::hit);
+        //  Y LA FILA SE METE `panelSangria`, que es lo que le deja sitio al
+        //  relleno del panel. Sin esto la fila ocupa 33..380 y el panel
+        //  tambien, asi que «off» y «NORMALIZAR» nacen pegados al filo del
+        //  color - la queja «por los lados tiene que tener mas aire». Con los
+        //  doce, la fila cae en 45..368 y el panel en 37..376, alineado con la
+        //  columna visible de los mandos de arriba.
+        auto filaBaja = inner.removeFromBottom (ZatiLookAndFeel::kKnobName + Metrics::hit)
+                             .reduced (Metrics::panelSangria, 0);
         //  Y EL AIRE DEL PANEL, reservado aqui y no supuesto. El grupo de abajo
         //  lo pinta `pintaPaneles` con un `expanded` incondicional, asi que sin
         //  estos dos pixeles el panel se mete dentro de la fila de mandos que
         //  tiene encima - que es lo que se veia en la captura del telefono.
-        inner.removeFromBottom (Metrics::panelAireY);
+        //
+        //  Y `sm` POR DELANTE, que es el hallazgo del telefono de esta tanda:
+        //  «de ahi tendria que haber algo de aire para arriba». Medido en
+        //  412x915: la chapa de ABIERTO/0%/100% acaba en 618 y el panel
+        //  empezaba en 618 CLAVADO, o sea cero. Lo que parecia aire entre la
+        //  ultima fila de mandos y la fila de CHOKE era el escalon de color de
+        //  la losa, no un hueco: en cuanto se mira sin el tinte, las dos cosas
+        //  se tocan. Los dos pixeles de `panelAireY` son lo que el panel se
+        //  EXPANDE, no lo que separa; el hueco de verdad es este.
+        inner.removeFromBottom (Metrics::sm + Metrics::panelAireY);
 
         {
             //  AIRE ENTRE LAS TRES FILAS DE MANDOS.
@@ -2051,6 +2146,16 @@ void MainComponent::resized()
             //  Y sale del reparto ANTES de dividir, no despues: sumarselo a
             //  cada fila lo convertiria en otro clamp hacia arriba de los que
             //  esta pagina ya ha pagado dos veces.
+            //  OCHO, Y AHORA SON OCHO DE VERDAD. Este hueco siempre valio
+            //  `sm`, pero el rotulo de la fila de abajo se dibuja
+            //  `kKnobNameGap` POR ENCIMA de su mando y la celda solo se habia
+            //  reservado el rotulo pelado, asi que la banda se metia en este
+            //  aire y de los ocho se veian cuatro. Arreglado en placeKnobRow
+            //  -que ahora aparta rotulo MAS hueco- sin tocar el numero: subirlo
+            //  a `md` fue el primer intento y lo canto maqueta.py, que solo
+            //  admite `sm` entre grupos y `xs` dentro de uno. Tenia razon: la
+            //  frontera no necesitaba un tercer valor, necesitaba cobrarse
+            //  entera.
             const int aireFilas = 2 * Metrics::sm;
             const int forKnobs = juce::jmax (0, inner.getHeight() - aireFilas);
             //  SE PIDE LO QUE HAY. `jlimit (60, kKnobRow, forKnobs/3)` es un
@@ -2272,12 +2377,16 @@ void MainComponent::resized()
             {
                 inner.removeFromTop (Metrics::xs);
                 gBajo = inner.getY();
-                layoutModuleBar (inner.removeFromTop (Metrics::hit),
+                //  Metida como `filaBaja`: es la otra fila del MISMO panel, y
+                //  dos filas de un panel que no empiezan en la misma x es lo
+                //  que `Tests/paneles.py` llama FILAS.
+                layoutModuleBar (inner.removeFromTop (Metrics::hit)
+                                      .reduced (Metrics::panelSangria, 0),
                                  r3b + chokeAcomp, 0, 2 - chokeAcomp);
             }
             padGrupos.add (filaExtra
-                             ? filaBaja.getUnion (juce::Rectangle<int> (inner.getX(), gBajo,
-                                                                        inner.getWidth(),
+                             ? filaBaja.getUnion (juce::Rectangle<int> (filaBaja.getX(), gBajo,
+                                                                        filaBaja.getWidth(),
                                                                         inner.getY() - gBajo))
                              : filaBaja);
         }
@@ -2308,7 +2417,7 @@ void MainComponent::resized()
         {
         //  RECORTE: la regla, la onda y las tres cosas que se le hacen a la
         //  muestra que se esta mirando.
-        const int gRecorte = inner.getY();
+        const int gRecorte = abre();
         padSectionArea[0] = inner.removeFromTop (secH);   // pintado: RECORTE
         padSectionArea[1] = {};
         padSectionArea[2] = {};
@@ -2337,7 +2446,7 @@ void MainComponent::resized()
         //  y BOMBEO, que son cosas del pad y no de la muestra. QUITAR RUIDO va
         //  con ellas por lo mismo: es de la muestra.
         {
-            const int gLectura = inner.getY();
+            const int gLectura = abre();
             //  CUATRO TAPAS Y NO TRES desde que esta RECORTAR, asi que la fila
             //  se parte donde no caben - con la MISMA pregunta que se hace al
             //  presupuestar el alto (`padMuestraWraps`), o la ficha reserva una
@@ -2779,6 +2888,9 @@ void MainComponent::resized()
                 //  El rotulo, el interruptor y la lista de puertos son UN
                 //  grupo: SALIDA y ENTRADA son dos cosas y aqui se leian como
                 //  cuatro filas seguidas.
+                //  La sangria del panel, que sale del ancho de la fila y no del
+                //  margen de la tarjeta. Ver Metrics::panelSangria.
+                inner.reduce (Metrics::panelSangria, 0);
                 const int g0 = inner.getY();
                 inner.removeFromTop (Metrics::bandaSubtitulo);       // pintado: el rotulo
                 auto row = inner.removeFromTop (Metrics::hit);
@@ -2787,6 +2899,7 @@ void MainComponent::resized()
                 inner.removeFromTop (Metrics::xs);
                 box.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
                 setGrupos.add ({ inner.getX(), g0, inner.getWidth(), inner.getY() - g0 });
+                inner.expand (Metrics::panelSangria, 0);
                 inner.removeFromTop (Metrics::sm);
             };
             block (midiOutBtn, midiOutBox);
@@ -2837,6 +2950,7 @@ void MainComponent::resized()
             auto ponPruebas = [this] (juce::Rectangle<int>& donde)
             {
                 donde.removeFromTop (Metrics::xs);
+                donde.reduce (Metrics::panelSangria, 0);
                 pruebasLabelArea = donde.removeFromTop (Metrics::bandaSubtitulo);
                 auto fila = donde.removeFromTop (Metrics::hit);
                 juce::TextButton* ab[3] = { &quantButton, &measureButton, &testButton };
@@ -2844,17 +2958,19 @@ void MainComponent::resized()
                 //  El rotulo PRUEBAS y sus tres tapas son UNA cosa, igual que en
                 //  el secuenciador el nombre y el mando que lleva debajo.
                 setGrupos.add (pruebasLabelArea.getUnion (fila));
+                donde.expand (Metrics::panelSangria, 0);
                 donde.removeFromTop (Metrics::sm);
             };
 
             juce::Rectangle<int> columnaChips = inner;
+            columnaChips.reduce (Metrics::panelSangria, 0);
             if (dosColumnas)
             {
                 auto izda = inner.removeFromLeft (inner.getWidth() / 2 - Metrics::sm);
                 inner.removeFromLeft (Metrics::sm);
                 audioInfoArea = izda.removeFromTop (juce::jmin (kAltoAudioInfo, izda.getHeight()));
                 ponPruebas (izda);
-                columnaChips = inner;
+                columnaChips = inner.reduced (Metrics::panelSangria, 0);
             }
             else
             {
@@ -2875,7 +2991,7 @@ void MainComponent::resized()
                                     juce::jlimit (0, kAltoAudioInfo, inner.getHeight() - Metrics::xs - chipsNecesarios));
                 inner.removeFromTop (Metrics::xs);
                 ponPruebas (inner);
-                columnaChips = inner;
+                columnaChips = inner.reduced (Metrics::panelSangria, 0);
             }
 
             //  Repartidos POR EL TEXTO QUE LLEVAN y no a partes iguales, y en
@@ -2980,7 +3096,12 @@ void MainComponent::resized()
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
 
+            //  Y LA COLUMNA SE METE LA SANGRIA DEL PANEL: cada fila de chips
+            //  es un grupo y el panel se pinta `panelAireX` por fuera de ella,
+            //  asi que si la fila ocupa la columna de contenido entera el color
+            //  nace pegado al primer chip. Ver Metrics::panelSangria.
             juce::Rectangle<int> columnaChips = inner;
+            columnaChips.reduce (Metrics::panelSangria, 0);
             auto chipRow = [this, &columnaChips] (juce::OwnedArray<juce::TextButton>& btns,
                                                   int labelW, bool partir)
             {
@@ -3039,6 +3160,9 @@ void MainComponent::resized()
         {
             midiArea = {};
             skinRowArea = {};
+            //  Las dos filas del nombre y la ruta se meten la sangria del
+            //  panel; ver Metrics::panelSangria.
+            inner.reduce (Metrics::panelSangria, 0);
             projNameRowArea = inner.removeFromTop (Metrics::hit);
             {
                 auto r = projNameRowArea;
@@ -3055,8 +3179,10 @@ void MainComponent::resized()
             //  tapas de abajo, otra. Sin panel, la caja de escribir se leia como
             //  una fila mas de la lista que hay debajo.
             setGrupos.add (projNameRowArea.getUnion (projPathRowArea));
+            inner.expand (Metrics::panelSangria, 0);
             inner.removeFromTop (Metrics::sm);
 
+            inner.reduce (Metrics::panelSangria, 0);
             const int gAcciones = inner.getBottom();
             {
                 auto fila = inner.removeFromBottom (Metrics::btn);
@@ -3076,6 +3202,7 @@ void MainComponent::resized()
             }
             setGrupos.add ({ inner.getX(), inner.getBottom(),
                              inner.getWidth(), gAcciones - inner.getBottom() });
+            inner.expand (Metrics::panelSangria, 0);
             inner.removeFromBottom (Metrics::sm);
 
             projList.setBounds (inner);
@@ -3178,6 +3305,9 @@ void MainComponent::resized()
             inner.removeFromTop (Metrics::sm);
         }
 
+        //  Las dos filas de abajo son el panel de esta ficha, asi que se meten
+        //  la sangria: ver Metrics::panelSangria.
+        inner.reduce (Metrics::panelSangria, 0);
         auto row = inner.removeFromBottom (Metrics::btn);
         exportCancelButton.setBounds (row);
         //  Y EL REBOTE EN VIVO, en su PROPIA fila justo encima. MASTER y PISTAS
@@ -3242,6 +3372,7 @@ void MainComponent::resized()
                     fila = fila.getUnion (b->getBounds());
             if (! fila.isEmpty()) exportGrupos.add (fila);
         }
+        inner.expand (Metrics::panelSangria, 0);
     }
 
     // RACK sheet: which pad, and how much of it reaches each effect.
@@ -4150,6 +4281,9 @@ void MainComponent::resized()
         //  Cada uno envuelve su banda de ROTULO y su fila, que es lo que hace
         //  que el nombre pintado quede dentro de la placa y no encima del filo.
         //  No cuestan un pixel: se deducen de lo que `resized()` ya reserva.
+        //  Los dos grupos se meten la sangria del panel; ver
+        //  Metrics::panelSangria.
+        inner.reduce (Metrics::panelSangria, 0);
         auto grupoComo = inner.removeFromTop (Metrics::bandaSubtitulo);      // pintado: "COMO"
         {
             auto row = inner.removeFromTop (Metrics::hit);
@@ -4171,6 +4305,7 @@ void MainComponent::resized()
                                                  .reduced (Metrics::aireTapa, 0));
         }
         chopGrupos.add (grupoTrozos);
+        inner.expand (Metrics::panelSangria, 0);
 
         inner.removeFromTop (Metrics::sm);
         chopSafeButton.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
@@ -4588,11 +4723,15 @@ void MainComponent::resized()
         //  que en 280x653 ya andan por 21 px. El panel agrupa igual sin decir
         //  como se llama el grupo: lo que separa una paleta de una fila de
         //  herramientas no es su nombre, es que sean dos bloques.
+        //  Abre y cierra, con la sangria en la pareja: ver `abre`/`cierra` de la
+        //  ficha del pad y `Metrics::panelSangria`.
         songGrupos.clear();
+        auto abreSong = [&panel] { panel.reduce (Metrics::panelSangria, 0); return panel.getY(); };
         auto cierraSong = [this, &panel] (int y0)
         {
             if (panel.getY() > y0)
                 songGrupos.add ({ panel.getX(), y0, panel.getWidth(), panel.getY() - y0 });
+            panel.expand (Metrics::panelSangria, 0);
         };
 
         //  El borde de arriba del panel de LA BROCHA, que empieza en la paleta
@@ -4604,7 +4743,7 @@ void MainComponent::resized()
         //  del zoom acababa en 108 - la losa cruzando por dentro de una tapa
         //  que no envuelve. Ver Tests/paneles.py, regla AJENO.
         panel.removeFromTop (Metrics::panelAireY);
-        const int gBrocha = panel.getY();
+        const int gBrocha = abreSong();
 
         // Palette: P1..P8.
         //
@@ -4806,7 +4945,7 @@ void MainComponent::resized()
         //  mueven la LINEA DE TIEMPO, o sea lo que haya en el carril, patrones
         //  y clips. La MISMA lista que decidio la altura, no una parecida.
         {
-            const int gUtil = panel.getY();
+            const int gUtil = abreSong();
             juce::TextButton* su[10] = { &songLeftBtn, &songRightBtn, &songShortBtn,
                                          &songLongBtn, &songInsertBtn, &songRemoveBtn,
                                          &songCopyBtn, &songPasteBtn, &songLoopBtn,
@@ -5461,7 +5600,16 @@ void MainComponent::resized()
             //  ficha de CANCION: aqui todavia no existe `inner`, y estimarlo
             //  a ojo es como se pide una altura que luego no vale.
             const int anchoDeLaTarjeta = anchoTarjetaInterior (safeArea().getWidth());
-            const int anchoCol = pasoDosCol ? (anchoDeLaTarjeta - Metrics::gap) / 2 : anchoDeLaTarjeta;
+            //  Y CON LA SANGRIA DEL PANEL YA RESTADA, que es la misma regla
+            //  que este bloque repite tres veces: preguntar con una cuenta y
+            //  colocar con otra es como una fila se queda con altura cero. Las
+            //  dos columnas de esta pagina se meten `panelSangria` por lado
+            //  -son todas grupos- asi que el ancho util es ese y no el de la
+            //  tarjeta. Sin restarlo, `Tests/paneles.py` saco VACIO 2: el panel
+            //  de REJILLA quedaba envolviendo un control de 279x0 en 360x640 y
+            //  en 280x653, que es el mismo 217x0 que ya costo una medida aqui.
+            const int anchoCol = (pasoDosCol ? (anchoDeLaTarjeta - Metrics::gap) / 2 : anchoDeLaTarjeta)
+                                 - 2 * Metrics::panelSangria;
             //  Una fila si las ocho caben, dos si caben de cuatro en cuatro, y
             //  si no, tres: tres, tres y dos. `filasUtil` es lo que se paga DE
             //  MAS sobre la primera fila, que ya la cuenta bandH.
@@ -6186,7 +6334,10 @@ void MainComponent::resized()
             if (wideFace && inner.getHeight() >= altoDe (porColumna)
                          && inner.getWidth() > anchoLado + Metrics::hit * 4)
             {
-                auto side = Lang::takeEnd (inner, anchoLado);
+                //  Y la columna se mete la sangria del panel: las celdas de
+                //  esta tira son el grupo, y el panel se pinta `panelAireX`
+                //  por fuera de ellas. Ver Metrics::panelSangria.
+                auto side = Lang::takeEnd (inner, anchoLado).reduced (Metrics::panelSangria, 0);
                 Lang::takeEnd (inner, Metrics::gap);
                 juce::Rectangle<int> col = Lang::takeStart (side, anchoCol);
                 int puestas = 0;
@@ -6243,7 +6394,7 @@ void MainComponent::resized()
                 //  las herramientas son las de mas abajo.
 
                 //  La fila de tapas se aparta ANTES: es lo que no puede encoger.
-                auto tapas = inner.removeFromBottom (Metrics::hit);
+                auto tapas = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
                 inner.removeFromBottom (Metrics::sm);
 
                 //  TRES y no cuatro: PLAY es del transporte y ya esta en la
@@ -6308,7 +6459,7 @@ void MainComponent::resized()
                             && moduleBarFits (tapas.getWidth(), pb + k, nb - k))
                         { arriba = k; break; }
                     layoutModuleBar (tapas, pb, 0, arriba);
-                    auto fila2 = inner.removeFromBottom (Metrics::hit);
+                    auto fila2 = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
                     inner.removeFromBottom (Metrics::xs);
                     layoutModuleBar (fila2, pb + arriba, 0, nb - arriba);
                     //  DOS FILAS Y UN SOLO PANEL. Son dos preguntas -arriba lo
@@ -6337,7 +6488,7 @@ void MainComponent::resized()
                 //  no `xs`.
                 if (haySel)
                 {
-                    auto acc = inner.removeFromBottom (Metrics::hit);
+                    auto acc = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
                     inner.removeFromBottom (Metrics::sm);
 
                     juce::TextButton* pbAcc[4];
@@ -6402,6 +6553,57 @@ void MainComponent::resized()
 
             auto& col = wideFace ? side : inner;
 
+            //  Y LA COLUMNA SE METE LA SANGRIA DEL PANEL mientras dura el
+            //  grupo. El panel de esta ficha se deduce de la banda del rotulo
+            //  mas el control que lleva debajo -ver `seqBloques` en el pintor- y
+            //  se pinta `panelAireX` por fuera, asi que sin meter la columna el
+            //  color nace pegado al mando. Ver Metrics::panelSangria.
+            col.reduce (Metrics::panelSangria, 0);
+
+            //  Y EL RENGLON NO SE PARTE A MITADES: SE PARTE POR LO QUE CADA
+            //  MITAD VA A ESCRIBIR.
+            //
+            //  LARGO escribe una FRASE -«1 compas», «مازورة واحدة»- y PATRON
+            //  una etiqueta de dos letras. A mitades exactas en 280x653 el
+            //  renglon da 209 px, cada uno se lleva 104, y la caja de LARGO
+            //  sale de 71 porque la base recorta a `ancho - kPistaMin` sin
+            //  avisar: el arabe pide 71.3 sobre 67 utiles y el banco lo canto
+            //  como SQUEEZE en las cuatro corridas de esa pantalla. Y no es
+            //  que falte sitio en el renglon: PATRON gasta 16.4 px de los 36
+            //  que tiene, o sea diecinueve tirados al lado de uno que se
+            //  queda corto por cuatro decimas.
+            //
+            //  Se mide lo que LARGO va a escribir -con la fuente con la que
+            //  se va a escribir, que es la misma figura que layoutModuleBar
+            //  con los rotulos de una fila de tapas- y PATRON se queda con el
+            //  resto, nunca por debajo de su caja mas sus dos teclas. Y nunca
+            //  MENOS de la mitad para LARGO, que es lo que habia: donde el
+            //  renglon da de si, la pista sobrante es suya y se agarra mejor.
+            const auto fCifra = ZatiColours::monoFont (Metrics::fValue, true);
+            const auto pideCaja = [&fCifra] (const juce::String& t)
+            {
+                return (int) std::ceil (juce::GlyphArrangement::getStringWidth (fCifra, t))
+                       + ZatiLookAndFeel::kRotuloMargen;
+            };
+            //  Y LA CAJA DE PATRON SE MIDE POR SU VALOR MAS ANCHO, no por un
+            //  suelo de cuarenta. Escribe «P1»..«P8» -16.4 px- y el suelo le
+            //  reservaba cuarenta, que en el renglon estrecho es lo que hacia
+            //  falta al lado. Ver mas abajo lo que costaban esos cuarenta.
+            const int pidePat = pideCaja (patternSlider.getTextFromValue (patternSlider.getMaximum()));
+
+            int w1 = col.getWidth();
+            if (! wideFace)
+            {
+                const int pideLen = pideCaja (lengthSlider.getTextFromValue (lengthSlider.getValue()))
+                                  + ZatiLookAndFeel::kPistaMin
+                                  + 2 * Metrics::aireTapa;
+                const int minPat = pidePat + Metrics::gap + 2 * Metrics::chip + 2 * Metrics::aireTapa;
+                const int largo  = juce::jlimit (col.getWidth() / 2,
+                                                 juce::jmax (col.getWidth() / 2, col.getWidth() - minPat),
+                                                 pideLen);
+                w1 = col.getWidth() - largo;
+            }
+
             //  PATRON and LARGO share one row upright, so they share one band -
             //  split in two, a name over each control. One caption stretched
             //  across both is how NOTA once came to look like part of CADENA.
@@ -6411,7 +6613,7 @@ void MainComponent::resized()
                     seqLabelBands.add ({ band, juce::String ("PATRON") });
                 else
                 {
-                    auto half = Lang::takeStart (band, band.getWidth() / 2);
+                    auto half = Lang::takeStart (band, w1);
                     seqLabelBands.add ({ half, juce::String ("PATRON") });
                     seqLabelBands.add ({ band, juce::String ("LARGO")  });
                 }
@@ -6423,9 +6625,23 @@ void MainComponent::resized()
                 //  pair of slabs twice the size of anything else on the card.
                 //  Reserve the box first and the keys come out finger-sized.
                 //  Stacked in the side column, each takes the whole width.
-                const int w1 = wideFace ? row.getWidth() : row.getWidth() / 2;
+                //  Y EL SUELO DE LA CAJA ES LO QUE ESCRIBE, NO CUARENTA.
+                //
+                //  Con el suelo en cuarenta y el renglon repartido por lo que
+                //  pide cada mitad, a PATRON le quedaban 99 px: caja 40, hueco
+                //  8 y 44 para las dos teclas. Y ahi JUCE cambia de maqueta
+                //  sin decirlo — `resizeIncDecButtons` las pone una al lado de
+                //  otra solo si el hueco es MAS ANCHO QUE ALTO, y 44 menos los
+                //  dos px que expande por lado son 40 contra 40 — asi que las
+                //  apilo: dos teclas de 40x20 donde habia dos de 24x40. Medio
+                //  dedo de alto por veinte pixeles de caja que nadie usaba.
+                //
+                //  La caja pide lo suyo -«P8» son 16.4 mas el margen- y las
+                //  teclas se quedan con el resto, que es lo que este bloque ya
+                //  queria decir: reservar la caja primero para que las teclas
+                //  salgan del tamano del dedo, no para que salgan enormes.
                 patternSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                               juce::jmax (40, w1 - 2 * Metrics::gap - 2 * Metrics::stepKey),
+                                               juce::jmax (pidePat, w1 - 2 * Metrics::gap - 2 * Metrics::stepKey),
                                                Metrics::readout);
                 if (wideFace)
                 {
@@ -6436,7 +6652,16 @@ void MainComponent::resized()
                 }
                 else
                 {
-                    patternSlider.setBounds (row.removeFromLeft (w1).reduced (Metrics::aireTapa, 0));
+                    //  Y EL MANDO SE COGE POR EL MISMO LADO QUE SU ROTULO.
+                    //
+                    //  La banda de arriba se parte con `Lang::takeStart`, que
+                    //  en arabe coge de la DERECHA, y el mando se cogia con
+                    //  `removeFromLeft`, que no. Medido en 280x653/ar: el
+                    //  rotulo PATRON quedaba sobre el deslizador de LARGO y al
+                    //  reves - los dos nombres cruzados en la unica pantalla
+                    //  donde nadie de esta casa lee. Un rotulo que no esta
+                    //  sobre su mando no es un rotulo, es ruido.
+                    patternSlider.setBounds (Lang::takeStart (row, w1).reduced (Metrics::aireTapa, 0));
                     lengthSlider.setBounds  (row.reduced (Metrics::aireTapa, 0));
                 }
             }
@@ -6576,6 +6801,10 @@ void MainComponent::resized()
             //  than to the pattern.
             {
                 auto& fuente = wideFace ? tempoRes : col;
+                //  Sangria del panel mientras dura el grupo del TEMPO; en
+                //  apaisado `col` ya viene metida, asi que solo hace falta en el
+                //  rectangulo apartado. Ver Metrics::panelSangria.
+                if (wideFace) fuente.reduce (Metrics::panelSangria, 0);
                 auto row = fuente.removeFromBottom (Metrics::hit);
                 //  Cuatro en la fila del tempo: el deslizador, TAP a su lado
                 //  porque marcar y ver el numero es el mismo gesto, y luego
@@ -6644,9 +6873,13 @@ void MainComponent::resized()
             {
                 //  Se aparta del FONDO de la rejilla: lo que no puede encoger
                 //  se reserva primero, y los carriles se reparten lo que queda.
+                //  Y METIDA LA SANGRIA DEL PANEL: la tira entera es UN panel
+                //  -grupo 1- y se pinta `panelAireX` por fuera de sus bandas.
+                //  Ver Metrics::panelSangria.
                 auto tira = inner.removeFromBottom (
                                 tiraFilas * (nameH + Metrics::hit)
-                              + (tiraFilas - 1) * Metrics::halfGap);
+                              + (tiraFilas - 1) * Metrics::halfGap)
+                                 .reduced (Metrics::panelSangria, 0);
                 inner.removeFromBottom (Metrics::sm);
 
                 //  showSeqPage las apaga al entrar en PASOS y solo resized
@@ -6783,6 +7016,14 @@ void MainComponent::resized()
             //  either way, so the card never has to be taller than it is wide.
             auto colA = pasoDosCol ? inner.removeFromLeft ((inner.getWidth() - Metrics::gap) / 2) : inner;
             auto colB = pasoDosCol ? inner.withTrimmedLeft (Metrics::gap) : juce::Rectangle<int>();
+            //  Y LAS DOS COLUMNAS SE METEN LA SANGRIA DEL PANEL. Esta pagina es
+            //  entera grupos -cada banda de rotulo con su fila debajo- y el
+            //  panel se pinta `panelAireX` por fuera de cada uno, asi que sin
+            //  meter la columna el color nace pegado al mando y ademas se sale
+            //  del margen de la tarjeta: medido, FILO 160 en las nueve
+            //  pantallas. Ver Metrics::panelSangria.
+            colA.reduce (Metrics::panelSangria, 0);
+            colB.reduce (Metrics::panelSangria, 0);
             auto& second = pasoDosCol ? colB : colA;
 
             if (seqCadenaAqui)

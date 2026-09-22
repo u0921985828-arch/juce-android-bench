@@ -317,9 +317,32 @@ def barre(met, laf):
 #  parte del trazo y no del tema. Sin exenciones por fichero: la pregunta se
 #  hace igual en los catorce, y por eso no hay lista que se quede vieja.
 #
-#  Y NO SE PREGUNTA POR EL RADIO. Se probo y se rechazo: los radios de esta
-#  casa son de cada sitio a proposito -«lo de redondear todo, eso si que no»- y
-#  una regla que los unificara volveria a traer el cambio que se deshizo.
+#  ----------------------------------------------------------------------------
+#  Y AHORA TAMBIEN POR EL RADIO, QUE AQUI DECIA QUE NO.
+#
+#  Lo que decia: «los radios de esta casa son de cada sitio a proposito -"lo de
+#  redondear todo, eso si que no"- y una regla que los unificara volveria a
+#  traer el cambio que se deshizo». La segunda mitad era cierta y la primera no.
+#  Lo que se deshizo fue REDONDEAR MAS -esquinas de 8 a 10 px- y unificar en los
+#  valores que ya estaban no es ese cambio: es el de al lado. Y «de cada sitio a
+#  proposito» no lo sostiene el arbol: contados, 2.0f x24, 3.0f x20, 4.0f x4 y
+#  1.5f x3, con el panel de grupo redondeado a OCHO porque cogio `Metrics::sm`
+#  -un token de ESPACIADO- por no haber ninguno de radio. Nadie decidio cuatro
+#  esquinas distintas para la misma figura; se escribieron por separado.
+#
+#  Lo pedido, con estas palabras: «los bordes y los filos no son iguales entre
+#  si». El grosor ya se unifico la tanda pasada y seguia la queja, porque no era
+#  el grosor: era la esquina, y se nota porque dos de esas superficies estan una
+#  DENTRO de la otra en la misma pantalla -la chapa de una cifra a 2 sobre la
+#  tarjeta de su ficha a 2 sobre la losa de su grupo a 8-.
+#
+#  LA CLASE, y no una lista de ficheros: el radio no puede ser un numero PELADO.
+#  `Metrics::radio` y `Metrics::radioChip` valen, y valen tambien los que salen
+#  de algo -`3.0f * escala` de un sprite, `canal * 0.5f` de una pista, `rad -
+#  1.5f` de una caja concentrica-, porque esos SI son de su sitio a proposito:
+#  se mueven con lo que dibujan. Un `2.0f` a secas no se mueve con nada. Por eso
+#  los dibujos -PadArt, StoreArt, Iconos- no necesitan exencion: ya escalan.
+RADIO_CAJA = re.compile(r'\.(?:draw|fill)RoundedRectangle\s*\(')
 FILO_CAJA = re.compile(r'\.draw(?:Rounded)?Rect(?:angle)?\s*\(')
 
 
@@ -341,6 +364,46 @@ def filos(raiz):
                 ult = args.rsplit(",", 1)[-1].strip()
                 if re.fullmatch(r'[0-9]+(\.[0-9]+)?f?', ult):
                     malos.append((f, n, ult, linea.strip()))
+    return malos
+
+
+def corta_args(resto):
+    """Los argumentos de una llamada ya abierta, partidos al nivel de arriba."""
+    fuera, hondo, cur = [], 0, ""
+    for ch in resto:
+        if ch in "([":
+            hondo += 1
+        elif ch in ")]":
+            if hondo == 0:
+                fuera.append(cur)
+                return fuera
+            hondo -= 1
+        if ch == "," and hondo == 0:
+            fuera.append(cur); cur = ""
+        else:
+            cur += ch
+    return None
+
+
+def radios(raiz):
+    """Los radios de esquina escritos como numero pelado, con fichero y linea."""
+    malos = []
+    for f in sorted(os.listdir(raiz)):
+        if not f.endswith((".h", ".cpp")): continue
+        txt = sin_comentarios(open(os.path.join(raiz, f), encoding="utf8").read())
+        #  Sobre el fichero entero y no linea a linea: una llamada de estas se
+        #  parte en dos renglones a menudo, y `filos()` no lo necesitaba porque
+        #  el grosor va SIEMPRE en el ultimo argumento, que es el del cierre.
+        for m in RADIO_CAJA.finditer(txt):
+            args = corta_args(txt[m.end():])
+            if not args: continue
+            #  `draw` lleva el grosor detras del radio; `fill` no lleva grosor.
+            #  Y `fill (x, y, w, h, radio)` existe: el radio es el ultimo igual.
+            rad = args[-2] if ".draw" in m.group(0) and len(args) >= 3 else args[-1]
+            rad = rad.strip()
+            if re.fullmatch(r"[0-9]+(\.[0-9]+)?f?", rad):
+                n = txt[:m.start()].count("\n") + 1
+                malos.append((f, n, rad, txt.splitlines()[n - 1].strip()))
     return malos
 
 
@@ -381,11 +444,11 @@ def main():
     #  Y los dos del filo, por lo mismo: sin ellos la regla de abajo saldria
     #  verde por no haber nadie a quien comparar.
     src = open(CABECERA, encoding="utf8").read()
-    sinfilo = [t for t in ("filo", "filoFoco")
+    sinfilo = [t for t in ("filo", "filoFoco", "radio", "radioChip")
                if not re.search(r'float\s+%s\s*=' % t, src)]
     if sinfilo:
-        print("FALLA  la tabla ya no tiene %s: la regla del filo no mide nada"
-              % ", ".join(sinfilo))
+        print("FALLA  la tabla ya no tiene %s: la regla del filo y la del radio"
+              " no miden nada" % ", ".join(sinfilo))
         return 1
 
     fallas, sueltos, tam, porValor, fronteras = barre(met, laf or {})
@@ -419,6 +482,14 @@ def main():
         for f, n, tok, linea in fronteras:
             print("  Source/%s:%d  Metrics::%s (%d px)" % (f, n, tok, met[tok]))
             print("      %s" % linea)
+    sueltosRadio = radios(os.path.join(RAIZ, "Source"))
+    if sueltosRadio:
+        mal = 1
+        print("FALLA  %d esquinas llevan el radio a mano en vez de"
+              " Metrics::radio o Metrics::radioChip:" % len(sueltosRadio))
+        for f, n, v, linea in sueltosRadio:
+            print("  Source/%s:%d  radio %s" % (f, n, v))
+            print("      %s" % linea)
     sueltosFilo = filos(os.path.join(RAIZ, "Source"))
     if sueltosFilo:
         mal = 1
@@ -430,8 +501,8 @@ def main():
     if mal:
         return 1
     print("VEREDICTO: OK  ningun literal de AIRE vale lo que un token,"
-          " la frontera vertical es %s, y los %d filos de caja"
-          " salen de Metrics"
+          " la frontera vertical es %s, ninguna esquina lleva el radio a mano,"
+          " y los %d filos de caja salen de Metrics"
           % (" o ".join(FRONTERA),
              len(re.findall(r'Metrics::filo', open(os.path.join(RAIZ, "Source",
                             "MainComponent_Paint.cpp"), encoding="utf8").read()))))
