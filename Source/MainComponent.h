@@ -126,6 +126,43 @@ private:
     //  asi que sumarlas es lo unico que mide un fotograma entero.
     double cuadroGastoMs = 0.0;
     double cuadroUltimoMs = 0.0;
+    //  LA CADENCIA EN LA QUE SE ESTA, que es distinta de la que se querria.
+    //
+    //  El salto se decidia con `floor (coste / periodo)` y sin memoria, o sea
+    //  recalculado desde cero en cada cuadro. Con un coste que ronda el periodo
+    //  -que es el caso NORMAL en un telefono, porque para eso se elige el
+    //  presupuesto- ese `floor` cae a un lado y a otro con la media movil y la
+    //  app alterna entre pintar todos los cuadros y pintar uno de cada dos:
+    //  16.7 ms, 33.3, 16.7, 33.3. La media sale bien -«50 cuadros por segundo»-
+    //  y lo que se ve es un tiron por cada cambio.
+    //
+    //  Asi que el nivel se RECUERDA y solo se mueve de uno en uno, con banda
+    //  muerta: se sube pasado el 130 % del presupuesto y se baja por debajo del
+    //  70 %, que deja un 60 % de holgura entre las dos decisiones y es lo que
+    //  impide que un cuadro caro suelto cambie la cadencia.
+    int    saltoNivel    = 0;
+    double saltoCambioMs = 0.0;
+    //  El periodo del panel, suavizado. Ver enVBlank: con el instantaneo el
+    //  suelo de la cadencia aleteaba con el jitter del propio aviso de vblank.
+    double periodoPanel  = 0.0;
+    //  El periodo con el que se resolvio el suelo de cadencia, y el suelo. Ver
+    //  enVBlank: recalcularlo por cuadro deja que el temblor del aviso cruce un
+    //  umbral entero y cambie la cadencia sin que haya cambiado nada.
+    double periodoNivel    = 0.0;
+    int    nivelMinVigente = 0;
+    //  Medio segundo, y sale de lo que el ojo distingue: por debajo de ahi dos
+    //  cambios seguidos se leen como un tiron y no como la app acomodandose.
+    static constexpr double kCadenciaEsperaMs = 500.0;
+    //  El techo de dibujo. Ver enVBlank: por encima de esto no se gana nada que
+    //  se vea y se paga el doble de CPU en el mismo hilo que tiene que dejar
+    //  respirar al de audio.
+    static constexpr int kDibujoTopeHz = 60;
+    //  Y el suelo por debajo del cual el techo se afloja: ver enVBlank.
+    static constexpr int kDibujoSueloHz = 50;
+    //  ZATI_LASTRE=ms — ver lastreDeBanco.
+    void lastreDeBanco();
+    double       lastreMs      = 0.0;
+    unsigned int lastreSemilla = 12345u;
 
     //  ZATI_VBLANK=hz — LA CADENCIA COMO ENTRADA DEL BANCO, igual que ZATI_SKIN
     //  con la carcasa, ZATI_DLC con los packs y ZATI_INSETS con los margenes.
@@ -588,7 +625,7 @@ private:
     //  lleva: es la puerta que se pidio -«el tema de los presets no esta muy
     //  accesible ni legible»- y es un gesto sin marca en la cara, que es la
     //  unica clase de gesto que esta pagina tiene que enumerar.
-    static constexpr int kNumGestures = 10;
+    static constexpr int kNumGestures = 11;
     void showSetPage (int page);
 
     //  THE SEQUENCER CARD HAS TWO PAGES, and it has them because measuring it
@@ -655,6 +692,71 @@ private:
     bool filaCopiada = false;
     void copiarFila();
     void pegarFila();
+
+    //  ------------------------------------------------------------------
+    //  LA BANDA DE LA REJILLA DE PASOS: pads x pasos.
+    //
+    //  Esta rejilla era la unica de las tres que no tenia seleccion de ninguna
+    //  clase: el piano marca notas con SEL y la linea de tiempo marca tramos,
+    //  y aqui lo mas fino que habia era COPIAR FILA -un pad entero, los 192
+    //  pasos- y COPIAR PATRON -los 64 pads-. Llevarse los dos primeros compases
+    //  del bombo y la caja a otro patron pedia copiar el BANCO entero y borrar
+    //  a mano los catorce pads que sobraban.
+    //
+    //  Es el MISMO modelo que las otras dos y no uno nuevo: SEL arma, el
+    //  arrastre marca, un toque suelto vacia, y la tira de cuatro aparece con
+    //  la banda. Un solo gesto de seleccion en las tres pantallas.
+    juce::TextButton seqSelBtn { "SEL" };
+    //  LA TIRA DE ACCIONES DE LA BANDA. Ver el reparto en
+    //  MainComponent_Layout.cpp: solo existe con banda puesta, y PEGAR ademas
+    //  pide portapapeles - pegar lo que no se ha copiado no es nada.
+    juce::TextButton seqCopiaBtn { "COPIAR" }, seqCorteSelBtn { "CORTE" },
+                     seqPegaBtn { "PEGAR" }, seqBorraSelBtn { "BORRAR" };
+    //  La banda en las coordenadas de la rejilla: `pad0/pad1` son CARRILES del
+    //  banco que se ve -0..15- y `paso0/paso1` son CASILLAS DE LA VISTA, que
+    //  con la rejilla en 1/8 sobre un patron de 1/16 no son pasos guardados.
+    //  La traduccion la hace `pasoDeCelda`, en un solo sitio.
+    StepGrid::Sel seqSel;
+
+    //  EL PORTAPAPELES DE PASOS, y con los NUEVE campos de `AudioEngine::Paso`.
+    //
+    //  Es la leccion que este proyecto ya pago dos veces y esta escrita en la
+    //  cabecera de `AudioEngine::Paso`: COPIAR PATRON se llevaba TRES de los
+    //  nueve y DESPLAZAR y DOBLAR, cuatro, y la queja llego con las dos
+    //  mitades - «la velocidad no se copia» y «de un acorde de tres notas solo
+    //  se pega una». Por eso aqui no se toca `setStep`, que solo pone el
+    //  on/off: se lee con `leePaso` y se escribe con `escribePaso`, que son los
+    //  dos unicos que conocen la lista entera.
+    //
+    //  En coordenadas RELATIVAS a la esquina de la banda -como el piano y como
+    //  la cancion- porque pegar tiene que caer donde miras y no donde se copio.
+    struct PasoPeg { int dPaso; int dPad; AudioEngine::Paso paso; };
+    std::vector<PasoPeg> seqPortapapeles;
+    //  Y EL TAMANO DEL HUECO, que el vector no puede dar: solo lleva los pasos
+    //  que SUENAN, asi que una banda de dieciseis pasos con dos golpes tiene
+    //  dos entradas. Sin estas tres cifras PEGAR borraria el destino hasta el
+    //  ultimo golpe copiado y dejaria vivo lo que hubiera detras - la figura
+    //  nueva mezclada con la cola de la vieja, que es el mismo fallo que
+    //  `escribePaso` vino a cerrar una capa mas abajo.
+    int seqPegPad0 = 0;     // el carril en el que empezaba la banda copiada
+    int seqPegPads = 0;     // cuantos carriles medía
+    int seqPegPasos = 0;    // y cuantos PASOS GUARDADOS de ancho
+    void seqBanda (int pad0, int paso0, int pad1, int paso1);
+    void seqVaciaSel();
+    void seqCopiaSel();
+    void seqPegaSel();
+    //  CORTE es COPIAR y BORRAR seguidos, y se escribe asi -llamando a las
+    //  dos- y no repitiendo el bucle: dos caminos que hacen el mismo trabajo
+    //  por su cuenta acaban separandose, y el sintoma es «cortar y copiar no
+    //  pegan igual» sin poder decir por que. Es la cuarta vez que esta casa lo
+    //  escribe: piano, cancion y aqui.
+    void seqCortaSel();
+    void seqBorraSel();
+    //  VACIAR UN RECTANGULO DE PASOS, en PASOS GUARDADOS. La usan BORRAR,
+    //  CORTE y el carvado de PEGAR, que es la misma reparticion que
+    //  `vaciaBanda` tiene en la cancion.
+    void vaciaBandaPasos (int lane0, int lane1, int st0, int st1);
+
     juce::TextButton seqFollowBtn { "SEGUIR" };
     bool seqFollow = false;
     void humanizePattern();
@@ -1309,6 +1411,32 @@ private:
     double xrunLimpioMs = 0.0;
     static constexpr int kXRunOlvidoMs = 5000;
     static constexpr int kMaxBursts = 4;
+    //  Y EL BUFFER TAMBIEN BAJA, que es la mitad que faltaba.
+    //
+    //  `burstMult` solo subia. Subia por cuatro chasquidos, se escribia en
+    //  `buffer.txt` y de ahi no se movia nunca mas: ni en esa sesion ni en
+    //  ninguna de las siguientes, porque el arranque lee el fichero. O sea que
+    //  UN mal rato -otra app comiendose el telefono, una llamada, el sistema
+    //  indexando- dejaba la app en 4 bursts PARA SIEMPRE. Con un burst de 256 a
+    //  48 kHz eso es pasar de 5.3 ms de buffer a 21.3, y de ~16 ms de salida a
+    //  ~64: cuatro veces la latencia, en la app cuyo argumento entero es la
+    //  latencia, por un chasquido de hace tres semanas.
+    //
+    //  Asi que un tramo limpio LARGO baja un burst y vuelve a probar. Cuarenta
+    //  y cinco segundos y no cinco: cinco es lo que hace falta para olvidar una
+    //  cuenta de chasquidos, y bajar el buffer reabre el stream -lo que corta
+    //  el sonido un instante-, asi que hacerlo cada cinco segundos seria peor
+    //  que el problema.
+    static constexpr int kXRunBajaMs = 45000;
+    //  Y SI AL BAJAR VUELVE A CREPITAR, ese nivel queda descartado en esta
+    //  sesion. Sin esto la app oscilaria entre dos buffers para siempre en el
+    //  telefono justo, que es exactamente el caso para el que existe todo esto.
+    int    burstSuelo   = 1;
+    double burstBajoMs  = -1.0;   // ms desde la ultima bajada; < 0 = ninguna
+    //  ZATI_XRUN / ZATI_XRUN_ESCALA — ver checkXRuns.
+    juce::String xrunGuion;
+    double       xrunEscala  = 1.0;
+    double       xrunRelojMs = 0.0;
     void   keepChosenRate();
     juce::String exportStatus;
     bool         exportOk = false;
@@ -2076,6 +2204,14 @@ private:
     //  The grid shows ONE bank: sixteen lanes, whichever sixteen those are.
     bool  gridCells[AudioEngine::kNumSteps * AudioEngine::kPadsPerBank] {};
     signed char gridNotes[AudioEngine::kNumSteps * AudioEngine::kPadsPerBank] {};
+    //  Y LO QUE DURA CADA GOLPE, en cuartos de paso guardado.
+    //
+    //  La rejilla dibujaba UNA celda por golpe pasara lo que pasara, asi que
+    //  una redonda escrita en 1/8 y mirada en 1/32 se veia igual de corta que
+    //  una semicorchea. El piano lo dibuja desde el primer dia (`pianoLargos`);
+    //  la rejilla de pasos no, y en una linea melodica eso es no ver la mitad
+    //  de lo que hay escrito. Ver StepGrid::paint, que pinta la cola atenuada.
+    std::uint16_t gridLargos[AudioEngine::kNumSteps * AudioEngine::kPadsPerBank] {};
     int   gridZati[AudioEngine::kPadsPerBank] {};
     bool  gridLoaded[AudioEngine::kPadsPerBank] {};
     //  EL PRIMER PASO DE LA VENTANA, continuo y no en multiplos de dieciseis.
@@ -2149,8 +2285,11 @@ private:
     //  Las cinco herramientas de arreglo. Ver songCursor.
     juce::TextButton songInsertBtn  { "INSERTAR" };
     juce::TextButton songRemoveBtn  { "QUITAR" };
-    juce::TextButton songCopyBtn    { "COPIAR" };
-    juce::TextButton songPasteBtn   { "PEGAR" };
+    //  COPIAR y PEGAR DE COMPAS SE RETIRARON, y no por sitio: copiaban UNA
+    //  columna de cuatro celdas sin sus clips y sin poder decir «de aqui a
+    //  aqui». Lo que se pidio es copiar MEDIO patron, y medio patron no es un
+    //  compas. Las sustituye la tira de la banda -COPIAR · CORTE · PEGAR ·
+    //  BORRAR- que recorta por los filos de lo seleccionado. Ver songCopiaSel.
     juce::TextButton songLoopBtn    { "LOOP" };
     juce::TextButton songLeftBtn    { "ATRAS" };
     juce::TextButton songRightBtn   { "ADELANTE" };
@@ -2286,12 +2425,16 @@ private:
     //  un fichero nuevo que limpiar - un clip es una referencia, y partir una
     //  referencia es quedarse con dos ventanas de la misma fuente.
     void parteClip (int indice, int paso);
-    int songCells[Playlist::kLanes * AudioEngine::kSongBars] {};
-    //  Y CUANTOS PASOS DURA CADA PATRON, al lado de las celdas y por lo mismo:
+    //  LOS BLOQUES, TRADUCIDOS A PASOS para la rejilla. Era
+    //  `songCells[4][64]`, una celda por compas, y por eso un bloque no podia
+    //  empezar a mitad de compas ni durar medio: en una celda no caben dos
+    //  cabezas, asi que partir por el paso 8 no tenia donde guardarse. Ahora es
+    //  una lista, como los clips, y vive aqui y no en `refreshSong` por lo
+    //  mismo que `songClipsVista`: la rejilla guarda el PUNTERO y no copia.
+    std::vector<Playlist::BloqueVista> songBloquesVista;
+    //  Y CUANTOS PASOS DURA CADA PATRON, al lado de los bloques y por lo mismo:
     //  la rejilla guarda el PUNTERO -no copia- asi que un array local se
-    //  quedaria colgando en cuanto acabara el bloque que lo llena. Es la misma
-    //  razon por la que `songCells` es un miembro y no una variable de
-    //  `refreshSong`.
+    //  quedaria colgando en cuanto acabara el bloque que lo llena.
     int songLargos[AudioEngine::kNumPatterns] {};
     //  El repintado de la TARJETA es opcional, y por eso es un parametro.
     //  La rejilla de la cancion se repinta sola cuando cambia su fuente; lo
@@ -2314,14 +2457,13 @@ private:
     //  sobre los cuatro carriles a la vez, porque un compas de una cancion es
     //  una columna y no una casilla.
     int songCursor = 0;
-    int songClip[Playlist::kLanes] {};   // el compas copiado, un carril por hueco
-    bool songClipLleno = false;
     void insertSongBar();
     void removeSongBar();
     //  Y LO QUE MUEVE LA LINEA DE TIEMPO MUEVE LAS DOS COSAS. Ver el cuerpo.
     void corredClips (int desdeCompas, int delta);
-    void copySongBar();
-    void pasteSongBar();
+    //  Lo mismo para los bloques: sin esto, meter un compas corria el audio y
+    //  dejaba los patrones donde estaban, que es el mismo desfase al reves.
+    void corredBloques (int desdeCompas, int delta);
     void toggleSongLoop();
     //  MOVER EL COMPAS MARCADO uno a la izquierda o a la derecha, con sus
     //  cuatro carriles. Reordenar era la unica operacion de arreglo que
@@ -2335,7 +2477,16 @@ private:
     //  lleva dentro: acortar un bloque obligaba antes a acortar el patron
     //  entero, o sea a cambiarlo en los otros sitios donde estuviera puesto.
     void resizeSongBlock (int dir);
-    void ponLargoBloque (int carril, int cabeza, int nuevo, bool apunta = true);
+    //  EN PASOS Y POR INDICE, no en compases y por cabeza: con la lista, la
+    //  identidad de un bloque es su sitio en el vector -dos bloques pueden
+    //  empezar en el mismo compas- y su largo es un numero de pasos.
+    void ponLargoBloque (int indice, int desdePaso, int hastaPaso, bool apunta = true);
+    //  PARTIR UN BLOQUE EN DOS por un paso absoluto, que es lo que las TIJERAS
+    //  significan en un lienzo y lo que no se podia hacer con celdas. El
+    //  segundo trozo se lleva el `offset` que le toca -`(offset + corte -
+    //  desde) % len`- o sonaria desde el principio del patron y el corte se
+    //  oiria como un salto. Es la misma cuenta que `parteClip` con muestras.
+    void parteBloque (int indice, int paso);
     void toggleSongLane (int lane);
     juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
     juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) },
@@ -3834,6 +3985,106 @@ private:
     //  Traduce los clips a la tabla del motor resolviendo pad -> buffer, y la
     //  publica. Se llama desde el hilo de mensajes y en ningun otro sitio.
     void publicaClips();
+
+    //  UN BLOQUE DE LA CANCION, con la misma forma que un clip y por la misma
+    //  razon.
+    //
+    //  Era `songCell[4][64]` en el motor: un entero por compas, cabeza o
+    //  `kContinued`. Con eso un bloque SIEMPRE ocupaba compases enteros y
+    //  SIEMPRE arrancaba en el paso 0 del patron, asi que «copiar medio patron»
+    //  -lo que se pidio- no se podia ni representar: partir un bloque por el
+    //  paso 8 pide dos cabezas en el mismo compas y en una celda solo cabe una.
+    //  Los clips de audio ya eran por paso desde que una toma podia entrar a
+    //  mitad del compas; esto es el mismo modelo para los patrones.
+    struct BloqueUI
+    {
+        int  lane   = 0;    // 0..kSongLanes-1
+        //  QUE SUENA: banco 0..kNumPatterns-1 de patron, o negativo para un
+        //  golpe suelto -(pad+1), que es la misma codificacion que la brocha.
+        int  bank   = 0;
+        int  compas = 0;    // donde empieza
+        int  paso   = 0;    // y en que paso guardado de ese compas
+        //  CUANTOS PASOS OCUPA en la linea de tiempo, que no es el largo del
+        //  patron: un bloque puede llevar medio patron o repetirlo tres veces.
+        int  largo  = 0;
+        //  CON QUE PASO DEL PATRON ARRANCA. Cero en todo lo que se pinta; lo
+        //  mueven las tijeras y el recorte de COPIAR, que es lo que hace que
+        //  media frase siga sonando por donde iba.
+        int  offset = 0;
+        bool mudo   = false;
+    };
+    std::vector<BloqueUI> bloques;
+
+    //  Publica la lista al motor por intercambio de puntero, igual que
+    //  `publicaClips`. Hilo de mensajes y ningun otro.
+    void publicaBloques();
+
+    //  LOS TRES HELPERS QUE LA AUDITORIA USA para hablar en compases, que es
+    //  como estaba escrita. Viven aqui y no en el banco porque la conversion
+    //  compas <-> bloque es del modelo: repetirla en `auditArrange` seria la
+    //  misma cuenta escrita dos veces y la copia que se quede vieja mediria
+    //  otra cosa que la app.
+    void ponBloqueCompas (int lane, int bar, int valor, int nBars = 1);
+    int  celdaCancion (int lane, int bar) const;
+    void vaciaCancion();
+    //  Y EL INDICE DEL BLOQUE QUE CUBRE UN PASO, o -1. Ver Playlist::bloqueEn:
+    //  la rejilla hace la misma pregunta con sus coordenadas y esta es la
+    //  version del modelo.
+    int  bloqueEnPaso (int lane, int paso) const;
+
+    // ------------------------------------------------------------------
+    //  LA SELECCION DE LA LINEA DE TIEMPO: una banda de carriles x pasos.
+    //
+    //  Es la otra mitad de lo que se pidio -«que la seleccion funcione bien y
+    //  se pueda copiar y pegar medio patron sin virguerias»-. Calco del piano
+    //  (`pianoSel`), que ya resolvio el mismo problema: se ve por RELLENO, la
+    //  tira de acciones aparece SOLA en cuanto hay banda y se va con ella, y
+    //  un toque fuera la vacia. Nada de mantener pulsado ni de menus.
+    Playlist::Sel songSel;
+    //  DONDE CAE PEGAR: el punto que marca un toque con SEL. Sin marca, el
+    //  carril 0 del primer compas visible - pegar tiene que caer donde miras y
+    //  no donde se copio, que es la leccion de `pianoPortapapeles`.
+    int songMarcaLane = -1, songMarcaPaso = -1;
+    //  Un solo pushUndo por arrastre, como `moviendoSel` en el piano: apilar
+    //  uno por evento de raton no es deshacer, es contar.
+    bool moviendoSelCancion = false;
+
+    //  EL PORTAPAPELES DE RANGO, RELATIVO a la esquina de la banda y con los
+    //  clips dentro. Se lleva SOLO LO SELECCIONADO: un bloque de dos compases
+    //  cruzado por una banda de 24 pasos sale como bloque de 24 con su offset
+    //  ajustado, y un clip se recorta con la misma cuenta que `parteClip`. Eso
+    //  es lo que «copiar medio patron y no el bucle entero» quiere decir.
+    struct PortaCancion
+    {
+        std::vector<BloqueUI> bloques;
+        std::vector<ClipUI>   clips;
+        int carriles = 0, pasos = 0;
+    };
+    PortaCancion songPortapapeles;
+
+    void songBanda (int lane0, int paso0, int lane1, int paso1);
+    void songMueveSel (int dLane, int dPaso);
+    void songVaciaSel();
+    void songCopiaSel();
+    void songPegaSel();
+    void songBorraSel();
+    void songCortaSel();
+    //  BORRAR UN TRAMO dejando lo que asoma por fuera: el bloque se PARTE por
+    //  el filo en vez de irse entero. Sin esto, borrar dos compases de un
+    //  bloque de ocho se lleva los ocho, que es justo lo que una banda existe
+    //  para no hacer. La usan BORRAR, CORTE y el carvado de PEGAR.
+    void vaciaBanda (int lane0, int lane1, int paso0, int paso1);
+
+    //  LA TIRA DE ACCIONES DE LA BANDA. Ver el reparto en
+    //  MainComponent_Layout.cpp: solo existe con seleccion, y PEGAR solo con
+    //  portapapeles. Calco de la tira del piano.
+    juce::TextButton songCopiaBtn { "COPIAR" }, songPegaBtn { "PEGAR" },
+                     songCorteSelBtn { "CORTE" }, songBorraSelBtn { "BORRAR" };
+
+    //  LA VISTA DE ANTES DE LA LUPA. Un toque sin arrastre vuelve a donde
+    //  estabas: sin eso, acercar un tramo es un viaje de ida y volver pide
+    //  adivinar el zoom que tenias, que es lo que hace que nadie use el zoom.
+    struct { int primero = 0; int compases = Playlist::kBarsViewDef; } songVistaAntes;
 
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
     // Chassis layout regions (set in resized(), drawn in paint()).

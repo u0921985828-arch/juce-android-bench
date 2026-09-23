@@ -157,6 +157,18 @@ AudioEngine::~AudioEngine()
     for (auto& slot : pendingPad)
         if (auto* p = slot.exchange (nullptr)) p->decReferenceCount();
     retired.drain ([] (SampleBuffer* p) { if (p) p->decReferenceCount(); });
+    //  Y las tres tablas publicadas, que hasta aqui nadie soltaba al morir el
+    //  motor: los clips con sus referencias, la automatizacion y los bloques.
+    //  Sin hilo de audio ya, asi que aqui si se puede.
+    clipsRetiradas.drain ([] (TablaClips* t) { sueltaTabla (t); });
+    sueltaTabla (clips);
+    sueltaTabla (pendingClips.exchange (nullptr));
+    autoRetiradas.drain ([] (TablaAuto* t) { delete t; });
+    delete autom;
+    delete pendingAuto.exchange (nullptr);
+    bloquesRetiradas.drain ([] (TablaBloques* t) { delete t; });
+    delete bloques;
+    delete pendingBloques.exchange (nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -788,6 +800,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         autoVivos.store (nueva->n, std::memory_order_relaxed);
     }
 
+    //  Y LA DE BLOQUES DE LA CANCION, que desde la tanda de la playlist por
+    //  pasos es una tabla como las otras dos y no una rejilla de atomicos.
+    if (auto* nueva = pendingBloques.exchange (nullptr, std::memory_order_acquire))
+    {
+        bloquesRetiradas.push (bloques);
+        bloques = nueva;
+        bloquesVivos.store (nueva->n, std::memory_order_relaxed);
+    }
+
     // 2. Clear output.
     out.clear (startSample, numSamples);
 
@@ -1258,7 +1279,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  Y el paso de la automatizacion, que si no quien graba seguiria
         //  escribiendo en el ultimo paso que sono antes de parar.
         pasoAuto.store (-1, std::memory_order_relaxed);
-        for (int ln = 0; ln < kSongLanes; ++ln) { lanePattern[ln] = -1; laneStartStep[ln] = 0; }
+        for (auto& u : ultimoDisparo) u.store (-1, std::memory_order_relaxed);
         playStep.store (-1, std::memory_order_relaxed);
         //  Y EL CLIC EMPIEZA EN EL PRIMER TIEMPO. Sin esto, el tono fuerte cae
         //  donde lo dejo la vez anterior y el metronomo dice que el compas
@@ -1510,10 +1531,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     if (hasta > desde && (songStep < desde || songStep >= hasta))
                     {
                         songStep = desde;
-                        //  Y los carriles sueltan lo que arrastraban: un patron
-                        //  de cuatro compases que empezo antes del tramo se
-                        //  quedaria sonando desde su compas tres para siempre.
-                        for (int ln = 0; ln < kSongLanes; ++ln) lanePattern[ln] = -1;
                     }
                 }
 
@@ -1533,89 +1550,45 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 pasoAuto.store (songStep, std::memory_order_relaxed);
                 aplicaAutomacion (songStep);
 
-                // At the top of a bar, read what each lane starts here.
-                if (songStep % pasosCompas == 0)
+                //  CADA PASO RECORRE LA TABLA DE BLOQUES. Antes el carril
+                //  leia su celda al empezar el compas y contaba desde ahi; con
+                //  bloques por pasos no hay «cabeza de compas»: un bloque
+                //  empieza en el paso que diga, dura los pasos que diga y
+                //  arranca por el paso del patron que diga (`offset`). Un
+                //  bloque mas largo que su patron da la vuelta dentro del
+                //  bloque, que es lo unico que puede significar un bloque de
+                //  ocho compases con un patron de cuatro.
+                //
+                //  Un carril silenciado no dispara, y un bloque silenciado
+                //  tampoco; ninguno de los dos «cuenta» nada porque ya no hay
+                //  nada que contar - al quitar el silencio el bloque suena por
+                //  el paso que toque, que es lo que hace un DAW.
+                for (auto& u : ultimoDisparo) u.store (-1, std::memory_order_relaxed);
+                if (bloques != nullptr)
                 {
-                    for (int ln = 0; ln < kSongLanes; ++ln)
+                    for (int i = 0; i < bloques->n; ++i)
                     {
-                        //  Un carril silenciado ni adopta patron ni dispara su
-                        //  disparo suelto. Se mira aqui, al empezar el compas,
-                        //  y no en el bucle de abajo, para que silenciar deje
-                        //  tambien de CONTAR el patron: si no, al quitar el
-                        //  silencio el carril seguiria a mitad de un patron que
-                        //  nadie ha oido empezar.
-                        if (songLaneMute[(size_t) ln].load (std::memory_order_relaxed))
+                        const auto& b = bloques->b[(size_t) i];
+                        if (b.mudo || b.lane < 0 || b.lane >= kSongLanes) continue;
+                        if (songLaneMute[(size_t) b.lane].load (std::memory_order_relaxed)) continue;
+                        const int desde = b.compas * pasosCompas + b.paso;
+                        const int off   = songStep - desde;
+                        if (off < 0 || off >= b.largo) continue;
+
+                        if (b.bank < 0)
                         {
-                            lanePattern[ln] = -1;
+                            //  Golpe suelto: dispara en su paso y no ocupa
+                            //  el carril mas alla de eso.
+                            if (off == 0) triggerPad (-b.bank - 1);
                             continue;
                         }
-
-                        const int cell = songCell[(size_t) ln][(size_t) bar].load (std::memory_order_relaxed);
-                        if (cell == kContinued)
-                            continue;                         // a pattern from an earlier bar still owns this lane
-
-                        //  Y EL SILENCIO DE ESTE BLOQUE, mirado donde se mira
-                        //  el del carril y por la misma razon: en la CABEZA del
-                        //  bloque. Silenciar a mitad cortaria un patron por la
-                        //  mitad, y ademas asi el bloque silenciado no adopta
-                        //  el patron - o sea que al quitarle el silencio no
-                        //  entra a mitad de algo que nadie oyo empezar. Una
-                        //  carga atomica y un desplazamiento, una vez por
-                        //  compas y por carril.
-                        if (isSongCellMuted (ln, bar))
-                        {
-                            lanePattern[ln] = -1;
-                            continue;
-                        }
-                        if (cell > 0 && cell <= kNumPatterns)
-                        {
-                            lanePattern[ln]   = cell - 1;
-                            laneStartStep[ln] = songStep;
-                            //  Cuantos compases ocupa el bloque: el suyo mas la
-                            //  cola de continuaciones. Se cuenta AQUI, una vez
-                            //  por bloque, y no en cada paso.
-                            int n = 1;
-                            for (int b2 = bar + 1; b2 < bars; ++b2)
-                            {
-                                if (songCell[(size_t) ln][(size_t) b2].load (std::memory_order_relaxed) != kContinued) break;
-                                ++n;
-                            }
-                            laneBars[ln] = n;
-                        }
-                        else if (cell < 0)
-                        {
-                            lanePattern[ln] = -1;             // a one-shot owns no lane time
-                            triggerPad (-cell - 1);
-                        }
-                        else
-                        {
-                            lanePattern[ln] = -1;             // empty: this lane rests
-                        }
+                        if (b.bank >= kNumPatterns) continue;
+                        const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) b.bank].load (std::memory_order_relaxed));
+                        const int pasoPatron = (off + b.offset) % len;
+                        firePatternStep (b.bank, pasoPatron);
+                        ultimoDisparo[(size_t) b.lane].store ((b.bank << 16) | pasoPatron, std::memory_order_relaxed);
+                        if (b.lane == 0) playingPattern.store (b.bank, std::memory_order_relaxed);
                     }
-                }
-
-                for (int ln = 0; ln < kSongLanes; ++ln)
-                {
-                    const int bank = lanePattern[ln];
-                    if (bank < 0) continue;
-                    const int len = juce::jlimit (kMinPatLen, kMaxPatLen, patternLength[(size_t) bank].load (std::memory_order_relaxed));
-                    const int off = songStep - laneStartStep[ln];
-                    if (off < 0) { lanePattern[ln] = -1; continue; }
-
-                    //  EL BLOQUE MANDA SOBRE EL PATRON.
-                    //
-                    //  Antes un bloque duraba exactamente lo que su patron, y
-                    //  acortarlo obligaba a acortar el patron entero - o sea a
-                    //  cambiarlo en los otros sitios donde estuviera puesto.
-                    //  Ahora lo que manda es cuantos compases ocupa en la
-                    //  linea de tiempo: si ocupa menos, el patron se corta ahi;
-                    //  si ocupa mas, da la vuelta dentro del bloque, que es lo
-                    //  unico que puede significar un bloque de ocho compases
-                    //  con un patron de cuatro.
-                    const int suyos = juce::jmax (1, laneBars[ln]) * pasosCompas;
-                    if (off >= suyos) { lanePattern[ln] = -1; continue; }
-                    firePatternStep (bank, off % len);
-                    if (ln == 0) playingPattern.store (bank, std::memory_order_relaxed);
                 }
 
                 currentStep = songStep % pasosCompas;
@@ -4444,10 +4417,39 @@ void AudioEngine::sueltaTabla (TablaClips* t) noexcept
     delete t;
 }
 
+//  LOS BLOQUES DE LA CANCION, por el mismo camino que los clips y sin
+//  referencias que contar: un bloque son siete enteros. La copia de mensajes
+//  (`bloquesCara`) se queda para quien pregunta desde fuera del audio.
+void AudioEngine::publicaBloques (const BloqueSong* entrada, int cuantos) noexcept
+{
+    //  SI NO HA CAMBIADO NADA, NO SE PUBLICA. `refreshSong` corre treinta veces
+    //  por segundo con la ficha delante, y publicar por fotograma seria una
+    //  tabla nueva -y una retirada- cada 33 ms: la cola de retiradas tiene
+    //  dieciseis huecos y se drena en el temporizador, asi que llenarla es
+    //  perder tablas. Es la misma comparacion que ya hacen `setSource` y
+    //  `setAudio` de la rejilla, y por lo mismo.
+    {
+        const int n = juce::jlimit (0, kMaxBloques, cuantos);
+        if (n == bloquesCara.n
+            && (n == 0 || std::memcmp (bloquesCara.b.data(), entrada,
+                                       (size_t) n * sizeof (BloqueSong)) == 0))
+            return;
+    }
+
+    auto* t = new TablaBloques();
+    t->n = juce::jlimit (0, kMaxBloques, cuantos);
+    for (int i = 0; i < t->n; ++i) t->b[(size_t) i] = entrada[i];
+    bloquesCara = *t;
+
+    bloquesRetiradas.drain ([] (TablaBloques* v) { delete v; });
+    if (auto* anterior = pendingBloques.exchange (t, std::memory_order_release)) delete anterior;
+}
+
 void AudioEngine::collectRetiredSamples() noexcept
 {
     retired.drain ([] (SampleBuffer* p) { if (p) p->decReferenceCount(); });
     clipsRetiradas.drain ([] (TablaClips* t) { sueltaTabla (t); });
+    bloquesRetiradas.drain ([] (TablaBloques* t) { delete t; });
 }
 
 //  The silhouette's columns, oldest first. Cosmetic like copyScope: a torn
@@ -4561,7 +4563,7 @@ void AudioEngine::setStepLen (int patternIdx, int step, int pad, int cuartos) no
     if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
         || pad < 0 || pad >= kNumPads) return;
     stepLen[(size_t) patternIdx][(size_t) step][(size_t) pad]
-        .store ((std::uint8_t) juce::jlimit (0, kLenMax, cuartos), std::memory_order_relaxed);
+        .store ((std::uint16_t) juce::jlimit (0, kLenMax, cuartos), std::memory_order_relaxed);
 }
 
 int AudioEngine::getStepLen (int patternIdx, int step, int pad) const noexcept
@@ -4719,7 +4721,7 @@ AudioEngine::Paso AudioEngine::leePaso (int patternIdx, int step, int pad) const
     s.corte    = (std::int8_t)   getStepLock  (patternIdx, step, pad);
     s.vel      = (std::uint8_t)  getStepVel   (patternIdx, step, pad);
     s.roll     = (std::uint8_t)  getStepRoll  (patternIdx, step, pad);
-    s.largo    = (std::uint8_t)  getStepLen   (patternIdx, step, pad);
+    s.largo    = (std::uint16_t) getStepLen   (patternIdx, step, pad);
     s.acorde   = getStepChordRaw (patternIdx, step, pad);
     s.bloqueos = getStepPLockRaw (patternIdx, step, pad);
     return s;
@@ -4857,19 +4859,26 @@ AudioEngine::RemapeoPaso AudioEngine::remapeaPaso (int unidadesViejas, int unida
                 //  Dejarlo asi fue el primer borrador y era la deformacion de
                 //  siempre escrita en otro sitio.
                 //
-                //  Y LOS DOS TIENEN TECHO -63 cuartos y media casilla-, asi que
-                //  al afinar puede no caber. Se recorta y SE CUENTA: negarse
-                //  a cambiar de rejilla porque una nota dura mucho seria peor
-                //  que la nota, y callarlo es cambiar la musica en silencio.
+                //  Y EL EMPUJON TIENE TECHO -media casilla-, asi que al afinar
+                //  puede no caber. Se recorta y SE CUENTA: negarse a cambiar
+                //  de rejilla porque un golpe va muy empujado seria peor que
+                //  el golpe, y callarlo es cambiar la musica en silencio.
+                //
+                //  El largo YA NO se cuenta: tenia techo de 63 cuartos y era el
+                //  fallo que hacia que una redonda escrita a 1/8 (32 cuartos)
+                //  durase 63 en vez de 128 al pasar a 1/32 - la mitad. Con
+                //  kLenMax en un patron entero (768) lo mas largo que se puede
+                //  escribir cabe en cualquier rejilla, y `Tests/arr.py` lo
+                //  mide: 32 → 1/32 → 1/8 vuelve 32 con recortados == 0.
                 Paso nuevo = col[s];
                 const auto escala = [unidadesViejas, unidadesNuevas] (int v)
                 { return (int) (((long long) v * unidadesViejas) / unidadesNuevas); };
 
                 const int largoPedido = escala ((int) col[s].largo);
                 const int empujePedido = escala ((int) col[s].empujon);
-                if (largoPedido > kLenMax || empujePedido > 50 || empujePedido < -50)
+                if (empujePedido > 50 || empujePedido < -50)
                     ++r.recortados;
-                nuevo.largo   = (std::uint8_t) juce::jlimit (0, kLenMax, largoPedido);
+                nuevo.largo   = (std::uint16_t) juce::jlimit (0, kLenMax, largoPedido);
                 nuevo.empujon = (std::int8_t)  juce::jlimit (-50, 50, empujePedido);
 
                 escribePaso (p, d, pad, nuevo);
@@ -5101,14 +5110,14 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
             copyArr (stepPLock[b2][s2], s.stepPLock[b2][s2]);
         }
 
-    for (size_t ln = 0; ln < songCell.size(); ++ln)
-        copyArr (songCell[ln], s.songCell[ln]);
+    //  Los bloques de la cancion: la copia de mensajes del motor de escucha,
+    //  publicada en este. Sin esto el rebote de una cancion sale VACIO.
+    if (s.bloquesCara.n > 0) publicaBloques (s.bloquesCara.b.data(), s.bloquesCara.n);
     //  Y el silenciado de carriles y el tramo en bucle, que son estado de la
-    //  cancion igual que las celdas: sin esto, exportar una mezcla que se
+    //  cancion igual que los bloques: sin esto, exportar una mezcla que se
     //  monta con un motor aparte sonaria con los cuatro carriles y la cancion
     //  entera, que no es lo que la persona esta oyendo.
     copyArr (songLaneMute, s.songLaneMute);
-    copyArr (songCellMute, s.songCellMute);
     songLoopA.store (s.songLoopA.load (std::memory_order_relaxed), std::memory_order_relaxed);
     songLoopB.store (s.songLoopB.load (std::memory_order_relaxed), std::memory_order_relaxed);
 
@@ -5216,12 +5225,16 @@ int AudioEngine::lengthInSteps() const noexcept
         // slider says: exporting eight bars of silence after the track ends
         // is the kind of thing you only notice once the file is uploaded.
         const int bars = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
+        const int pc   = pasosPorCompas();
         int last = -1;
-        for (int ln = 0; ln < kSongLanes; ++ln)
-            for (int b = 0; b < bars; ++b)
-                if (songCell[(size_t) ln][(size_t) b].load (std::memory_order_relaxed) != 0)
-                    last = juce::jmax (last, b);
-        return (last < 0) ? 0 : (last + 1) * pasosPorCompas();
+        for (int i = 0; i < bloquesCara.n; ++i)
+        {
+            const auto& b = bloquesCara.b[(size_t) i];
+            const int hasta = b.compas * pc + b.paso + juce::jmax (1, b.largo);   // exclusivo
+            last = juce::jmax (last, (hasta - 1) / pc);
+        }
+        last = juce::jmin (last, bars - 1);
+        return (last < 0) ? 0 : (last + 1) * pc;
     }
 
     const int chainLen = chainLength.load (std::memory_order_relaxed);
@@ -5253,14 +5266,13 @@ bool AudioEngine::hasContentToRender() const noexcept
 
     if (songMode.load (std::memory_order_relaxed))
     {
-        const int bars = juce::jlimit (1, kSongBars, songBars.load (std::memory_order_relaxed));
-        for (int ln = 0; ln < kSongLanes; ++ln)
-            for (int b = 0; b < bars; ++b)
-            {
-                const int cell = songCell[(size_t) ln][(size_t) b].load (std::memory_order_relaxed);
-                if (cell < 0) return true;                                   // a one-shot always sounds
-                if (cell > 0 && cell <= kNumPatterns && bankHasNotes (cell - 1)) return true;
-            }
+        for (int i = 0; i < bloquesCara.n; ++i)
+        {
+            const auto& b = bloquesCara.b[(size_t) i];
+            if (b.mudo || b.largo <= 0) continue;
+            if (b.bank < 0) return true;                                   // a one-shot always sounds
+            if (b.bank < kNumPatterns && bankHasNotes (b.bank)) return true;
+        }
         return false;
     }
 

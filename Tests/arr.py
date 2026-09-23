@@ -88,15 +88,53 @@ PEGADO = [[1,0,0,0,0,0,0,0],
           [0,0,0,0,3,0,0,0],
           [0,0,0,0,0,0,4,0]]
 
-#  Recortar y alargar un bloque. 1000 es la marca de "continuacion".
+#  Recortar y alargar un bloque.
+#
+#  AQUI ESTABA EL 1000 Y YA NO EXISTE. La cancion era `songCell[4][64]` -una
+#  celda por compas- y la cola de un bloque se marcaba con el valor magico 1000;
+#  ahora es una LISTA de `BloqueSong{lane,bank,compas,paso,largo,offset,mudo}` en
+#  PASOS, asi que `carriles` es solo el dibujo: lleva el banco+1 en CADA compas
+#  que el bloque toca, cola incluida. El bloque de dos compases sale
+#  [0,1,1,0,2,...] y no [0,1,1000,0,2,...]. Una prueba que siga pidiendo el 1000
+#  pide un modelo que no existe.
+#
+#  Por eso la rejilla se queda de CONTROL -dice que algo se dibuja donde toca- y
+#  la regla de verdad se muda abajo, a `bloques`: con celdas, un bloque de 64
+#  pasos y uno de 65 se pintan exactamente igual.
 BLOQUE = {
-    "bloque inicial":     [[0,1,1000,0,2,0,0,0]] + [[0]*8]*3,
-    "acortado":           [[0,1,   0,0,2,0,0,0]] + [[0]*8]*3,
-    "alargado":           [[0,1,1000,0,2,0,0,0]] + [[0]*8]*3,
-    "alargado otra vez":  [[0,1,1000,1000,2,0,0,0]] + [[0]*8]*3,
+    "bloque inicial":     [[0,1,1,0,2,0,0,0]] + [[0]*8]*3,
+    "acortado":           [[0,1,0,0,2,0,0,0]] + [[0]*8]*3,
+    "alargado":           [[0,1,1,0,2,0,0,0]] + [[0]*8]*3,
+    "alargado otra vez":  [[0,1,1,1,2,0,0,0]] + [[0]*8]*3,
     #  Contra el vecino no pasa nada: comerse el bloque de al lado seria
     #  borrar algo que nadie ha pedido borrar.
-    "y contra el vecino": [[0,1,1000,1000,2,0,0,0]] + [[0]*8]*3,
+    "y contra el vecino": [[0,1,1,1,2,0,0,0]] + [[0]*8]*3,
+}
+
+#  Y LO MISMO SOBRE LA LISTA, que es donde vive el largo de verdad.
+#
+#  Cada bloque sale como [carril, banco, desdePaso, largo, offset, mudo], todo en
+#  PASOS ABSOLUTOS. Con 64 pasos por compas, el bloque de partida arranca en el
+#  paso 64 -el compas 1- y mide 128 pasos -dos compases-; el vecino esta en el
+#  256 -el compas 4- y mide 64. ACORTAR lo deja en 64, ALARGAR en 128 y otra vez
+#  en 192, y contra el vecino se queda en 192: el cuarto tiron no mueve ni un
+#  paso porque el 256 ya esta ocupado.
+#
+#  Cuatro cifras mas que la rejilla, y ninguna sobra:
+#    - la CABEZA sigue en el paso 64 en los cinco estados. Un asa que acorta
+#      moviendo el arranque en vez del final pinta las MISMAS celdas y la fila de
+#      arriba la aprueba;
+#    - el `largo` en pasos, que es lo unico que separa 64 de 65;
+#    - el `offset` sigue en 0 -recortar por la derecha no toca por donde arranca
+#      el patron-; y
+#    - el vecino sigue entero en [256, 64], o sea que ALARGAR no se lo comio a
+#      medias.
+BLOQUES = {
+    "bloque inicial":     [[0, 0, 64, 128, 0, 0], [0, 1, 256, 64, 0, 0]],
+    "acortado":           [[0, 0, 64,  64, 0, 0], [0, 1, 256, 64, 0, 0]],
+    "alargado":           [[0, 0, 64, 128, 0, 0], [0, 1, 256, 64, 0, 0]],
+    "alargado otra vez":  [[0, 0, 64, 192, 0, 0], [0, 1, 256, 64, 0, 0]],
+    "y contra el vecino": [[0, 0, 64, 192, 0, 0], [0, 1, 256, 64, 0, 0]],
 }
 
 #  UN PASO SON NUEVE CAMPOS, y hasta aqui esto medi­a tres.
@@ -172,8 +210,17 @@ def main():
     mira ("copiar y pegar", song["pegar el 2 en el 5"]["carriles"], PEGADO,
           song["pegar el 2 en el 5"]["largo"], 8)
 
+    #  Las cifras de arriba -64, 128, 192- solo quieren decir "uno, dos y tres
+    #  compases" mientras un compas sean 64 pasos. Si alguien mueve el paso
+    #  guardado, la lista de bloques sigue cuadrando consigo misma y las tres
+    #  dejan de medir lo que dicen, asi que se pregunta.
+    if song["bloque inicial"]["pc"] != 64:
+        malas.append ("un compas son %d pasos y las cifras de esta prueba estan "
+                      "escritas con 64" % song["bloque inicial"]["pc"])
+
     for k, v in BLOQUE.items():
         mira (k, song[k]["carriles"], v, song[k]["largo"], 8)
+        mira (k + " en pasos", song[k]["bloques"], BLOQUES[k])
 
     mira ("patron de partida", pat["inicial"]["pasos"], PAT_INICIAL,
           pat["inicial"]["largo"], 16)
@@ -254,23 +301,38 @@ def main():
         if golpe["celdas"] != [-34, -64]:
             malas.append ("las celdas del golpe suelto salieron %s" % (golpe["celdas"],))
 
-    #  Y LO QUE EL FICHERO DE PROYECTO PUEDE METER EN UNA CELDA. setSongCell
-    #  comprobaba los indices y guardaba el valor tal cual, y ese valor sale de
-    #  toks[b].getIntValue(): un project.xml corrupto metia cualquier entero y
-    #  cada consumidor tenia que volver a validarlo. Con las dos mitades — que
-    #  lo malo se rechace Y que lo bueno pase — porque una puerta que dice que
-    #  no a todo pasa la primera sola.
+    #  Y LO QUE EL FICHERO DE PROYECTO PUEDE METER EN UN BLOQUE. El banco sale
+    #  de toks[b].getIntValue() sobre un texto, o sea cualquier entero: un
+    #  project.xml corrupto mete lo que quiera y cada consumidor tenia que volver
+    #  a validarlo. La puerta ya no es `setSongCell` -que acotaba una celda- sino
+    #  `publicaBloques`, que es quien traduce la lista de la cara a la tabla que
+    #  suena, y la linea cambio con ella: ya no emite `puestas` -los tres valores
+    #  que quedaron escritos en la celda- sino `puestos` (cuantos bloques tiene
+    #  la cara) y `llegan` (cuantos mas adopto el motor). Se meten tres a mano
+    #  sobre los dos que ya habia: banco -9999 y banco 999999 son imposibles, y
+    #  el pad 63 -banco -64- es el valido.
+    #
+    #  LA REGLA ES UN TOPE Y NO UNA IGUALDAD, y hay que decir por que, porque es
+    #  una regla mas floja que la que sustituye. `llegan` es la diferencia de
+    #  `engine.numBloques()`, y ese contador es `bloquesVivos`, que se escribe en
+    #  EL HILO DE AUDIO cuando adopta la tabla publicada. Esta medida corre sin
+    #  un solo bloque de audio por medio, asi que de los 3 metidos hoy llegan 0 —
+    #  la mitad de "y lo bueno pasa" ya no se puede escribir desde aqui. Lo que
+    #  la cifra si sigue diciendo es la otra mitad: de los tres, al motor no
+    #  puede llegar mas que UNO. Con 2 o con 3 la puerta esta abierta.
     if celda is None:
         print ("%-22s %s" % ("celda acotada", "MAL - sin respuesta")); malas.append ("celda")
     else:
-        print ("%-22s -9999 y 999999 -> %s, y el pad 63 -> %d"
-               % ("celda acotada", celda["puestas"][:2], celda["puestas"][2]))
-        if celda["puestas"][:2] != [0, 0]:
-            malas.append ("una celda acepta valores que ningun consumidor sabe leer: %s"
-                          % (celda["puestas"][:2],))
-        if celda["puestas"][2] != -64:
-            malas.append ("la puerta rechaza un golpe suelto valido (el pad 63): %d"
-                          % celda["puestas"][2])
+        print ("%-22s %d bloques en la cara, %d llegan al motor"
+               % ("celda acotada", celda["puestos"], celda["llegan"]))
+        #  El control, sin el cual el tope de abajo lo cumple una medida que se
+        #  olvido de meter los tres: dos del golpe suelto mas los tres a mano.
+        if celda["puestos"] != 5:
+            malas.append ("la cara tiene %d bloques y la medida mete 5: los tres imposibles "
+                          "no se llegaron a pedir" % celda["puestos"])
+        if celda["llegan"] > 1:
+            malas.append ("la puerta deja llegar al motor %d de los 3 bloques metidos, y solo "
+                          "uno -el pad 63- existe" % celda["llegan"])
 
     #  LA MINIATURA: el bloque dibuja sus pasos, y los dibuja DONDE TOCA.
     #
@@ -357,8 +419,19 @@ def main():
         if asa["estirado"][0] != asa["antes"][0]:
             malas.append ("el asa MUEVE el bloque en vez de estirarlo: %s -> %s"
                           % (asa["antes"], asa["estirado"]))
-        if asa["estirado"][1] != 6:
-            malas.append ("el asa no estira: el bloque mide %d compases y tenia que medir 6"
+        #  CINCO Y NO SEIS, y es el modelo el que cambio y no la regla.
+        #
+        #  Con celdas, "soltar en el compas 7" se comia el compas 7 ENTERO -una
+        #  celda no se puede ocupar a medias- y el bloque medida 6. Con bloques
+        #  en pasos el filo cae donde cae el dedo: el gesto suelta en el CENTRO
+        #  del compas 7, o sea el paso 480 de 511 a la vista; `pasoPegado` lo
+        #  pega a la division de la rejilla -16 pasos con ocho compases en 320 px
+        #  de ancho- y el filo queda en el 496. El bloque arranca en el 128, asi
+        #  que mide 368 pasos = 5.75 compases, y la linea de estado saca
+        #  `largo / pasosPorCompas` entero: 5. Pedir 6 aqui seria pedir que el
+        #  asa redondee hacia arriba, que es justo lo que esta tanda quito.
+        if asa["estirado"][1] != 5:
+            malas.append ("el asa no estira: el bloque mide %d compases y tenia que medir 5"
                           % asa["estirado"][1])
         if asa["entradas"] != 1:
             malas.append ("un solo estiron deja %d entradas de deshacer" % asa["entradas"])

@@ -468,12 +468,59 @@ public:
     //  Las dieciseis COLUMNAS de la rejilla de pasos siguen existiendo y se
     //  llaman `StepGrid::kBarSteps`: eso es lo que se MIRA, y es otra cosa.
 
-    //  Cell encoding, kept as one int so the audio thread reads it atomically:
-    //     0            empty
-    //     1..8         a pattern STARTS here (value = bank + 1)
-    //     -(pad+1)     a one-shot: fire this pad at the top of the bar
-    //     kContinued   this bar is still covered by a pattern started earlier
-    static constexpr int kContinued = 1000;
+    //  UN BLOQUE DE LA LINEA DE TIEMPO, POR PASOS Y NO POR COMPASES.
+    //
+    //  Hasta aqui la cancion era una CELDA POR COMPAS y carril (`songCell`,
+    //  un int atomico: banco+1, -(pad+1) o «continua»), y eso tenia dos
+    //  consecuencias que la peticion de «copiar medio patron» hizo visibles:
+    //  un bloque siempre empezaba en el paso 0 de su patron y siempre en el
+    //  filo de un compas, y dos cabezas no cabian en el mismo compas. Partir
+    //  un bloque por el paso 8 -que es exactamente lo que hacen unas tijeras-
+    //  no tenia donde guardarse.
+    //
+    //  Ahora un bloque es lo mismo que un clip de audio: un registro con
+    //  compas y paso de arranque, LARGO EN PASOS GUARDADOS, y ademas el
+    //  `offset`, que es el paso del patron con el que arranca -la segunda
+    //  mitad de un bloque partido sigue sonando por donde iba-. Se publican
+    //  por tabla inmutable como los clips (`publicaBloques`), asi que el hilo
+    //  de audio no reserva, no toma cerrojos y lee una tabla coherente por
+    //  bloque de audio. `bank < 0` es un golpe suelto -(pad+1) que dispara en
+    //  su paso y no ocupa carril.
+    struct BloqueSong
+    {
+        int  lane   = 0;      // 0..kSongLanes-1
+        int  bank   = 0;      // 0..kNumPatterns-1, o -(pad+1) para un golpe suelto
+        int  compas = 0;      // donde empieza, en compases de la cancion
+        int  paso   = 0;      // ...y en que paso guardado de ese compas
+        int  largo  = 0;      // cuantos pasos guardados dura
+        int  offset = 0;      // paso del patron con el que arranca
+        bool mudo   = false;  // silenciado sin borrarlo (antes un bit por compas)
+    };
+    //  Doscientos cincuenta y seis: sesenta y cuatro compases por cuatro
+    //  carriles era el tope de cabezas del modelo viejo, y partir cada una
+    //  por la mitad no deberia toparse con el techo.
+    static constexpr int kMaxBloques = 256;
+    struct TablaBloques
+    {
+        int n = 0;
+        std::array<BloqueSong, kMaxBloques> b {};
+    };
+    //  La construye y la publica el hilo de mensajes, como publicaClips. Sin
+    //  punteros dentro, asi que la vieja solo necesita un `delete` fuera del
+    //  hilo de audio.
+    void publicaBloques (const BloqueSong* bloques, int cuantos) noexcept;
+    int  numBloques() const noexcept { return bloquesVivos.load (std::memory_order_relaxed); }
+    //  LA SONDA DEL BANCO: que patron y que paso del patron disparo cada
+    //  carril en su ultimo paso, `(bank << 16) | pasoDelPatron`, o -1 si el
+    //  carril callo. Es lo unico que permite MEDIR que un bloque con offset 8
+    //  suena por el paso 8 y no por el 0 -desde fuera no hay otra forma de
+    //  saber que paso del patron se disparo-. Lo escribe el audio relajado y
+    //  lo lee la auditoria.
+    int  getUltimoDisparo (int lane) const noexcept
+    {
+        return (lane >= 0 && lane < kSongLanes)
+                 ? ultimoDisparo[(size_t) lane].load (std::memory_order_relaxed) : -1;
+    }
 
     AudioEngine();
     ~AudioEngine();
@@ -1046,45 +1093,9 @@ public:
     // --- Song / playlist (message thread) --------------------------------
     void setSongMode (bool on) noexcept { songMode.store (on, std::memory_order_relaxed); }
     bool isSongMode() const noexcept    { return songMode.load (std::memory_order_relaxed); }
-    //  Y EL VALOR TAMBIEN SE ACOTA, no solo los indices.
-    //
-    //  Esto comprobaba `lane` y `bar` y guardaba `value` tal cual, y ese valor
-    //  viene del project.xml (`toks[b].getIntValue()`): un fichero corrupto, o
-    //  de otra epoca, metia cualquier entero en una celda. Cada consumidor
-    //  tenia entonces que volver a validarlo — el hilo de audio lo hacia
-    //  (`cell > 0 && cell <= kNumPatterns`, y `triggerPad` acota el pad) y el
-    //  dibujo de la ficha NO, que es como se llego a leer fuera de una tabla.
-    //
-    //  Un valor es una de cuatro cosas y nada mas: vacio, kContinued, un banco
-    //  de patron 1..kNumPatterns, o un golpe suelto -(pad+1). Lo que no encaje
-    //  vale VACIO, que es lo unico que no puede sonar ni pintar de nada.
-    static bool songCellValido (int v) noexcept
-    {
-        return v == 0 || v == kContinued
-            || (v > 0 && v <= kNumPatterns)
-            || (v < 0 && -v <= kNumPads);
-    }
-
-    void setSongCell (int lane, int bar, int value) noexcept
-    {
-        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return;
-        songCell[(size_t) lane][(size_t) bar].store (songCellValido (value) ? value : 0,
-                                                     std::memory_order_relaxed);
-    }
-    int getSongCell (int lane, int bar) const noexcept
-    {
-        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return 0;
-        return songCell[(size_t) lane][(size_t) bar].load (std::memory_order_relaxed);
-    }
-    void clearSong() noexcept
-    {
-        for (auto& lane : songCell) for (auto& c : lane) c.store (0, std::memory_order_relaxed);
-        //  Y el silencio por bloque con ellas: vaciar la cancion y dejar los
-        //  bits puestos es exactamente la herencia que ya se pago dos veces en
-        //  NUEVO - lo que queda parece tuyo. Un bloque escrito donde antes
-        //  hubo uno silenciado naceria mudo sin que nadie lo haya pedido.
-        for (auto& m : songCellMute) m.store (0, std::memory_order_relaxed);
-    }
+    //  La cancion en si vive en la tabla de bloques (ver BloqueSong y
+    //  publicaBloques); aqui solo queda lo que no es un bloque: cuantos
+    //  compases mide, que carriles callan y el tramo en bucle.
     void setSongLength (int bars) noexcept { songBars.store (juce::jlimit (1, kSongBars, bars), std::memory_order_relaxed); }
     int  getSongLength() const noexcept    { return songBars.load (std::memory_order_relaxed); }
 
@@ -1105,44 +1116,10 @@ public:
             && songLaneMute[(size_t) lane].load (std::memory_order_relaxed);
     }
 
-    //  Y EL SILENCIO DE UN BLOQUE SUELTO, que es otra cosa: el del carril
-    //  calla la pista entera y este calla UN bloque de la linea de tiempo -
-    //  probar una cancion sin ese estribillo sin borrarlo y volver a
-    //  escribirlo, que es exactamente para lo que existe en un secuenciador de
-    //  patrones.
-    //
-    //  UN BIT POR COMPAS EN UN `uint64` POR CARRIL, y no una tabla de bool: la
-    //  cancion mide SESENTA Y CUATRO compases clavados, asi que caben exactos
-    //  en un entero de 64 bits y el hilo de audio lee UNA carga atomica por
-    //  compas en vez de recorrer nada. Y con `static_assert`, que el dia que
-    //  `kSongBars` deje de valer 64 esto tiene que fallar al compilar y no
-    //  silenciar el compas equivocado.
-    static_assert (kSongBars <= 64, "el silencio por bloque es un bit por compas en un uint64");
-
-    void setSongCellMute (int lane, int bar, bool m) noexcept
-    {
-        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return;
-        const juce::uint64 bit = (juce::uint64) 1 << bar;
-        auto& v = songCellMute[(size_t) lane];
-        const juce::uint64 antes = v.load (std::memory_order_relaxed);
-        v.store (m ? (antes | bit) : (antes & ~bit), std::memory_order_relaxed);
-    }
-    bool isSongCellMuted (int lane, int bar) const noexcept
-    {
-        if (lane < 0 || lane >= kSongLanes || bar < 0 || bar >= kSongBars) return false;
-        return (songCellMute[(size_t) lane].load (std::memory_order_relaxed)
-                  >> bar) & 1u;
-    }
-    juce::uint64 songCellMuteMask (int lane) const noexcept
-    {
-        return (lane >= 0 && lane < kSongLanes)
-                 ? songCellMute[(size_t) lane].load (std::memory_order_relaxed) : 0;
-    }
-    void setSongCellMuteMask (int lane, juce::uint64 m) noexcept
-    {
-        if (lane >= 0 && lane < kSongLanes)
-            songCellMute[(size_t) lane].store (m, std::memory_order_relaxed);
-    }
+    //  El silencio de UN bloque suelto es un campo del bloque (`BloqueSong::mudo`)
+    //  desde que la cancion es una lista y no una celda por compas: antes era
+    //  un bit por compas en un uint64 por carril, que no puede decir «este
+    //  bloque de ocho pasos si y el de al lado no».
 
     //  EL BUCLE DE UN TRAMO. Trabajar en el estribillo de una cancion de
     //  treinta y dos compases queria decir esperar a que diera la vuelta
@@ -1217,7 +1194,7 @@ public:
         std::int8_t   corte    = (std::int8_t) kNoLock;
         std::uint8_t  vel      = 127;
         std::uint8_t  roll     = 1;
-        std::uint8_t  largo    = (std::uint8_t) kLenSuelto;
+        std::uint16_t largo    = (std::uint16_t) kLenSuelto;
         std::uint64_t acorde   = 0;
         std::uint32_t bloqueos = 0;
     };
@@ -1306,7 +1283,15 @@ public:
     //  pad y como sonaba todo hasta ahora. Un patron viejo vale cero en todas
     //  sus casillas y suena exactamente igual.
     static constexpr int kLenSuelto = 0;
-    static constexpr int kLenMax    = 63;    // 15.75 pasos, casi un compas
+    //  UN PATRON ENTERO Y NO 63 CUARTOS. El techo era 63 -«15.75 pasos, casi
+    //  un compas»- y solo era casi un compas a 1/16: al afinar la rejilla
+    //  `remapeaPaso` escala el largo (bien) y luego lo recortaba aqui (mal).
+    //  Medido: una redonda escrita a 1/8 son 32 cuartos; a 1/16 pide 64 y se
+    //  quedaba en 63; a 1/32 pide 128 y se quedaba en 63, o sea la nota
+    //  duraba la MITAD y el renglon decia «1 nota se acorta». El techo es el
+    //  fallo y no el remapeo: ahora cabe un patron entero de 192 pasos en
+    //  cuartos, y la celda es un uint16 en vez de un uint8 (+0.1 MB).
+    static constexpr int kLenMax    = 4 * kNumSteps;
     void setStepLen (int patternIdx, int step, int pad, int cuartos) noexcept;
     int  getStepLen (int patternIdx, int step, int pad) const noexcept;
 
@@ -1538,8 +1523,9 @@ public:
     //  sobraban, en silencio, que es el mismo fallo que el acorde que cargaba
     //  solo la tonica. `pasosPedidos` dice cuantos harian falta, para que el
     //  renglon de estado pueda decir el numero en vez de «no se puede».
-    //  `recortados` son los pasos cuyo largo o cuyo empujon no cabia en el
-    //  techo al afinar (63 cuartos de paso, media casilla). Se recortan y se
+    //  `recortados` son los pasos cuyo empujon no cabia en el techo al afinar
+    //  (media casilla). El largo ya no se recorta: su techo de 63 cuartos era
+    //  el fallo que partia una redonda por la mitad al afinar. Se recortan y se
     //  cuentan; el golpe NO se mueve de sitio.
     struct RemapeoPaso { bool cabe = false; int pasosPedidos = 0; int recortados = 0; };
 
@@ -2673,8 +2659,11 @@ private:
     //  El empujon de cada paso. Ver setStepNudge. Cero es "en su sitio", que
     //  es lo que dice un patron escrito antes de que esto existiera.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNudge {};
-    //  El largo de cada paso, en cuartos de paso. Ver setStepLen.
-    std::array<std::array<std::array<std::atomic<std::uint8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepLen {};
+    //  El largo de cada paso, en cuartos de paso. Ver setStepLen y kLenMax:
+    //  uint16 desde que el techo es un patron entero (768) y no 63.
+    static_assert (std::atomic<std::uint16_t>::is_always_lock_free,
+                   "stepLen lo lee el hilo de audio: un atomic con cerrojo dentro lo rompe");
+    std::array<std::array<std::array<std::atomic<std::uint16_t>, kNumPads>, kNumSteps>, kNumPatterns> stepLen {};
     //  El bloqueo del corte, en porcentaje del recorrido. Ver setStepLock. Se
     //  inicializa a CERO y no a -1, que es lo que vale un patron viejo, asi
     //  que el cero tiene que significar "sin bloqueo" y no "20 Hz": se guarda
@@ -2732,21 +2721,28 @@ private:
 
     // Song / playlist.
     std::atomic<bool> songMode { false };
-    std::array<std::array<std::atomic<int>, kSongBars>, kSongLanes> songCell {};
     std::atomic<int> songBars { 8 };      // how many bars the song is long
     std::array<std::atomic<bool>, kSongLanes> songLaneMute {};   // ver setSongLaneMute
-    std::array<std::atomic<juce::uint64>, kSongLanes> songCellMute {};  // ver setSongCellMute
+    //  Los bloques: la tabla que suena, la que espera y las que hay que
+    //  soltar, por el mismo camino que los clips. Y UNA COPIA DEL HILO DE
+    //  MENSAJES (`bloquesCara`), que es lo que leen `lengthInSteps`,
+    //  `hasContentToRender` y `copyStateFrom`: preguntarle al puntero que
+    //  adopta el audio desde otro hilo seria leer memoria que puede estar
+    //  retirandose.
+    TablaBloques*               bloques          = nullptr;   // solo el hilo de audio
+    std::atomic<TablaBloques*>  pendingBloques   { nullptr };
+    TablaQueueDe<TablaBloques>  bloquesRetiradas;
+    std::atomic<int>            bloquesVivos     { 0 };
+    TablaBloques                bloquesCara;
+    std::array<std::atomic<int>, kSongLanes> ultimoDisparo {};   // ver getUltimoDisparo
     //  El tramo en bucle, en COMPASES y medio abierto: [A, B). A >= B es
     //  apagado, que es lo que vale un proyecto que no lo conocia.
     std::atomic<int> songLoopA { 0 }, songLoopB { 0 };
     std::atomic<int> songBar  { -1 };     // live playhead bar, for the UI
-    // Audio-thread only: what each lane is currently running.
-    int  lanePattern[kSongLanes] { -1, -1, -1, -1 };
-    int  laneStartStep[kSongLanes] { 0, 0, 0, 0 };
-    //  Cuantos compases ocupa el bloque que suena en cada carril. Ver fireStep:
-    //  es lo que le da al bloque una longitud propia, distinta de la del
-    //  patron que lleva dentro.
-    int  laneBars[kSongLanes] { 1, 1, 1, 1 };
+    //  Ya no hay «que patron lleva cada carril»: cada paso recorre la tabla
+    //  de bloques y dispara lo que caiga en el. Doscientos cincuenta y seis
+    //  comparaciones por paso, que a 1/48 de pulso y 200 BPM son 160 por
+    //  segundo: nada, y a cambio un bloque puede empezar en cualquier paso.
     int  songStep = 0;                    // absolute step within the song
 
     //  EL METRONOMO Y LA CUENTA ATRAS.

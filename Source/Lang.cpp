@@ -239,6 +239,12 @@ namespace
                                      "opens CUT with its sound",
                                      "用它的声音打开切片",
                                      "يفتح القص بصوته" },
+        { "ARRASTRA CON LA LUPA", "", "DRAG WITH THE ZOOM",
+                                     "用缩放工具拖动", "اسحب بأداة التكبير" },
+        { "acerca ese tramo; un toque vuelve", "",
+                                     "zooms that range; a tap goes back",
+                                     "放大该区段；轻点返回",
+                                     "يقرّب ذلك المقطع؛ نقرة واحدة تعيده" },
         { "Todo parado",        "",  "Everything stopped",
                                      "全部停止", "توقف كل شيء" },
 
@@ -414,6 +420,11 @@ namespace
         { "Audio entrecortado - buffer a %1 muestras", "",
           "Audio glitching - buffer raised to %1 samples", "音频断续 - 缓冲区提高到 %1 采样",
           "صوت متقطع - رفع المخزن إلى %1 عينة" },
+        //  Y LA VUELTA, que hasta hoy no existia: el buffer subia y no bajaba
+        //  nunca. Ver checkXRuns.
+        { "Audio limpio - buffer a %1 muestras", "",
+          "Audio clean - buffer lowered to %1 samples", "音频干净 - 缓冲区降到 %1 采样",
+          "صوت نظيف - خفض المخزن إلى %1 عينة" },
         { "MODO",           "",         "MODE",       "模式",       "الوضع" },
         { "CINTA",          "",         "TAPE",       "磁带",       "شريط" },
         { "TONO",           "",         "TONE",       "变调",       "نغمة" },
@@ -1013,6 +1024,20 @@ namespace
         { "LAPIZ",          "",         "PENCIL",     "铅笔",       "قلم" },
         { "GOMA",           "",         "ERASE",      "橡皮",       "ممحاة" },
         { "TIJERAS",        "",         "CUT",        "剪刀",       "مقص" },
+        { "LUPA",           "",         "ZOOM",       "缩放",       "تكبير" },
+        { "Bloque partido", "",
+          "Block split", "块已分割", "تم تقسيم الكتلة" },
+        { "Bloque de %1 pasos", "",
+          "Block is %1 steps", "块为 %1 步", "الكتلة %1 خطوة" },
+        { "1 bloque copiado", "",
+          "1 block copied", "已复制 1 个块", "تم نسخ كتلة واحدة" },
+        { "%1 bloques copiados", "",
+          "%1 blocks copied", "已复制 %1 个块", "تم نسخ %1 كتلة" },
+        { "Tramo borrado", "",
+          "Range deleted", "区段已删除", "تم حذف المقطع" },
+        { "Tramo cortado", "",
+          "Range cut", "区段已剪切", "تم قص المقطع" },
+        { "CLIP",           "",         "CLIP",       "片段",       "مقطع" },
         { "Fila vacia",     "",         "Row cleared", "该行已清空", "تم مسح الصف" },
         { "%1 golpes repartidos en %2 pasos", "",
           "%1 hits spread over %2 steps", "%1 个音符分布在 %2 步中",
@@ -1160,11 +1185,12 @@ namespace
           "وأيها يستبدل وأيها يضيف." },
 
         { "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
-          "dura lo que ocupa, no lo que dure su patron.", "",
-          "The patterns placed in time, across four lanes. A block lasts as long as "
-          "it occupies, not as long as its pattern.",
-          "将图案排布在时间轴的四条轨道上。区块的长度取决于它占据的小节数，而非其图案的长度。",
-          "الأنماط موضوعة في الزمن على أربعة مسارات. يدوم البلوك بقدر ما يشغل، لا بقدر نمطه." },
+          "dura los PASOS que ocupa: se parte con las tijeras y se copia medio.", "",
+          "The patterns placed in time, across four lanes. A block lasts the STEPS "
+          "it occupies: cut it with the scissors and copy just half.",
+          "将图案排布在时间轴的四条轨道上。区块的长度以步为单位：可用剪刀切开，只复制其中一半。",
+          "الأنماط موضوعة في الزمن على أربعة مسارات. يدوم البلوك بعدد الخطوات التي "
+          "يشغلها: يُقسّم بالمقص ويُنسخ نصفه." },
 
         { "La mezcla entera o una pista por pad, en WAV o en OGG, y a la carpeta "
           "que tu elijas.", "",
@@ -1411,6 +1437,24 @@ namespace
           "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 %1 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9" },
         { "1 nota borrada", "",         "1 note deleted",  "已删除 1 个音符",
           "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
+        //  Y LAS MISMAS TRES PAREJAS PARA LA BANDA DE LA REJILLA DE PASOS, que
+        //  cuenta PASOS y no notas. Claves propias y no reaprovechadas: en
+        //  espanol «%1 notas copiadas» y «%1 pasos copiados» solo se parecen,
+        //  y el chino y el arabe cuentan con la palabra dentro de la frase -
+        //  reaprovechar la del piano diria "音符" (nota) donde suena un paso.
+        //  El plural se resuelve FUERA de T(), como en las del piano.
+        { "%1 pasos copiados", "",      "%1 steps copied", "已复制 %1 个步进",
+          "\xd8\xaa\xd9\x85 \xd9\x86\xd8\xb3\xd8\xae %1 \xd8\xae\xd8\xb7\xd9\x88\xd8\xa9" },
+        { "1 paso copiado", "",         "1 step copied",   "已复制 1 个步进",
+          "\xd8\xaa\xd9\x85 \xd9\x86\xd8\xb3\xd8\xae \xd8\xae\xd8\xb7\xd9\x88\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
+        { "%1 pasos cortados", "",      "%1 steps cut",    "已剪切 %1 个步进",
+          "\xd8\xaa\xd9\x85 \xd9\x82\xd8\xb5 %1 \xd8\xae\xd8\xb7\xd9\x88\xd8\xa9" },
+        { "1 paso cortado", "",         "1 step cut",      "已剪切 1 个步进",
+          "\xd8\xaa\xd9\x85 \xd9\x82\xd8\xb5 \xd8\xae\xd8\xb7\xd9\x88\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
+        { "%1 pasos borrados", "",      "%1 steps deleted", "已删除 %1 个步进",
+          "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 %1 \xd8\xae\xd8\xb7\xd9\x88\xd8\xa9" },
+        { "1 paso borrado", "",         "1 step deleted",  "已删除 1 个步进",
+          "\xd8\xaa\xd9\x85 \xd8\xad\xd8\xb0\xd9\x81 \xd8\xae\xd8\xb7\xd9\x88\xd8\xa9 \xd9\x88\xd8\xa7\xd8\xad\xd8\xaf\xd8\xa9" },
         { "2 OCTAVAS",      "",         "2 OCTAVES",  "2 个八度",     "أوكتافان" },
         { "%1 pasos",       "",         "%1 steps",   "%1 步",          "%1 خطوة" },
         { "sin cadena - repite P%1", "sin cadena · repite P%1", "no chain · P%1 repeats",

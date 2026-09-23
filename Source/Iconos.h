@@ -46,6 +46,7 @@ namespace Iconos
         copiar, pegar, vaciar,
         insertar, quitar, acortar, alargar,
         atras, adelante, doblar, humanizar, lapiz, goma, tijeras, loop, cuadrar,
+        seleccion, lupa,
         pads, sec, piano, mezcla, cancion, xy, ajustes, rack, chop, instrumentos, manual,
         sonido, recorte, recortar,
         flt, hpf, drv, dly, bit, rev, eq, cmp, gte, dss, lim,
@@ -199,6 +200,7 @@ namespace Iconos
             case Id::humanizar: return "humanizar";    case Id::goma: return "goma";
             case Id::lapiz: return "lapiz";
             case Id::tijeras: return "tijeras";        case Id::loop: return "loop";
+            case Id::seleccion: return "seleccion";    case Id::lupa: return "lupa";
             case Id::cuadrar: return "cuadrar";        case Id::pads: return "pads";
             case Id::sec: return "sec";                case Id::piano: return "piano";
             case Id::mezcla: return "mezcla";          case Id::cancion: return "cancion";
@@ -562,6 +564,28 @@ namespace Iconos
                 L.addEllipse (15.5f, 15.5f, 5.5f, 5.5f);
                 linea (L, 19.0f, 3.0f, 7.5f, 16.5f);
                 linea (L, 5.0f, 3.0f, 16.5f, 16.5f);
+                break;
+
+            //  SELECCION: el marco de puntos de toda la vida. Se dibuja con
+            //  ocho trazos cortos y no con un trazo discontinuo porque el
+            //  camino de esta casa es un Path relleno a 24x24 y un patron de
+            //  guiones no sobrevive al escalado de la tapa.
+            case Id::seleccion:
+                linea (L, 3.5f,  3.5f,  8.0f,  3.5f);
+                linea (L, 12.0f, 3.5f, 16.5f,  3.5f);
+                linea (L, 20.5f, 3.5f, 20.5f,  8.0f);
+                linea (L, 20.5f, 12.0f, 20.5f, 16.5f);
+                linea (L, 20.5f, 20.5f, 16.0f, 20.5f);
+                linea (L, 12.0f, 20.5f, 7.5f,  20.5f);
+                linea (L, 3.5f,  20.5f, 3.5f,  16.0f);
+                linea (L, 3.5f,  12.0f, 3.5f,   7.5f);
+                break;
+
+            //  LUPA: el circulo y el mango, mirando abajo a la derecha como
+            //  todas las de la casa.
+            case Id::lupa:
+                L.addEllipse (3.5f, 3.5f, 12.0f, 12.0f);
+                linea (L, 14.5f, 14.5f, 20.5f, 20.5f);
                 break;
 
             case Id::loop:

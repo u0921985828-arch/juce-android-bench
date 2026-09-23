@@ -1215,6 +1215,10 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
         //  herramienta armada- y por eso tiene que estar aqui: sin fila, la
         //  unica forma de encontrarlo es tropezarse con el.
         { "DOBLE TOQUE EN UN CLIP", "abre CORTAR con su sonido" },
+        //  Y LA LUPA, que es un modo armado y SI deja marca en la tapa: esta
+        //  aqui porque lo que hace al soltar -y sobre todo lo que hace un toque
+        //  sin arrastre- no se adivina mirando el icono.
+        { "ARRASTRA CON LA LUPA", "acerca ese tramo; un toque vuelve" },
     };
 
     //  SE REPARTE LO QUE HAY, no se pide un suelo.

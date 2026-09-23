@@ -120,6 +120,15 @@ MainComponent::MainComponent()
 
     stepGrid.onCell = [this] (int lane, int step, bool arr)
     { stepCellToggled (currentBank * kPadsPerBank + lane, step, arr); };
+    //  Y LA BANDA, que es la otra mitad del dedo sobre esta rejilla. La
+    //  rejilla sabe GEOMETRIA -en que carril y en que casilla cayo el dedo- y
+    //  este fichero sabe QUE HAY ESCRITO, que es la misma reparticion que ya
+    //  tienen el piano y la linea de tiempo. Sin estas dos lineas la mitad que
+    //  vive en StepGrid.h -el pintado por relleno y la rama de `hit`- estaba
+    //  escrita y muerta: nadie armaba `selArmada` y nadie recogia los avisos.
+    stepGrid.onBanda = [this] (int pad0, int paso0, int pad1, int paso1)
+    { seqBanda (pad0, paso0, pad1, paso1); };
+    stepGrid.onVaciaSel = [this] { seqVaciaSel(); };
     seqSheet.addAndMakeVisible (stepGrid);
 
     //  LA BARRA, QUE SUSTITUYE A LA FILA DE COMPASES.
@@ -2762,6 +2771,45 @@ MainComponent::MainComponent()
         pasteRowBtn.onClick = [this] { pegarFila(); };
         pasteRowBtn.setEnabled (false);   // no hay nada que pegar hasta que se copie
 
+        //  SEL, junto a COPIAR FILA y PEGAR FILA porque es de su familia: las
+        //  tres se llevan trozos del patron de un sitio a otro, y lo que SEL
+        //  anade es poder decir CUAL trozo en vez de "la fila entera" o "el
+        //  banco entero".
+        //
+        //  Es un MODO y no un gesto nuevo, que es la regla de esta casa para un
+        //  lienzo: un gesto sin tapa no se puede medir por la tapa. Con ella
+        //  encendida el arrastre marca banda; apagada, pinta pasos como
+        //  siempre.
+        styleButton (seqSelBtn, kKey);
+        litAccent (seqSelBtn);
+        seqSelBtn.setClickingTogglesState (true);
+        seqSheet.addAndMakeVisible (seqSelBtn);
+        seqSelBtn.onClick = [this]
+        {
+            stepGrid.selArmada = seqSelBtn.getToggleState();
+            //  Al apagar se vacia: dejar la banda puesta con el modo apagado
+            //  deja una marca que ya no se puede mover y una tira de acciones
+            //  sobre algo que nadie puede volver a seleccionar.
+            if (! stepGrid.selArmada) seqVaciaSel();
+        };
+
+        //  LA TIRA DE ACCIONES DE LA BANDA, calcada de la del piano y de la de
+        //  la cancion: COPIAR, CORTE, PEGAR y BORRAR, y solo con banda puesta.
+        //  Un control que no puede hacer nada no es informacion, es ruido.
+        for (juce::TextButton* b : { &seqCopiaBtn, &seqCorteSelBtn,
+                                     &seqPegaBtn, &seqBorraSelBtn })
+        {
+            styleButton (*b, kKey);
+            seqSheet.addChildComponent (*b);
+        }
+        //  BORRAR en rojo, que es el unico de los cuatro que se lleva algo por
+        //  delante: el tono de la casa para "se pierde".
+        styleButton (seqBorraSelBtn, kRec);
+        seqCopiaBtn.onClick    = [this] { seqCopiaSel(); };
+        seqCorteSelBtn.onClick = [this] { seqCortaSel(); };
+        seqPegaBtn.onClick     = [this] { seqPegaSel(); };
+        seqBorraSelBtn.onClick = [this] { seqBorraSel(); };
+
         euclidSlider.onValueChange = [this] { euclidesPattern ((int) euclidSlider.getValue()); };
         //  Y se refresca el texto: la funcion se asigna DESPUES del setValue, y
         //  sin esto la casilla se queda con el numero crudo hasta que alguien
@@ -3461,7 +3509,7 @@ MainComponent::MainComponent()
     //  Las cinco herramientas de arreglo. Ver songCursor: las cuatro primeras
     //  actuan sobre el compas marcado y sobre los cuatro carriles a la vez.
     for (auto* b : { &songLeftBtn, &songRightBtn, &songShortBtn, &songLongBtn,
-                     &songInsertBtn, &songRemoveBtn, &songCopyBtn, &songPasteBtn })
+                     &songInsertBtn, &songRemoveBtn })
     {
         styleButton (*b, kKey);
         songSheet.addAndMakeVisible (*b);
@@ -3472,9 +3520,19 @@ MainComponent::MainComponent()
     songRightBtn.onClick = [this] { moveSongBar (+1); };
     songInsertBtn.onClick = [this] { insertSongBar(); };
     songRemoveBtn.onClick = [this] { removeSongBar(); };
-    songCopyBtn.onClick   = [this] { copySongBar(); };
-    songPasteBtn.onClick  = [this] { pasteSongBar(); };
-    songPasteBtn.setEnabled (false);      // hasta que haya algo copiado
+
+    //  LA TIRA DE LA BANDA. Solo existe con seleccion -el reparto la esconde-
+    //  y PEGAR solo con portapapeles, que es la misma regla que la tira del
+    //  piano: una tapa que no puede hacer nada no es informacion.
+    for (auto* b : { &songCopiaBtn, &songCorteSelBtn, &songPegaBtn, &songBorraSelBtn })
+    {
+        styleButton (*b, kKey);
+        songSheet.addAndMakeVisible (*b);
+    }
+    songCopiaBtn.onClick    = [this] { songCopiaSel(); };
+    songCorteSelBtn.onClick = [this] { songCortaSel(); };
+    songPegaBtn.onClick     = [this] { songPegaSel(); };
+    songBorraSelBtn.onClick = [this] { songBorraSel(); };
 
     styleButton (songPlayBtn, kKey);
     litAccent (songPlayBtn);
@@ -3712,96 +3770,145 @@ MainComponent::MainComponent()
     //  que es exactamente lo que pasa al arrastrar un compas. Es la misma
     //  leccion que el mover del piano, donde quitar todas antes de poner es lo
     //  que impide que un acorde pierda una nota.
-    songGrid.onMueveBloque = [this] (int carril, int cabeza, int nuevoCarril, int nuevoCompas, bool primero)
+    songGrid.onMueveBloque = [this] (int indice, int nuevoCarril, int desdePaso, bool primero)
     {
-        const int len = engine.getSongLength();
-        int largo = 1;
-        while (cabeza + largo < len
-               && engine.getSongCell (carril, cabeza + largo) == AudioEngine::kContinued) ++largo;
-        if (nuevoCompas < 0 || nuevoCompas + largo > len) return;
+        if (! juce::isPositiveAndBelow (indice, (int) bloques.size())) return;
+        if (! juce::isPositiveAndBelow (nuevoCarril, AudioEngine::kSongLanes)) return;
+
+        const int pc    = juce::jmax (1, engine.pasosPorCompas());
+        const int total = engine.getSongLength() * pc;
+        auto& b = bloques[(size_t) indice];
+        if (desdePaso < 0 || desdePaso + b.largo > total) return;
 
         //  Y NO SE COME AL VECINO, que es la misma regla que ya tiene ALARGAR:
         //  pisar un bloque que hay debajo seria borrar algo que nadie ha pedido
         //  borrar, y para eso esta la goma. Se mira TODO el tramo de destino
-        //  saltandose el origen, que se va a quedar vacio.
-        for (int b = nuevoCompas; b < nuevoCompas + largo; ++b)
+        //  saltandose el bloque que se mueve, que va a dejar su sitio.
+        for (size_t i = 0; i < bloques.size(); ++i)
         {
-            const bool esMio = (nuevoCarril == carril && b >= cabeza && b < cabeza + largo);
-            if (! esMio && engine.getSongCell (nuevoCarril, b) != 0) return;
+            if ((int) i == indice) continue;
+            const auto& o = bloques[i];
+            if (o.lane != nuevoCarril) continue;
+            const int od = o.compas * pc + o.paso;
+            if (desdePaso < od + o.largo && od < desdePaso + b.largo) return;
         }
 
         if (primero) pushUndo (T ("MOVER"));
 
-        const int v = engine.getSongCell (carril, cabeza);
-        const bool mudo = engine.isSongCellMuted (carril, cabeza);
-        for (int b = cabeza; b < cabeza + largo; ++b)
-        {
-            engine.setSongCell (carril, b, 0);
-            engine.setSongCellMute (carril, b, false);
-        }
-        engine.setSongCell (nuevoCarril, nuevoCompas, v);
-        engine.setSongCellMute (nuevoCarril, nuevoCompas, mudo);
-        for (int b = nuevoCompas + 1; b < nuevoCompas + largo; ++b)
-            engine.setSongCell (nuevoCarril, b, AudioEngine::kContinued);
-
-        songCursor = nuevoCompas;
+        b.lane   = nuevoCarril;
+        b.compas = desdePaso / pc;
+        b.paso   = desdePaso % pc;
+        songCursor = b.compas;
         refreshSong();
     };
 
-    //  SILENCIAR UN BLOQUE. Se apunta en la CABEZA, que es donde el motor lo
-    //  lee: una continuacion no adopta patron, asi que silenciarla no callaria
-    //  nada y el bloque seguiria sonando con la tapa encendida.
-    songGrid.onMuteBloque = [this] (int carril, int cabeza)
+    //  SILENCIAR UN BLOQUE, que ahora es una marca del bloque y no de un
+    //  compas: con celdas habia que apuntarla en la CABEZA porque una
+    //  continuacion no adoptaba patron, y silenciar la cola no callaba nada.
+    songGrid.onMuteBloque = [this] (int indice)
     {
-        const bool nuevo = ! engine.isSongCellMuted (carril, cabeza);
+        if (! juce::isPositiveAndBelow (indice, (int) bloques.size())) return;
         pushUndo (T ("SILENCIAR"));
-        engine.setSongCellMute (carril, cabeza, nuevo);
+        auto& b = bloques[(size_t) indice];
+        b.mudo = ! b.mudo;
         refreshSong();
-        status.setText (nuevo ? T ("Bloque en silencio") : T ("Bloque suena"),
+        status.setText (b.mudo ? T ("Bloque en silencio") : T ("Bloque suena"),
                         juce::dontSendNotification);
     };
 
-    songGrid.onLargoBloque = [this] (int carril, int cabeza, int largo, bool primero)
+    songGrid.onLargoBloque = [this] (int indice, int desdePaso, int hastaPaso, bool primero)
     {
-        ponLargoBloque (carril, cabeza, largo, primero);
+        ponLargoBloque (indice, desdePaso, hastaPaso, primero);
     };
 
-    songGrid.onCell = [this] (int lane, int bar)
-    {
-        //  El compas que tocas es el compas sobre el que actuan las
-        //  herramientas. Sin esto habria que inventar un segundo gesto para
-        //  decir "aqui", y el gesto que ya existe dice exactamente eso.
-        songCursor = bar;
+    //  LAS TIJERAS PARTEN, que es lo que unas tijeras significan. Caian en
+    //  `onCell` sin rama propia, o sea que BORRABAN el bloque: la herramienta
+    //  que mas se parece a «corta aqui» era una segunda goma.
+    songGrid.onParteBloque = [this] (int indice, int paso) { parteBloque (indice, paso); };
 
-        // Placing a pattern claims as many bars as its length needs; the tail
-        // bars are marked as continuation so the block reads as one thing.
-        if (songBrush == 0 || engine.getSongCell (lane, bar) != 0)
+    //  LA BANDA, el mover de la banda y el vaciado: calco del piano. La marca
+    //  es donde caera PEGAR.
+    songGrid.onBanda    = [this] (int l0, int p0, int l1, int p1) { songBanda (l0, p0, l1, p1); };
+    songGrid.onMueveSel = [this] (int dl, int dp) { songMueveSel (dl, dp); };
+    songGrid.onVaciaSel = [this] { songVaciaSel(); };
+    songGrid.onMarca    = [this] (int lane, int paso)
+    {
+        songMarcaLane = lane;
+        songMarcaPaso = paso;
+        refreshSong (false);
+    };
+
+    //  LA LUPA: se arrastra sobre el tramo que se quiere ver y ese tramo pasa a
+    //  ser la vista. Es lo que se pidio con esas palabras -«arrastras y acerca
+    //  ese trozo»- y no un pellizco: en esta casa las herramientas de un lienzo
+    //  son MODOS ARMADOS y no gestos nuevos, porque un gesto sin tapa no se
+    //  puede medir por la tapa.
+    songGrid.onLupa = [this] (int compas0, int compas1)
+    {
+        const int a = juce::jlimit (0, AudioEngine::kSongBars - 1, compas0);
+        const int b = juce::jlimit (a + 1, AudioEngine::kSongBars, compas1);
+        songVistaAntes.primero  = songPrimerCompas;
+        songVistaAntes.compases = songGrid.getCompasesVista();
+        ponVistaCompases (b - a);
+        songPrimerCompas = juce::jlimit (0, juce::jmax (0, engine.getSongLength() - 1), a);
+        refreshSong();
+    };
+    //  Y UN TOQUE VUELVE. Sin esto, acercar es un viaje de ida: volver pide
+    //  adivinar el zoom que tenias, que es exactamente por lo que un zoom deja
+    //  de usarse.
+    songGrid.onLupaVuelve = [this]
+    {
+        ponVistaCompases (songVistaAntes.compases);
+        songPrimerCompas = juce::jlimit (0, juce::jmax (0, engine.getSongLength() - 1),
+                                         songVistaAntes.primero);
+        refreshSong();
+    };
+
+    //  EL CANDADO DE DESHACER SE ABRE AL LEVANTAR EL DEDO, no en cada evento.
+    songGrid.onSuelta = [this] { moviendoSelCancion = false; };
+
+    //  PINTAR Y BORRAR. Llega el PASO absoluto pegado a la division, no el
+    //  compas: un bloque puede empezar donde caiga.
+    songGrid.onCell = [this] (int lane, int paso)
+    {
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        if (! juce::isPositiveAndBelow (lane, AudioEngine::kSongLanes)) return;
+        const int total = engine.getSongLength() * pc;
+        if (paso < 0 || paso >= total) return;
+
+        songCursor = paso / pc;
+
+        //  UN SOLO pushUndo POR ARRASTRE, con el mismo candado que el piano:
+        //  el lapiz emite un evento por celda cruzada, asi que apilar uno por
+        //  evento no es deshacer, es contar. Y no lo tenia NINGUNO -ni pintar,
+        //  ni borrar, ni los seis gestos de clip-, que salio del inventario.
+        if (! moviendoSelCancion) { pushUndo (songBrush == 0 ? T ("GOMA") : T ("LAPIZ")); moviendoSelCancion = true; }
+
+        const int hay = bloqueEnPaso (lane, paso);
+        if (songBrush == 0 || hay >= 0)
         {
-            // Clear this block, tail included.
-            int start = bar;
-            while (start > 0 && engine.getSongCell (lane, start) == AudioEngine::kContinued) --start;
-            engine.setSongCell (lane, start, 0);
-            for (int b = start + 1; b < engine.getSongLength(); ++b)
-            {
-                if (engine.getSongCell (lane, b) != AudioEngine::kContinued) break;
-                engine.setSongCell (lane, b, 0);
-            }
+            if (hay >= 0) bloques.erase (bloques.begin() + hay);
         }
         else if (songBrush > 0)
         {
             const int bank = songBrush - 1;
-            //  PASOS GUARDADOS a compases, o sea `pasosPorCompas()`: con el
-            //  16 a mano esto decia «cuatro compases» de un patron de un
-            //  compas en cuanto el paso guardado se afinaba.
-            const int pc = juce::jmax (1, engine.pasosPorCompas());
-            const int bars = juce::jmax (1, (engine.getPatternLength (bank) + pc - 1) / pc);
-            engine.setSongCell (lane, bar, songBrush);
-            for (int b = bar + 1; b < bar + bars && b < engine.getSongLength(); ++b)
-                engine.setSongCell (lane, b, AudioEngine::kContinued);
+            //  EL LARGO EN PASOS, que es el del patron y no un compas
+            //  redondeado: un patron de doce pasos ocupaba un compas de
+            //  dieciseis y sonaba con cuatro de silencio detras.
+            BloqueUI b;
+            b.lane = lane; b.bank = bank;
+            b.compas = paso / pc; b.paso = paso % pc;
+            b.largo  = juce::jmax (1, engine.getPatternLength (bank));
+            if ((int) bloques.size() < AudioEngine::kMaxBloques) bloques.push_back (b);
         }
         else
         {
-            engine.setSongCell (lane, bar, songBrush);      // one-shot
+            //  GOLPE SUELTO: un solo paso, que es lo que dura un disparo en la
+            //  linea de tiempo. Ver el bucle de cancion.
+            BloqueUI b;
+            b.lane = lane; b.bank = songBrush;
+            b.compas = paso / pc; b.paso = paso % pc; b.largo = 1;
+            if ((int) bloques.size() < AudioEngine::kMaxBloques) bloques.push_back (b);
         }
         refreshSong();
     };
@@ -4397,6 +4504,9 @@ MainComponent::MainComponent()
     //  puestas el cuadro se pintaria dos veces por vuelta y el `dt` mediria la
     //  mitad de lo que dura.
     {
+        lastreMs   = UiAudit::env ("ZATI_LASTRE").getDoubleValue();
+        xrunGuion  = UiAudit::env ("ZATI_XRUN");
+        xrunEscala = juce::jmax (1.0, UiAudit::env ("ZATI_XRUN_ESCALA").getDoubleValue());
         const int hz = UiAudit::env ("ZATI_VBLANK").getIntValue();
         if (hz > 0)
         {
@@ -4604,7 +4714,6 @@ void MainComponent::ponIconos()
         //  sitios escribiendo el mismo icono es uno de los dos quedandose viejo.
         { &songDoubleBtn, Iconos::Id::doblar },
         { &songInsertBtn, Iconos::Id::insertar }, { &songRemoveBtn, Iconos::Id::quitar },
-        { &songCopyBtn, Iconos::Id::copiar },     { &songPasteBtn, Iconos::Id::pegar },
         { &songLoopBtn, Iconos::Id::loop },       { &songLeftBtn, Iconos::Id::atras },
         { &songRightBtn, Iconos::Id::adelante },  { &songShortBtn, Iconos::Id::acortar },
         { &songLongBtn, Iconos::Id::alargar },
@@ -4675,6 +4784,9 @@ void MainComponent::ponIconos()
         //  GRABAR no necesitaba dibujo nuevo: `rec` existe desde el primer dia
         //  y a esa tapa no se le habia asignado nunca.
         { &pianoSelBtn, Iconos::Id::sel },
+        //  Y la de la rejilla de pasos, con el MISMO dibujo: es el mismo modo
+        //  en otra pantalla, y darle otro icono seria decir que hace otra cosa.
+        { &seqSelBtn, Iconos::Id::sel },
         { &songRecBtn, Iconos::Id::rec },         { &songClickBtn, Iconos::Id::clic },
         { &autoBtn, Iconos::Id::automacion },
     };
@@ -6984,6 +7096,20 @@ void MainComponent::showSeqPage (int page)
     seqModoBtn.setVisible    (onGrid || onPiano);
     if (onPat) { seqPlayBtn.setBounds ({}); seqModoBtn.setBounds ({}); }
     seqHumanBtn.setVisible   (onPat);
+    //  SEL vive en la pagina PATRON, con COPIAR FILA y PEGAR FILA, y arma la
+    //  rejilla de la pagina PASOS. Fuera de su pagina se apaga Y se le vacian
+    //  los limites: un componente invisible que conserva sus coordenadas sigue
+    //  estando ahi para todo lo que mida geometria - es la regla del RESIDUO
+    //  que ya costo 248 hallazgos con las cuatro del piano.
+    seqSelBtn.setVisible     (onPat);
+    if (! onPat) seqSelBtn.setBounds ({});
+    //  Y la tira de la banda solo en PASOS, que es donde esta la rejilla. Aqui
+    //  solo se puede APAGAR: si hay banda o no lo sabe resized(), que es el
+    //  unico que reparte el alto. Misma regla que las tapas de banco.
+    if (! onGrid)
+        for (juce::TextButton* b : { &seqCopiaBtn, &seqCorteSelBtn,
+                                     &seqPegaBtn, &seqBorraSelBtn })
+        { b->setVisible (false); b->setBounds ({}); }
     //  SEGUIR NO SE ENCIENDE AQUI. Va en la fila del transporte y solo
     //  entra donde las cuatro tapas caben, y quien lo sabe es resized().
     //  Misma regla que las tapas de banco: aqui solo se puede APAGAR.
@@ -8290,6 +8416,7 @@ void MainComponent::refreshStepGrid()
         {
             bool on = false;
             signed char nota = 0;
+            std::uint16_t largo = 0;
 
             if (c < celdas)
                 for (int k = 0; k < ppc; ++k)
@@ -8297,13 +8424,20 @@ void MainComponent::refreshStepGrid()
                     const int st = c * ppc + k;
                     if (st >= kNumSteps) break;
                     if (! pattern[(size_t) selectedPattern][(size_t) st][(size_t) (base + p)]) continue;
-                    on   = true;
-                    nota = (signed char) engine.getStepNote (selectedPattern, st, base + p);
+                    on    = true;
+                    nota  = (signed char) engine.getStepNote (selectedPattern, st, base + p);
+                    //  Y SU LARGO, que es lo que la rejilla no dibujaba. En
+                    //  cuartos de paso GUARDADO, igual que lo guarda el motor:
+                    //  traducirlo a celdas aqui seria repartir la misma cuenta
+                    //  entre dos sitios, y la rejilla ya sabe cuantos pasos
+                    //  guardados mide una celda suya.
+                    largo = (std::uint16_t) engine.getStepLen (selectedPattern, st, base + p);
                     break;
                 }
 
-            gridCells[c * kPadsPerBank + p] = on;
-            gridNotes[c * kPadsPerBank + p] = nota;
+            gridCells [c * kPadsPerBank + p] = on;
+            gridNotes [c * kPadsPerBank + p] = nota;
+            gridLargos[c * kPadsPerBank + p] = largo;
         }
 
     for (int p = 0; p < kPadsPerBank; ++p)
@@ -8336,7 +8470,8 @@ void MainComponent::refreshStepGrid()
                         celdas,
                         seqPrimerCelda, psCelda, selectedPad - base,
                         fase,
-                        base);   // el pad del carril 0, para que el canalon diga 17..32 en el banco B
+                        base,    // el pad del carril 0, para que el canalon diga 17..32 en el banco B
+                        gridLargos, 4 * ppc);
 
     //  Y LA BARRA DICE DONDE ESTA LA VENTANA Y DONDE EL CABEZAL.
     //
@@ -9623,6 +9758,14 @@ void MainComponent::retranslateUi()
     seqHumanBtn .setButtonText (T ("HUMANIZAR"));
     copyRowBtn  .setButtonText (T ("COPIAR FILA"));
     pasteRowBtn .setButtonText (T ("PEGAR FILA"));
+    //  Las mismas cinco claves que el piano: es el mismo gesto en otra
+    //  pantalla, y dos claves distintas para lo mismo son dos traducciones que
+    //  se pueden separar.
+    seqSelBtn     .setButtonText (T ("SEL"));
+    seqCopiaBtn   .setButtonText (T ("COPIAR"));
+    seqCorteSelBtn.setButtonText (T ("CORTE"));
+    seqPegaBtn    .setButtonText (T ("PEGAR"));
+    seqBorraSelBtn.setButtonText (T ("BORRAR"));
     seqFollowBtn.setButtonText (T ("SEGUIR"));
     patLeftBtn  .setButtonText (T ("ATRAS"));
     patRightBtn .setButtonText (T ("ADELANTE"));
@@ -9877,11 +10020,10 @@ void MainComponent::retranslateUi()
     //  18 % al 79 %.
     {
         static const char* kArr[] = { "ACORTAR", "ALARGAR", "ATRAS", "ADELANTE",
-                                      "INSERTAR", "QUITAR", "COPIAR", "PEGAR", "LOOP" };
+                                      "INSERTAR", "QUITAR", "LOOP" };
         juce::TextButton* arr[] = { &songShortBtn, &songLongBtn, &songLeftBtn, &songRightBtn,
-                                    &songInsertBtn, &songRemoveBtn, &songCopyBtn,
-                                    &songPasteBtn, &songLoopBtn };
-        for (int i = 0; i < 9; ++i)
+                                    &songInsertBtn, &songRemoveBtn, &songLoopBtn };
+        for (int i = 0; i < 7; ++i)
         {
             arr[i]->setButtonText ({});
             arr[i]->setTitle (T (kArr[i]));
@@ -10952,12 +11094,18 @@ juce::ValueTree MainComponent::captureState() const
         juce::ValueTree song ("song");
         song.setProperty ("bars", engine.getSongLength(), nullptr);
         song.setProperty ("mode", engine.isSongMode(), nullptr);
-        for (int lane = 0; lane < Playlist::kLanes; ++lane)
+        //  LOS BLOQUES, DISPERSOS Y POR PASOS. Eran cuatro filas de sesenta y
+        //  cuatro enteros -`lane0..lane3`- porque un bloque era una celda por
+        //  compas; con la lista una fila fija no puede escribir dos bloques en
+        //  el mismo compas ni el paso en el que arranca ninguno. Mismo formato
+        //  que `clips`: una linea por bloque y nada cuando no hay ninguno.
+        if (! bloques.empty())
         {
-            juce::String row;
-            for (int b = 0; b < AudioEngine::kSongBars; ++b)
-                row += juce::String (engine.getSongCell (lane, b)) + (b + 1 < AudioEngine::kSongBars ? "," : "");
-            song.setProperty ("lane" + juce::String (lane), row, nullptr);
+            juce::String filas;
+            for (const auto& b : bloques)
+                filas << b.lane << " " << b.bank << " " << b.compas << " " << b.paso
+                      << " " << b.largo << " " << b.offset << " " << (b.mudo ? 1 : 0) << ";";
+            song.setProperty ("bloques", filas, nullptr);
         }
         //  El silenciado de carriles y el tramo en bucle: son estado del
         //  arreglo igual que las celdas. Sin guardarlos, volver a abrir un
@@ -10969,18 +11117,9 @@ juce::ValueTree MainComponent::captureState() const
                 mudos += (engine.isSongLaneMuted (lane) ? "1" : "0");
             song.setProperty ("mudos", mudos, nullptr);
         }
-        //  Y EL SILENCIO POR BLOQUE, cuatro numeros y no una lista dispersa:
-        //  es un bit por compas en un uint64 por carril, o sea que la tabla
-        //  ENTERA son cuatro enteros. Escribir tripletes «carril compas 1»
-        //  seria mas largo que el dato. Se guardan en decimal porque
-        //  `getProperty` devuelve un var y un uint64 en hexadecimal habria que
-        //  parsearlo a mano.
-        {
-            juce::StringArray cm;
-            for (int lane = 0; lane < Playlist::kLanes; ++lane)
-                cm.add (juce::String ((juce::int64) engine.songCellMuteMask (lane)));
-            song.setProperty ("bmudos", cm.joinIntoString (","), nullptr);
-        }
+        //  `bmudos` -el silencio por compas, cuatro mascaras de 64 bits- ya no
+        //  se escribe: el silencio viaja DENTRO de cada bloque, que es de quien
+        //  siempre fue. Se sigue LEYENDO al abrir un proyecto viejo.
         song.setProperty ("bucleA", engine.getSongLoopFrom(), nullptr);
         song.setProperty ("bucleB", engine.getSongLoopTo(), nullptr);
 
@@ -12108,56 +12247,116 @@ void MainComponent::applyState (const juce::ValueTree& s)
     auto song = s.getChildWithName ("song");
     if (! song.isValid())
     {
-        engine.clearSong();
+        vaciaCancion();
         engine.setSongLength (8);
         songLenSlider.setValue (8.0, juce::dontSendNotification);
         ponModoCancion (false);
         for (int lane = 0; lane < Playlist::kLanes; ++lane)
-        {
             engine.setSongLaneMute (lane, false);
-            engine.setSongCellMuteMask (lane, 0);
-        }
         engine.setSongLoop (0, 0);
+        publicaBloques();
     }
     else
     {
-        engine.clearSong();
+        vaciaCancion();
         engine.setSongLength ((int) song.getProperty ("bars", 8));
         songLenSlider.setValue ((double) engine.getSongLength(), juce::dontSendNotification);
         //  Por ponModoCancion, que es quien pone las TRES tapas: abrir un
         //  proyecto en modo cancion dejaba la de la cara diciendo PATRON.
         ponModoCancion ((bool) song.getProperty ("mode", false));
-        for (int lane = 0; lane < Playlist::kLanes; ++lane)
+
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+
+        if (song.hasProperty ("bloques"))
         {
-            auto toks = juce::StringArray::fromTokens (song.getProperty ("lane" + juce::String (lane)).toString(), ",", "");
-            for (int b = 0; b < juce::jmin (toks.size(), AudioEngine::kSongBars); ++b)
-                engine.setSongCell (lane, b, toks[b].getIntValue());
+            const auto filas = juce::StringArray::fromTokens (
+                song.getProperty ("bloques").toString(), ";", "");
+            for (const auto& fila : filas)
+            {
+                const auto n = juce::StringArray::fromTokens (fila.trim(), " ", "");
+                if (n.size() < 7) continue;
+                BloqueUI b;
+                b.lane   = n[0].getIntValue();
+                b.bank   = n[1].getIntValue();
+                b.compas = n[2].getIntValue();
+                b.paso   = n[3].getIntValue();
+                b.largo  = n[4].getIntValue();
+                b.offset = n[5].getIntValue();
+                b.mudo   = n[6].getIntValue() != 0;
+                //  Se acota EN LA PUERTA, que es donde entra un fichero que
+                //  puede venir de otra epoca o corrupto: cada consumidor
+                //  volviendo a validar es como el color de un bloque acabo
+                //  leyendo fuera del array.
+                if (! juce::isPositiveAndBelow (b.lane, AudioEngine::kSongLanes)) continue;
+                if (b.bank >= kNumPatterns) continue;
+                if (b.bank < 0 && ! juce::isPositiveAndBelow (-b.bank - 1, kNumPads)) continue;
+                if (b.largo <= 0) continue;
+                b.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, b.compas);
+                b.paso   = juce::jlimit (0, pc - 1, b.paso);
+                b.offset = juce::jmax (0, b.offset);
+                if ((int) bloques.size() < AudioEngine::kMaxBloques) bloques.push_back (b);
+            }
         }
-        //  Los mudos y el bucle. Ausentes -un proyecto de antes de que
-        //  existieran- valen cero, que es "nada silenciado y sin bucle": el
+        else
+        {
+            //  UN PROYECTO DE ANTES DE LA LISTA SE CONVIERTE AL ABRIRLO.
+            //
+            //  Trae `lane0..lane3` -sesenta y cuatro enteros por carril, cabeza
+            //  o `kContinued = -1000`- y `bmudos`, cuatro mascaras de un bit por
+            //  compas. Una cabeza en el compas b con n colas detras es un bloque
+            //  de `(1+n) * pasosPorCompas()` desde el paso 0, y su bit de mudo
+            //  se le pega. Sin esto, todo proyecto guardado hasta hoy abre con
+            //  cuatro carriles vacios: la mitad de un proyecto es peor que
+            //  ninguno, porque lo que queda parece tuyo.
+            static constexpr int kColaVieja = -1000;
+            juce::uint64 bmudos[Playlist::kLanes] {};
+            {
+                const auto cm = juce::StringArray::fromTokens (
+                                    song.getProperty ("bmudos").toString(), ",", "");
+                for (int lane = 0; lane < Playlist::kLanes; ++lane)
+                    bmudos[lane] = lane < cm.size()
+                                     ? (juce::uint64) cm[lane].getLargeIntValue() : 0;
+            }
+            for (int lane = 0; lane < Playlist::kLanes; ++lane)
+            {
+                const auto toks = juce::StringArray::fromTokens (
+                    song.getProperty ("lane" + juce::String (lane)).toString(), ",", "");
+                const int n = juce::jmin (toks.size(), AudioEngine::kSongBars);
+                for (int b = 0; b < n; ++b)
+                {
+                    const int v = toks[b].getIntValue();
+                    if (v == 0 || v == kColaVieja) continue;
+                    int colas = 0;
+                    while (b + 1 + colas < n && toks[b + 1 + colas].getIntValue() == kColaVieja) ++colas;
+
+                    BloqueUI bl;
+                    bl.lane   = lane;
+                    bl.bank   = v > 0 ? v - 1 : v;
+                    bl.compas = b;
+                    bl.largo  = (1 + colas) * pc;
+                    bl.mudo   = (bmudos[lane] & (1ull << (unsigned) b)) != 0;
+                    if (bl.bank >= kNumPatterns) continue;
+                    if (bl.bank < 0 && ! juce::isPositiveAndBelow (-bl.bank - 1, kNumPads)) continue;
+                    if ((int) bloques.size() < AudioEngine::kMaxBloques) bloques.push_back (bl);
+                    b += colas;
+                }
+            }
+        }
+
+        //  Los mudos de CARRIL y el bucle. Ausentes -un proyecto de antes de
+        //  que existieran- valen cero, que es "nada silenciado y sin bucle": el
         //  comportamiento que ese proyecto tenia.
         {
             const auto mudos = song.getProperty ("mudos").toString();
             for (int lane = 0; lane < Playlist::kLanes; ++lane)
                 engine.setSongLaneMute (lane, lane < mudos.length() && mudos[lane] == '1');
         }
-        //  Y el silencio por bloque. Un proyecto anterior no trae la propiedad
-        //  y vuelve con los cuatro a CERO - o sea, todos los bloques sonando,
-        //  que es exactamente como sonaba el dia que se guardo. Lo que manda no
-        //  es cual es el defecto de hoy sino como sonaba entonces.
-        {
-            const auto cm = juce::StringArray::fromTokens (
-                                song.getProperty ("bmudos").toString(), ",", "");
-            for (int lane = 0; lane < Playlist::kLanes; ++lane)
-                engine.setSongCellMuteMask (lane, lane < cm.size()
-                                                    ? (juce::uint64) cm[lane].getLargeIntValue()
-                                                    : 0);
-        }
         engine.setSongLoop ((int) song.getProperty ("bucleA", 0),
                             (int) song.getProperty ("bucleB", 0));
 
         songPrimerCompas = 0;
         songCursor = 0;
+        publicaBloques();
         refreshSong();
     }
 
@@ -12564,12 +12763,14 @@ void MainComponent::deleteProject (const juce::String& name)
 //  lee como un bloque y suena como medio.
 void MainComponent::songPorDefecto()
 {
-    engine.clearSong();
-    const int pc = juce::jmax (1, engine.pasosPorCompas());
-    const int bars = juce::jmax (1, (engine.getPatternLength (0) + pc - 1) / pc);
-    engine.setSongCell (0, 0, 1);
-    for (int b = 1; b < bars && b < engine.getSongLength(); ++b)
-        engine.setSongCell (0, b, AudioEngine::kContinued);
+    vaciaCancion();
+    //  EL LARGO EN PASOS, que es el del patron: con celdas habia que redondear
+    //  a compases y un patron de doce pasos se leia como uno de dieciseis.
+    BloqueUI b;
+    b.lane = 0; b.bank = 0; b.compas = 0; b.paso = 0;
+    b.largo = juce::jmax (1, engine.getPatternLength (0));
+    bloques.push_back (b);
+    publicaBloques();
 }
 
 //  UN PAD RECIEN NACIDO, EN UN SOLO SITIO.
@@ -12782,11 +12983,10 @@ void MainComponent::refreshProjectList()
 //  cinco vacios incluidos - porque ese silencio es parte del arreglo y quitarlo
 //  cambiaria donde cae todo lo que venga detras.
 //
-//  Y kContinued viaja con su patron. Una celda que dice "este compas lo sigue
-//  cubriendo el patron que empezo antes" copiada sin el compas que lo empezo
-//  seria un patron que continua sin haber empezado: el motor la leeria como
-//  silencio y el arreglo saldria con agujeros. Como se copia el bloque entero y
-//  en orden, el que empieza va siempre delante.
+//  Y LOS CLIPS VAN CON LOS BLOQUES. Con celdas se copiaban las celdas y el
+//  audio se quedaba en su sitio: doblar una cancion con una toma de voz
+//  devolvia la segunda mitad muda. Un bloque duplicado se lleva su `offset`,
+//  asi que la copia suena por donde sonaba el original.
 //  DESPLAZAR EL PATRON, con la vuelta puesta.
 //
 //  Un groove que entra un paso tarde no se arregla moviendo dieciseis celdas
@@ -12847,6 +13047,226 @@ void MainComponent::pegarFila()
     refreshPiano (false);
     seqSheet.repaint();
     status.setText (T ("Fila pegada en el pad %1", juce::String (p + 1)), juce::dontSendNotification);
+}
+
+//  ===========================================================================
+//  LA BANDA DE LA REJILLA DE PASOS.
+//
+//  La rejilla avisa en SUS coordenadas -carril del banco que se ve, y casilla
+//  de la vista- y aqui se traducen a las del motor: pad absoluto y paso
+//  guardado. Los dos cambios son el mismo que ya hace `stepCellToggled` con un
+//  toque suelto; escribirlos otra vez dentro de cada accion serian cinco
+//  sitios sumando `currentBank * kPadsPerBank` y multiplicando por
+//  `pasosPorCelda`, que es exactamente como se separan dos caminos.
+//  ===========================================================================
+void MainComponent::seqBanda (int pad0, int paso0, int pad1, int paso1)
+{
+    //  Ordenada aqui y no en la rejilla: un arrastre hacia arriba llega con
+    //  `pad1 < pad0`, y una banda con el alto negativo no se pinta ni se
+    //  recorre. Los pasos ya vienen en orden -la rejilla los ordena para poder
+    //  sumar el uno del filo exclusivo- pero se ordenan igual: una banda que
+    //  depende de quien la mande es media banda.
+    seqSel.pad0  = juce::jmin (pad0, pad1);
+    seqSel.pad1  = juce::jmax (pad0, pad1);
+    seqSel.paso0 = juce::jmin (paso0, paso1);
+    seqSel.paso1 = juce::jmax (paso0, paso1);
+    stepGrid.setSel (seqSel);
+    resized();      // la tira aparece con la banda
+}
+
+void MainComponent::seqVaciaSel()
+{
+    if (! seqSel.activa()) return;
+    seqSel = {};
+    stepGrid.setSel (seqSel);
+    resized();      // y se va con ella
+}
+
+//  VACIAR UN RECTANGULO DE PASOS, DE VERDAD Y NO SOLO EL "SUENA".
+//
+//  `setStep (false)` apaga la casilla y deja detras la nota, la fuerza, el
+//  acorde, el largo y los bloqueos del paso que habia. Eso no se ve -la celda
+//  se pinta vacia- hasta que alguien vuelve a encender ese paso y le sale con
+//  los parametros de otro: es el mismo «queda MEZCLADO» que la cabecera de
+//  `AudioEngine::Paso` cuenta para el que pegaba sin vaciar. Por eso van las
+//  dos, `setStep` y `vaciaPaso`, que es la lista canonica de los nueve.
+void MainComponent::vaciaBandaPasos (int lane0, int lane1, int st0, int st1)
+{
+    const int b    = selectedPattern;
+    const int base = currentBank * kPadsPerBank;
+    const int len  = engine.getPatternLength (b);
+
+    const int l0 = juce::jmax (0, lane0), l1 = juce::jmin (kPadsPerBank - 1, lane1);
+    const int s0 = juce::jmax (0, st0),   s1 = juce::jmin (len, st1);
+
+    for (int lane = l0; lane <= l1; ++lane)
+        for (int st = s0; st < s1; ++st)
+        {
+            pattern[(size_t) b][(size_t) st][(size_t) (base + lane)] = false;
+            engine.setStep (b, st, base + lane, false);
+            engine.vaciaPaso (b, st, base + lane);
+        }
+}
+
+//  COPIAR LA BANDA, CON LOS NUEVE CAMPOS DE CADA PASO.
+//
+//  Con `leePaso` y no campo a campo, que es la leccion que este proyecto ya
+//  pago dos veces y esta escrita entera en la cabecera de `AudioEngine::Paso`:
+//  COPIAR PATRON se llevaba TRES de los nueve y DESPLAZAR y DOBLAR, cuatro, y
+//  la queja llego partida en dos - «la velocidad no se copia» y «de un acorde
+//  de tres notas solo se pega una», que es lo que pasa cuando viaja la nota
+//  raiz y no `stepChord`, donde viven las otras siete.
+//
+//  Y SE COPIAN LOS PASOS GUARDADOS, no las casillas de la vista. Con la
+//  rejilla en 1/8 sobre un patron escrito en 1/16 una casilla son DOS pasos y
+//  la casilla solo dibuja el primero que suena: copiar por casillas perderia
+//  el segundo golpe de cada una sin decirlo. La banda se traduce una vez, aqui.
+void MainComponent::seqCopiaSel()
+{
+    if (! seqSel.activa()) return;
+
+    const int b    = selectedPattern;
+    const int base = currentBank * kPadsPerBank;
+    const int len  = engine.getPatternLength (b);
+    const int st0  = juce::jlimit (0, len, pasoDeCelda (seqSel.paso0));
+    const int st1  = juce::jlimit (0, len, pasoDeCelda (seqSel.paso1));
+
+    seqPortapapeles.clear();
+    seqPegPad0  = seqSel.pad0;
+    seqPegPads  = seqSel.pad1 - seqSel.pad0 + 1;
+    seqPegPasos = st1 - st0;
+
+    for (int lane = seqSel.pad0; lane <= seqSel.pad1; ++lane)
+        for (int st = st0; st < st1; ++st)
+        {
+            //  Solo lo que SUENA, y el hueco lo dicen las tres cifras de
+            //  arriba: guardar tambien los pasos vacios haria el portapapeles
+            //  del tamano de la banda -dieciseis carriles por 192 pasos son
+            //  3072 entradas- para decir lo mismo que un rectangulo.
+            const auto s = engine.leePaso (b, st, base + lane);
+            if (! s.on) continue;
+            seqPortapapeles.push_back ({ st - st0, lane - seqSel.pad0, s });
+        }
+
+    status.setText (seqPortapapeles.size() == 1
+                        ? T ("1 paso copiado")
+                        : T ("%1 pasos copiados",
+                             Lang::ltr (juce::String ((int) seqPortapapeles.size()))),
+                    juce::dontSendNotification);
+    resized();      // PEGAR aparece
+}
+
+//  PEGAR DESDE EL PRIMER PASO QUE SE VE, y en los mismos carriles.
+//
+//  El primer paso visible y no el sitio donde se copio: pegar donde se copio
+//  no sirve de nada, y pedir un segundo gesto para decir «aqui» es la virgueria
+//  que ya se quito de la cancion. La ventana es lo que estas mirando, asi que
+//  mover la barra y pegar es el gesto entero.
+//
+//  Y SOBREVIVE A CAMBIAR DE PATRON, que es para lo que existe: el portapapeles
+//  no se toca al mover el mando de PATRON, asi que copiar dos compases en P1 y
+//  pegarlos en P3 son dos toques. Es lo que COPIAR FILA no podia dar sin
+//  llevarse los 192 pasos del pad.
+//
+//  EL DESTINO SE VACIA PRIMERO, del tamano de la banda copiada y no del de lo
+//  que se va a colocar: pegar encima sin vaciar deja vivo lo que hubiera en los
+//  huecos -la figura nueva mezclada con la cola de la vieja- que es el mismo
+//  fallo que `escribePaso` cerro una capa mas abajo.
+void MainComponent::seqPegaSel()
+{
+    if (seqPortapapeles.empty()) return;
+
+    const int b    = selectedPattern;
+    const int base = currentBank * kPadsPerBank;
+    const int len  = engine.getPatternLength (b);
+    const int ppc  = pasosPorCelda();
+    const int st0  = juce::jlimit (0, len, pasoDeCelda (seqPrimerCelda));
+
+    pushUndo (T ("PEGAR"));
+    vaciaBandaPasos (seqPegPad0, seqPegPad0 + seqPegPads - 1, st0, st0 + seqPegPasos);
+
+    for (const auto& s : seqPortapapeles)
+    {
+        const int st   = st0 + s.dPaso;
+        const int lane = seqPegPad0 + s.dPad;
+        //  LO QUE NO CABE NO SE PEGA, y no se recorta a la fuerza ni se dobla
+        //  por el principio: la misma regla que el piano y la cancion. Un
+        //  patron de 16 pasos con la ventana en el 12 se queda con los cuatro
+        //  primeros de lo copiado, que es lo que se ve.
+        if (st < 0 || st >= len) continue;
+        if (! juce::isPositiveAndBelow (lane, kPadsPerBank)) continue;
+        pattern[(size_t) b][(size_t) st][(size_t) (base + lane)] = s.paso.on;
+        engine.escribePaso (b, st, base + lane, s.paso);
+    }
+
+    //  Y LA BANDA SE PONE SOBRE LO PEGADO, que es donde vas a seguir
+    //  trabajando: igual que en la cancion. En casillas de la vista y
+    //  redondeando hacia ARRIBA, que es como `celdasDePatron` cuenta un patron
+    //  que no llena la ultima casilla - hacia abajo la banda dejaria fuera la
+    //  casilla a medias y con ella los golpes que lleve dentro.
+    seqSel.pad0  = seqPegPad0;
+    seqSel.pad1  = juce::jmin (kPadsPerBank - 1, seqPegPad0 + seqPegPads - 1);
+    seqSel.paso0 = st0 / ppc;
+    seqSel.paso1 = (juce::jmin (len, st0 + seqPegPasos) + ppc - 1) / ppc;
+    stepGrid.setSel (seqSel);
+
+    refreshStepGrid();
+    refreshPiano (false);
+    seqSheet.repaint();
+    resized();
+    status.setText (T ("Pegado en P%1", juce::String (b + 1)), juce::dontSendNotification);
+}
+
+//  BORRAR LA BANDA. Un solo pushUndo para el rectangulo entero, por lo mismo
+//  que en el piano: deshacer treinta pasos treinta veces no es deshacer, es
+//  contar.
+//
+//  Y LA BANDA SE VACIA DESPUES. Dejarla puesta sobre pasos que ya no existen
+//  deja una marca sin dueno y la tira ofreciendo COPIAR de la nada, que es la
+//  misma figura que «un control que no puede hacer nada no es informacion».
+void MainComponent::seqBorraSel()
+{
+    if (! seqSel.activa()) return;
+
+    const int b    = selectedPattern;
+    const int base = currentBank * kPadsPerBank;
+    const int len  = engine.getPatternLength (b);
+    const int st0  = juce::jlimit (0, len, pasoDeCelda (seqSel.paso0));
+    const int st1  = juce::jlimit (0, len, pasoDeCelda (seqSel.paso1));
+
+    //  Se cuenta ANTES de vaciar, que es el unico momento en el que se puede:
+    //  el renglon dice cuantos pasos se ha llevado, no cuantas celdas cubria
+    //  la banda.
+    int cuantos = 0;
+    for (int lane = seqSel.pad0; lane <= seqSel.pad1; ++lane)
+        for (int st = st0; st < st1; ++st)
+            if (pattern[(size_t) b][(size_t) st][(size_t) (base + lane)]) ++cuantos;
+
+    pushUndo (T ("BORRAR"));
+    vaciaBandaPasos (seqSel.pad0, seqSel.pad1, st0, st1);
+
+    seqSel = {};
+    stepGrid.setSel (seqSel);
+    refreshStepGrid();
+    refreshPiano (false);
+    seqSheet.repaint();
+    resized();      // la tira se va con la banda
+    status.setText (cuantos == 1 ? T ("1 paso borrado")
+                                 : T ("%1 pasos borrados",
+                                      Lang::ltr (juce::String (cuantos))),
+                    juce::dontSendNotification);
+}
+
+void MainComponent::seqCortaSel()
+{
+    if (! seqSel.activa()) return;
+    seqCopiaSel();
+    seqBorraSel();
+    status.setText (seqPortapapeles.size() == 1
+                        ? T ("1 paso cortado")
+                        : T ("%1 pasos cortados",
+                             Lang::ltr (juce::String ((int) seqPortapapeles.size()))),
+                    juce::dontSendNotification);
 }
 
 //  EUCLIDES: N golpes repartidos lo mas uniformemente posible en la fila.
@@ -13016,9 +13436,31 @@ void MainComponent::doubleSong()
 
     pushUndo (T ("DOBLAR"));
 
-    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
-        for (int b = 0; b < len; ++b)
-            engine.setSongCell (lane, len + b, engine.getSongCell (lane, b));
+    //  SE DUPLICAN LOS BLOQUES Y LOS CLIPS, corridos `len` compases. Con celdas
+    //  se copiaban las celdas y los clips se quedaban: doblar una cancion con
+    //  una toma de voz devolvia la segunda mitad muda, que es el mismo desfase
+    //  que INSERTAR ya costo una vez.
+    {
+        const int n = (int) bloques.size();
+        for (int i = 0; i < n; ++i)
+        {
+            if ((int) bloques.size() >= AudioEngine::kMaxBloques) break;
+            auto b = bloques[(size_t) i];
+            b.compas += len;
+            if (b.compas < AudioEngine::kSongBars) bloques.push_back (b);
+        }
+    }
+    {
+        const int n = (int) clips.size();
+        for (int i = 0; i < n; ++i)
+        {
+            if ((int) clips.size() >= AudioEngine::kMaxClips) break;
+            auto c = clips[(size_t) i];
+            c.compas += len;
+            if (c.compas < AudioEngine::kSongBars) clips.push_back (c);
+        }
+        publicaClips();
+    }
 
     engine.setSongLength (len * 2);
     songLenSlider.setValue (len * 2, juce::dontSendNotification);
@@ -13058,6 +13500,18 @@ void MainComponent::corredClips (int desdeCompas, int delta)
     publicaClips();
 }
 
+//  Y LOS BLOQUES IGUAL, que con celdas lo hacia el bucle de `setSongCell`.
+//  Meter un compas y correr solo el audio es el mismo desfase del reves.
+void MainComponent::corredBloques (int desdeCompas, int delta)
+{
+    if (delta == 0) return;
+    for (auto& b : bloques)
+    {
+        if (b.compas < desdeCompas) continue;
+        b.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, b.compas + delta);
+    }
+}
+
 //  METER UN COMPAS DONDE FALTA.
 //
 //  Todo lo que va detras del cursor se corre un compas a la derecha, en los
@@ -13079,25 +13533,22 @@ void MainComponent::insertSongBar()
     pushUndo (T ("INSERTAR"));
 
     const int at = juce::jlimit (0, len - 1, songCursor);
-    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
+    //  UN BLOQUE QUE CRUZA EL COMPAS NUEVO SE PARTE POR EL, que es lo unico que
+    //  puede significar meter un silencio dentro de un bloque: un patron de
+    //  cuatro compases con un hueco en medio no es uno de cinco. Con celdas
+    //  esto era «la cola deja de ser cola»; ahora el segundo trozo se lleva su
+    //  `offset` y sigue sonando por donde iba.
     {
-        for (int b = len; b > at; --b)
-            engine.setSongCell (lane, b, engine.getSongCell (lane, b - 1));
-        engine.setSongCell (lane, at, 0);
-    }
-
-    //  Y la COLA de un bloque que quedaba partida por el compas nuevo deja de
-    //  ser cola: un patron de cuatro compases con un hueco metido en medio no
-    //  es un patron de cinco, es uno de cuatro que ya no empieza donde decia.
-    //  Se corta ahi, que es lo unico que puede significar meter un silencio
-    //  dentro de un bloque.
-    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
-        for (int b = at + 1; b < len + 1; ++b)
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        const int corte = at * pc;
+        const int n = (int) bloques.size();
+        for (int i = 0; i < n; ++i)
         {
-            if (engine.getSongCell (lane, b) != AudioEngine::kContinued) break;
-            engine.setSongCell (lane, b, 0);
+            const int d = bloques[(size_t) i].compas * pc + bloques[(size_t) i].paso;
+            if (d < corte && corte < d + bloques[(size_t) i].largo) parteBloque (i, corte);
         }
-
+    }
+    corredBloques (at, +1);
     corredClips (at, +1);
 
     engine.setSongLength (len + 1);
@@ -13120,22 +13571,25 @@ void MainComponent::removeSongBar()
     pushUndo (T ("QUITAR"));
 
     const int at = juce::jlimit (0, len - 1, songCursor);
-    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
+    //  LO QUE EMPIEZA EN EL COMPAS QUE SE VA, SE VA CON EL; lo que lo cruza se
+    //  acorta por el filo en vez de desaparecer entero. Con celdas la cola se
+    //  quedaba huerfana -pintada como parte de un bloque que ya no existe- y
+    //  habia que limpiarla a mano.
     {
-        for (int b = at; b < len - 1; ++b)
-            engine.setSongCell (lane, b, engine.getSongCell (lane, b + 1));
-        engine.setSongCell (lane, len - 1, 0);
-
-        //  Si lo que queda en el cursor es una COLA, se quedo sin cabeza: el
-        //  compas que la empezaba es el que acabamos de quitar. Una cola
-        //  huerfana se pinta como parte de un bloque que ya no existe.
-        if (engine.getSongCell (lane, at) == AudioEngine::kContinued)
-            for (int b = at; b < len - 1; ++b)
-            {
-                if (engine.getSongCell (lane, b) != AudioEngine::kContinued) break;
-                engine.setSongCell (lane, b, 0);
-            }
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        const int a = at * pc, b1 = a + pc;
+        for (int i = (int) bloques.size() - 1; i >= 0; --i)
+        {
+            auto& b = bloques[(size_t) i];
+            const int d = b.compas * pc + b.paso, h = d + b.largo;
+            if (h <= a || d >= b1) continue;
+            if (d >= a && h <= b1) { bloques.erase (bloques.begin() + i); continue; }
+            if (d >= a) { b.offset += b1 - d; b.largo -= b1 - d; b.compas = b1 / pc; b.paso = b1 % pc; }
+            else        { b.largo -= juce::jmin (h, b1) - a; }
+            if (b.largo <= 0) bloques.erase (bloques.begin() + i);
+        }
     }
+    corredBloques (at + 1, -1);
 
     //  Y los clips van detras, igual que en INSERTAR: los que empiezan DESPUES
     //  del compas que se va se corren uno a la izquierda. El que empezaba en el
@@ -13149,44 +13603,6 @@ void MainComponent::removeSongBar()
     resized();
     refreshSong();
     status.setText (T ("Compas %1 quitado", juce::String (at + 1)), juce::dontSendNotification);
-}
-
-//  COPIAR Y PEGAR UN COMPAS, con sus cuatro carriles. Es como se repite un
-//  trozo que funciona sin volver a colocarlo, y con PEGAR repetido se monta
-//  una seccion entera en cuatro toques.
-void MainComponent::copySongBar()
-{
-    const int at = juce::jlimit (0, engine.getSongLength() - 1, songCursor);
-    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
-        songClip[lane] = engine.getSongCell (lane, at);
-    songClipLleno = true;
-    refreshSong();
-    status.setText (T ("Compas %1 copiado", juce::String (at + 1)), juce::dontSendNotification);
-}
-
-void MainComponent::pasteSongBar()
-{
-    if (! songClipLleno)
-    {
-        status.setText (T ("No hay ningun compas copiado"), juce::dontSendNotification);
-        return;
-    }
-
-    pushUndo (T ("PEGAR"));
-
-    const int at = juce::jlimit (0, engine.getSongLength() - 1, songCursor);
-    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
-    {
-        //  Una COLA copiada se pega como hueco: pegarla tal cual pondria la
-        //  continuacion de un bloque en un sitio donde ese bloque no empieza,
-        //  y la rejilla la pintaria buscando hacia atras una cabeza que no
-        //  esta - un bloque que aparece de la nada.
-        const int v = songClip[lane];
-        engine.setSongCell (lane, at, v == AudioEngine::kContinued ? 0 : v);
-    }
-
-    refreshSong();
-    status.setText (T ("Pegado en el compas %1", juce::String (at + 1)), juce::dontSendNotification);
 }
 
 //  REORDENAR: intercambiar el compas marcado con el de al lado.
@@ -13210,18 +13626,21 @@ void MainComponent::moveSongBar (int dir)
 
     pushUndo (T ("MOVER"));
 
-    for (int lane = 0; lane < AudioEngine::kSongLanes; ++lane)
+    //  SE INTERCAMBIA POR SU COMPAS DE ARRANQUE, y con los clips detras. Con
+    //  celdas era columna contra columna y una cola que cambiaba de sitio
+    //  dejaba de ser cola; con la lista, mover un compas es mover lo que
+    //  EMPIEZA en el, que es lo que la persona ve como «ese compas».
+    for (auto& bl : bloques)
     {
-        //  Una COLA que cambia de sitio deja de ser cola: la cabeza que la
-        //  explicaba se queda donde estaba. Se convierte en hueco por el mismo
-        //  motivo que al pegar - un bloque que aparece de la nada es peor que
-        //  un silencio.
-        auto limpia = [] (int v) { return v == AudioEngine::kContinued ? 0 : v; };
-        const int va = limpia (engine.getSongCell (lane, a));
-        const int vb = limpia (engine.getSongCell (lane, b));
-        engine.setSongCell (lane, a, vb);
-        engine.setSongCell (lane, b, va);
+        if (bl.compas == a) bl.compas = b;
+        else if (bl.compas == b) bl.compas = a;
     }
+    for (auto& c : clips)
+    {
+        if (c.compas == a) c.compas = b;
+        else if (c.compas == b) c.compas = a;
+    }
+    publicaClips();
 
     songCursor = b;
     //  Y LA VENTANA SE ACERCA AL COMPAS, en vez de saltar a su pagina: con la
@@ -13234,38 +13653,38 @@ void MainComponent::moveSongBar (int dir)
     status.setText (T ("Compas movido al %1", juce::String (b + 1)), juce::dontSendNotification);
 }
 
-//  RECORTAR O ALARGAR UN BLOQUE.
+//  RECORTAR O ALARGAR UN BLOQUE, un compas cada vez.
 //
-//  La longitud de un bloque es cuantos compases ocupa: el suyo mas la cola de
-//  continuaciones. Acortarlo tira la cola sobrante; alargarlo solo se come
-//  compases VACIOS - comerse el bloque de al lado seria borrar algo que
-//  nadie ha pedido borrar, y para eso ya esta la goma.
+//  La longitud de un bloque es cuantos PASOS ocupa en la linea de tiempo, no la
+//  del patron que lleva dentro: acortar un bloque obligaba antes a acortar el
+//  patron entero, o sea a cambiarlo en los otros sitios donde estuviera puesto.
 void MainComponent::resizeSongBlock (int dir)
 {
-    const int len = engine.getSongLength();
-    const int at  = juce::jlimit (0, len - 1, songCursor);
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const int at = juce::jlimit (0, juce::jmax (0, engine.getSongLength() - 1), songCursor);
 
-    //  La cabeza del bloque: hacia atras hasta que deje de ser continuacion.
-    int carril = -1, cabeza = -1;
-    for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
-    {
-        int b = at;
-        while (b > 0 && engine.getSongCell (ln, b) == AudioEngine::kContinued) --b;
-        const int v = engine.getSongCell (ln, b);
-        if (v > 0 && v != AudioEngine::kContinued) { carril = ln; cabeza = b; break; }
-    }
+    //  EL PRIMER BLOQUE QUE CUBRE ESE COMPAS, mirando los cuatro carriles en
+    //  orden. Con celdas habia que caminar hacia atras buscando la cabeza; una
+    //  lista ya sabe donde empieza cada uno.
+    int indice = -1;
+    for (int ln = 0; ln < AudioEngine::kSongLanes && indice < 0; ++ln)
+        for (size_t i = 0; i < bloques.size(); ++i)
+        {
+            const auto& b = bloques[i];
+            if (b.lane != ln) continue;
+            const int d = b.compas * pc + b.paso;
+            if (at * pc < d + b.largo && d < (at + 1) * pc) { indice = (int) i; break; }
+        }
 
-    if (carril < 0)
+    if (indice < 0)
     {
         status.setText (T ("No hay ningun bloque en este compas"), juce::dontSendNotification);
         return;
     }
 
-    int largo = 1;
-    while (cabeza + largo < len
-           && engine.getSongCell (carril, cabeza + largo) == AudioEngine::kContinued) ++largo;
-
-    ponLargoBloque (carril, cabeza, largo + dir);
+    const auto& b = bloques[(size_t) indice];
+    const int d = b.compas * pc + b.paso;
+    ponLargoBloque (indice, d, d + b.largo + dir * pc);
 }
 
 //  EL LARGO DE UN BLOQUE LO ESCRIBE UNA FUNCION.
@@ -13273,52 +13692,474 @@ void MainComponent::resizeSongBlock (int dir)
 //  La regla entera vivia dentro de `resizeSongBlock`, que es quien la llamaba
 //  desde las tapas ACORTAR y ALARGAR; en cuanto el gesto del filo fue un
 //  segundo cliente, dejarla ahi habria sido la misma cuenta escrita dos veces
-//  -«alargar solo se come compases VACIOS», el tope de la cancion, el
-//  `pushUndo`- y la que se quedara vieja seria un bloque que se come al vecino
-//  desde un camino y no desde el otro. Es la extraccion de `normaliza` fuera de
-//  `render` con otra pieza.
+//  -«alargar solo se come lo VACIO», el tope de la cancion, el `pushUndo`- y la
+//  que se quedara vieja seria un bloque que se come al vecino desde un camino y
+//  no desde el otro.
 //
-//  Y UNA SOLA ENTRADA DE DESHACER POR GESTO: un arrastre emite un evento por
-//  movimiento, asi que apilar uno por evento no es deshacer, es contar. Se
-//  apunta solo cuando el largo de verdad cambia, y quien arrastra vuelve a
-//  llamar con el mismo numero mientras el dedo no cruce a otra celda.
-void MainComponent::ponLargoBloque (int carril, int cabeza, int nuevo, bool apunta)
+//  Y LOS DOS FILOS, no solo el de la derecha: arrastrar el de la izquierda
+//  corre el arranque Y el `offset`, que es lo que hace que la frase siga
+//  sonando por donde iba en vez de saltar al principio del patron. Es la misma
+//  cuenta que `largoClip` hace con muestras.
+//
+//  UNA SOLA ENTRADA DE DESHACER POR GESTO: un arrastre emite un evento por
+//  movimiento, asi que apilar uno por evento no es deshacer, es contar.
+void MainComponent::ponLargoBloque (int indice, int desdePaso, int hastaPaso, bool apunta)
 {
-    const int len = engine.getSongLength();
-    if (carril < 0 || carril >= AudioEngine::kSongLanes || cabeza < 0 || cabeza >= len) return;
+    if (! juce::isPositiveAndBelow (indice, (int) bloques.size())) return;
 
-    int largo = 1;
-    while (cabeza + largo < len
-           && engine.getSongCell (carril, cabeza + largo) == AudioEngine::kContinued) ++largo;
+    const int pc    = juce::jmax (1, engine.pasosPorCompas());
+    const int total = engine.getSongLength() * pc;
+    const int d = juce::jlimit (0, total - 1, desdePaso);
+    const int h = juce::jlimit (d + 1, total, hastaPaso);
 
-    if (nuevo == largo) return;
-    if (nuevo < 1 || cabeza + nuevo > len)
+    auto& b = bloques[(size_t) indice];
+    const int dAhora = b.compas * pc + b.paso;
+    if (d == dAhora && h == dAhora + b.largo) return;
+
+    //  No se come al vecino: pisar un bloque que hay debajo seria borrar algo
+    //  que nadie ha pedido borrar, y para eso ya esta la goma. Se mira TODO el
+    //  tramo nuevo y no solo el paso siguiente - un dedo salta varias celdas de
+    //  una vez donde una tapa avanza de uno en uno.
+    for (size_t i = 0; i < bloques.size(); ++i)
     {
-        status.setText (T ("El bloque no puede medir eso"), juce::dontSendNotification);
-        return;
-    }
-    //  Alargar solo se come compases VACIOS: comerse el bloque de al lado seria
-    //  borrar algo que nadie ha pedido borrar, y para eso ya esta la goma. Con
-    //  el gesto hace falta mirar TODOS los que se van a ocupar y no solo el
-    //  siguiente - un dedo salta varias celdas de una vez donde una tapa avanza
-    //  de uno en uno.
-    for (int b = cabeza + largo; b < cabeza + nuevo; ++b)
-        if (engine.getSongCell (carril, b) != 0)
+        if ((int) i == indice) continue;
+        const auto& o = bloques[i];
+        if (o.lane != b.lane) continue;
+        const int od = o.compas * pc + o.paso;
+        if (d < od + o.largo && od < h)
         {
             status.setText (T ("El compas siguiente ya esta ocupado"), juce::dontSendNotification);
             return;
         }
+    }
 
     if (apunta) pushUndo (T ("LARGO"));
 
-    for (int b = cabeza + 1; b < cabeza + nuevo; ++b)
-        engine.setSongCell (carril, b, AudioEngine::kContinued);
-    for (int b = cabeza + nuevo; b < cabeza + largo; ++b)
-        engine.setSongCell (carril, b, 0);
+    //  EL FILO IZQUIERDO MUEVE EL OFFSET. Lo que se recorta por delante es
+    //  patron que ya no se oye, asi que el trozo que queda tiene que arrancar
+    //  mas adelante o sonaria otra cosa con el mismo dibujo.
+    if (d != dAhora)
+    {
+        const int len = b.bank >= 0
+                            ? juce::jmax (1, engine.getPatternLength (b.bank)) : 1;
+        b.offset = ((b.offset + (d - dAhora)) % len + len) % len;
+        b.compas = d / pc;
+        b.paso   = d % pc;
+    }
+    b.largo = h - d;
 
-    songCursor = cabeza;
+    songCursor = b.compas;
     refreshSong();
-    status.setText (T ("Bloque de %1 compases", juce::String (nuevo)), juce::dontSendNotification);
+    status.setText (T ("Bloque de %1 pasos", juce::String (b.largo)), juce::dontSendNotification);
+}
+
+//  PARTIR UN BLOQUE POR DONDE CAYO EL DEDO.
+//
+//  Las TIJERAS caian en `onCell` sin rama propia, o sea que BORRABAN: la
+//  herramienta que mas se parece a «corta aqui» era una segunda goma. Y con
+//  celdas no habia arreglo posible, porque partir por el paso 8 pide dos
+//  cabezas en el mismo compas y en una celda solo cabe una - por eso el modelo
+//  cambio antes que el gesto.
+//
+//  El segundo trozo se lleva `(offset + corte - desde) % len`: sin eso volveria
+//  al principio del patron y el corte se oiria como un salto. Es la misma
+//  cuenta que `parteClip` hace con muestras.
+void MainComponent::parteBloque (int indice, int paso)
+{
+    if (! juce::isPositiveAndBelow (indice, (int) bloques.size())) return;
+    if ((int) bloques.size() >= AudioEngine::kMaxBloques) return;
+
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    auto& c = bloques[(size_t) indice];
+    const int d = c.compas * pc + c.paso;
+    const int corte = paso - d;
+
+    //  Y UN CORTE EN EL FILO NO ES UN CORTE: dejaria un trozo de cero pasos,
+    //  invisible y sin poder cogerlo. Mismo guardia que en los clips.
+    if (corte <= 0 || corte >= c.largo) return;
+
+    pushUndo (T ("TIJERAS"));
+
+    const int len = c.bank >= 0 ? juce::jmax (1, engine.getPatternLength (c.bank)) : 1;
+    BloqueUI b = c;
+    b.compas = paso / pc;
+    b.paso   = paso % pc;
+    b.offset = (c.offset + corte) % len;
+    b.largo  = c.largo - corte;
+    c.largo  = corte;
+    bloques.push_back (b);
+
+    refreshSong();
+    status.setText (T ("Bloque partido"), juce::dontSendNotification);
+}
+
+//  ------------------------------------------------------------------
+//  LA BANDA DE LA LINEA DE TIEMPO, y las cuatro cosas que se hacen con ella.
+//
+//  Es la mitad de la peticion que no era el zoom: «que la seleccion funcione
+//  bien y se pueda copiar y pegar medio patron sin virguerias». Medio patron
+//  quiere decir SOLO LO SELECCIONADO y no el bucle entero, y eso es lo que
+//  hacen el recorte de COPIAR y el partido por el filo de BORRAR.
+//
+//  El modelo es el del piano, que ya resolvio esto: se ve por relleno, la tira
+//  aparece sola con la banda, un toque fuera la vacia y no hay que mantener
+//  pulsado nada.
+
+//  Los tres helpers que la auditoria usa para hablar en COMPASES, que es como
+//  esta escrita. La conversion vive aqui, una vez: repetida en el banco, la
+//  copia que se quedara vieja mediria otra cosa que la app.
+void MainComponent::ponBloqueCompas (int lane, int bar, int valor, int nBars)
+{
+    if (! juce::isPositiveAndBelow (lane, AudioEngine::kSongLanes)) return;
+    if (! juce::isPositiveAndBelow (bar, AudioEngine::kSongBars)) return;
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+
+    //  Escribir en un compas empieza por vaciarlo, que es lo que hacia la celda
+    //  por construccion: en un array una escritura tapa lo que hubiera.
+    for (int i = (int) bloques.size() - 1; i >= 0; --i)
+        if (bloques[(size_t) i].lane == lane && bloques[(size_t) i].compas == bar)
+            bloques.erase (bloques.begin() + i);
+
+    if (valor == 0) return;
+    if ((int) bloques.size() >= AudioEngine::kMaxBloques) return;
+
+    BloqueUI b;
+    b.lane   = lane;
+    b.compas = bar;
+    //  El valor es el de la brocha -banco+1 o -(pad+1)-, que es como lo
+    //  escribia `setSongCell`, y aqui se traduce al banco de verdad.
+    b.bank   = valor > 0 ? valor - 1 : valor;
+    b.largo  = valor > 0 ? juce::jmax (1, juce::jmax (1, nBars) * pc) : 1;
+    bloques.push_back (b);
+}
+
+int MainComponent::celdaCancion (int lane, int bar) const
+{
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    for (const auto& b : bloques)
+    {
+        if (b.lane != lane) continue;
+        const int d = b.compas * pc + b.paso;
+        if (bar * pc < d + b.largo && d < (bar + 1) * pc)
+            return b.bank >= 0 ? b.bank + 1 : b.bank;
+    }
+    return 0;
+}
+
+void MainComponent::vaciaCancion()
+{
+    bloques.clear();
+    songSel = {};
+    songMarcaLane = songMarcaPaso = -1;
+}
+
+int MainComponent::bloqueEnPaso (int lane, int paso) const
+{
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    for (size_t i = 0; i < bloques.size(); ++i)
+    {
+        const auto& b = bloques[i];
+        if (b.lane != lane) continue;
+        const int d = b.compas * pc + b.paso;
+        if (paso >= d && paso < d + b.largo) return (int) i;
+    }
+    return -1;
+}
+
+void MainComponent::songBanda (int lane0, int paso0, int lane1, int paso1)
+{
+    songSel.lane0 = juce::jmin (lane0, lane1);
+    songSel.lane1 = juce::jmax (lane0, lane1);
+    songSel.paso0 = juce::jmin (paso0, paso1);
+    songSel.paso1 = juce::jmax (paso0, paso1);
+    refreshSong (false);
+    resized();      // la tira aparece con la banda
+}
+
+void MainComponent::songVaciaSel()
+{
+    if (! songSel.activa()) return;
+    songSel = {};
+    refreshSong (false);
+    resized();      // y se va con ella
+}
+
+//  MOVER LA BANDA ENTERA, con sus bloques y sus clips. Un solo pushUndo por
+//  arrastre: mover doce bloques doce veces no es deshacer, es contar.
+void MainComponent::songMueveSel (int dLane, int dPaso)
+{
+    if (! songSel.activa() || (dLane == 0 && dPaso == 0)) return;
+
+    const int pc    = juce::jmax (1, engine.pasosPorCompas());
+    const int total = engine.getSongLength() * pc;
+
+    //  Lo que no cabe no se mueve, y entonces NO se mueve nada: mover media
+    //  banda contra el borde la deforma, y deformar no es lo que se pidio.
+    if (songSel.lane0 + dLane < 0 || songSel.lane1 + dLane >= AudioEngine::kSongLanes) return;
+    if (songSel.paso0 + dPaso < 0 || songSel.paso1 + dPaso > total) return;
+
+    if (! moviendoSelCancion) { pushUndo (T ("MOVER")); moviendoSelCancion = true; }
+
+    for (auto& b : bloques)
+    {
+        const int d = b.compas * pc + b.paso;
+        if (b.lane < songSel.lane0 || b.lane > songSel.lane1) continue;
+        if (d < songSel.paso0 || d >= songSel.paso1) continue;
+        b.lane  += dLane;
+        const int nd = d + dPaso;
+        b.compas = nd / pc;
+        b.paso   = nd % pc;
+    }
+    for (auto& c : clips)
+    {
+        const int d = c.compas * pc + c.paso;
+        if (c.pista < songSel.lane0 || c.pista > songSel.lane1) continue;
+        if (d < songSel.paso0 || d >= songSel.paso1) continue;
+        c.pista = juce::jlimit (0, AudioEngine::kAudioTracks - 1, c.pista + dLane);
+        const int nd = d + dPaso;
+        c.compas = nd / pc;
+        c.paso   = nd % pc;
+    }
+    publicaClips();
+
+    songSel.lane0 += dLane; songSel.lane1 += dLane;
+    songSel.paso0 += dPaso; songSel.paso1 += dPaso;
+    refreshSong();
+}
+
+//  COPIAR SOLO LO SELECCIONADO, RECORTADO POR LOS FILOS DE LA BANDA.
+//
+//  Es la frase exacta de quien manda: «no copiar todo el bucle sino unicamente
+//  lo seleccionado». Un bloque de dos compases cruzado por una banda de 24
+//  pasos sale como bloque de 24 CON SU OFFSET CORRIDO -o al pegarlo sonaria
+//  desde el principio del patron, que es otra frase-; un clip se recorta con la
+//  misma cuenta de muestras que `parteClip`.
+//
+//  Y en coordenadas RELATIVAS a la esquina de la banda, como el piano: sin eso
+//  pegar caeria donde se copio y no donde se toca.
+void MainComponent::songCopiaSel()
+{
+    if (! songSel.activa()) return;
+
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const double porPaso = juce::jmax (1.0, engine.muestrasPorCompas()) / (double) pc;
+
+    songPortapapeles.bloques.clear();
+    songPortapapeles.clips.clear();
+    songPortapapeles.carriles = songSel.lane1 - songSel.lane0 + 1;
+    songPortapapeles.pasos    = songSel.paso1 - songSel.paso0;
+
+    for (const auto& b : bloques)
+    {
+        if (b.lane < songSel.lane0 || b.lane > songSel.lane1) continue;
+        const int d = b.compas * pc + b.paso, h = d + b.largo;
+        const int a = juce::jmax (d, songSel.paso0), z = juce::jmin (h, songSel.paso1);
+        if (z <= a) continue;
+
+        const int len = b.bank >= 0 ? juce::jmax (1, engine.getPatternLength (b.bank)) : 1;
+        BloqueUI c = b;
+        c.lane   = b.lane - songSel.lane0;
+        c.offset = (b.offset + (a - d)) % len;
+        c.largo  = z - a;
+        const int rel = a - songSel.paso0;
+        c.compas = rel / pc;
+        c.paso   = rel % pc;
+        songPortapapeles.bloques.push_back (c);
+    }
+
+    for (const auto& c : clips)
+    {
+        if (c.pista < songSel.lane0 || c.pista > songSel.lane1) continue;
+        const int d = c.compas * pc + c.paso;
+        const int h = d + juce::jmax (1, (int) std::ceil ((double) c.largo / porPaso));
+        const int a = juce::jmax (d, songSel.paso0), z = juce::jmin (h, songSel.paso1);
+        if (z <= a) continue;
+
+        ClipUI k = c;
+        k.pista = c.pista - songSel.lane0;
+        k.desde = c.desde + (int) ((double) (a - d) * porPaso);
+        k.largo = juce::jmax (1, (int) ((double) (z - a) * porPaso));
+        const int rel = a - songSel.paso0;
+        k.compas = rel / pc;
+        k.paso   = rel % pc;
+        songPortapapeles.clips.push_back (k);
+    }
+
+    const int cuantos = (int) (songPortapapeles.bloques.size() + songPortapapeles.clips.size());
+    status.setText (cuantos == 1 ? T ("1 bloque copiado")
+                                 : T ("%1 bloques copiados", Lang::ltr (juce::String (cuantos))),
+                    juce::dontSendNotification);
+    resized();      // PEGAR aparece
+}
+
+//  VACIAR UN TRAMO DEJANDO LO QUE ASOMA POR FUERA.
+//
+//  Un bloque que cruza el filo se PARTE por el en vez de irse entero: borrar
+//  dos compases de un bloque de ocho se llevaba los ocho, que es justo lo que
+//  una banda existe para no hacer. La usan BORRAR, CORTE y el carvado de PEGAR.
+void MainComponent::vaciaBanda (int lane0, int lane1, int paso0, int paso1)
+{
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const double porPaso = juce::jmax (1.0, engine.muestrasPorCompas()) / (double) pc;
+
+    for (int i = (int) bloques.size() - 1; i >= 0; --i)
+    {
+        auto& b = bloques[(size_t) i];
+        if (b.lane < lane0 || b.lane > lane1) continue;
+        const int d = b.compas * pc + b.paso, h = d + b.largo;
+        if (h <= paso0 || d >= paso1) continue;
+
+        const int len = b.bank >= 0 ? juce::jmax (1, engine.getPatternLength (b.bank)) : 1;
+
+        //  El tramo se lo come entero.
+        if (d >= paso0 && h <= paso1) { bloques.erase (bloques.begin() + i); continue; }
+
+        //  Lo parte en dos: queda cabeza y queda cola.
+        if (d < paso0 && h > paso1)
+        {
+            if ((int) bloques.size() < AudioEngine::kMaxBloques)
+            {
+                BloqueUI cola = b;
+                cola.offset = (b.offset + (paso1 - d)) % len;
+                cola.largo  = h - paso1;
+                cola.compas = paso1 / pc;
+                cola.paso   = paso1 % pc;
+                bloques.push_back (cola);
+            }
+            bloques[(size_t) i].largo = paso0 - d;
+            continue;
+        }
+
+        //  O le muerde un filo.
+        if (d < paso0) b.largo = paso0 - d;
+        else
+        {
+            b.offset = (b.offset + (paso1 - d)) % len;
+            b.largo  = h - paso1;
+            b.compas = paso1 / pc;
+            b.paso   = paso1 % pc;
+        }
+        if (b.largo <= 0) bloques.erase (bloques.begin() + i);
+    }
+
+    for (int i = (int) clips.size() - 1; i >= 0; --i)
+    {
+        auto& c = clips[(size_t) i];
+        if (c.pista < lane0 || c.pista > lane1) continue;
+        const int d = c.compas * pc + c.paso;
+        const int h = d + juce::jmax (1, (int) std::ceil ((double) c.largo / porPaso));
+        if (h <= paso0 || d >= paso1) continue;
+
+        if (d >= paso0 && h <= paso1) { clips.erase (clips.begin() + i); continue; }
+
+        if (d < paso0 && h > paso1)
+        {
+            if ((int) clips.size() < AudioEngine::kMaxClips)
+            {
+                ClipUI cola = c;
+                cola.desde = c.desde + (int) ((double) (paso1 - d) * porPaso);
+                cola.largo = juce::jmax (1, (int) ((double) (h - paso1) * porPaso));
+                cola.compas = paso1 / pc;
+                cola.paso   = paso1 % pc;
+                clips.push_back (cola);
+            }
+            clips[(size_t) i].largo = juce::jmax (1, (int) ((double) (paso0 - d) * porPaso));
+            continue;
+        }
+
+        if (d < paso0) c.largo = juce::jmax (1, (int) ((double) (paso0 - d) * porPaso));
+        else
+        {
+            c.desde  = c.desde + (int) ((double) (paso1 - d) * porPaso);
+            c.largo  = juce::jmax (1, (int) ((double) (h - paso1) * porPaso));
+            c.compas = paso1 / pc;
+            c.paso   = paso1 % pc;
+        }
+    }
+    publicaClips();
+}
+
+void MainComponent::songBorraSel()
+{
+    if (! songSel.activa()) return;
+    pushUndo (T ("BORRAR"));
+    vaciaBanda (songSel.lane0, songSel.lane1, songSel.paso0, songSel.paso1);
+    songSel = {};
+    moviendoSelCancion = false;
+    refreshSong();
+    resized();      // la tira se va con la banda
+    status.setText (T ("Tramo borrado"), juce::dontSendNotification);
+}
+
+//  CORTAR ES COPIAR Y BORRAR SEGUIDOS, y se escribe LLAMANDO A LAS DOS.
+//  Repetir aqui el bucle de `songCopiaSel` seria la cuarta vez que esta casa
+//  paga lo mismo: dos caminos que hacen el mismo trabajo acaban separandose y
+//  el sintoma es «cortar y copiar no pegan igual» sin poder decir por que.
+void MainComponent::songCortaSel()
+{
+    if (! songSel.activa()) return;
+    songCopiaSel();
+    songBorraSel();
+    status.setText (T ("Tramo cortado"), juce::dontSendNotification);
+}
+
+//  PEGAR DONDE SE TOCA. El destino es la marca que deja un toque con SEL y, sin
+//  marca, el carril 0 del primer compas visible: pegar donde se copio no sirve
+//  de nada, y pedir un segundo gesto para decir «aqui» es la virgueria que se
+//  pidio quitar.
+//
+//  Y CARVA EL DESTINO antes de colocar, como un DAW: negarse porque hay algo
+//  debajo obliga a borrar a mano primero, que son dos operaciones para una.
+void MainComponent::songPegaSel()
+{
+    if (songPortapapeles.bloques.empty() && songPortapapeles.clips.empty()) return;
+
+    const int pc    = juce::jmax (1, engine.pasosPorCompas());
+    const int total = engine.getSongLength() * pc;
+    const int lane0 = songMarcaLane >= 0 ? songMarcaLane : 0;
+    const int paso0 = songMarcaPaso >= 0 ? songMarcaPaso : songPrimerCompas * pc;
+
+    pushUndo (T ("PEGAR"));
+    vaciaBanda (lane0, juce::jmin (AudioEngine::kSongLanes - 1, lane0 + songPortapapeles.carriles - 1),
+                paso0, juce::jmin (total, paso0 + songPortapapeles.pasos));
+
+    for (const auto& b : songPortapapeles.bloques)
+    {
+        if ((int) bloques.size() >= AudioEngine::kMaxBloques) break;
+        BloqueUI c = b;
+        c.lane = lane0 + b.lane;
+        const int d = paso0 + b.compas * pc + b.paso;
+        //  Lo que no cabe en cuatro carriles o en la cancion NO se pega, y no
+        //  se recorta a la fuerza: la misma regla que el piano.
+        if (! juce::isPositiveAndBelow (c.lane, AudioEngine::kSongLanes)) continue;
+        if (d < 0 || d + c.largo > total) continue;
+        c.compas = d / pc;
+        c.paso   = d % pc;
+        bloques.push_back (c);
+    }
+    for (const auto& k : songPortapapeles.clips)
+    {
+        if ((int) clips.size() >= AudioEngine::kMaxClips) break;
+        ClipUI c = k;
+        c.pista = lane0 + k.pista;
+        const int d = paso0 + k.compas * pc + k.paso;
+        if (! juce::isPositiveAndBelow (c.pista, AudioEngine::kAudioTracks)) continue;
+        if (d < 0 || d >= total) continue;
+        c.compas = d / pc;
+        c.paso   = d % pc;
+        clips.push_back (c);
+    }
+    publicaClips();
+
+    //  Y LA BANDA SE PONE SOBRE LO PEGADO, que es donde vas a seguir trabajando.
+    songSel.lane0 = lane0;
+    songSel.lane1 = juce::jmin (AudioEngine::kSongLanes - 1, lane0 + songPortapapeles.carriles - 1);
+    songSel.paso0 = paso0;
+    songSel.paso1 = juce::jmin (total, paso0 + songPortapapeles.pasos);
+    refreshSong();
+    resized();
+    status.setText (T ("Pegado en el compas %1", juce::String (paso0 / pc + 1)),
+                    juce::dontSendNotification);
 }
 
 //  EL BUCLE DEL TRAMO QUE SE ESTA MIRANDO.
@@ -13813,7 +14654,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 //  dedo estaba en la rejilla y no en la tapa.
 void MainComponent::ponHerramienta (int h)
 {
-    songHerramienta = juce::jlimit (0, (int) Playlist::hTijeras, h);
+    songHerramienta = juce::jlimit (0, (int) Playlist::hLupa, h);
     songGrid.herramienta = songHerramienta;
 
     if (songHerramienta == Playlist::hGoma)      songBrush = 0;
@@ -14028,6 +14869,10 @@ void MainComponent::ponClip (int pista, int paso)
     c.desde  = ini;
     c.largo  = fin - ini;
     c.gain   = 1.0f;
+    //  CON RED. Ninguno de los seis gestos de clip apilaba una entrada de
+    //  deshacer -salio del inventario-: soltar un clip encima de otro, o
+    //  arrastrar un filo de mas, era trabajo que solo se recuperaba a mano.
+    pushUndo (T ("CLIP"));
     clips.push_back (c);
     publicaClips();
     refreshSong (false);
@@ -14036,6 +14881,9 @@ void MainComponent::ponClip (int pista, int paso)
 void MainComponent::mueveClip (int indice, int pista, int paso)
 {
     if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    //  UNA ENTRADA POR ARRASTRE y no una por evento: el mismo candado que el
+    //  lapiz, abierto al levantar el dedo. Ver Playlist::onSuelta.
+    if (! moviendoSelCancion) { pushUndo (T ("MOVER")); moviendoSelCancion = true; }
     const int pc = juce::jmax (1, engine.pasosPorCompas());
     const int p  = juce::jlimit (0, AudioEngine::kSongBars * pc - 1, paso);
     clips[(size_t) indice].pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
@@ -14058,6 +14906,7 @@ void MainComponent::mueveClip (int indice, int pista, int paso)
 void MainComponent::largoClip (int indice, int desdePaso, int hastaPaso)
 {
     if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    if (! moviendoSelCancion) { pushUndo (T ("LARGO")); moviendoSelCancion = true; }
     auto& c = clips[(size_t) indice];
 
     const double porCompas = juce::jmax (1.0, engine.muestrasPorCompas());
@@ -14110,6 +14959,7 @@ void MainComponent::parteClip (int indice, int paso)
     //  igualmente publica.
     if (corte <= 0 || corte >= c.largo) return;
 
+    pushUndo (T ("TIJERAS"));
     ClipUI b = c;
     b.compas = paso / pc;
     b.paso   = paso % pc;
@@ -14125,6 +14975,7 @@ void MainComponent::parteClip (int indice, int paso)
 void MainComponent::quitaClip (int indice)
 {
     if (! juce::isPositiveAndBelow (indice, (int) clips.size())) return;
+    pushUndo (T ("GOMA"));
     clips.erase (clips.begin() + indice);
     publicaClips();
     refreshSong (false);
@@ -14133,9 +14984,32 @@ void MainComponent::quitaClip (int indice)
 void MainComponent::refreshSong (bool repintarTarjeta)
 {
     const int bars = engine.getSongLength();
-    for (int lane = 0; lane < Playlist::kLanes; ++lane)
-        for (int b = 0; b < bars; ++b)
-            songCells[lane * bars + b] = engine.getSongCell (lane, b);
+    //  LOS BLOQUES, TRADUCIDOS A PASOS ABSOLUTOS. Lo que la rejilla dibuja no
+    //  es el modelo: el modelo guarda compas+paso -que es como se escribe en el
+    //  fichero y como se corre al insertar un compas- y la rejilla pinta en una
+    //  linea recta de pasos. La traduccion vive aqui, una vez, por lo mismo que
+    //  la de los clips.
+    {
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        songBloquesVista.clear();
+        songBloquesVista.reserve (bloques.size());
+        for (const auto& b : bloques)
+        {
+            Playlist::BloqueVista v;
+            v.lane      = b.lane;
+            v.desdePaso = b.compas * pc + b.paso;
+            v.hastaPaso = v.desdePaso + juce::jmax (1, b.largo);
+            v.bank      = b.bank;
+            v.offset    = b.offset;
+            v.mudo      = b.mudo;
+            songBloquesVista.push_back (v);
+        }
+    }
+    //  Y AL MOTOR, por el mismo sitio donde se dibujan: la tabla que suena y la
+    //  que se ve salen del mismo vector en el mismo tick, o el arreglo se
+    //  oiria un fotograma por detras de lo que se esta arrastrando. El motor se
+    //  salta la publicacion si no ha cambiado nada; ver AudioEngine.
+    publicaBloques();
 
     for (int i = 0; i < songPatBtns.size(); ++i)
         songPatBtns[i]->setToggleState (songBrush == i + 1, juce::dontSendNotification);
@@ -14163,7 +15037,6 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     songGrid.pincelClip = (songPincel == 2);
 
     songCursor = juce::jlimit (0, juce::jmax (0, bars - 1), songCursor);
-    songPasteBtn.setEnabled (songClipLleno);
     //  El transporte se puede parar desde la cara, desde un gesto o solo, asi
     //  que la tapa lo LEE en vez de recordarlo.
     {
@@ -14184,18 +15057,24 @@ void MainComponent::refreshSong (bool repintarTarjeta)
     for (int q = 0; q < kNumPatterns; ++q) songLargos[(size_t) q] = engine.getPatternLength (q);
     songGrid.setPatrones (&pattern[0][0][0], songLargos, kNumPatterns, kNumSteps, kNumPads);
 
-    //  El silencio por bloque, cuatro enteros: el motor los guarda como un bit
-    //  por compas y la rejilla los lee igual, asi que no hay traduccion que
-    //  pueda quedarse vieja.
-    juce::uint64 bmudos[Playlist::kLanes] {};
-    for (int ln = 0; ln < Playlist::kLanes; ++ln)
-        bmudos[ln] = engine.songCellMuteMask (ln);
-
-    songGrid.setSource (songCells, padZati.data(), (int) padZati.size(), bars, songPrimerCompas,
+    //  EL SILENCIO POR BLOQUE VIAJA DENTRO DEL BLOQUE. Eran cuatro mascaras de
+    //  64 bits -un bit por compas y carril- porque el silencio era de la CELDA;
+    //  con la lista es una marca del bloque, que es de quien siempre fue: una
+    //  cola silenciada no callaba nada porque el motor solo miraba la cabeza.
+    songGrid.setSource (songBloquesVista.data(), (int) songBloquesVista.size(),
+                        padZati.data(), (int) padZati.size(), bars, songPrimerCompas,
                         engine.isSongMode() && engine.isPlaying() ? engine.getSongBar() : -1,
                         songCursor, mudos,
-                        engine.getSongLoopFrom(), engine.getSongLoopTo(),
-                        bmudos);
+                        engine.getSongLoopFrom(), engine.getSongLoopTo());
+    songGrid.setSel (songSel);
+    songGrid.setMarca (songMarcaLane, songMarcaPaso);
+
+    //  Y EL CABEZAL DE LA BARRA, que su propio comentario prometia y nadie
+    //  ponia: se pintaba SIEMPRE sin marca, asi que con la cancion rodando
+    //  fuera de la vista no habia forma de saber por donde iba - que es
+    //  literalmente para lo que se puso. Salio del inventario.
+    songBarra.ponCabezal (engine.isSongMode() && engine.isPlaying()
+                              ? engine.getSongBar() : -1);
 
     //  LOS CLIPS, TRADUCIDOS A PASOS. La rejilla dibuja pasos y el motor
     //  guarda muestras, asi que alguien traduce; se hace aqui y con
@@ -14340,6 +15219,38 @@ void MainComponent::publicaClips()
         d.gain   = c.gain;
     }
     engine.publicaClips (tabla.data(), n);
+}
+
+//  LOS BLOQUES, AL MOTOR. Mismo camino que los clips y por la misma razon: la
+//  tabla que SUENA es inmutable y se publica de una vez, porque editarla en su
+//  sitio seria una lectura rota a medio bloque. Lo que se edita vive aqui.
+//
+//  Se acota EN LA PUERTA -carril, banco y sitio- que es donde entra lo que
+//  puede venir de un fichero de otra epoca: cada consumidor volviendo a validar
+//  es como el color de un bloque acabo leyendo fuera del array.
+void MainComponent::publicaBloques()
+{
+    std::array<AudioEngine::BloqueSong, AudioEngine::kMaxBloques> tabla {};
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    int n = 0;
+    for (const auto& b : bloques)
+    {
+        if (n >= AudioEngine::kMaxBloques) break;
+        if (! juce::isPositiveAndBelow (b.lane, AudioEngine::kSongLanes)) continue;
+        if (b.largo <= 0) continue;
+        if (b.bank >= kNumPatterns) continue;
+        if (b.bank < 0 && ! juce::isPositiveAndBelow (-b.bank - 1, kNumPads)) continue;
+
+        auto& d = tabla[(size_t) n++];
+        d.lane   = b.lane;
+        d.bank   = b.bank;
+        d.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, b.compas);
+        d.paso   = juce::jlimit (0, pc - 1, b.paso);
+        d.largo  = b.largo;
+        d.offset = juce::jmax (0, b.offset);
+        d.mudo   = b.mudo;
+    }
+    engine.publicaBloques (tabla.data(), n);
 }
 
 void MainComponent::refreshRack()
@@ -15436,10 +16347,60 @@ int MainComponent::loadBurstPreference()
 //  aprender lo mismo.
 void MainComponent::checkXRuns (double dtMs)
 {
-    auto* dev = deviceManager.getCurrentAudioDevice();
-    if (dev == nullptr) { lastXRuns = -1; return; }
+    //  ZATI_XRUN — LOS CHASQUIDOS COMO ENTRADA DEL BANCO.
+    //
+    //  Toda esta ley -sube a los cuatro, olvida a los cinco segundos, baja a
+    //  los cuarenta y cinco limpio, y descarta el nivel si al bajar vuelve a
+    //  crepitar- vivia sin medir, porque depende de `getXRunCount` y en el
+    //  escritorio no hay aparato que lo cuente. Es la misma figura de
+    //  ZATI_VBLANK y ZATI_INSETS: lo que no existe aqui se convierte en una
+    //  ENTRADA. El guion son pares `ms:cuantos` separados por comas, en el
+    //  reloj ESCALADO por ZATI_XRUN_ESCALA -si no, medir cuarenta y cinco
+    //  segundos de tramo limpio costaria cuarenta y cinco segundos de banco- y
+    //  se consume por el mismo camino que el contador de verdad: la ley corre
+    //  UNA vez y no dos, que es lo unico que hace que esto pruebe algo.
+    const bool guion = xrunGuion.isNotEmpty();
+    if (guion)
+    {
+        dtMs *= xrunEscala;
+        //  Sin aparato de sonido `useLowestLatency` sale por la puerta y deja
+        //  el multiplicador en cero, que no es un nivel sino «aun sin leer».
+        //  Se siembra igual que alli, del disco y de la gama.
+        if (burstMult <= 0)
+            burstMult = juce::jlimit (1, kMaxBursts,
+                                      juce::jmax (loadBurstPreference(),
+                                                  DeviceTier::profile().bufferBursts));
+        std::cout << "{\"buffer\":1,\"ms\":" << (int) xrunRelojMs
+                  << ",\"mult\":" << burstMult
+                  << ",\"suelo\":" << burstSuelo
+                  << ",\"vistos\":" << xrunsSeen
+                  << ",\"limpio_ms\":" << (int) xrunLimpioMs << "}" << std::endl;
+    }
 
-    const int now = dev->getXRunCount();
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev == nullptr && ! guion) { lastXRuns = -1; return; }
+
+    int now = 0;
+    if (guion)
+    {
+        xrunRelojMs += dtMs;
+        //  Se acumula lo que toque hasta este instante, que es lo que un
+        //  contador del dispositivo devuelve: un TOTAL y no un incremento.
+        auto trozos = juce::StringArray::fromTokens (xrunGuion, ",", "");
+        int total = 0;
+        for (auto& t : trozos)
+        {
+            const int c = t.indexOfChar (':');
+            if (c < 0) continue;
+            if (t.substring (0, c).getDoubleValue() <= xrunRelojMs)
+                total += t.substring (c + 1).getIntValue();
+        }
+        now = total;
+    }
+    else
+    {
+        now = dev->getXRunCount();
+    }
     if (now < 0) return;                     // el dispositivo no lleva la cuenta
 
     if (xrunGraceMs > 0.0) { xrunGraceMs -= dtMs; lastXRuns = now; return; }
@@ -15456,10 +16417,32 @@ void MainComponent::checkXRuns (double dtMs)
         //  buffer mas grande hubiera hecho falta o no - y ese buffer es
         //  latencia, que es el argumento entero de esta app. Un tramo limpio
         //  lo suficientemente largo y se empieza de cero.
-        if (xrunsSeen > 0 && (xrunLimpioMs += dtMs) >= kXRunOlvidoMs)
+        xrunLimpioMs += dtMs;
+        if (burstBajoMs >= 0.0) burstBajoMs += dtMs;
+
+        if (xrunsSeen > 0 && xrunLimpioMs >= kXRunOlvidoMs)
         {
             xrunsSeen    = 0;
             xrunLimpioMs = 0.0;
+        }
+
+        //  Y AQUI SE BAJA. Ver kXRunBajaMs: el buffer subia y no volvia nunca.
+        if (burstMult > burstSuelo && xrunLimpioMs >= kXRunBajaMs)
+        {
+            --burstMult;
+            ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (burstMult));
+            xrunLimpioMs = 0.0;
+            burstBajoMs  = 0.0;
+            useLowestLatency();
+            //  Y SE DICE, por lo mismo que se dice al subir: la latencia acaba
+            //  de cambiar y quien eligio esta app por la latencia tiene derecho
+            //  a saber en que numero esta.
+            status.setText (T ("Audio limpio - buffer a %1 muestras",
+                               Lang::ltr (juce::String (deviceManager.getCurrentAudioDevice() != nullptr
+                                                            ? deviceManager.getCurrentAudioDevice()->getCurrentBufferSizeSamples()
+                                                            : 0))),
+                            juce::dontSendNotification);
+            refreshDeviceStatusLine (true);
         }
         return;
     }
@@ -15467,6 +16450,13 @@ void MainComponent::checkXRuns (double dtMs)
     xrunLimpioMs = 0.0;
     xrunsSeen += nuevos;
     if (xrunsSeen < 4 || burstMult >= kMaxBursts) return;
+
+    //  Y SI ACABAMOS DE BAJAR, ese nivel queda descartado. Sin esto la app se
+    //  pasaria la sesion entera subiendo y bajando en el telefono justo, con un
+    //  corte de sonido en cada viaje.
+    if (burstBajoMs >= 0.0 && burstBajoMs < kXRunBajaMs)
+        burstSuelo = juce::jlimit (1, kMaxBursts, burstMult + 1);
+    burstBajoMs = -1.0;
 
     ++burstMult;
     ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (burstMult));
@@ -16107,10 +17097,22 @@ void MainComponent::llenaDePrueba()
     //  Y LA CANCION ENTERA. Sesenta y cuatro compases es el tope que la app
     //  admite, y es donde la linea de tiempo reparte su celda mas estrecha.
     engine.setSongLength (AudioEngine::kSongBars);
-    for (int bar = 0; bar < AudioEngine::kSongBars; ++bar)
-        for (int lane = 0; lane < 4; ++lane)
-            if (((bar + lane) % 3) != 2)
-                engine.setSongCell (lane, bar, 1 + ((bar / 2 + lane) % AudioEngine::kNumPatterns));
+    vaciaCancion();
+    {
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        for (int bar = 0; bar < AudioEngine::kSongBars; ++bar)
+            for (int lane = 0; lane < 4; ++lane)
+                if (((bar + lane) % 3) != 2)
+                {
+                    if ((int) bloques.size() >= AudioEngine::kMaxBloques) break;
+                    BloqueUI b;
+                    b.lane = lane; b.compas = bar;
+                    b.bank = (bar / 2 + lane) % AudioEngine::kNumPatterns;
+                    b.largo = pc;
+                    bloques.push_back (b);
+                }
+        publicaBloques();
+    }
 
     //  Cuatro clips de audio, uno por pista, del recorte de su pad — que es lo
     //  que `ponClip` hace y por eso se llama a `ponClip` y no se rellena la
@@ -18264,10 +19266,43 @@ void MainComponent::timerCallback()
 //  permite. Ahi es donde ese numero dejo de ser «cada cuanto se pinta» y paso a
 //  ser «lo mas lento a lo que se nos permite caer».
 // ============================================================================
+// ============================================================================
+//  ZATI_LASTRE=ms — UN CUADRO QUE CUESTA LO QUE CUESTA EN UN TELEFONO.
+//
+//  La decision de saltarse vblanks solo se puede juzgar cuando el cuadro cuesta
+//  CERCA de lo que dura un periodo, que es el caso normal en un movil y no pasa
+//  nunca en el escritorio: aqui la cara sale a 0.3 ms de fotograma contra los
+//  8.3 de un panel a 120 Hz, o sea que la rama que decide la cadencia no se
+//  ejecuta ni una vez en las 983 corridas del banco. Es exactamente la figura
+//  de ZATI_VBLANK y ZATI_INSETS: lo que no existe en el escritorio se convierte
+//  en una ENTRADA en vez de quedarse sin medir.
+//
+//  Y CON TEMBLOR, que es la mitad que importa. Un lastre plano converge en la
+//  media movil y deja la decision clavada; lo que un telefono hace de verdad es
+//  rondar el presupuesto -un cuadro con dos fichas, el siguiente con una- y es
+//  ese temblor el que hace que un `floor` sin memoria cambie de opinion. +-18 %
+//  con un generador propio y determinista, para que dos corridas del banco den
+//  el mismo numero.
+// ============================================================================
+void MainComponent::lastreDeBanco()
+{
+    if (lastreMs <= 0.0) return;
+
+    lastreSemilla = lastreSemilla * 1103515245u + 12345u;
+    const double f = 0.82 + 0.36 * (double) ((lastreSemilla >> 16) & 0xFFFF) / 65535.0;
+    const double hasta = juce::Time::getMillisecondCounterHiRes() + lastreMs * f;
+    //  Espera ACTIVA y no un `sleep`: lo que se simula es trabajo de dibujo, o
+    //  sea el hilo de mensajes ocupado. Dormirlo mediria lo contrario.
+    volatile double basura = 0.0;
+    while (juce::Time::getMillisecondCounterHiRes() < hasta) basura += 1.0;
+    juce::ignoreUnused (basura);
+}
+
 void MainComponent::enVBlank (double timestampSec)
 {
     const double ahora = juce::Time::getMillisecondCounterHiRes();
     vblankUltimoMs = ahora;
+    ++UiAudit::vblanksVistos;
 
     //  El periodo del panel, de su propia marca de tiempo. Acotado: un salto
     //  de segundos es la app volviendo de segundo plano, no un panel lento.
@@ -18276,7 +19311,7 @@ void MainComponent::enVBlank (double timestampSec)
                              : 16.7;
     vblankUltimoSec = timestampSec;
 
-    if (cuadroSaltar > 0) { --cuadroSaltar; return; }
+    if (cuadroSaltar > 0) { --cuadroSaltar; ++UiAudit::cuadrosSaltados; return; }
 
     //  Lo que se pasa es el tiempo desde el ultimo cuadro PINTADO y no desde el
     //  ultimo vblank: con saltos, los dos dejan de ser lo mismo y usar el
@@ -18285,11 +19320,13 @@ void MainComponent::enVBlank (double timestampSec)
     const double dt = cuadroUltimoMs > 0.0
                         ? juce::jlimit (1.0, 250.0, ahora - cuadroUltimoMs)
                         : periodo;
+    if (cuadroUltimoMs > 0.0) UiAudit::apuntaHueco (dt);
     cuadroUltimoMs = ahora;
 
     cuadroGastoMs = 0.0;
     const double t0 = juce::Time::getMillisecondCounterHiRes();
     pintaCuadro (dt);
+    lastreDeBanco();
     cuadroGastoMs += juce::Time::getMillisecondCounterHiRes() - t0;
 
     //  Y el `paint` que esto acaba de pedir corre DESPUES de volver de aqui,
@@ -18298,9 +19335,112 @@ void MainComponent::enVBlank (double timestampSec)
     //  cuando el peer ha terminado de despachar.
     cuadroCosteMs = 0.8 * cuadroCosteMs + 0.2 * cuadroGastoMs;
 
-    const int techo = juce::jmax (0, (int) (DeviceTier::profile().relojMs / periodo) - 1);
-    const int quiere = (int) std::floor (cuadroCosteMs / periodo);
-    cuadroSaltar = juce::jlimit (0, techo, quiere);
+    //  Y LA CADENCIA SE MUEVE DE UNA EN UNA, CON BANDA MUERTA Y CON RELOJ.
+    //
+    //  Antes era `cuadroSaltar = floor (coste / periodo)`, recalculado desde
+    //  cero en cada cuadro y sin memoria. Con un cuadro que cuesta CERCA de un
+    //  periodo -el caso normal en un telefono, que es para lo que se elige el
+    //  presupuesto- ese `floor` cae a un lado y a otro con el temblor de la
+    //  media movil, y la app alterna entre pintar todos los cuadros y pintar
+    //  uno de cada dos. Medido con ZATI_LASTRE=16 a 60 Hz: **56 cambios de
+    //  cadencia en 10 segundos**, y el histograma de huecos con DOS columnas
+    //  separadas -179 huecos de 16-20 ms y 137 de 32-36- en vez de una. La
+    //  media decia 41 cuadros por segundo y lo que se veia era un tiron cada
+    //  dos decimas.
+    //
+    //  Tres cosas lo arreglan y las tres hacen falta:
+    //
+    //   · El nivel se RECUERDA y se mueve de uno en uno. Un pico no puede
+    //     mandar la cadencia de 60 a 20 de un salto.
+    //   · BANDA MUERTA del 115 % para subir y del 70 % para bajar, contra el
+    //     presupuesto del nivel en el que se esta -`periodo * (nivel + 1)`, que
+    //     es el tiempo de verdad disponible cuando se salta-. Entre las dos
+    //     decisiones hay un factor 1.64, o sea que el coste tiene que cambiar
+    //     de verdad para que la cadencia se mueva.
+    //   · Y MEDIO SEGUNDO ENTRE CAMBIOS. La banda muerta sola deja aletear a un
+    //     coste que deriva despacio justo por el borde; con el reloj, el peor
+    //     caso posible son dos cambios por segundo y no cinco, que es la
+    //     diferencia entre «ha cambiado algo» y «va a tirones».
+    //  Y UN TECHO DE CADENCIA, que es la otra mitad de los tirones y la que no
+    //  se arregla con histeresis.
+    //
+    //  Un panel de 120 Hz pide el DOBLE de cuadros que uno de 60, y la app los
+    //  pintaba todos: el mismo trabajo dos veces, en el mismo hilo de mensajes
+    //  que tiene que dejar respirar al de audio. Una cara que cuesta 12 ms cabe
+    //  de sobra en los 16.7 de un panel de 60 y NO CABE en los 8.3 de uno de
+    //  120, asi que el telefono mas caro era justo el que iba peor - y de paso
+    //  el que mas under-runs se comia, porque un hilo de mensajes al 100 % le
+    //  roba nucleo al de audio.
+    //
+    //  Sesenta cuadros por segundo es el techo, y es una decision y no un
+    //  limite tecnico: esto es un groovebox y nada de lo que dibuja -agujas,
+    //  cabezales, destellos- gana nada por encima de ahi. Lo que se gana es la
+    //  mitad de CPU y de bateria en un panel rapido, y una cadencia CLAVADA en
+    //  vez de una que aletea intentando llegar a 120.
+    //  Y LA CADENCIA SE DECIDE CON EL PERIODO SUAVIZADO, no con el ultimo.
+    //
+    //  Un panel no cambia de frecuencia entre dos cuadros: lo que cambia es
+    //  CUANDO llega el aviso, y ese temblor es de milisegundos. Decidir con el
+    //  intervalo instantaneo hace que `ceil (16.67 / periodo)` valga 1 con un
+    //  periodo de 17.0 y 2 con uno de 16.0, o sea que el suelo de la cadencia
+    //  aleteaba con el jitter del propio aviso: 28 cambios en 10 s a 60 Hz con
+    //  la cara quieta, que es peor que no tener techo. Con la media movil el
+    //  panel se mide una vez y se cree.
+    periodoPanel = periodoPanel > 0.0 ? 0.9 * periodoPanel + 0.1 * periodo : periodo;
+
+    //  Y CON MARGEN DEL 10 %: un panel de 60 Hz declarado entrega 16.6 o 16.8
+    //  segun el momento, y sin el margen la mitad de los telefonos de 60 Hz
+    //  pintarian a 30 por redondeo. Uno de 120 daba 2.008 periodos por cuadro,
+    //  `ceil` lo subia a 3 y la app salia a 40 cuadros por segundo en el panel
+    //  mas rapido que hay: 406 de 1211 medidos.
+    //  Y SE RESUELVE UNA VEZ POR PANEL, no una vez por cuadro.
+    //
+    //  Un panel tiene UNA frecuencia. Recalcular el suelo en cada aviso hace
+    //  que un temblor de medio milisegundo cruce un umbral entero y cambie la
+    //  cadencia: a 144 Hz, con el resultado cayendo en 51 cuadros por segundo
+    //  contra un suelo de 50, salieron 14 cambios en 10 s con la cara quieta y
+    //  nada que dibujar. Asi que el suelo se recalcula solo cuando el periodo
+    //  del panel cambia DE VERDAD -mas de un 8 %, o sea un cambio de modo de la
+    //  pantalla- y entre medias se cree el que hay.
+    if (periodoNivel <= 0.0 || std::abs (periodoPanel - periodoNivel) > 0.08 * periodoNivel)
+    {
+        periodoNivel = periodoPanel;
+
+        const double periodoMin = 1000.0 / (double) kDibujoTopeHz;
+        int n = juce::jmax (0, (int) std::ceil (periodoMin / periodoNivel - 0.10) - 1);
+
+        //  Y EL TECHO NO PUEDE HUNDIR LA CADENCIA POR DEBAJO DEL SUELO. En un
+        //  panel de 90 Hz el primer divisor entero deja 45 cuadros por segundo,
+        //  que se ve PEOR que pintar los 90: un techo que empeora lo que venia a
+        //  arreglar no es un techo. Se afloja hasta que lo que queda pasa del
+        //  suelo.
+        while (n > 0 && 1000.0 / (periodoNivel * (double) (n + 1)) < (double) kDibujoSueloHz)
+            --n;
+
+        nivelMinVigente = n;
+    }
+    const int nivelMin = nivelMinVigente;
+
+    const int techo = juce::jmax (nivelMin,
+                                  (int) (DeviceTier::profile().relojMs / periodoPanel) - 1);
+    const double presupuesto = periodoPanel * (double) (saltoNivel + 1);
+    int quiere = saltoNivel;
+    if (cuadroCosteMs > 1.15 * presupuesto)                      quiere = saltoNivel + 1;
+    else if (saltoNivel > nivelMin && cuadroCosteMs < 0.70 * periodoPanel * (double) saltoNivel)
+                                                                 quiere = saltoNivel - 1;
+    quiere = juce::jlimit (nivelMin, techo, quiere);
+
+    //  El suelo del techo de cadencia NO espera medio segundo: no es una
+    //  decision que pueda aletear -sale del periodo del panel, que no cambia-
+    //  y hacerla esperar solo retrasaria el primer cuadro bien pintado.
+    if (quiere != saltoNivel && (saltoNivel < nivelMin
+                                 || ahora - saltoCambioMs >= kCadenciaEsperaMs))
+    {
+        saltoNivel    = quiere;
+        saltoCambioMs = ahora;
+        ++UiAudit::cadenciaCambios;
+    }
+    cuadroSaltar = saltoNivel;
 }
 
 // ============================================================================

@@ -773,6 +773,11 @@ public:
                         UiAudit::fondosPintados = 0;
                         UiAudit::pixelesPintados = 0;
                         UiAudit::cuadrosPintados = 0;
+                        UiAudit::vblanksVistos   = 0;
+                        UiAudit::cuadrosSaltados = 0;
+                        UiAudit::cadenciaCambios = 0;
+                        UiAudit::huecoPeorMs     = 0.0;
+                        UiAudit::huecoCubos.fill (0);
                         juce::Timer::callAfterDelay (juce::jmax (1, sp.getIntValue()) * 1000,
                                                      [this, t0, ventana, c2]
                         {
@@ -789,7 +794,16 @@ public:
                                       //  esta ahi: se lee sonando y callada, y las dos
                                       //  cifras son la medida. Ver SpectrumDisplay.
                                       << ",\"espectro_db\":" << c2->auditPicoEspectro()
-                                      << "}" << std::endl;
+                                      //  LA FLUIDEZ, que es la pregunta que la media
+                                      //  de cuadros no puede contestar. Ver UiAudit.
+                                      << ",\"vblanks\":" << UiAudit::vblanksVistos
+                                      << ",\"saltados\":" << UiAudit::cuadrosSaltados
+                                      << ",\"cadencia_cambios\":" << UiAudit::cadenciaCambios
+                                      << ",\"hueco_peor_ms\":" << UiAudit::huecoPeorMs
+                                      << ",\"huecos\":[";
+                            for (size_t i = 0; i < UiAudit::huecoCubos.size(); ++i)
+                                std::cout << (i ? "," : "") << UiAudit::huecoCubos[i];
+                            std::cout << "]}" << std::endl;
                             quit();
                         });
                         return;

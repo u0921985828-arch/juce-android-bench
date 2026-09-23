@@ -144,14 +144,56 @@ public:
     //  misma celda- y nadie mas puede saberlo.
     std::function<void (int pad, int step, bool arrastrando)> onCell;
 
+    //  LA BANDA DE LA REJILLA: pads x pasos.
+    //
+    //  Esta rejilla no tenia seleccion de ninguna clase -solo COPIAR y PEGAR
+    //  FILA y PATRON- asi que llevarse medio patron a otro sitio pedia copiar
+    //  el patron entero y borrar a mano lo que sobraba. Se marca arrastrando
+    //  con SEL armada y un toque fuera la vacia, igual que en el piano y en la
+    //  linea de tiempo: un solo modelo de seleccion en las tres pantallas.
+    std::function<void (int pad0, int paso0, int pad1, int paso1)> onBanda;
+    std::function<void()> onVaciaSel;
+
+    struct Sel
+    {
+        int pad0 = -1, pad1 = -1, paso0 = 0, paso1 = 0;   // paso1 EXCLUSIVO
+        bool activa() const noexcept { return pad0 >= 0 && paso1 > paso0; }
+        bool operator== (const Sel& o) const noexcept
+        {
+            return pad0 == o.pad0 && pad1 == o.pad1 && paso0 == o.paso0 && paso1 == o.paso1;
+        }
+    };
+    void setSel (Sel s) { if (! (s == sel)) { sel = s; repaint(); } }
+    Sel  getSel() const noexcept { return sel; }
+    //  ARMADA O NO. Es un MODO y no un gesto nuevo, que es la regla de esta
+    //  casa para un lienzo: un gesto sin tapa no se puede medir por la tapa.
+    bool selArmada = false;
+
     void setSource (const bool* cells,          // [step][pad] flattened, stride = kLanes
                     const int*  zati,           // per pad
                     const bool* loaded,         // per pad
                     const signed char* notes,   // [step][pad] semitone offset, same stride
                     int patternLength, int desdePaso, int playStep, int selectedPad,
-                    float stepPhase = 0.0f, int firstPad = 0)
+                    float stepPhase = 0.0f, int firstPad = 0,
+                    //  Y CUANTO DURA CADA GOLPE, en cuartos de paso guardado.
+                    //  La rejilla dibujaba una celda por golpe pasara lo que
+                    //  pasara, asi que una redonda escrita en 1/8 y mirada en
+                    //  1/32 se veia igual de corta que una semicorchea: el
+                    //  largo existia y no se veia en ningun sitio. Opcional -
+                    //  nulo dibuja lo de siempre.
+                    const std::uint16_t* largos = nullptr,
+                    //  Y CUANTOS CUARTOS MIDE UNA CELDA DE ESTA VISTA, que es
+                    //  la mitad sin la cual el largo no se puede dibujar: el
+                    //  motor guarda el largo en cuartos de PASO GUARDADO y una
+                    //  celda son `pasosPorCelda` de esos. Con la rejilla en 1/8
+                    //  sobre un patron de 1/16 una celda son ocho cuartos y no
+                    //  cuatro, asi que dar por hecho el cuatro pintaria la cola
+                    //  del doble de larga en cuanto se cambia de rejilla, que
+                    //  es justo lo que esta tanda venia a arreglar.
+                    int cuartosCelda = 4)
     {
-        data = cells; zatiOf = zati; loadedOf = loaded; noteOf = notes;
+        data = cells; zatiOf = zati; loadedOf = loaded; noteOf = notes; largoOf = largos;
+        cuartosPorCelda = juce::jmax (1, cuartosCelda);
         patLen = patternLength;
         //  ACOTADO AQUI Y NO SOLO EN LA MAQUETA. El primer paso lo mueve una
         //  barra y lo mueve SEGUIR, y esta funcion la llama el temporizador
@@ -354,6 +396,32 @@ public:
 
                 const bool on = data[step * kLanes + pad];
 
+                //  LA COLA DE UN GOLPE QUE DURA MAS DE UNA CELDA.
+                //
+                //  Se pinta ANTES que el golpe y mirando hacia atras: el largo
+                //  vive en la celda que empieza, asi que una celda cualquiera
+                //  no sabe si esta dentro de la cola de otra sin preguntarle a
+                //  las de su izquierda. `kLenSuelto` -un golpe suelto- sigue
+                //  midiendo una celda y por eso un ritmo no cambia de dibujo,
+                //  que es lo que se pidio: esto es para el midi melodico.
+                if (! on && largoOf != nullptr && step < patLen)
+                {
+                    const int porCelda = cuartosPorCelda;
+                    for (int atras = 1; atras <= step && atras < 64; ++atras)
+                    {
+                        const int st0 = step - atras;
+                        if (! data[st0 * kLanes + pad]) continue;
+                        const int cuartos = (int) largoOf[st0 * kLanes + pad];
+                        if (cuartos > atras * porCelda)
+                        {
+                            g.setColour ((has ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.55f))
+                                             .withMultipliedAlpha (0.35f));
+                            g.fillRect (cell);
+                        }
+                        break;      // la primera que se encuentra manda
+                    }
+                }
+
                 if (on)
                 {
                     //  Un paso puesto en un carril SIN sonido no lleva color de
@@ -394,6 +462,29 @@ public:
                     g.fillRect (cell);
                 }
 
+            }
+        }
+
+        //  LA BANDA, POR RELLENO Y SOBRE LAS CELDAS. Por relleno y no por un
+        //  anillo: un anillo de un pixel sobre una rejilla de celdas con cerco
+        //  desaparece, que es lo que ya se midio en el piano.
+        if (sel.activa())
+        {
+            const int p0 = juce::jmax (sel.pad0, medio);
+            const int p1 = juce::jmin (sel.pad1, medio + carriles - 1);
+            const int s0 = juce::jmax (sel.paso0, base);
+            const int s1 = juce::jmin (sel.paso1, base + cols);
+            if (p1 >= p0 && s1 > s0)
+            {
+                auto banda = juce::Rectangle<float> (
+                    (float) r.getX() + (float) gutter + cellW * (float) (s0 - base),
+                    (float) r.getY() + laneH * (float) (p0 - medio),
+                    cellW * (float) (s1 - s0),
+                    laneH * (float) (p1 - p0 + 1));
+                g.setColour (ZatiColours::playhead.withAlpha (0.35f));
+                g.fillRect (banda);
+                g.setColour (ZatiColours::playheadEdge);
+                g.drawRect (banda, Metrics::filo);
             }
         }
 
@@ -448,7 +539,8 @@ public:
 private:
     void hit (const juce::MouseEvent& e, bool dragging = false)
     {
-        if (data == nullptr || ! onCell) return;
+        if (data == nullptr) return;
+        if (! selArmada && ! onCell) return;
         auto r = getLocalBounds();
         const int gutter = kGutter;
         if (e.x < r.getX() + gutter) return;
@@ -464,6 +556,28 @@ private:
         const int step = primerPaso + col;
         if (step >= patLen) return;
 
+        //  CON SEL ARMADA EL DEDO MARCA, no escribe. Un toque sin arrastre
+        //  VACIA: la banda se quita con el mismo gesto con el que se pone en
+        //  cualquier sitio que no sea arrastrar, que es lo que el piano y la
+        //  linea de tiempo ya hacen.
+        if (selArmada)
+        {
+            if (! dragging) { selPadIni = lane; selPasoIni = step; movidoSel = false; }
+            else            { movidoSel = true; }
+
+            if (movidoSel)
+            {
+                if (onBanda) onBanda (selPadIni, juce::jmin (selPasoIni, step),
+                                      lane,      juce::jmax (selPasoIni, step) + 1);
+            }
+            else if (! dragging && onVaciaSel)
+            {
+                onVaciaSel();
+            }
+            return;
+        }
+
+        if (! onCell) return;
         // A drag paints, but only across cells it has not already touched this
         // gesture — otherwise moving inside one cell would flip it repeatedly.
         const int key = lane * 1000 + step;
@@ -476,6 +590,11 @@ private:
     const int*  zatiOf = nullptr;
     const bool* loadedOf = nullptr;
     const signed char* noteOf = nullptr;
+    const std::uint16_t* largoOf = nullptr;
+    int cuartosPorCelda = 4;
+    Sel sel;
+    int selPadIni = -1, selPasoIni = 0;
+    bool movidoSel = false;
     int patLen = 16, primerPaso = 0, playing = -1, selPad = -1, lastKey = -1;
     int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
     int carriles = kLanes, medio = 0;   // la ventana de pistas. Ver setVentana.

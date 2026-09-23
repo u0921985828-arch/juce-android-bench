@@ -4411,7 +4411,17 @@ void MainComponent::resized()
         //  Y AHORA ES INCONDICIONAL: la rejilla es UNA sola y lleva las
         //  cuatro herramientas siempre - patrones y clips comparten carril, asi
         //  que la tira sirve para los dos.
-        const int filasHerr = Metrics::hit + Metrics::halfGap;
+        //  Y DESDE QUE SON SIETE PUEDE SER DOS. SEL y LUPA se suman a las
+        //  cinco, y siete tapas a `hit + 2*aireTapa` son 308 px: en 280 de
+        //  ancho no caben. Se parte en dos filas ANTES que encoger la tapa por
+        //  debajo del dedo - la vez que se encogio, el banco saco 222 TOUCH
+        //  nuevos en una ficha donde ninguna regla dura se habia movido.
+        int filasHerr = Metrics::hit + Metrics::halfGap;
+        //  LA TIRA DE LA BANDA: cuatro tapas, y solo cuando hay banda. Se
+        //  cuenta aqui porque de ella depende la altura que se pide, y pedir
+        //  sin ella y colocarla abajo es como un control se queda con altura
+        //  cero -el fallo que esta misma ficha ya pago con la fila de paginas-.
+        const int filasSel = songSel.activa() ? Metrics::hit + Metrics::halfGap : 0;
         int filasModo = Metrics::hit;
         //  Y la de herramientas puede ser dos por lo mismo: son cinco tapas y
         //  en arabe INSERTAR y QUITAR piden bastante mas ancho que en ingles.
@@ -4479,10 +4489,19 @@ void MainComponent::resized()
             //  GRABAR, el clic y el modo- y no queda hueco. Y ademas es donde
             //  le toca: doblar la cancion es una herramienta de ARREGLO, como
             //  insertar un compas o quitarlo, no una brocha.
-            juce::TextButton* su[10] = { &songLeftBtn, &songRightBtn, &songShortBtn,
-                                         &songLongBtn, &songInsertBtn, &songRemoveBtn,
-                                         &songCopyBtn, &songPasteBtn, &songLoopBtn,
-                                         &songDoubleBtn };
+            //  LA TIRA DE HERRAMIENTAS, CONTADA CON EL ANCHO DE VERDAD y no
+            //  con el de la pantalla: siete tapas a `hit + 2*aireTapa` piden
+            //  308 px y en 280 salen dos filas.
+            filasHerr = (anchoUtil >= kNumHerramientas * (Metrics::hit + 2 * Metrics::aireTapa))
+                          ? Metrics::hit + Metrics::halfGap
+                          : 2 * Metrics::hit + 2 * Metrics::halfGap;
+
+            //  OCHO Y NO DIEZ: COPIAR y PEGAR DE COMPAS se fueron -copiaban una
+            //  columna de cuatro celdas sin sus clips- y los sustituye la tira
+            //  de la banda, que recorta por los filos de lo seleccionado.
+            juce::TextButton* su[8] = { &songLeftBtn, &songRightBtn, &songShortBtn,
+                                        &songLongBtn, &songInsertBtn, &songRemoveBtn,
+                                        &songLoopBtn, &songDoubleBtn };
             //  Nueve tapas no caben en una fila salvo en tableta, y en 280 px
             //  tampoco en dos - medido con siete, ADELANTE pedia 60 px y tenia
             //  51. Tres escalones, y el que se elige aqui es el mismo que se
@@ -4494,8 +4513,8 @@ void MainComponent::resized()
             //  un dedo, y el banco lo cantaria entero. Nueve por cuarenta, y
             //  donde no caben, en dos filas.
             juce::ignoreUnused (su);
-            filasUtil = (anchoUtil >= 10 * Metrics::hit) ? Metrics::hit
-                      : (anchoUtil >= 5 * Metrics::hit) ? 2 * Metrics::hit + Metrics::halfGap
+            filasUtil = (anchoUtil >= 8 * Metrics::hit) ? Metrics::hit
+                      : (anchoUtil >= 4 * Metrics::hit) ? 2 * Metrics::hit + Metrics::halfGap
                                                         : 4 * Metrics::hit + 3 * Metrics::halfGap;
         }
         //  Girado, la tarjeta no tiene que ser tan alta como la suma de las
@@ -4558,7 +4577,7 @@ void MainComponent::resized()
         {
             const int pie = altoBarraVista + Metrics::xs + Metrics::btn + Metrics::xs;
             const int col = filasPal * Metrics::hit + (filasPal - 1) * Metrics::halfGap + Metrics::xs
-                          + filasHerr + filasModo + filasUtil + Metrics::sm * 2;
+                          + filasHerr + filasModo + filasUtil + filasSel + Metrics::sm * 2;
             juce::ignoreUnused (col);
             const int rej = Playlist::kLanes * laneH;
             return Ficha::marco + Metrics::hit
@@ -4601,7 +4620,7 @@ void MainComponent::resized()
         {
             return filasPaleta * Metrics::hit
                  + (filasPaleta - 1) * Metrics::halfGap + Metrics::xs   // paleta
-                 + filasHerr + fm + fu + Metrics::sm * 2;
+                 + filasHerr + fm + fu + filasSel + Metrics::sm * 2;
         };
         const auto pideSong = [&] (int fu, int fm, int lane)
         {
@@ -4847,8 +4866,14 @@ void MainComponent::resized()
             //  rotulos. Con cuatro son 160 px y caben en las siete pantallas,
             //  incluida la mas estrecha que nadie fabrica.
             {
-                auto fila = panel.removeFromTop (Metrics::hit);
                 const int n = songToolBtns.size();
+                //  DOS FILAS DONDE SIETE NO CABEN. La celda es el dedo mas lo
+                //  que el aire se come, y siete por 44 son 308: en 280 px la
+                //  tira se parte 4+3 en vez de encoger la tapa, que es lo que
+                //  se probo la primera vez y devolvio 222 TOUCH.
+                const int celdaHerr = Metrics::hit + 2 * Metrics::aireTapa;
+                const int filasHerrAqui = (panel.getWidth() >= n * celdaHerr) ? 1 : 2;
+                auto fila = panel.removeFromTop (Metrics::hit);
                 if (n > 0)
                 {
                     //  A `Metrics::hit` por tapa y NO estirada: cuatro iconos
@@ -4880,8 +4905,8 @@ void MainComponent::resized()
                     //  midio -acotar el aire a lo que sobra por encima del
                     //  dedo- y esta tira no pasa por ella porque se reparte por
                     //  el dedo y no por el texto.
-                    const int celda = juce::jmin (Metrics::hit + 2 * Metrics::aireTapa,
-                                                  fila.getWidth() / n);
+                    const int porFila = (n + filasHerrAqui - 1) / filasHerrAqui;
+                    const int celda = juce::jmin (celdaHerr, fila.getWidth() / porFila);
                     //  Por el borde de ENTRADA y no por la izquierda: en
                     //  arabe la fila empieza a la DERECHA, y leer siempre la
                     //  izquierda daba por bueno alli justo lo que se rechaza
@@ -4897,11 +4922,20 @@ void MainComponent::resized()
                     //  `Tests/paneles.py` con las once reglas duras en cero. El
                     //  aire entre tapas es aire ENTRE hermanas y no vale en los
                     //  dos extremos de la fila.
-                    auto ancha = fila.expanded (Metrics::aireTapa, 0);
-                    auto zona  = Lang::takeStart (ancha, celda * n);
-                    for (int i = 0; i < n; ++i)
-                        songToolBtns[i]->setBounds (zona.removeFromLeft (celda)
-                                                        .reduced (Metrics::aireTapa, 0));
+                    int puestas = 0;
+                    for (int f = 0; f < filasHerrAqui; ++f)
+                    {
+                        auto renglon = (f == 0) ? fila
+                                                : (panel.removeFromTop (Metrics::halfGap),
+                                                   panel.removeFromTop (Metrics::hit));
+                        const int enEsta = juce::jmin (porFila, n - puestas);
+                        auto ancha = renglon.expanded (Metrics::aireTapa, 0);
+                        auto zona  = Lang::takeStart (ancha, celda * enEsta);
+                        for (int i = 0; i < enEsta; ++i)
+                            songToolBtns[puestas + i]->setBounds (zona.removeFromLeft (celda)
+                                                                     .reduced (Metrics::aireTapa, 0));
+                        puestas += enEsta;
+                    }
                 }
                 panel.removeFromTop (Metrics::xs);
             }
@@ -4964,10 +4998,9 @@ void MainComponent::resized()
         //  y clips. La MISMA lista que decidio la altura, no una parecida.
         {
             const int gUtil = abreSong();
-            juce::TextButton* su[10] = { &songLeftBtn, &songRightBtn, &songShortBtn,
-                                         &songLongBtn, &songInsertBtn, &songRemoveBtn,
-                                         &songCopyBtn, &songPasteBtn, &songLoopBtn,
-                                         &songDoubleBtn };
+            juce::TextButton* su[8] = { &songLeftBtn, &songRightBtn, &songShortBtn,
+                                        &songLongBtn, &songInsertBtn, &songRemoveBtn,
+                                        &songLoopBtn, &songDoubleBtn };
             //  APAGADAS Y SIN SITIO donde la fila no cabe. Ver songUtilAqui.
             for (auto* b : su) b->setVisible (songUtilAqui);
             //  La MISMA pregunta que decidio la altura y no otra parecida: por
@@ -4978,8 +5011,8 @@ void MainComponent::resized()
             //  corta de una tapa huerfana: cuatro filas de tres dejarian la
             //  ultima con UNA, y una tapa sola al final de una rejilla se lee
             //  como que falta algo. Se reparten 3, 3, 2 y 2.
-            const int filas = (panel.getWidth() >= 10 * Metrics::hit) ? 1
-                            : (panel.getWidth() >= 5  * Metrics::hit) ? 2 : 4;
+            const int filas = (panel.getWidth() >= 8 * Metrics::hit) ? 1
+                            : (panel.getWidth() >= 4 * Metrics::hit) ? 2 : 4;
             int puesto = 0;
             //  Y donde la fila se cayo no se recorre: un bucle que coloca cero
             //  tapas sigue gastando `removeFromTop (hit)` por vuelta, o sea
@@ -4988,7 +5021,7 @@ void MainComponent::resized()
             //  veces.
             for (int f = 0; songUtilAqui && f < filas; ++f)
             {
-                const int quedan = 10 - puesto;
+                const int quedan = 8 - puesto;
                 const int enEsta = (quedan + (filas - f) - 1) / (filas - f);
                 layoutModuleBar (panel.removeFromTop (Metrics::hit), su + puesto, 0, enEsta);
                 puesto += enEsta;
@@ -4998,6 +5031,33 @@ void MainComponent::resized()
                 for (auto* b : su) b->setBounds ({});
             cierraSong (gUtil);
             panel.removeFromTop (Metrics::sm);
+        }
+
+        //  LA TIRA DE LA BANDA: COPIAR · CORTE · PEGAR · BORRAR.
+        //
+        //  SOLO EXISTE CON BANDA, que es la regla que el piano ya escribio: una
+        //  tapa que no puede hacer nada no es informacion, y cuatro tapas
+        //  apagadas encima de la linea de tiempo cuestan 44 px de lo unico para
+        //  lo que esta pagina existe. Y PEGAR solo con portapapeles, por lo
+        //  mismo. En el orden en que se usan, con el dedo entero cada una.
+        {
+            juce::TextButton* ss[4] = { &songCopiaBtn, &songCorteSelBtn,
+                                        &songPegaBtn, &songBorraSelBtn };
+            const bool hayBanda = songSel.activa();
+            for (auto* b : ss) b->setVisible (hayBanda);
+            songPegaBtn.setEnabled (! songPortapapeles.bloques.empty()
+                                    || ! songPortapapeles.clips.empty());
+            if (! hayBanda)
+            {
+                for (auto* b : ss) b->setBounds ({});
+            }
+            else
+            {
+                const int gSel = abreSong();
+                layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 4);
+                cierraSong (gSel);
+                panel.removeFromTop (Metrics::sm);
+            }
         }
 
         //  EL TRANSPORTE y el largo, en la misma fila: PLAY primero porque es
@@ -5035,6 +5095,9 @@ void MainComponent::resized()
             songBarra.ponRango (songGrid.getPrimerCompas(),
                                 songGrid.getCompasesVista(),
                                 engine.getSongLength());
+            //  El CABEZAL lo pone `refreshSong` y no aqui: se mueve treinta
+            //  veces por segundo y `resized` corre cuando cambia la ventana.
+            //  Una funcion, un dueño.
         }
         else
         {
@@ -5541,6 +5604,23 @@ void MainComponent::resized()
             stacked += tiraFilas * (nameH + Metrics::hit)
                      + juce::jmax (0, tiraFilas - 1) * Metrics::halfGap
                      + (tiraFilas > 0 ? Metrics::sm : 0);
+
+            //  Y LA TIRA DE LA BANDA -COPIAR, CORTE, PEGAR, BORRAR- TAMBIEN SE
+            //  PIDE.
+            //
+            //  Es la regla que esta ficha ya tiene escrita tres veces: pedir
+            //  una fila y colocar dos es como la rejilla se queda sin sitio.
+            //  Se coloca encima de la rejilla unas lineas mas abajo y sale
+            //  entera de ella -44 px, `hit` mas `sm`-, asi que sin esta linea
+            //  la tarjeta pide el alto de antes, la tira se coloca igual y los
+            //  44 px se los come lo ultimo que se maqueta, que es la rejilla.
+            //  DE PIE. Girado la tira se va a la columna de al lado -ver donde
+            //  se coloca- que es la misma salida que ya tomo la del piano: alli
+            //  no hay fila de pie donde poner una tira, y 48 px sobre la
+            //  rejilla girada son justo los que no hay. Medido con la banda
+            //  puesta en 915x412: sobre la rejilla, la celda caia de 12.6 a 9.6
+            //  px; en la columna, se queda como estaba.
+            if (! wideFace && seqSel.activa()) stacked += Metrics::hit + Metrics::sm;
             //  Y SIN SUELO, que es lo que fallaba.
             //
             //  Aqui ponia jlimit (12, 26, ...) con un parrafo explicando que
@@ -5611,9 +5691,13 @@ void MainComponent::resized()
             //  lista tiene que ser LA MISMA que la de abajo: la primera version
             //  dejo esta en cinco y la de abajo en seis, y HUMANIZAR no se
             //  colocaba nunca - existente, invisible e imposible de tocar.
-            juce::TextButton* pb5[8] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+            //  NUEVE desde que la banda de la rejilla tiene su SEL, y con las
+            //  MISMAS tapas que se van a colocar: preguntar por ocho y poner
+            //  nueve es pedir con una cuenta y colocar con otra, que es como
+            //  una fila se queda con altura cero. Ya paso aqui con HUMANIZAR.
+            juce::TextButton* pb5[9] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
                                          &seqHumanBtn, &copyPatBtn, &pastePatBtn,
-                                         &copyRowBtn, &pasteRowBtn };
+                                         &copyRowBtn, &pasteRowBtn, &seqSelBtn };
             //  El ancho util de la tarjeta, con la misma cuenta que usa la
             //  ficha de CANCION: aqui todavia no existe `inner`, y estimarlo
             //  a ojo es como se pide una altura que luego no vale.
@@ -5638,9 +5722,12 @@ void MainComponent::resized()
             //  en 344x882 "COPIAR FILA" pedia 82 px de letra y tenia 76, y en
             //  360x640 82 contra 81. La fila decia que cabia porque nadie habia
             //  medido esa fila.
-            const int filasTools = moduleBarFits (anchoCol, pb5, 8) ? 1
-                                 : (moduleBarFits (anchoCol, pb5, 4)
-                                    && moduleBarFits (anchoCol, pb5 + 4, 4)) ? 2 : 3;
+            //  Y EL CORTE DE DOS FILAS ES 5+4 Y NO 4+4, que es el mismo reparto
+            //  que coloca abajo: preguntar por cuatro y colocar cinco vuelve a
+            //  ser preguntar una cosa y hacer otra.
+            const int filasTools = moduleBarFits (anchoCol, pb5, 9) ? 1
+                                 : (moduleBarFits (anchoCol, pb5, 5)
+                                    && moduleBarFits (anchoCol, pb5 + 5, 4)) ? 2 : 3;
             const int filasUtil = (filasTools - 1) * (Metrics::hit + Metrics::halfGap);
 
             //  LO QUE LA TIRA YA LLEVA, AQUI NO SE REPITE.
@@ -6117,8 +6204,11 @@ void MainComponent::resized()
         //  en 0x0, que no solapa con nada. Hace falta cambiar de pagina dentro
         //  del mismo proceso, que es lo que hace la persona y lo que ahora
         //  hace ZATI_PAGES.
+        //  Y SEL CON ELLAS, que es la sexta de esa fila y llego por el mismo
+        //  camino: vive en PATRON y arma la rejilla de PASOS, asi que fuera de
+        //  su pagina se apaga Y se le quita el sitio.
         for (auto* b : { &patLeftBtn, &patRightBtn, &patDoubleBtn,
-                         &copyRowBtn, &pasteRowBtn })
+                         &copyRowBtn, &pasteRowBtn, &seqSelBtn })
         {
             b->setVisible (false);
             b->setBounds ({});
@@ -6716,7 +6806,22 @@ void MainComponent::resized()
             const int tiraCost  = tiraFilas * (nameH + Metrics::hit)
                                 + juce::jmax (0, tiraFilas - 1) * Metrics::halfGap
                                 + (tiraFilas > 0 ? Metrics::sm : 0);
-            const int lanesH    = juce::jmax (0, col.getHeight() - tempoCost - barsCost - tiraCost);
+            //  Y LA TIRA DE LA BANDA, POR EXACTAMENTE LO MISMO Y MEDIDA.
+            //
+            //  Se pidio arriba -entra en `stacked`- pero no se restaba aqui, y
+            //  eso son dos cuentas distintas para el mismo hueco: la tarjeta
+            //  crecia donde podia crecer y donde ya estaba en el tope del 78 %
+            //  los 48 px salian enteros de la rejilla SIN que las dos filas
+            //  prescindibles se enteraran. Medido con la banda puesta: la celda
+            //  de paso caia de 14.0 a 11.0 px en 360x640, de 15.1 a 11.2 en
+            //  393x851, de 12.6 a 9.6 en 915x412 y de 9.8 a 6.8 en 640x360 -
+            //  por debajo del suelo de 12 en tres de las cuatro- mientras
+            //  BANCO y PADS seguian puestas creyendo tener un sitio que ya no
+            //  era suyo. Es el mismo fallo que la tira del PASO ya tuvo, con
+            //  las mismas cifras y una tanda mas tarde.
+            const int selCost   = seqSel.activa() ? (Metrics::hit + Metrics::sm) : 0;
+            const int lanesH    = juce::jmax (0, col.getHeight() - tempoCost - barsCost
+                                                 - tiraCost - selCost);
             const int rowCost   = nameH + Metrics::hit + Metrics::sm;
             //  Las dos filas prescindibles se deciden en orden y contando la
             //  una a la otra: primero la de COPIAR/PEGAR, que es la que menos
@@ -6736,11 +6841,14 @@ void MainComponent::resized()
             //  puestas la celda queda en 12.9 px, y sin ellas en 21. Se pide
             //  dieciseis para dejarlas, que es lo que separa "cabe" de "se ve".
             const int sueloCelda = tiraFilas > 0 ? 16 : kMinLaneH;
+            //  Y GIRADO LA TIRA DE LA BANDA SALE DE LA COLUMNA, asi que se
+            //  resta aqui tambien: ver donde se coloca, al final de esta rama.
             const bool copyRowFits = wideFace
-                ? (col.getHeight() - barsCost - tiraCost >= rowCost)
+                ? (col.getHeight() - barsCost - tiraCost - selCost >= rowCost)
                 : ((lanesH - rowCost) / kPadsPerBank >= sueloCelda);
             const bool bankRowFits = wideFace
-                ? (col.getHeight() - barsCost - tiraCost - (copyRowFits ? rowCost : 0) >= rowCost)
+                ? (col.getHeight() - barsCost - tiraCost - selCost
+                     - (copyRowFits ? rowCost : 0) >= rowCost)
                 : ((lanesH - (copyRowFits ? rowCost : 0) - rowCost) / kPadsPerBank >= sueloCelda);
 
             //  COPIAR Y PEGAR EL BANCO, pero solo donde sobra sitio.
@@ -6920,11 +7028,29 @@ void MainComponent::resized()
                     //  casilla se come el ancho. Es la misma cuenta que GOLPE.
                     auto caja = [] (juce::Slider& sl, juce::Rectangle<int> celda)
                     {
-                        if (sl.getSliderStyle() == juce::Slider::IncDecButtons)
-                            sl.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
-                                                juce::jmax (34, celda.getWidth()
-                                                                - Metrics::gap - 2 * Metrics::stepKey),
-                                                Metrics::readout);
+                        if (sl.getSliderStyle() != juce::Slider::IncDecButtons)
+                            return;
+                        //  Y LA CASILLA PIDE LO QUE ESCRIBE, no un suelo a mano.
+                        //  El suelo era 34 px y una Label se cobra diez de borde:
+                        //  24 utiles para «+4 st», que mide 30. Tres corridas de
+                        //  expo.py en 344x882 (dos en es, una en ar) con la nota
+                        //  del paso transpuesta, y ninguna en 412x915 porque alli
+                        //  la celda da de sobra: el suelo solo manda en la
+                        //  pantalla estrecha, que es justo donde nadie lo miro.
+                        //  Es el mismo fallo que ya se corrigio en BLOQUEOS con
+                        //  «مغلق», y el remedio es el mismo: se mide lo que el
+                        //  mando va a escribir en sus DOS extremos -que es donde
+                        //  el texto es mas largo- y se pide eso. Los seis pixeles
+                        //  salen de las teclas, como alli salieron del dial.
+                        const auto f = ZatiColours::monoFont (Metrics::fValue, true);
+                        const int minCaja = (int) std::ceil (juce::jmax (
+                                                juce::GlyphArrangement::getStringWidth (f, sl.getTextFromValue (sl.getMinimum())),
+                                                juce::GlyphArrangement::getStringWidth (f, sl.getTextFromValue (sl.getMaximum()))))
+                                          + ZatiLookAndFeel::kRotuloMargen;
+                        sl.setTextBoxStyle (juce::Slider::TextBoxLeft, false,
+                                            juce::jmax (minCaja, celda.getWidth()
+                                                            - Metrics::gap - 2 * Metrics::stepKey),
+                                            Metrics::readout);
                     };
                     caja (izq, celdaIzq);
                     caja (der, celdaDer);
@@ -7029,6 +7155,79 @@ void MainComponent::resized()
                 seqBarra.setBounds ({});
             }
 
+            //  LA TIRA DE ACCIONES DE LA BANDA, JUSTO ENCIMA DE LA REJILLA.
+            //
+            //  Encima y no debajo: debajo ya estan la barra de la ventana y la
+            //  tira del paso, y meterla ahi la dejaria cuarta en una pila que
+            //  en un telefono llega a tres filas. Y sobre todo, es lo que se
+            //  hace CON lo que acabas de marcar, asi que sale donde miras - la
+            //  misma razon por la que la del piano se separo de la fila de
+            //  herramientas.
+            //
+            //  Las cuatro solo con banda puesta y PEGAR ademas con
+            //  portapapeles: un control que no puede hacer nada no es
+            //  informacion, es ruido. Y las que no se colocan se APAGAN Y SE
+            //  QUEDAN SIN SITIO, que son las dos cosas: un componente invisible
+            //  que conserva sus limites sigue estando ahi para todo lo que mida
+            //  geometria.
+            {
+                const bool haySel = seqSel.activa();
+                const bool hayPeg = ! seqPortapapeles.empty();
+                juce::TextButton* pbSel[4] = { &seqCopiaBtn, &seqCorteSelBtn,
+                                               &seqPegaBtn,  &seqBorraSelBtn };
+                const bool vive[4] = { haySel, haySel, haySel && hayPeg, haySel };
+                for (int i = 0; i < 4; ++i)
+                {
+                    pbSel[i]->setVisible (vive[i]);
+                    if (! vive[i]) pbSel[i]->setBounds ({});
+                }
+
+                if (haySel)
+                {
+                    //  GIRADO LA TIRA SE VA A LA COLUMNA, y es la misma salida
+                    //  que ya tomo la del piano: apaisado no hay fila de pie
+                    //  que gastar y la rejilla esta al lado de los mandos, asi
+                    //  que 48 px sobre ella salen enteros de lo unico que
+                    //  escasea girado. Medido en 915x412 con la banda puesta:
+                    //  sobre la rejilla la celda de paso caia de 12.6 a 9.6 px
+                    //  -por debajo del suelo de 12-; en la columna sube a 15.4,
+                    //  porque quien se cae es la fila de BANCO, que ya es
+                    //  prescindible aqui por escrito.
+                    //
+                    //  SIN METER MAS SANGRIA. De pie `col` ES `inner` y ya se
+                    //  metio la sangria del panel arriba, asi que meterla otra
+                    //  vez dejaria la tira un escalon por dentro de la rejilla
+                    //  que encabeza; girado, `col` es la columna y viene metida
+                    //  por la misma linea. La tira mide lo que mide lo que
+                    //  tiene al lado, en las dos orientaciones.
+                    //  Y SI LA COLUMNA NO DA PARA UN DEDO, LA TIRA VUELVE
+                    //  SOBRE LA REJILLA.
+                    //
+                    //  Girado la columna puede quedarse sin nada que soltar:
+                    //  en 640x360 BANCO y PADS ya se caen ellas solas, asi que
+                    //  al llegar aqui a `col` le quedaban CATORCE pixeles y
+                    //  `removeFromTop` los reparte sin quejarse - medido, las
+                    //  cuatro tapas salian de 29x14, 39x14, 31x14 y 33x14. Un
+                    //  control de catorce pixeles no esta apretado, no existe.
+                    //  Entre una tapa que no se puede tocar y una celda de
+                    //  paso mas baja no hay duda, que es la misma eleccion que
+                    //  ya hizo la fila de BANCO: el tope que se supera en
+                    //  silencio no protege, esconde.
+                    auto& donde = (wideFace && col.getHeight() >= Metrics::hit + Metrics::sm)
+                                    ? col : inner;
+                    auto acc = donde.removeFromTop (Metrics::hit);
+                    donde.removeFromTop (Metrics::sm);
+
+                    juce::TextButton* pbAcc[4];
+                    int na = 0;
+                    pbAcc[na++] = &seqCopiaBtn;
+                    pbAcc[na++] = &seqCorteSelBtn;
+                    if (hayPeg) pbAcc[na++] = &seqPegaBtn;
+                    pbAcc[na++] = &seqBorraSelBtn;
+                    layoutModuleBar (acc, pbAcc, 0, na);
+                }
+            }
+
             stepGrid.setBounds (inner);
         }
         else
@@ -7037,7 +7236,8 @@ void MainComponent::resized()
             //  las dos de COPIAR/PEGAR tambien, que alli su fila es
             //  prescindible y puede haberlas dejado apagadas.
             for (auto* b : { &patLeftBtn, &patRightBtn, &patDoubleBtn,
-                             &copyPatBtn, &pastePatBtn, &copyRowBtn, &pasteRowBtn })
+                             &copyPatBtn, &pastePatBtn, &copyRowBtn, &pasteRowBtn,
+                             &seqSelBtn })
                 b->setVisible (true);
 
             //  The foot line first, so no column can lay a control over it.
@@ -7153,13 +7353,17 @@ void MainComponent::resized()
                 //  arriba: la primera version dejo esta en cinco y la de la
                 //  altura en seis, asi que HUMANIZAR no se colocaba nunca y se
                 //  quedaba en 0x0 - existente, invisible e imposible de tocar.
-                juce::TextButton* pb[8] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
+                //  NUEVE desde que la banda de la rejilla tiene su SEL: es de
+                //  la familia de COPIAR FILA y PEGAR FILA -las tres se llevan
+                //  trozos del patron de un sitio a otro- y lo que anade es
+                //  poder decir CUAL trozo.
+                juce::TextButton* pb[9] = { &patLeftBtn, &patRightBtn, &patDoubleBtn,
                                             &seqHumanBtn, &copyPatBtn, &pastePatBtn,
-                                            &copyRowBtn, &pasteRowBtn };
+                                            &copyRowBtn, &pasteRowBtn, &seqSelBtn };
                 //  La MISMA pregunta que decidio la altura, con el mismo ancho.
-                const int nFilas = moduleBarFits (colA.getWidth(), pb, 8) ? 1
-                                 : (moduleBarFits (colA.getWidth(), pb, 4)
-                                    && moduleBarFits (colA.getWidth(), pb + 4, 4)) ? 2 : 3;
+                const int nFilas = moduleBarFits (colA.getWidth(), pb, 9) ? 1
+                                 : (moduleBarFits (colA.getWidth(), pb, 5)
+                                    && moduleBarFits (colA.getWidth(), pb + 5, 4)) ? 2 : 3;
                 //  Y el panel del grupo tiene que saberlo: sin esto se pintaba
                 //  detras de la primera fila y las de abajo quedaban fuera de
                 //  su propio grupo.
@@ -7168,21 +7372,24 @@ void MainComponent::resized()
 
                 if (nFilas == 1)
                 {
-                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 8);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 9);
                 }
                 else if (nFilas == 2)
                 {
-                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 4);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 5);
                     colA.removeFromTop (Metrics::xs);
-                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 4, 0, 4);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 5, 0, 4);
                 }
                 else
                 {
+                    //  Tres, tres y tres: con nueve el reparto sale justo, que
+                    //  es lo que antes no pasaba -eran 3+3+2 con la ultima fila
+                    //  a medias-.
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb, 0, 3);
                     colA.removeFromTop (Metrics::xs);
                     layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 3, 0, 3);
                     colA.removeFromTop (Metrics::xs);
-                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 6, 0, 2);
+                    layoutModuleBar (colA.removeFromTop (Metrics::hit), pb + 6, 0, 3);
                 }
                 colA.removeFromTop (Metrics::sm);
             }

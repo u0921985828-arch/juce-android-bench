@@ -113,8 +113,26 @@ public:
         int columnas      = 0;
     };
 
-    // (lane, bar) — the host decides what to place or whether to clear.
-    std::function<void (int lane, int bar)> onCell;
+    //  UN BLOQUE DE PATRON, TAL Y COMO ESTA REJILLA LO VE: en pasos, como un
+    //  clip. Era una celda por compas (`kContinued` para la cola) y con eso un
+    //  bloque no podia empezar a mitad de compas ni partirse por un paso: dos
+    //  cabezas no caben en la misma celda. Quien lo publica es la ficha, desde
+    //  su lista, y aqui se presta igual que los clips.
+    struct BloqueVista
+    {
+        int  lane      = 0;
+        int  desdePaso = 0;   // primer paso absoluto que ocupa
+        int  hastaPaso = 1;   // el primero que YA NO ocupa
+        int  bank      = 0;   // 0..7 patron; < 0 golpe suelto -(pad+1)
+        int  offset    = 0;   // paso del patron con el que arranca
+        bool mudo      = false;
+    };
+
+    //  (lane, paso absoluto PEGADO a la division): el lapiz pone un bloque y
+    //  la goma quita el que haya debajo. En pasos y no en compases desde que
+    //  un bloque puede vivir a mitad de compas: con el compas la goma no
+    //  encontraba un bloque de ocho pasos que empezara en el ocho.
+    std::function<void (int lane, int paso)> onCell;
 
     //  ESTIRAR UN BLOQUE ARRASTRANDO SU FILO. El largo de un bloque de patron
     //  solo se cambiaba con ACORTAR / ALARGAR, de compas en compas y sobre el
@@ -126,14 +144,39 @@ public:
     //  un arrastre emite un evento por movimiento, asi que apilar una entrada
     //  por evento no es deshacer, es contar. Medido: 3 entradas por un solo
     //  gesto antes de esta linea.
-    std::function<void (int lane, int cabeza, int largo, bool primero)> onLargoBloque;
+    //  Por INDICE de la tabla que se paso y en PASOS, como los clips.
+    std::function<void (int indice, int desdePaso, int hastaPaso, bool primero)> onLargoBloque;
 
     //  MOVER un bloque entero y SILENCIARLO, que son las dos herramientas que
     //  esta rejilla no tenia y que un playlist de verdad si: probar una cancion
     //  sin el estribillo, o correrlo dos compases, se hacia borrando y
     //  volviendo a escribir.
-    std::function<void (int lane, int cabeza, int carrilNuevo, int compasNuevo, bool primero)> onMueveBloque;
-    std::function<void (int lane, int cabeza)> onMuteBloque;
+    std::function<void (int indice, int carrilNuevo, int desdePaso, bool primero)> onMueveBloque;
+    std::function<void (int indice)> onMuteBloque;
+    //  LAS TIJERAS PARTEN UN BLOQUE por el paso pegado, como parten un clip.
+    //  Antes caian en `onCell` y lo BORRABAN: unas tijeras que borran son una
+    //  goma con otro dibujo.
+    std::function<void (int indice, int paso)> onParteBloque;
+
+    //  LA SELECCION, calcada del piano: una banda carriles x pasos que se
+    //  marca arrastrando sobre vacio con SEL, se mueve arrastrando desde
+    //  dentro, y se vacia tocando fuera. Quien tiene los datos es la ficha;
+    //  aqui solo se sabe la geometria, igual que en PianoRoll.
+    std::function<void (int lane0, int paso0, int lane1, int paso1)> onBanda;
+    std::function<void (int dLane, int dPaso)> onMueveSel;
+    std::function<void()> onVaciaSel;
+    //  Y DONDE SE PEGA: un toque con SEL sin arrastrar marca (carril, paso).
+    //  Sin esto, PEGAR no tendria donde ir salvo al principio de la vista.
+    std::function<void (int lane, int paso)> onMarca;
+    //  LA LUPA: arrastrar marca un tramo en compases y al soltar la vista se
+    //  acerca a el; un toque sin arrastre vuelve a la vista anterior. Es una
+    //  herramienta armada y no un pellizco por la regla de la casa: un
+    //  pellizco no se puede medir por la tapa.
+    std::function<void (int compas0, int compas1)> onLupa;
+    std::function<void()> onLupaVuelve;
+    //  EL DEDO SE LEVANTO. Cierra el arrastre para quien cuenta entradas de
+    //  deshacer. Ver mouseUp.
+    std::function<void()> onSuelta;
     //  UN HUECO DE LA BANDA DE AUDIO: aqui no habia nada, pon lo que tengas.
     //  El sitio llega en PASO ABSOLUTO y ya PEGADO a la division que se ve
     //  dibujada: pegar aqui y no en el anfitrion es lo que garantiza que el
@@ -266,16 +309,16 @@ public:
         repaint();
     }
 
-    void setSource (const int* cells,       // [lane][bar] flattened, stride = bars
+    void setSource (const BloqueVista* filas, int cuantas,   // los bloques, prestados
                     const int* zatiOf,      // un zati por pad...
                     int numZatis,           // ...y CUANTOS, que es la mitad que faltaba
                     int bars, int desdeCompas, int playBar,
                     int cursorBar = -1,     // el compas sobre el que actuan las herramientas
                     unsigned mudos = 0,     // un bit por carril silenciado
-                    int loopA = 0, int loopB = 0,   // el tramo en bucle, [A,B) en compases
-                    const juce::uint64* bloquesMudos = nullptr)  // un bit por compas y carril
+                    int loopA = 0, int loopB = 0)   // el tramo en bucle, [A,B) en compases
     {
-        data = cells; zati = zatiOf; zatis = numZatis;
+        bloques = filas; numBloques = juce::jmax (0, cuantas);
+        zati = zatiOf; zatis = numZatis;
         totalBars = bars;
         //  LA VENTANA ARRANCA EN UN COMPAS CUALQUIERA, no en un multiplo del
         //  zoom. Antes llegaba el numero de PAGINA y la vista empezaba en
@@ -286,9 +329,6 @@ public:
         primerCompas = juce::jlimit (0, juce::jmax (0, bars - barsView), desdeCompas);
         playing = playBar;
         cursor = cursorBar; mute = mudos; lA = loopA; lB = loopB;
-        juce::uint64 bm[kLanes] {};
-        if (bloquesMudos != nullptr)
-            for (int i = 0; i < kLanes; ++i) bm[i] = bloquesMudos[i];
 
         //  REPINTAR SOLO SI HA CAMBIADO ALGO. Por lo mismo que la rejilla de
         //  pasos: el temporizador llama aqui treinta veces por segundo
@@ -298,30 +338,42 @@ public:
         //  Y la ficha es translucida y ocupa la ventana entera, asi que un
         //  repintado de esta rejilla arrastra el chasis, los dieciseis pads y
         //  los cuarenta controles que hay debajo del velo.
-        const size_t nCel = (size_t) kLanes * (size_t) juce::jmax (1, totalBars);
-        bool igual = data != nullptr && visto
+        bool igual = visto
                   && totalBars == prevBars && primerCompas == prevPage && playing == prevPlaying
                   && cursor == prevCursor && mute == prevMute
-                  //  Y el silencio por bloque, o silenciar uno no repintaria:
-                  //  el atajo de arriba existe para no arrastrar el chasis
-                  //  treinta veces por segundo, no para tragarse un cambio.
-                  && std::memcmp (bmute, bm, sizeof (bmute)) == 0
                   && lA == prevLA && lB == prevLB
-                  && sombra.size() == nCel
-                  && std::memcmp (sombra.data(), data, nCel * sizeof (int)) == 0
+                  && (int) sombra.size() == numBloques
+                  && (numBloques == 0
+                      || std::memcmp (sombra.data(), bloques, (size_t) numBloques * sizeof (BloqueVista)) == 0)
                   && (zati == nullptr
                         || std::memcmp (sombraZati.data(), zati, sizeof (sombraZati)) == 0);
 
         if (igual) return;
 
-        if (data != nullptr) { sombra.resize (nCel); std::memcpy (sombra.data(), data, nCel * sizeof (int)); }
+        sombra.assign (bloques, bloques + numBloques);
         if (zati != nullptr) std::memcpy (sombraZati.data(), zati, sizeof (sombraZati));
         prevBars = totalBars; prevPage = primerCompas; prevPlaying = playing;
         prevCursor = cursor; prevMute = mute; prevLA = lA; prevLB = lB;
-        std::memcpy (bmute, bm, sizeof (bmute));
         visto = true;
 
         repaint();
+    }
+
+    //  LA BANDA SELECCIONADA y el punto de pegado, que los tiene la ficha y
+    //  aqui solo se pintan. `lane0 < 0` es «sin seleccion».
+    struct Sel { int lane0 = -1, lane1 = -1, paso0 = 0, paso1 = 0;
+                 bool activa() const noexcept { return lane0 >= 0 && paso1 > paso0; } };
+    void setSel (Sel nueva)
+    {
+        if (nueva.lane0 == sel.lane0 && nueva.lane1 == sel.lane1
+            && nueva.paso0 == sel.paso0 && nueva.paso1 == sel.paso1) return;
+        sel = nueva; repaint();
+    }
+    Sel  getSel() const noexcept { return sel; }
+    void setMarca (int lane, int paso)
+    {
+        if (lane == marcaLane && paso == marcaPaso) return;
+        marcaLane = lane; marcaPaso = paso; repaint();
     }
 
     //  LO QUE UN BLOQUE LLEVA DENTRO, que es lo que separa una lista de
@@ -393,7 +445,10 @@ public:
     }
     void setCompasesVista (int n)
     {
-        n = juce::jlimit (4, kBarsViewMax, n);
+        //  DESDE UNO y no desde cuatro: la lupa acerca «ese trozo», y el
+        //  trozo puede ser un compas. El techo de arriba lo sigue diciendo
+        //  `cabeVista`; el de abajo era una cifra que sobraba.
+        n = juce::jlimit (1, kBarsViewMax, n);
         if (n == barsView) return;
         barsView = n;
         //  Y EL PRIMER COMPAS SE RE-ACOTA: al abrir la vista, lo que era el
@@ -410,7 +465,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        if (data == nullptr) { marcoDelModo (g); return; }
+        if (! visto) { marcoDelModo (g); return; }
         auto r = getLocalBounds();
         const int gutter = kGutter;
         const float laneH = (float) r.getHeight() / (float) kLanes;
@@ -445,119 +500,111 @@ public:
             if (mudo)
                 g.fillRect (gut.getX() + 3.0f, gut.getCentreY() - 0.5f, gut.getWidth() - 6.0f, 1.4f);
 
+            //  LOS HUECOS PRIMERO, compas a compas: un compas vacio es un
+            //  hueco, y un hueco oscurece. Pasado el final de la cancion, mas.
             for (int c = 0; c < barsView; ++c)
             {
                 const int bar = base + c;
                 const float x = (float) r.getX() + (float) gutter + barW * (float) c;
                 auto cell = juce::Rectangle<float> (x, y, barW, laneH).reduced (1.5f);
+                g.setColour (bar >= totalBars ? ZatiColours::groove (0.30f)
+                                              : ZatiColours::groove ((bar % 4 == 0) ? 0.48f : 0.28f));
+                g.fillRect (cell);
+            }
+        }
 
-                if (bar >= totalBars)                        // past the end of the song
+        //  Y LOS BLOQUES ENCIMA, EN PASOS: un bloque de ocho pasos ocupa
+        //  ocho subceldas, y uno de cuatro compases es UNA caja y no cuatro
+        //  copias -que es lo que `kContinued` conseguia a base de celdas-.
+        {
+            const int pc   = juce::jmax (1, pasosCompas);
+            const int base0 = base * pc;
+            const int tope  = base0 + barsView * pc;
+            for (int i = 0; i < numBloques; ++i)
+            {
+                const BloqueVista& b = bloques[i];
+                if (! juce::isPositiveAndBelow (b.lane, kLanes)) continue;
+                const int d = juce::jmax (b.desdePaso, base0);
+                const int h = juce::jmin (b.hastaPaso, tope);
+                if (h <= d) continue;
+
+                const bool mudo  = (mute & (1u << (unsigned) b.lane)) != 0;
+                const bool mudoB = mudo || b.mudo;
+                const auto col   = blockColour (b.bank);
+                auto cell = cajaPaso (b.lane, d, h);
+                cell = cell.reduced (juce::jmin (1.5f, cell.getWidth() * 0.25f), 1.5f);
+                //  Un carril silenciado ensena sus bloques HUECOS: siguen
+                //  ahi, con su color y su nombre, y no suenan. Borrarlos
+                //  seria otra cosa, y esa ya existe. Y un bloque silenciado
+                //  SOLO se ve igual: un mute que no se distingue de sonar no
+                //  es un mute, es un boton.
+                if (mudoB)
                 {
-                    g.setColour (ZatiColours::groove (0.30f));   // pasado el final
+                    g.setColour (ZatiColours::groove (0.30f));
                     g.fillRect (cell);
-                    continue;
-                }
-
-                const int v = data[lane * totalBars + bar];
-
-                if (v == 0)
-                {
-                    //  Un compas vacio es un hueco, y un hueco oscurece.
-                    g.setColour (ZatiColours::groove ((bar % 4 == 0) ? 0.48f : 0.28f));
-                    g.fillRect (cell);
-                }
-                else if (v == kContinued)
-                {
-                    // The tail of a longer pattern: same colour, no label, so a
-                    // four-bar block reads as ONE block instead of four copies.
-                    const int startBar = findStart (lane, bar);
-                    const int sv = startBar >= 0 ? data[lane * totalBars + startBar] : 0;
-                    const bool mini = cabeMini (cell) && sv > 0;
-                    const bool mudoB = mudo || bloqueMudo (lane, bar);
-                    g.setColour (blockColour (sv).withAlpha (mudoB ? 0.18f : (mini ? 0.22f : 0.55f)));
-                    g.fillRect (cell.withTrimmedLeft (-1.5f));
-                    //  Y LA COLA ENSEÑA SU TROZO, que es lo que la hace cola y
-                    //  no una copia: un bloque de cuatro compases con un patron
-                    //  de cuatro enseña compases distintos en cada celda, y con
-                    //  uno de uno enseña el mismo cuatro veces - que es
-                    //  exactamente lo que suena.
-                    if (mini && startBar >= 0)
-                        pintaPasos (g, cell.reduced (2.0f).withTrimmedTop (0.0f), sv,
-                                    (bar - startBar) * StepGrid::kBarSteps, mudoB);
+                    g.setColour (col.withAlpha (0.70f));
+                    g.drawRect (cell, Metrics::filo);
                 }
                 else
                 {
-                    const auto col = blockColour (v);
-                    //  Un carril silenciado ensena sus bloques HUECOS: siguen
-                    //  ahi, con su color y su nombre, y no suenan. Borrarlos
-                    //  seria otra cosa, y esa ya existe.
-                    //
-                    //  Y un bloque silenciado SOLO se ve igual, que es lo que
-                    //  hace que la herramienta se vea: un mute que no se
-                    //  distingue de sonar no es un mute, es un boton.
-                    const bool mudoB = mudo || bloqueMudo (lane, bar);
-                    if (mudoB)
+                    //  EL FONDO DEL BLOQUE SE HUNDE cuando lleva miniatura: el
+                    //  bloque es del color del PATRON y las marcas del color de
+                    //  cada PAD, y dos colores plenos uno sobre otro no se
+                    //  separan. Con la tapa al 30% el bloque sigue diciendo
+                    //  cual es y las marcas se leen encima.
+                    g.setColour (cabeMini (cell) ? col.withAlpha (0.30f) : col);
+                    g.fillRect (cell);
+                    if (cabeMini (cell))
                     {
-                        g.setColour (ZatiColours::groove (0.30f));
-                        g.fillRect (cell);
-                        g.setColour (col.withAlpha (0.70f));
+                        g.setColour (col.withAlpha (0.85f));
                         g.drawRect (cell, Metrics::filo);
                     }
-                    else
-                    {
-                        //  EL FONDO DEL BLOQUE SE HUNDE cuando lleva
-                        //  miniatura. Con el color a pleno las marcas de los
-                        //  pads caen sobre su propio tono y desaparecen: el
-                        //  bloque es del color del PATRON y las marcas del
-                        //  color de cada PAD, y dos colores plenos uno sobre
-                        //  otro no se separan. Con la tapa al 30% el bloque
-                        //  sigue diciendo cual es y las marcas se leen encima.
-                        g.setColour (cabeMini (cell) ? col.withAlpha (0.30f) : col);
-                        g.fillRect (cell);
-                        if (cabeMini (cell))
-                        {
-                            g.setColour (col.withAlpha (0.85f));
-                            g.drawRect (cell, Metrics::filo);
-                        }
-                    }
-
-                    //  LO QUE EL BLOQUE LLEVA DENTRO. Solo un patron - un
-                    //  golpe de pad suelto no tiene pasos que enseñar - y solo
-                    //  donde cabe: por debajo de kAltoMini el bloque se queda
-                    //  como estaba, que es la escalera de siempre.
-                    juce::Rectangle<float> texto = cell;
-                    if (v > 0 && cabeMini (cell))
-                    {
-                        auto dentro = cell.reduced (2.0f);
-                        texto = dentro.removeFromTop (kFilaRotulo);
-                        //  El primer compas del bloque empieza en el paso cero
-                        //  del patron; los de detras siguen contando, y el
-                        //  resto da la vuelta si el bloque es mas largo que el
-                        //  patron.
-                        const int desde = (bar - findStart (lane, bar)) * StepGrid::kBarSteps;
-                        pintaPasos (g, dentro, v, juce::jmax (0, desde), mudo);
-                    }
-
-                    g.setColour (mudo ? col.withAlpha (0.85f)
-                                      : ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
-                    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-                    g.drawText (v > 0 ? "P" + juce::String (v)
-                                      : juce::String (-v).paddedLeft ('0', 2),
-                                texto,
-                                texto == cell ? juce::Justification::centred
-                                              : juce::Justification::centredLeft);
                 }
 
-                if (bar == playing)
+                //  LO QUE EL BLOQUE LLEVA DENTRO. Solo un patron -un golpe
+                //  suelto no tiene pasos que enseñar- y solo donde cabe.
+                juce::Rectangle<float> texto = cell;
+                if (b.bank >= 0 && cabeMini (cell))
                 {
-                    //  The bar being played, in the playhead's colour rather
-                    //  than in the recording one. Ink outside, white inside,
-                    //  so it reads on a pale card and on a filled block alike.
-                    g.setColour (ZatiColours::playheadEdge);
-                    g.drawRect (cell.expanded (1.0f), Metrics::filo);
-                    g.setColour (ZatiColours::playhead);
-                    g.drawRect (cell, Metrics::filoFoco);
+                    auto dentro = cell.reduced (2.0f);
+                    texto = dentro.removeFromTop (kFilaRotulo);
+                    pintaPasos (g, dentro, b, d, h, mudoB);
                 }
+
+                //  Y LAS ASAS, donde se pueden coger: en los dos filos si el
+                //  bloque mide tres compases o mas, como un clip.
+                if ((b.hastaPaso - b.desdePaso) >= kCompasesConAsa * pc && ! mudoB)
+                {
+                    g.setColour (ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white)
+                                     .withAlpha (0.55f));
+                    g.fillRect (cell.getX() + 2.0f, cell.getY() + 3.0f, 2.0f, cell.getHeight() - 6.0f);
+                    g.fillRect (cell.getRight() - 4.0f, cell.getY() + 3.0f, 2.0f, cell.getHeight() - 6.0f);
+                }
+
+                g.setColour (mudoB ? col.withAlpha (0.85f)
+                                   : ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
+                g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+                g.drawText (b.bank >= 0 ? "P" + juce::String (b.bank + 1)
+                                        : juce::String (-b.bank).paddedLeft ('0', 2),
+                            texto,
+                            texto == cell ? juce::Justification::centred
+                                          : juce::Justification::centredLeft);
+            }
+        }
+
+        //  EL COMPAS QUE SUENA, en el color del cabezal y no en el de grabar,
+        //  en los cuatro carriles: tinta fuera, blanco dentro, que se lee
+        //  sobre una tarjeta clara y sobre un bloque lleno.
+        if (playing >= base && playing < base + barsView)
+        {
+            const float x = (float) r.getX() + (float) gutter + barW * (float) (playing - base);
+            for (int lane = 0; lane < kLanes; ++lane)
+            {
+                auto cell = juce::Rectangle<float> (x, (float) r.getY() + laneH * (float) lane, barW, laneH).reduced (1.5f);
+                g.setColour (ZatiColours::playheadEdge);
+                g.drawRect (cell.expanded (1.0f), Metrics::filo);
+                g.setColour (ZatiColours::playhead);
+                g.drawRect (cell, Metrics::filoFoco);
             }
         }
 
@@ -625,6 +672,47 @@ public:
 
         pintaClips (g);
 
+        //  LA SELECCION SE VE POR RELLENO, como en el piano: el cabezal al
+        //  55 % sobre lo que haya debajo, bloques y clips incluidos, que es lo
+        //  que dice «esto es lo que se va a copiar».
+        if (sel.activa())
+        {
+            const int pc = juce::jmax (1, pasosCompas);
+            const int d = juce::jmax (sel.paso0, base * pc);
+            const int h = juce::jmin (sel.paso1, (base + barsView) * pc);
+            const int l0 = juce::jlimit (0, kLanes - 1, juce::jmin (sel.lane0, sel.lane1));
+            const int l1 = juce::jlimit (0, kLanes - 1, juce::jmax (sel.lane0, sel.lane1));
+            if (h > d)
+            {
+                auto caja = cajaPaso (l0, d, h);
+                caja.setHeight (laneH * (float) (l1 - l0 + 1));
+                g.setColour (ZatiColours::playhead.withAlpha (0.55f));
+                g.fillRect (caja);
+                g.setColour (ZatiColours::playheadEdge);
+                g.drawRect (caja, Metrics::filo);
+            }
+        }
+        //  Y EL PUNTO DE PEGADO, una raya vertical del cabezal en su carril.
+        if (marcaLane >= 0 && marcaLane < kLanes)
+        {
+            const int pc = juce::jmax (1, pasosCompas);
+            if (marcaPaso >= base * pc && marcaPaso < (base + barsView) * pc)
+            {
+                auto caja = cajaPaso (marcaLane, marcaPaso, marcaPaso + 1);
+                g.setColour (ZatiColours::playhead);
+                g.fillRect (caja.getX(), caja.getY(), 2.0f, caja.getHeight());
+            }
+        }
+        //  Y EL TRAMO DE LA LUPA mientras se arrastra.
+        if (lupaViva && lupaX1 != lupaX0)
+        {
+            const float x0 = (float) juce::jmin (lupaX0, lupaX1), x1 = (float) juce::jmax (lupaX0, lupaX1);
+            g.setColour (ZatiColours::playhead.withAlpha (0.25f));
+            g.fillRect (x0, (float) r.getY(), x1 - x0, (float) r.getHeight());
+            g.setColour (ZatiColours::playheadEdge);
+            g.drawRect (juce::Rectangle<float> (x0, (float) r.getY(), x1 - x0, (float) r.getHeight()), Metrics::filo);
+        }
+
         // Bar numbers along the top edge of the first lane.
         g.setColour (ZatiColours::inkDim.withAlpha (0.7f));
         g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
@@ -691,6 +779,7 @@ public:
 
     bool tocaAlClip (const juce::MouseEvent& e) const
     {
+        if (herramienta == hSel || herramienta == hLupa) return false;
         if (herramienta == hMano || herramienta == hGoma || herramienta == hTijeras)
             return clipBajoElDedo (e);
         //  Con el LAPIZ y la brocha en CLIP, un hueco suelta un clip; encima de
@@ -701,7 +790,7 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        asaBloque = 0; bloqueCarril = -1; arrastrado = -1; asa = 0;
+        asaBloque = 0; bloqueIdx = -1; arrastrado = -1; asa = 0;
         ultima = { -1, -1 };
         enClip = tocaAlClip (e);
         if (enClip) { tocaAudio (e, false); return; }
@@ -712,13 +801,33 @@ public:
         if (enClip) { tocaAudio (e, true); return; }
         toca (e, true);
     }
-    void mouseUp   (const juce::MouseEvent&)   override
+    void mouseUp   (const juce::MouseEvent& e)   override
     {
         asaBloque = 0;
-        bloqueCarril = -1;
+        bloqueIdx = -1;
         ultima = { -1, -1 };
         arrastrado = -1;
         enClip = false;
+        moviendoSel = false;
+        //  Y SE AVISA DE QUE EL DEDO SE HA LEVANTADO. Quien escucha apila UNA
+        //  entrada de deshacer por arrastre -el lapiz emite un evento por celda
+        //  cruzada, asi que uno por evento no es deshacer, es contar- y sin
+        //  esta señal el candado no se abre nunca: el segundo trazo se
+        //  quedaria sin poder deshacerse.
+        if (onSuelta) onSuelta();
+        //  LA LUPA DECIDE AL SOLTAR: con tramo, acerca; sin el, vuelve.
+        if (lupaViva)
+        {
+            lupaViva = false;
+            const int pc = juce::jmax (1, pasosCompas);
+            const int c0 = pasoDeX (juce::jmin (lupaX0, e.x)) / pc;
+            const int c1 = pasoDeX (juce::jmax (lupaX0, e.x)) / pc;
+            //  Un arrastre mas corto que el aire de la casa es un toque con
+            //  el dedo temblando, no un tramo.
+            if (std::abs (e.x - lupaX0) < Metrics::gap) { if (onLupaVuelve) onLupaVuelve(); }
+            else if (onLupa) onLupa (c0, c1 + 1);
+            repaint();
+        }
     }
 
     //  DOBLE TOQUE EN UN CLIP: abre CORTAR con SU sonido.
@@ -746,7 +855,7 @@ public:
 
     void toca (const juce::MouseEvent& e, bool arrastrando)
     {
-        if (data == nullptr) return;
+        if (! visto) return;
         auto r = getLocalBounds();
         const int gutter = kGutter;
         const float laneH0 = (float) r.getHeight() / (float) kLanes;
@@ -763,10 +872,61 @@ public:
 
         const float laneH = (float) r.getHeight() / (float) kLanes;
         const float barW  = (float) (r.getWidth() - gutter) / (float) barsView;
+        if (barW <= 0.0f || laneH <= 0.0f) return;
+        const int pc   = juce::jmax (1, pasosCompas);
+        const int u    = juce::jmax (1, divisionPaso());
         const int lane = juce::jlimit (0, kLanes - 1, (int) ((float) (e.y - r.getY()) / laneH));
-        const int bar  = primerCompas
-                       + juce::jlimit (0, barsView - 1, (int) ((float) (e.x - r.getX() - gutter) / barW));
-        if (bar >= totalBars) return;
+        //  DOS CIFRAS Y NO UNA: donde esta el dedo y donde se SUELTA, por lo
+        //  mismo que en los clips. El dedo sin pegar decide que hay debajo;
+        //  el pegado es lo unico que se escribe.
+        const int paso   = pasoDeX (e.x);
+        const int pegado = (paso / u) * u;
+        if (paso / pc >= totalBars) return;
+
+        //  LA LUPA: un tramo horizontal, y se decide al soltar.
+        if (herramienta == hLupa)
+        {
+            if (! arrastrando) { lupaViva = true; lupaX0 = e.x; }
+            lupaX1 = e.x;
+            repaint();
+            return;
+        }
+
+        //  LA SELECCION, calcada del piano: apoyar dentro mueve, apoyar
+        //  fuera vacia y marca el punto de pegado, y arrastrar desde fuera
+        //  marca una banda.
+        if (herramienta == hSel)
+        {
+            if (! arrastrando)
+            {
+                selLaneIni = lane; selPasoIni = pegado;
+                moviendoSel = sel.activa()
+                           && lane >= juce::jmin (sel.lane0, sel.lane1) && lane <= juce::jmax (sel.lane0, sel.lane1)
+                           && paso >= sel.paso0 && paso < sel.paso1;
+                dLaneSel = dPasoSel = 0;
+                if (! moviendoSel)
+                {
+                    if (onVaciaSel) onVaciaSel();
+                    if (onMarca) onMarca (lane, pegado);
+                }
+                return;
+            }
+            if (moviendoSel)
+            {
+                //  EN DELTAS Y ACUMULADO, no en absolutos: quien mueve la
+                //  banda necesita cuanto se ha movido DESDE la ultima vez, o
+                //  cada evento del raton la desplazaria otra vez entera.
+                const int nl = lane - selLaneIni, np = pegado - selPasoIni;
+                if (nl == dLaneSel && np == dPasoSel) return;
+                if (onMueveSel) onMueveSel (nl - dLaneSel, np - dPasoSel);
+                dLaneSel = nl; dPasoSel = np;
+                return;
+            }
+            //  La banda va de division en division y coge la ultima entera.
+            if (onBanda) onBanda (selLaneIni, juce::jmin (selPasoIni, pegado),
+                                  lane, juce::jmax (selPasoIni, pegado) + u);
+            return;
+        }
 
         //  SILENCIAR UN BLOQUE: un toque, y solo un toque. Arrastrar por una
         //  fila silenciandolos todos es lo mismo que la canaleta ya tiene
@@ -775,8 +935,20 @@ public:
         {
             if (! arrastrando && onMuteBloque)
             {
-                const auto b = bloqueEn (lane, bar);
-                if (b.first >= 0) onMuteBloque (lane, b.first);
+                const int i = bloqueEn (lane, paso);
+                if (i >= 0) onMuteBloque (i);
+            }
+            return;
+        }
+
+        //  LAS TIJERAS PARTEN el bloque por el paso pegado. Un toque en el
+        //  filo no es un corte, y eso lo decide quien tiene los datos.
+        if (herramienta == hTijeras)
+        {
+            if (! arrastrando && onParteBloque)
+            {
+                const int i = bloqueEn (lane, paso);
+                if (i >= 0) onParteBloque (i, pegado);
             }
             return;
         }
@@ -785,78 +957,82 @@ public:
         //
         //  Las dos viven aqui y no en el lapiz, que es lo que hace que no
         //  cuesten el pincel: con el lapiz armado esta rejilla se comporta
-        //  exactamente como siempre. La primera version puso el asa en el
-        //  lapiz con un candado -el toque pinta, el arrastre estira- y
-        //  funcionaba, pero seguia siendo un segundo significado en el mismo
-        //  dedo, que es lo que esta casa lleva escrito que no se aprende. Con
-        //  la mano cada gesto tiene uno. Es la leccion de la SELECCION del
-        //  piano: la herramienta es la quinta, no un gesto nuevo.
+        //  exactamente como siempre. Con la mano cada gesto tiene UN
+        //  significado. Es la leccion de la SELECCION del piano: la
+        //  herramienta es la quinta, no un gesto nuevo.
         //
         //  Y el asa con las dos condiciones que la vista de audio ya midio:
-        //  solo el primer y el ultimo compas, y POR DEBAJO DE TRES COMPASES no
-        //  hay asas - dos asas de un compas se comen un bloque de dos y no
-        //  queda nada que arrastrar.
+        //  un tercio del bloque por lado y como mucho un compas, y POR DEBAJO
+        //  DE TRES COMPASES no hay asas - dos asas se comen un bloque corto y
+        //  no queda nada que arrastrar.
         if (herramienta == hMano)
         {
             if (! arrastrando)
             {
                 asaBloque = 0;
-                bloqueCarril = -1;
+                bloqueIdx = -1;
                 bloquePrimero = true;
-                const auto b = bloqueEn (lane, bar);
-                if (b.first < 0) return;
-                bloqueCarril = lane;
-                bloqueCabeza = b.first;
-                bloqueFin    = b.second;
-                if ((b.second - b.first) >= kCompasesConAsa)
+                const int i = bloqueEn (lane, paso);
+                if (i < 0) return;
+                const auto& b = bloques[i];
+                bloqueIdx   = i;
+                bloqueCarril = b.lane;
+                bloqueDesde = b.desdePaso;
+                bloqueHasta = b.hastaPaso;
+                const int ancho = b.hastaPaso - b.desdePaso;
+                if (ancho >= kCompasesConAsa * pc)
                 {
-                    if (bar == b.first)           asaBloque = -1;
-                    else if (bar == b.second - 1) asaBloque = +1;
+                    const int asaP = juce::jlimit (1, juce::jmax (1, ancho / 3), pc);
+                    if (paso < b.desdePaso + asaP)       asaBloque = -1;
+                    else if (paso >= b.hastaPaso - asaP) asaBloque = +1;
                 }
-                //  DONDE SE AGARRO, en compases desde la cabeza. Sin esto,
-                //  arrastrar un bloque de cuatro por su tercer compas lo pega
-                //  de un salto por su primero: se mueve un trozo que la persona
-                //  no pidio, y es lo primero que se nota.
-                agarre = bar - b.first;
+                //  DONDE SE AGARRO, en divisiones desde el principio. Sin
+                //  esto, arrastrar un bloque de cuatro por su tercer compas lo
+                //  pega de un salto por su primero.
+                agarre = ((paso - b.desdePaso) / u) * u;
                 return;
             }
 
-            if (bloqueCarril < 0) return;
+            if (bloqueIdx < 0 || bloqueIdx >= numBloques) return;
 
             if (asaBloque != 0)
             {
-                //  UN ASA CAMBIA EL LARGO Y NO LA POSICION. Son dos cosas y no
-                //  una: un asa que ademas mueve pasa cualquier prueba que solo
-                //  mire el largo, y desde el dedo es un bloque que se escapa
-                //  mientras lo recortas. Por el filo izquierdo la cabeza no se
-                //  toca: lo que se mueve es el FINAL.
-                const int nuevoL = (asaBloque < 0) ? juce::jmax (1, bloqueFin - bar)
-                                                   : juce::jmax (1, bar - bloqueCabeza + 1);
-                if (onLargoBloque && nuevoL != bloqueFin - bloqueCabeza)
+                //  UN ASA CAMBIA EL LARGO Y NO LA POSICION. Por el filo
+                //  izquierdo lo que se mueve es el principio y el bloque
+                //  sigue sonando por donde iba (eso lo resuelve la ficha con
+                //  el offset); por el derecho, el final.
+                int d = bloqueDesde, h = bloqueHasta;
+                if (asaBloque < 0) d = juce::jmin (pegado, h - u);
+                else               h = juce::jmax (pegado + u, d + u);
+                if (d == bloqueDesde && h == bloqueHasta) return;
+                if (onLargoBloque)
                 {
-                    onLargoBloque (bloqueCarril, bloqueCabeza, nuevoL, bloquePrimero);
+                    onLargoBloque (bloqueIdx, d, h, bloquePrimero);
                     bloquePrimero = false;
-                    bloqueFin = bloqueCabeza + nuevoL;
+                    bloqueDesde = d; bloqueHasta = h;
                 }
                 return;
             }
 
-            const int destino = juce::jmax (0, bar - agarre);
-            if (onMueveBloque && (destino != bloqueCabeza || lane != bloqueCarril))
+            const int destino = juce::jmax (0, pegado - agarre);
+            if (onMueveBloque && (destino != bloqueDesde || lane != bloqueCarril))
             {
-                onMueveBloque (bloqueCarril, bloqueCabeza, lane, destino, bloquePrimero);
+                onMueveBloque (bloqueIdx, lane, destino, bloquePrimero);
                 bloquePrimero = false;
-                bloqueFin    = destino + (bloqueFin - bloqueCabeza);
-                bloqueCabeza = destino;
+                bloqueHasta  = destino + (bloqueHasta - bloqueDesde);
+                bloqueDesde  = destino;
                 bloqueCarril = lane;
             }
             return;
         }
 
+        //  El lapiz y la goma, por celda de division: una celda no se
+        //  escribe dos veces seguidas, o pasar el dedo por encima de la
+        //  misma la enciende y la apaga a la velocidad del raton.
         if (! onCell) return;
-        if (arrastrando && lane == ultima.first && bar == ultima.second) return;
-        ultima = { lane, bar };
-        onCell (lane, bar);
+        if (arrastrando && lane == ultima.first && pegado == ultima.second) return;
+        ultima = { lane, pegado };
+        onCell (lane, pegado);
     }
 
     //  ------------------------------------------------------------------
@@ -1113,7 +1289,9 @@ public:
     //  Y LAS TIJERAS, que es la quinta y no un gesto nuevo: un clip se parte
     //  por donde cae el dedo, que es lo que se pidio -«para poder cortarlo y
     //  colocarlo donde debe»-. El vocabulario ya existia en el piano.
-    enum Herramienta { hLapiz = 0, hGoma, hMano, hMute, hTijeras };
+    //  Y SEL Y LUPA, la sexta y la septima, por lo mismo: seleccionar un
+    //  rango y acercar un tramo son modos armados y no gestos nuevos.
+    enum Herramienta { hLapiz = 0, hGoma, hMano, hMute, hTijeras, hSel, hLupa };
     int herramienta = hLapiz;
 
     //  Lo que la brocha VACIAR pone: quien la lleva es la ficha, y aqui solo se
@@ -1126,12 +1304,6 @@ public:
     //  elegido, que es lo que hacia un toque en la vista de audio. Cero pixeles
     //  nuevos — la tapa ya existia y sigue diciendo el ESTADO.
     bool pincelClip = false;
-
-    //  El mismo centinela que AudioEngine::kContinued, y por eso se toma de
-    //  alli: estaba escrito dos veces con el mismo numero, o sea dos duenos
-    //  para una regla - mover uno dejaria la rejilla pintando bloques que el
-    //  motor no reconoce, sin un solo error de compilacion.
-    static constexpr int kContinued = AudioEngine::kContinued;
 
 private:
     //  La ultima celda escrita por el arrastre en curso: sin esto, pasar el
@@ -1174,21 +1346,31 @@ private:
     //  que quepan a `kMinFila` cada una, en orden de pad — que es el orden de
     //  la rejilla — y las de mas no se dibujan. Es la escalera de siempre: se
     //  pide lo que hay.
+    //  Y DESDE QUE EL BLOQUE ES POR PASOS, la caja es el trozo visible del
+    //  bloque `[d, h)` y cada columna es un paso de la rejilla que se ve
+    //  -`kBarSteps` por compas-, que se traduce al paso del patron con el
+    //  `offset` del bloque: la segunda mitad de un bloque partido enseña la
+    //  segunda mitad del patron, que es lo que suena.
     void pintaPasos (juce::Graphics& g, juce::Rectangle<float> caja,
-                     int patron, int paso0, bool mudo) const
+                     const BloqueVista& b, int d, int h, bool mudo) const
     {
+        const int patron = b.bank + 1;
         if (patPasos == nullptr || patron < 1 || patron > juce::jmin (kMaxPat, patN)) return;
         const auto& filas = filasDe[(size_t) (patron - 1)];
-        if (filas.empty() || caja.getHeight() < 6.0f) return;
+        if (filas.empty() || caja.getHeight() < 6.0f || h <= d) return;
 
         const int largo = (patLargos != nullptr)
                             ? juce::jlimit (1, patPasos_, patLargos[patron - 1]) : patPasos_;
+        const int pc = juce::jmax (1, pasosCompas);
 
         constexpr float kMinFila = 2.0f;
         const int cabenF = juce::jmax (1, (int) (caja.getHeight() / kMinFila));
         const int nF     = juce::jmin ((int) filas.size(), cabenF);
         const float fh   = caja.getHeight() / (float) nF;
-        const float cw   = caja.getWidth()  / (float) StepGrid::kBarSteps;
+        //  Columnas: una por paso de la rejilla que se ve, o sea kBarSteps
+        //  por compas y las que le toquen a un trozo de compas.
+        const int cols   = juce::jmax (1, (int) std::lround ((double) (h - d) * StepGrid::kBarSteps / (double) pc));
+        const float cw   = caja.getWidth() / (float) cols;
 
         for (int r = 0; r < nF; ++r)
         {
@@ -1202,10 +1384,11 @@ private:
             //  que hace que ocho filas se lean como ocho y no como una mancha.
             const float mh = juce::jmax (1.0f, fh - 1.0f);
 
-            for (int c = 0; c < StepGrid::kBarSteps; ++c)
+            for (int c = 0; c < cols; ++c)
             {
-                const int st = (paso0 + c) % largo;
-                if (! patPasos[((size_t) (patron - 1) * (size_t) patPasos_ + (size_t) st)
+                const int abs = d + (int) ((long long) c * pc / StepGrid::kBarSteps);
+                const int st  = (b.offset + (abs - b.desdePaso)) % largo;
+                if (st < 0 || ! patPasos[((size_t) (patron - 1) * (size_t) patPasos_ + (size_t) st)
                                * (size_t) patPads + (size_t) pad])
                     continue;
                 g.fillRect (caja.getX() + cw * (float) c, y,
@@ -1214,59 +1397,32 @@ private:
         }
     }
 
-    juce::Colour blockColour (int v) const
+    //  `bank` 0..7 es un patron; negativo es un golpe suelto -(pad+1).
+    juce::Colour blockColour (int bank) const
     {
-        if (v > 0 && v != kContinued) return Zati::colour (v - 1);
-        if (v < 0)
+        if (bank >= 0) return Zati::colour (bank);
+        const int pad = -bank - 1;
+        if (zati == nullptr || ! juce::isPositiveAndBelow (pad, zatis))
         {
-            const int pad = -v - 1;
-            if (zati == nullptr || ! juce::isPositiveAndBelow (pad, zatis))
-            {
-                ++zatisFueraDeRango;
-                //  Su propio color, que es lo unico honesto cuando la tabla no
-                //  lo tiene: Zati::colour ya envuelve con el modulo de los ocho.
-                return Zati::colour (pad);
-            }
-            return Zati::colour (zati[pad]);
+            ++zatisFueraDeRango;
+            //  Su propio color, que es lo unico honesto cuando la tabla no
+            //  lo tiene: Zati::colour ya envuelve con el modulo de los ocho.
+            return Zati::colour (pad);
         }
-        return ZatiColours::padBorder;
+        return Zati::colour (zati[pad]);
     }
-    //  El bloque que ocupa una celda: su cabeza y su final EXCLUSIVO, o
-    //  {-1,-1} si ahi no hay ninguno. La cabeza se busca hacia atras -una
-    //  continuacion no dice de quien es- y la cola hacia delante, que es la
-    //  misma cuenta que ya hacen el pintado y `resizeSongBlock`.
-    std::pair<int, int> bloqueEn (int lane, int bar) const
+    //  El bloque que ocupa (carril, paso): su indice en la tabla o -1. El
+    //  PRIMERO que lo contenga, como con los clips.
+    int bloqueEn (int lane, int paso) const
     {
-        if (data == nullptr || lane < 0 || bar < 0 || bar >= totalBars) return { -1, -1 };
-        int cabeza = bar;
-        while (cabeza > 0 && data[lane * totalBars + cabeza] == kContinued) --cabeza;
-        const int v = data[lane * totalBars + cabeza];
-        if (v == 0 || v == kContinued) return { -1, -1 };
-        int fin = cabeza + 1;
-        while (fin < totalBars && data[lane * totalBars + fin] == kContinued) ++fin;
-        return { cabeza, fin };
-    }
-
-    //  El silencio del BLOQUE al que pertenece una celda, que no es el del
-    //  carril: aquel calla la pista entera. Se apunta en la CABEZA, que es
-    //  donde el motor lo lee, asi que la cola pregunta por la suya.
-    bool bloqueMudo (int lane, int bar) const
-    {
-        if (lane < 0 || lane >= kLanes || bar < 0 || bar >= 64) return false;
-        int cabeza = bar;
-        while (cabeza > 0 && data != nullptr
-               && data[lane * totalBars + cabeza] == kContinued) --cabeza;
-        return ((bmute[(size_t) lane] >> cabeza) & 1u) != 0;
-    }
-
-    int findStart (int lane, int bar) const
-    {
-        for (int b = bar - 1; b >= 0; --b)
-            if (data[lane * totalBars + b] != kContinued) return b;
+        for (int i = 0; i < numBloques; ++i)
+            if (bloques[i].lane == lane && paso >= bloques[i].desdePaso && paso < bloques[i].hastaPaso)
+                return i;
         return -1;
     }
 
-    const int* data = nullptr;
+    const BloqueVista* bloques = nullptr;
+    int numBloques = 0;
     const int* zati = nullptr;
     //  CUANTOS trae esa tabla. Sin este numero, `zati` es un puntero sin
     //  largo — que es literalmente el fallo que costo la lectura fuera de
@@ -1277,11 +1433,17 @@ private:
     int totalBars = 8, primerCompas = 0, playing = -1;
     int cursor = -1;          // el compas que las herramientas van a tocar
     unsigned mute = 0;        // un bit por carril silenciado
-    //  Y un bit por COMPAS y por carril: el silencio de un bloque suelto. Son
-    //  cuatro enteros copiados en cada refresco - la cancion mide sesenta y
-    //  cuatro compases clavados, asi que la tabla entera cabe en 32 bytes.
-    juce::uint64 bmute[kLanes] {};
     int lA = 0, lB = 0;       // el tramo en bucle, [A,B)
+    //  La banda seleccionada y el punto de pegado, que pinta esta rejilla y
+    //  guarda la ficha. Ver setSel y setMarca.
+    Sel sel;
+    int marcaLane = -1, marcaPaso = -1;
+    //  El gesto de SEL en curso, como en el piano.
+    int  selLaneIni = 0, selPasoIni = 0, dLaneSel = 0, dPasoSel = 0;
+    bool moviendoSel = false;
+    //  Y el de la LUPA: de que x a que x va el tramo.
+    bool lupaViva = false;
+    int  lupaX0 = 0, lupaX1 = 0;
 
     //  Los pasos de los ocho patrones, y que pads usa cada uno.
     int barsView = kBarsViewDef;
@@ -1309,7 +1471,7 @@ private:
     //  La copia de lo ultimo PINTADO, para no volver a pintarlo. Ver setSource.
     //  El numero de compases lo elige la persona, asi que la sombra de la tabla
     //  crece con ella; los sesenta y cuatro zatis son fijos.
-    std::vector<int> sombra;
+    std::vector<BloqueVista> sombra;
     std::array<int, 64> sombraZati {};
     int  prevBars = -1, prevPage = -1, prevPlaying = -2, prevCursor = -2, prevLA = -1, prevLB = -1;
     unsigned prevMute = 0xFFFFFFFFu;
@@ -1330,7 +1492,7 @@ private:
     //  `arrastrado`/`asa` y esta en el carril y la cabeza, porque un bloque no
     //  tiene indice - es lo que haya escrito en las celdas.
     int  asaBloque = 0;               // -1 filo izquierdo, +1 derecho, 0 ninguno
-    int  bloqueCarril = -1, bloqueCabeza = 0, bloqueFin = 0;
+    int  bloqueIdx = -1, bloqueCarril = -1, bloqueDesde = 0, bloqueHasta = 0;
     bool bloquePrimero = true;        // el primer cambio de largo del gesto
 
     int              agarre = 0;      // por que compas suyo lo agarro

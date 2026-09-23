@@ -5,6 +5,7 @@
 #include "PadButton.h"
 #include "Zati.h"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <functional>
 #include <typeinfo>
@@ -88,6 +89,35 @@ namespace UiAudit
     //  comparable con el de la tanda anterior sin decirlo. Lo que no puede
     //  empeorar es el coste POR CUADRO.
     inline long long cuadrosPintados = 0;
+    //  Y COMO DE REGULARES SON, que es una pregunta DISTINTA de cuantos hay.
+    //
+    //  «Cincuenta y tres cuadros por segundo» y «va a tirones» son compatibles:
+    //  una app que pinta 100, 50, 100, 50 da la misma media que una que pinta 75
+    //  siempre, y solo la primera se ve dar saltos. La media no puede verlo por
+    //  construccion -es lo que una media hace- asi que lo que se cuenta es la
+    //  VARIACION, y en tres numeros que no se pueden falsear promediando:
+    //
+    //   · `huecoCubos`  — el reparto de los huecos entre cuadros PINTADOS, en
+    //     cubos de 4 ms. Una cadencia sana es una sola columna; una a tirones
+    //     son dos columnas separadas, que es exactamente el dibujo de alternar
+    //     entre pintar y saltarse uno.
+    //   · `cadenciaCambios` — cuantas veces la app ha CAMBIADO de cadencia, o
+    //     sea cuantas veces `cuadroSaltar` paso a otro nivel. Este es EL numero
+    //     del tiron: cada cambio es un hueco que dura el doble o la mitad que el
+    //     anterior, y el ojo los ve uno a uno.
+    //   · `vblanksVistos` / `cuadrosSaltados` — el denominador, sin el cual «500
+    //     cuadros» no dice si la app llego o se rindio.
+    inline long long vblanksVistos   = 0;
+    inline long long cuadrosSaltados = 0;
+    inline long long cadenciaCambios = 0;
+    inline double    huecoPeorMs     = 0.0;
+    inline std::array<int, 16> huecoCubos {};   // [i] = huecos de [4i, 4i+4) ms
+    inline void apuntaHueco (double ms)
+    {
+        huecoPeorMs = std::max (huecoPeorMs, ms);
+        const int c = juce::jlimit (0, 15, (int) (ms / 4.0));
+        ++huecoCubos[(size_t) c];
+    }
     //  CUANTAS VECES SE HA MOVIDO EL CABEZAL DEL PIANO ROLL. La barra estaba
     //  dibujada desde el primer dia y no estaba viva: el temporizador solo
     //  alimentaba la rejilla de PASOS, asi que en la pagina del piano el

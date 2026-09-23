@@ -309,7 +309,14 @@ def main():
         #  cuadros por segundo y en el mejor 30. Con el vblank vivo esto tiene
         #  que dar la frecuencia del panel; treinta y cinco deja pasar
         #  cualquier panel real y no deja pasar la red.
-        print ("la cadencia del panel: %.1f cuadros por segundo%s"
+        #
+        #  Y ES LA CADENCIA DE DIBUJO, que desde el techo de 60 ya no es la del
+        #  panel: en uno de 120 Hz la app pinta uno de cada dos a proposito -el
+        #  mismo trabajo dos veces no se ve mejor y le roba nucleo al hilo de
+        #  audio- asi que 60 contra 120 aqui es lo correcto y no una perdida.
+        #  Lo que esta linea sigue cazando es el vblank que NO llega. Ver
+        #  `Tests/fluidez.py`, que es quien juzga si esa cadencia aletea.
+        print ("la cadencia de dibujo: %.1f cuadros por segundo%s"
                % (hz, "   <-- el vblank no llega, dibuja el reloj" if hz < 35.0 else ""))
         if hz < 35.0: malas.append ("el vblank no llega")
 

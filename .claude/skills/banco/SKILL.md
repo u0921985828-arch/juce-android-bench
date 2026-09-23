@@ -55,6 +55,8 @@ codigo.
 | cerrar una tanda, antes de la APK | `Tests/entrega.py` (donde acabo el empujon) |
 | repintados, coste de la cara | `Tests/cpu.py` **sola** (ver abajo) |
 | la tasa de refresco, cualquier constante de tiempo visual | `Tests/fps.py` |
+| que la cadencia no aletee: el salto de vblanks, el techo de dibujo | `Tests/fluidez.py` |
+| el buffer de audio: cuando sube, cuando baja y que aprende | `Tests/buffer.py` |
 | titulos y rotulos pintados, los gestos escondidos | `Tests/plano.py` |
 | la ANATOMIA de una ficha: marco, cabecera, pie | `Tests/maqueta.py` **y** `expo.py` (regla `ANATOMIA`) |
 | los minimos de un pop-up: titulo, cruz, dedo, PLAY | `Tests/desglose.py` |
@@ -88,6 +90,26 @@ ninguna otra ficha pasaba de 0.5- porque `StepGrid::setSource` se caia al
 RELOJ, y con las 1456 corridas de `expo.py` compartiendo nucleos saco nueve
 fichas «repintandose solas» —la cara a 19 fotogramas contra un tope de 3— con el
 codigo intacto. Una medida de tiempo con la maquina ocupada no es una medida.
+
+**Y `fluidez.py` mide lo que la MEDIA no puede ver.** «Cincuenta y tres cuadros
+por segundo» y «va a tirones» son compatibles: una app que pinta 100, 50, 100,
+50 da la misma media que una que pinta 75 siempre, y solo la primera se ve dar
+saltos. Lo que cuenta son los CAMBIOS de cadencia y las columnas del histograma
+de huecos. Y la condicion es una entrada y no una esperanza: en el escritorio la
+cara sale a 0.3 ms de fotograma y la rama que decide la cadencia no se ejecuta
+ni una vez, asi que `ZATI_LASTRE=ms` pone el cuadro a costar lo que cuesta en un
+telefono -con temblor, que es lo que hace cambiar de opinion a un umbral sin
+memoria- y `ZATI_VBLANK=hz` pone el panel. Con la ley vieja: **56 cambios en 10
+segundos** y el histograma partido en dos.
+
+**Y `buffer.py`, la ley de la latencia, que llevaba desde el primer dia sin
+medir** porque depende de `getXRunCount` y en el escritorio no hay aparato que
+lo cuente. `ZATI_XRUN="ms:cuantos,..."` inyecta los chasquidos por el MISMO
+camino por el que llegan los de verdad -la ley corre una vez y no dos- y
+`ZATI_XRUN_ESCALA` acelera el reloj, porque medir cuarenta y cinco segundos de
+tramo limpio costaria cuarenta y cinco segundos de banco. Y la prueba borra
+`buffer.txt` antes de cada corrida: la app RECUERDA el multiplicador, asi que sin
+eso la segunda corrida empieza donde acabo la primera.
 
 **Y todas devuelven codigo de salida.** `expo.py`, `session.py` y `apk.py` no lo
 hacian: imprimian sus numeros y terminaban con cero pasara lo que pasara, o sea

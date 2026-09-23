@@ -2862,9 +2862,24 @@ int main()
             e.setPatternLength (bank, 16);
             e.setStep (bank, 0, bank, true);
         }
+        //  LA CANCION ES UNA LISTA DE BLOQUES desde que un bloque puede empezar
+        //  a mitad de compas y durar medio. Se monta a mano y se publica de una
+        //  vez, que es el unico camino que el motor tiene: la tabla que suena
+        //  es inmutable.
+        const int pcSong = juce::jmax (1, e.pasosPorCompas());
+        std::vector<AudioEngine::BloqueSong> bl;
+        auto publica = [&] { e.publicaBloques (bl.data(), (int) bl.size()); };
+        auto pon = [&] (int lane, int bar, int bank, int compases = 1)
+        {
+            AudioEngine::BloqueSong b2;
+            b2.lane = lane; b2.bank = bank; b2.compas = bar; b2.paso = 0;
+            b2.largo = compases * pcSong; b2.offset = 0; b2.mudo = false;
+            bl.push_back (b2);
+        };
         for (int ln = 0; ln < 4; ++ln)
             for (int bar = 0; bar < 4; ++bar)
-                e.setSongCell (ln, bar, ln + 1);
+                pon (ln, bar, ln);
+        publica();
 
         e.setSongLength (4);
         e.setSongMode (true);
@@ -2914,7 +2929,10 @@ int main()
         //  igual un transporte que no llega al compas 1, y sin la primera lo
         //  cumple el carril entero mudo.
         std::uint64_t porCompas[4] {};
-        e.setSongCellMute (2, 1, true);
+        //  EL SILENCIO VIAJA DENTRO DEL BLOQUE: era un bit por compas y por eso
+        //  silenciar una cola no callaba nada.
+        for (auto& b2 : bl) if (b2.lane == 2 && b2.compas == 1) b2.mudo = true;
+        publica();
         e.setPlaying (true);
         for (int i = 0; i < blocksPerBar * 6; ++i)
         {
@@ -2925,7 +2943,8 @@ int main()
         e.setPlaying (false);
         e.renderNextBlock (b, 0, 256);
         e.fetchTriggered();
-        e.setSongCellMute (2, 1, false);
+        for (auto& b2 : bl) b2.mudo = false;
+        publica();
 
         const bool bloqueOk = (porCompas[0] & (1u << 2)) != 0
                            && (porCompas[1] & (1u << 2)) == 0
@@ -2973,17 +2992,14 @@ int main()
         //  acortar el patron - o sea a cambiarlo en los demas sitios donde
         //  estuviera puesto. Se cuenta cuantas veces dispara su pad.
         e.clearSongLoop();
-        for (int ln = 0; ln < 4; ++ln)
-            for (int bar = 0; bar < 4; ++bar)
-                e.setSongCell (ln, bar, 0);
+        bl.clear();
+        publica();
 
         auto disparos = [&] (int compases) noexcept
         {
-            e.setSongCell (0, 0, 1);                  // patron 1 en el carril 0
-            for (int b2 = 1; b2 < compases; ++b2)
-                e.setSongCell (0, b2, AudioEngine::kContinued);
-            for (int b2 = compases; b2 < 4; ++b2)
-                e.setSongCell (0, b2, 0);
+            bl.clear();
+            pon (0, 0, 0, compases);                  // el patron 0 en el carril 0
+            publica();
 
             e.setSongLength (4);
             int n = 0;

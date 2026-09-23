@@ -1150,7 +1150,7 @@ namespace ZatiTour
           "de cada canal pasa por cada uno, y cuales sustituyen y cuales suman.",
 
           "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
-          "dura lo que ocupa, no lo que dure su patron.",
+          "dura los PASOS que ocupa: se parte con las tijeras y se copia medio.",
 
           "La mezcla entera o una pista por pad, en WAV o en OGG, y a la carpeta "
           "que tu elijas.",
@@ -1174,5 +1174,12 @@ inline constexpr HerramientaCancion kHerramientas[] = {
     { "GOMA",      Iconos::Id::goma,   Playlist::hGoma  },
     { "SILENCIAR", Iconos::Id::apagar, Playlist::hMute  },
     { "TIJERAS",   Iconos::Id::tijeras, Playlist::hTijeras },
+    //  Y LAS DOS DE LA TANDA DE LA SELECCION. SEL marca una banda de carriles
+    //  por pasos -es lo que hace que copiar medio patron no pida virguerias- y
+    //  LUPA acerca el tramo que se arrastra. Las dos son MODOS ARMADOS y no
+    //  gestos nuevos, que es la regla de esta casa para un lienzo: un gesto sin
+    //  tapa no se puede medir por la tapa, y por eso el pellizco se descarto.
+    { "SEL",       Iconos::Id::seleccion, Playlist::hSel  },
+    { "LUPA",      Iconos::Id::lupa,      Playlist::hLupa },
 };
 inline constexpr int kNumHerramientas = (int) (sizeof (kHerramientas) / sizeof (kHerramientas[0]));
