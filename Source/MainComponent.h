@@ -616,15 +616,26 @@ private:
     juce::Rectangle<int> gesturesArea;
     //  Donde se pinta el parrafo del tour. Ver paintTourSheetContent.
     juce::Rectangle<int> tourBodyArea;
-    //  OCHO Y NO SEIS: entraron MANTEN SOLO y MANTEN AUTO, que llevaban dos
-    //  tandas existiendo sin fila en la unica pagina que los enumera. Ver
-    //  paintGesturesPage, y la regla de `Tests/plano.py` que exige que cada
-    //  HoldButton de la cara tenga la suya.
+    //  ONCE, y el numero ha subido cuatro veces porque cuatro veces hubo un
+    //  gesto SIN MARCA EN LA CARA, que es la unica clase que esta pagina tiene
+    //  que enumerar. Ver paintGesturesPage, y la regla de `Tests/plano.py` que
+    //  exige que cada HoldButton de la cara tenga su fila.
     //
-    //  Y NUEVE desde que el canalon del rack abre los presets del efecto que
-    //  lleva: es la puerta que se pidio -«el tema de los presets no esta muy
-    //  accesible ni legible»- y es un gesto sin marca en la cara, que es la
-    //  unica clase de gesto que esta pagina tiene que enumerar.
+    //  Este renglon decia «OCHO Y NO SEIS» y «Y NUEVE» con la constante de
+    //  debajo puesta en once: se quedo contando las dos primeras subidas y no
+    //  las dos ultimas. Un comentario que el codigo no cumple es lo mismo que
+    //  una regla que el codigo no cumple -deja de proteger nada- asi que se
+    //  cuenta la lista y no las tandas:
+    //
+    //    6 de siempre · MANTEN SOLO · MANTEN AUTO (dos tandas sin fila)
+    //    · MANTEN UNA RANURA DEL RACK (la puerta a los presets)
+    //    · DOBLE TOQUE EN UN CLIP (abre CORTAR)
+    //    · ARRASTRA CON LA LUPA (acerca ese tramo; un toque vuelve)
+    //
+    //  Y no hay fila para SEL: LUPA la tiene porque lo que hace al soltar -y
+    //  sobre todo el toque sin arrastre- no se adivina mirando el icono; SEL
+    //  es un modo armado que deja marca en su tapa y cuya banda se ve. Una
+    //  fila por herramienta seria la tira de herramientas escrita dos veces.
     static constexpr int kNumGestures = 11;
     void showSetPage (int page);
 
@@ -4026,7 +4037,19 @@ private:
 
     //  Publica la lista al motor por intercambio de puntero, igual que
     //  `publicaClips`. Hilo de mensajes y ningun otro.
-    void publicaBloques();
+    //
+    //  DEVUELVE CUANTOS PASARON LA PUERTA, y esa cifra es la mitad que al
+    //  banco le faltaba. `arr.py` medía lo que llega al motor por
+    //  `engine.numBloques()`, o sea `bloquesVivos`, que lo escribe EL HILO DE
+    //  AUDIO al adoptar la tabla; la auditoria no procesa ni un bloque de
+    //  audio antes de esa linea, asi que salia 0 con el guardia puesto y 0 con
+    //  el guardia quitado -la regla estaba viva y no probaba nada, y el propio
+    //  `arr.py:316` ya lo declaraba-. El `n` de aqui se cuenta en el hilo de
+    //  mensajes y en la puerta misma, asi que dice lo que la otra no podia:
+    //  que de los tres imposibles que la sonda mete pasa UNO -el pad 63- y no
+    //  ninguno. Nadie usa el valor de vuelta salvo la auditoria; ignorarlo no
+    //  cambia una linea de lo que hace la app.
+    int  publicaBloques();
 
     //  LOS TRES HELPERS QUE LA AUDITORIA USA para hablar en compases, que es
     //  como estaba escrita. Viven aqui y no en el banco porque la conversion

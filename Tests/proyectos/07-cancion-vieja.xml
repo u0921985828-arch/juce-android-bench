@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- LA CANCION DE ANTES DE LA LISTA DE BLOQUES.
+
+     Los seis de al lado se guardaron todos con la cancion vacia o con una sola
+     cabeza suelta, asi que la rama que convierte `lane0..lane3` + `bmudos` a
+     bloques -applyState, el `else` de `hasProperty("bloques")`- se probaba con
+     un caso que no ejercita nada: ni COLAS (`-1000`), ni golpe suelto, ni el
+     bit de mudo. Y lo unico que la fijaba era un CONTEO de compases con algo,
+     que un lector con el carril, el largo o el mudo equivocados cumple igual.
+
+     Este trae las tres:
+       - lane0, compas 0: cabeza del patron 1 con DOS colas -> un bloque de
+         tres compases, `offset 0`. El largo es lo que el modelo de celdas
+         guardaba repartido en tres casillas y aqui es UN numero.
+       - lane0, compas 5: cabeza del patron 2, un compas, y `bmudos` le pone el
+         bit 5 -> vuelve MUDO. El bit es del compas y no del bloque, que es la
+         traduccion que se puede equivocar de carril sin que nada falle.
+       - lane2, compas 4: golpe suelto del pad 5, que se guarda como -(pad+1).
+
+     Texto plano y escrito a mano a proposito, como los otros seis: generarlo
+     con la app de hoy seria volver a medir la app de hoy contra si misma. -->
+
+<ZATI version="1" bpm="120.0" selectedPattern="0">
+  <PADS>
+    <PAD i="0" name="ANTIGUO"/>
+  </PADS>
+  <song bars="8" mode="0"
+        lane0="1,-1000,-1000,0,0,2,0,0"
+        lane2="0,0,0,0,-6,0,0,0"
+        bmudos="32,0,0,0"/>
+</ZATI>

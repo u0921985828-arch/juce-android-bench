@@ -4868,8 +4868,22 @@ AudioEngine::RemapeoPaso AudioEngine::remapeaPaso (int unidadesViejas, int unida
                 //  fallo que hacia que una redonda escrita a 1/8 (32 cuartos)
                 //  durase 63 en vez de 128 al pasar a 1/32 - la mitad. Con
                 //  kLenMax en un patron entero (768) lo mas largo que se puede
-                //  escribir cabe en cualquier rejilla, y `Tests/arr.py` lo
-                //  mide: 32 → 1/32 → 1/8 vuelve 32 con recortados == 0.
+                //  escribir cabe en cualquier rejilla.
+                //
+                //  Y ESE PARRAFO DECIA «y `Tests/arr.py` lo mide» CUANDO NO LO
+                //  MEDIA NADIE: la regla no existia, y `recortados` -que el
+                //  mismo renglon citaba- solo cuenta el empujon desde este
+                //  cambio, asi que ni siquiera era la cifra. Un comentario que
+                //  promete una medida que no existe es peor que no tener
+                //  ninguna, porque el que pase despues no la escribe. Ahora
+                //  existe y se llama por su nombre: `arr.py` · «rejilla largo»
+                //  -32 en 1/8, 128 en 1/32 y 32 de vuelta-, y la rotura a
+                //  proposito es devolver `kLenMax` a 63, que da 63.
+                //
+                //  Lo que sigue sin medir, y se dice: la `escala` de aqui abajo
+                //  TRUNCA, asi que un largo que no sea multiplo del factor
+                //  pierde un cuarto por el camino sin que nadie lo cuente. La
+                //  regla usa una pareja de division exacta a proposito.
                 Paso nuevo = col[s];
                 const auto escala = [unidadesViejas, unidadesNuevas] (int v)
                 { return (int) (((long long) v * unidadesViejas) / unidadesNuevas); };

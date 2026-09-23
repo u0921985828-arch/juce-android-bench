@@ -15228,7 +15228,7 @@ void MainComponent::publicaClips()
 //  Se acota EN LA PUERTA -carril, banco y sitio- que es donde entra lo que
 //  puede venir de un fichero de otra epoca: cada consumidor volviendo a validar
 //  es como el color de un bloque acabo leyendo fuera del array.
-void MainComponent::publicaBloques()
+int MainComponent::publicaBloques()
 {
     std::array<AudioEngine::BloqueSong, AudioEngine::kMaxBloques> tabla {};
     const int pc = juce::jmax (1, engine.pasosPorCompas());
@@ -15251,6 +15251,7 @@ void MainComponent::publicaBloques()
         d.mudo   = b.mudo;
     }
     engine.publicaBloques (tabla.data(), n);
+    return n;
 }
 
 void MainComponent::refreshRack()

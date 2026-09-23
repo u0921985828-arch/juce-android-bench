@@ -112,6 +112,49 @@ def proyecto():
     return filas or None
 
 
+#  CUANTOS COMPASES CON ALGO TRAE CADA FICHERO CONGELADO, Y QUE BLOQUES.
+#
+#  Sin <song> la cancion queda VACIA -con el fallo, abrir un proyecto sin linea
+#  de tiempo dejaba sonando el arreglo del que estuviera abierto-, asi que los
+#  cinco que no la traen piden 0. El `02` trae una cabeza suelta y el `07` es
+#  el unico que ejercita la conversion entera.
+CANCION = {"02": 1, "07": 5}
+
+
+def bloquesDe(nombre, pc):
+    """LOS BLOQUES QUE TIENE QUE DEVOLVER CADA FICHERO, en pasos.
+
+    Derivados de `pc` -los pasos que mide un compas- y no escritos a mano: el
+    modelo viejo contaba COMPASES y el de hoy cuenta PASOS, asi que la
+    traduccion es `compas * pc` y repetir aqui un 16 la ataria al paso guardado
+    que tuviera la app el dia que se escribio esto.
+
+    El formato es el de `auditArrange`: [carril, banco, desdePaso, largo,
+    offset, mudo].
+
+    Del `07-cancion-vieja.xml`, que es el que trae las tres cosas:
+      - `lane0` compas 0 vale 1 y los compases 1 y 2 valen `-1000` (la cola del
+        modelo viejo), o sea el patron 0 ocupando TRES compases: un solo bloque
+        de `3*pc` pasos y no tres de uno.
+      - `lane0` compas 5 vale 2 -patron 1, un compas- y `bmudos` del carril 0
+        es 32, o sea el bit 5: vuelve MUDO. El bit es del COMPAS y no del
+        bloque, que es la traduccion que se puede equivocar de carril sin que
+        nada falle.
+      - `lane2` compas 4 vale -6, que es el golpe suelto del pad 5 -se guarda
+        como -(pad+1)- y en el modelo de hoy sigue siendo un banco negativo.
+    Y el `offset` es 0 en los tres: el modelo de celdas no podia empezar un
+    bloque por la mitad de su patron, asi que nada de lo que venga de ayer
+    puede volver con desfase.
+    """
+    if nombre.startswith ("02"):
+        return [[0, 0, 0, pc, 0, 0]]
+    if nombre.startswith ("07"):
+        return [[0,  0, 0 * pc, 3 * pc, 0, 0],
+                [0,  1, 5 * pc, 1 * pc, 0, 1],
+                [2, -6, 4 * pc, 1 * pc, 0, 0]]
+    return []
+
+
 def viejos():
     """PROYECTOS DE OTRA EPOCA, abiertos con el binario de hoy.
 
@@ -375,7 +418,7 @@ def main():
 
     #  --- Y LOS PROYECTOS DE OTRA EPOCA ------------------------------------
     vj = viejos()
-    viejo_ok = vj is not None and len (vj) == 6
+    viejo_ok = vj is not None and len (vj) == 7
     print()
     if vj:
         for nombre, d in sorted (vj.items()):
@@ -469,7 +512,19 @@ def main():
                     #  Y la cancion: sin <song> tiene que quedar VACIA. Con el
                     #  fallo, abrir un proyecto sin linea de tiempo dejaba
                     #  sonando el arreglo del que estuviera abierto.
-                    and d["cancion"] == (1 if nombre.startswith ("02") else 0)
+                    and d["cancion"] == CANCION.get (nombre[:2], 0)
+                    #  Y LA CANCION CONVERTIDA, BLOQUE A BLOQUE.
+                    #
+                    #  `cancion` es un CONTEO de compases con algo, y eso es
+                    #  todo lo que fijaba la rama que traduce `lane0..lane3` +
+                    #  `bmudos` a la lista de bloques: un lector que convirtiera
+                    #  al carril equivocado, con el largo equivocado o sin el
+                    #  bit de mudo da exactamente el mismo numero. El septimo
+                    #  fichero existe para esto y trae las tres cosas que los
+                    #  seis de al lado no tienen -colas `-1000`, golpe suelto y
+                    #  un compas silenciado- y aqui se piden los bloques
+                    #  EXACTOS, derivados de `pc` y no escritos a mano.
+                    and d.get ("bloques") == bloquesDe (nombre, d["pc"])
                     #  Y LA FILA DE EFECTOS. Ninguno de los tres lleva la
                     #  propiedad `slots`, asi que los seis vuelven EN ORDEN -la
                     #  fila de siempre- y no vacios, que es el defecto de hoy.

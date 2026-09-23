@@ -33,7 +33,7 @@ codigo.
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |
 | guardar/abrir/sesion | `Tests/session.py` |
-| arreglo, cancion, patrones | `Tests/arr.py` |
+| arreglo, cancion, patrones, el `offset` de un bloque y el largo de una nota entre rejillas | `Tests/arr.py` (reglas `medio patron suena` y `rejilla largo`) |
 | exportacion, carpetas, permisos | `Tests/export.py` |
 | sonidos de fabrica | `Tests/kits.py` |
 | defectos del proyecto nuevo | `Tests/nuevo.py` |
@@ -57,7 +57,7 @@ codigo.
 | la tasa de refresco, cualquier constante de tiempo visual | `Tests/fps.py` |
 | que la cadencia no aletee: el salto de vblanks, el techo de dibujo | `Tests/fluidez.py` |
 | el buffer de audio: cuando sube, cuando baja y que aprende | `Tests/buffer.py` |
-| las dos bandas de seleccion: los nueve campos del paso y el offset del bloque | `Tests/sel.py` |
+| las dos bandas de seleccion: los nueve campos del paso, el offset del bloque y el recorte de un clip | `Tests/sel.py` |
 | titulos y rotulos pintados, los gestos escondidos | `Tests/plano.py` |
 | la ANATOMIA de una ficha: marco, cabecera, pie | `Tests/maqueta.py` **y** `expo.py` (regla `ANATOMIA`) |
 | los minimos de un pop-up: titulo, cruz, dedo, PLAY | `Tests/desglose.py` |

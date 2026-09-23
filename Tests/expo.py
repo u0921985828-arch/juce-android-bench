@@ -79,7 +79,8 @@ SIN_DISENO = {"640x360", "412x480"}
 SIN_DISENO_REGLAS = {"CELDA", "TRUNC", "SQUEEZE"}
 
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "secsel", "paso", "eq", "eqb", "song", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "preset", "preseteq", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "browse", "browsedir",
+SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "secsel", "paso", "eq", "eqb", "song", "songa", "songsel", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "preset", "preseteq", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "tourpuerta",
+          "browse", "browsedir", "salvo",
 #  Y LA MISMA MAQUINA CON TRABAJO DENTRO. Todo lo de arriba se mide con
 #  un proyecto vacio o con el kit de fabrica, y casi todo lo que un
 #  rotulo puede romper solo aparece lleno: un nombre de pad que es el

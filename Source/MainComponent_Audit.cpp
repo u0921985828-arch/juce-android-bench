@@ -350,8 +350,19 @@ void MainComponent::auditArrange()
         BloqueUI bueno; bueno.lane = 2; bueno.bank = -(AudioEngine::kNumPads);
         bueno.compas = 2; bueno.largo = 1;
         bloques.push_back (malo1); bloques.push_back (malo2); bloques.push_back (bueno);
-        publicaBloques();
+        //  DOS CIFRAS Y NO UNA, y la nueva es la que mide de verdad. `llegan`
+        //  sale de `bloquesVivos`, que lo escribe el hilo de audio al adoptar
+        //  la tabla, y aqui no se ha procesado ni un bloque de audio: daba 0
+        //  con el guardia y 0 sin el, o sea que la mitad de «y lo bueno pasa»
+        //  no se podia escribir. `validos` es lo que `publicaBloques` acepto,
+        //  contado en la puerta misma y en el hilo de mensajes: de los tres
+        //  metidos tiene que pasar UNO, y con los dos que ya habia del golpe
+        //  suelto son TRES de cinco. Se dejan las dos porque dicen cosas
+        //  distintas -una la puerta, otra el motor- y borrar la floja seria
+        //  perder el dia que el motor deje de adoptar.
+        const int validos = publicaBloques();
         std::cout << "{\"celda\":\"acotada\",\"puestos\":" << (int) bloques.size()
+                  << ",\"validos\":" << validos
                   << ",\"llegan\":" << (engine.numBloques() - antes) << "}" << std::endl;
         bloques.pop_back(); bloques.pop_back(); bloques.pop_back();
         publicaBloques();
@@ -1324,6 +1335,198 @@ void MainComponent::auditArrange()
 
             std::cout << "]}" << std::endl;
         }
+    }
+
+    //  ========================================================================
+    //  MEDIO PATRON SUENA, que es la frase entera de esta tanda y la unica que
+    //  no se puede ver desde fuera.
+    //
+    //  El modelo de celdas no podia guardar «este bloque empieza por el paso 8
+    //  del patron»: una celda por compas no tiene donde escribirlo. La lista de
+    //  bloques si, en `offset`, y hasta aqui lo unico medido era el `offset`
+    //  DECLARADO en la lista -o sea lo que la cara dice que guardo-. Que el
+    //  motor lo USE al disparar no lo miraba nadie, y es justo la mitad que se
+    //  rompe sola: quitar el `+ b.offset` de AudioEngine.cpp deja las reglas de
+    //  `arr.py` en verde y la app sonando por el paso 0.
+    //
+    //  `getUltimoDisparo` existe para esto -su comentario ya decia «lo lee la
+    //  auditoria» y no lo leia nadie, que es la misma figura de la regla que el
+    //  codigo no cumple-. Devuelve `(bank << 16) | pasoDelPatron` por carril, y
+    //  se muestrea UNA VEZ POR BLOQUE DE AUDIO: a 48 kHz y 128 muestras un paso
+    //  dura decenas de bloques, asi que se apuntan los CAMBIOS y no las
+    //  lecturas, o la lista saldria con cada paso repetido cuarenta veces.
+    {
+        vaciaCancion();
+        clips.clear();
+        publicaClips();
+        engine.setClick (false);
+        engine.setSongLoop (0, 0);
+        engine.setPasoUnidades (rejillaU (2));           // 1/16
+        vistaRejilla = 2;
+        gridSlider.setValue (2.0, juce::dontSendNotification);
+
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        selectedPattern = 0;
+        engine.clearPattern (0);
+        engine.setPatternLength (0, 16);
+        engine.setSongLength (2);
+        //  Y LOS CUATRO CARRILES SIN SILENCIAR, que no lo hace `vaciaCancion`:
+        //  las sondas de arriba silencian carriles para medir «silenciar
+        //  silencia», y un carril que se quedo mudo hace que esta medida diga
+        //  «no suena nada» con el motor perfecto.
+        for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
+            engine.setSongLaneMute (ln, false);
+        engine.setSongLoop (0, 0);
+
+        //  MEDIO COMPAS, arrancando por la mitad del patron: paso 8, ocho
+        //  pasos de largo, `offset 8`. Con el offset bien suena el 8..15; sin
+        //  el, el 0..7 -y las dos listas tienen ocho numeros, o sea que contar
+        //  disparos no distingue una de otra. Por eso la regla mira CUALES.
+        {
+            BloqueUI b;
+            b.lane = 0; b.bank = 0; b.compas = 0; b.paso = 8;
+            b.largo = 8; b.offset = 8; b.mudo = false;
+            bloques.push_back (b);
+        }
+        publicaBloques();
+
+        constexpr int    kRafaga = 128;
+        constexpr double kRate   = 48000.0;
+        juce::AudioBuffer<float> bloque (2, kRafaga);
+        engine.prepareToPlay (kRate, kRafaga);
+        enginePreparedRate  = kRate;
+        enginePreparedBlock = kRafaga;
+
+        engine.setSongMode (true);
+        engine.setPlaying (false);
+        bloque.clear(); engine.renderNextBlock (bloque, 0, kRafaga);
+        engine.setPlaying (true);
+
+        juce::Array<int> vistos;
+        int ultimo = -2;
+        const int tope = (int) (engine.muestrasPorCompas() * 1.5) / kRafaga + 2;
+        for (int b = 0; b < tope; ++b)
+        {
+            bloque.clear();
+            engine.renderNextBlock (bloque, 0, kRafaga);
+            const int d = engine.getUltimoDisparo (0);
+            if (d != ultimo)
+            {
+                ultimo = d;
+                if (d >= 0) vistos.add (d);
+            }
+        }
+        engine.setPlaying (false);
+        engine.setSongMode (false);
+
+        std::cout << "{\"arr\":\"medio patron suena\",\"pc\":" << pc
+                  //  Los tres del aparato, que son lo primero que se mira
+                  //  cuando la lista sale vacia: si el motor no adopto la
+                  //  tabla, o la cancion mide cero, o el carril esta mudo, la
+                  //  medida no dice nada del `offset` - dice que no se midio.
+                  << ",\"bloques en el motor\":" << engine.numBloques()
+                  << ",\"compases\":" << engine.getSongLength()
+                  << ",\"largo del patron\":" << engine.getPatternLength (0)
+                  << ",\"bancos\":[";
+        for (int i = 0; i < vistos.size(); ++i)
+            std::cout << (i ? "," : "") << (vistos[i] >> 16);
+        std::cout << "],\"pasos\":[";
+        for (int i = 0; i < vistos.size(); ++i)
+            std::cout << (i ? "," : "") << (vistos[i] & 0xFFFF);
+        std::cout << "]}" << std::endl;
+
+        bloques.clear();
+        publicaBloques();
+        vaciaCancion();
+    }
+
+    //  ========================================================================
+    //  EL LARGO DE UNA NOTA SOBREVIVE AL CAMBIO DE REJILLA.
+    //
+    //  Lo pidio quien manda con estas palabras: «los golpes que ocupan una
+    //  rejilla en 1/8 ocupen lo que tengan que ocupar en las demas; en un midi
+    //  melodico mas que en un ritmo». `remapeaPaso` ya escalaba el largo, pero
+    //  `stepLen` era un uint8 con techo de 63 cuartos: una redonda escrita a
+    //  1/8 son 32 cuartos, a 1/32 pide 128 y se quedaba en 63 -la nota duraba
+    //  la mitad-. El techo subio a `kLenMax = 4 * kNumSteps` (768).
+    //
+    //  Y HASTA AQUI NADIE LO MEDIA, con el agravante de que el comentario de
+    //  `AudioEngine.cpp` afirmaba «y `Tests/arr.py` lo mide: 32 -> 1/32 -> 1/8
+    //  vuelve 32». No lo medía: esa regla no existia. Un comentario que promete
+    //  una medida que no existe es peor que no tener ninguna, porque el
+    //  siguiente que pase no la escribe.
+    //
+    //  Se mide la ida Y la vuelta, y se elige una pareja de division EXACTA
+    //  -1/8 a 1/32 es por cuatro- a proposito: la `escala` de `remapeaPaso`
+    //  trunca, asi que un largo que no sea multiplo del factor pierde un cuarto
+    //  por el camino. Eso es otro asunto y no se finge medido aqui.
+    //
+    //  `recortados` NO es la cifra de esta regla y por eso no se pide: desde
+    //  que el largo dejo de tener techo util, ese contador solo cuenta el
+    //  empujon, y este golpe no lleva empujon. Pedirle cero seria una linea que
+    //  imprime OK.
+    {
+        vaciaCancion();
+        clips.clear();
+        publicaClips();
+        selectedPattern = 0;
+        engine.clearPattern (0);
+
+        //  UN COMPAS LIMPIO EN LOS OCHO PATRONES, y hay que ponerlo a mano.
+        //
+        //  La sonda de las siete rejillas deja los ocho patrones con el largo
+        //  de UN compas de 1/64, o sea muchos pasos; poner aqui la rejilla a
+        //  1/8 sin remapear los convierte en ocho compases, y entonces afinar
+        //  a 1/32 pediria 256 pasos de los 192 que la maquina guarda: la app se
+        //  NIEGA -que es lo correcto- y esta medida salia en verde con los tres
+        //  numeros iguales, o sea sin medir nada. Es la misma cautela que ya
+        //  lleva escrita la sonda de las 42 parejas: cada medida sale de un
+        //  compas limpio.
+        for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
+        {
+            engine.clearPattern (b);
+            for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                for (int pd = 0; pd < kNumPads; ++pd)
+                    pattern[b][(size_t) st][(size_t) pd] = false;
+        }
+        engine.setPasoUnidades (rejillaU (0));           // 1/8
+        vistaRejilla = 0;
+        gridSlider.setValue (0.0, juce::dontSendNotification);
+        for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
+            engine.setPatternLength (b, engine.pasosPorCompas());
+        reajustaMandoLargo();
+        const int pasos18 = engine.getPatternLength (0);
+
+        //  UNA REDONDA a 1/8: 32 cuartos de paso, o sea ocho pasos de 1/8, o
+        //  sea cuatro negras. Es la nota que el techo de 63 partia por la
+        //  mitad al afinar la rejilla.
+        pattern[0][0][0] = true;
+        engine.setStep    (0, 0, 0, true);
+        engine.setStepLen (0, 0, 0, 32);
+        const int en18 = engine.getStepLen (0, 0, 0);
+
+        gridSlider.setValue (4.0, juce::sendNotificationSync);   // 1/32
+        const int en132   = engine.getStepLen (0, 0, 0);
+        const int paso132 = engine.getPatternLength (0);
+
+        gridSlider.setValue (0.0, juce::sendNotificationSync);   // y vuelta
+        const int vuelta = engine.getStepLen (0, 0, 0);
+
+        std::cout << "{\"arr\":\"rejilla largo\",\"en 1/8\":" << en18
+                  << ",\"en 1/32\":" << en132
+                  << ",\"vuelta\":" << vuelta
+                  //  Los pasos del patron en cada parada son el CONTROL sin el
+                  //  cual los tres largos iguales tambien los cumple una app
+                  //  que se nego a cambiar de rejilla: 1/32 tiene que multiplicar
+                  //  por cuatro los pasos igual que el largo.
+                  << ",\"pasos en 1/8\":" << pasos18
+                  << ",\"pasos en 1/32\":" << paso132
+                  << ",\"tope\":" << AudioEngine::kLenMax << "}" << std::endl;
+
+        engine.clearPattern (0);
+        engine.setPasoUnidades (rejillaU (2));
+        vistaRejilla = 2;
+        gridSlider.setValue (2.0, juce::dontSendNotification);
     }
 }
 
@@ -3057,6 +3260,33 @@ void MainComponent::auditOpen (const juce::String& pedido)
         selectedPad = 0;
         ponClip (0, 0);
         ponClip (2, 3);
+    }
+    //  LA PLAYLIST CON LA BANDA PUESTA, que es la OCTAVA vez de la misma
+    //  leccion: `secp`, `eqb`, `instp`, `rackf`, `ranural`, `pianosel` y
+    //  `secsel` estan aqui por lo mismo. Una tira que solo existe con algo
+    //  seleccionado se mide SIEMPRE vacia si el banco solo sabe abrir la
+    //  pagina recien abierta, y la de la cancion son CUATRO TAPAS y una fila
+    //  entera de alto que sale de la rejilla de carriles - la clase de cosa
+    //  que baja una celda por debajo de su suelo sin que nadie se entere.
+    //
+    //  Con bloques, con un CLIP y con portapapeles: el clip porque la banda lo
+    //  recorta por sus filos y sin uno dentro esa mitad no se ve; y se copia
+    //  antes de volver a marcar para que PEGAR -la quinta tapa, que solo
+    //  existe con portapapeles- llegue a existir. Es ademas el camino que hace
+    //  una persona: marcar, copiar, volver a marcar.
+    else if (which == "songsel")
+    {
+        openSheet (songSheet, songButton);
+        selectedPad = 0;
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        ponBloqueCompas (0, 0, 1, 2);
+        ponBloqueCompas (1, 1, 2);
+        ponClip (2, 0);
+        ponHerramienta (Playlist::hSel);
+        songBanda (0, 0, 2, pc + pc / 2);
+        songCopiaSel();                   // ...y asi PEGAR tambien existe
+        songBanda (0, 0, 2, pc + pc / 2);
+        refreshSong();
     }
     else if (which == "piano") { openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); }
     //  EL PIANO CON NOTAS DE LARGOS DISTINTOS, que es otro estado: la barra de
@@ -4882,6 +5112,22 @@ void MainComponent::auditViejos (const juce::String& carpeta)
             for (int bar = 0; bar < AudioEngine::kSongBars; ++bar)
                 if (celdaCancion (ln, bar) != 0) ++celdasCancion;
 
+        //  Y LA LISTA CONVERTIDA, en el MISMO formato que `auditArrange`
+        //  -[carril, banco, pasoAbsoluto, largo, offset, mudo]- para que las
+        //  dos reglas hablen el mismo idioma y no haya dos volcados que digan
+        //  lo mismo de dos maneras.
+        juce::String listaBloques;
+        {
+            const int pc = juce::jmax (1, engine.pasosPorCompas());
+            for (const auto& b : bloques)
+            {
+                if (listaBloques.isNotEmpty()) listaBloques << ",";
+                listaBloques << "[" << b.lane << "," << b.bank << ","
+                             << (b.compas * pc + b.paso) << "," << b.largo << ","
+                             << b.offset << "," << (b.mudo ? 1 : 0) << "]";
+            }
+        }
+
         std::cout << "{\"viejo\":\"" << UiAudit::esc (f.getFileNameWithoutExtension()) << "\""
                   << ",\"envio0\":" << engine.sendDePad (0, 0)
                   << ",\"autocorte0\":" << (padSelfCut[0] ? 1 : 0)
@@ -4928,6 +5174,21 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                   << ",\"eq5\":"  << engine.getEqGain (5, 2)
                   << ",\"ranuras\":[" << slotFx[0][0] << "," << slotFx[0][1] << "," << slotFx[0][2] << ","
                                        << slotFx[0][3] << "," << slotFx[0][4] << "," << slotFx[0][5] << "]"
+                  //  Y LA CANCION CONVERTIDA, bloque a bloque, que es la cifra
+                  //  que faltaba. Arriba va `cancion`, un CONTEO de compases
+                  //  con algo, y era lo unico que fijaba la rama de conversion
+                  //  de `lane0..lane3` + `bmudos` a la lista de bloques: un
+                  //  lector que convirtiera al carril equivocado, con el largo
+                  //  equivocado o perdiendo el mudo daria exactamente el mismo
+                  //  numero. Es la leccion de siempre -«volvio algo» no es
+                  //  «volvio lo mismo»- y aqui costaba una linea.
+                  << ",\"bloques\":[" << listaBloques << "]"
+                  //  Y LOS PASOS POR COMPAS, que es de donde la regla deriva
+                  //  los largos en vez de escribir un 16 a mano: la rejilla de
+                  //  la pagina abierta decide `pc`, y una prueba con el numero
+                  //  clavado sale en rojo con la app perfecta -ya paso en
+                  //  `sel.py`, que esperaba 16 y veia 64-.
+                  << ",\"pc\":" << engine.pasosPorCompas()
                   << "}" << std::endl;
     }
 }
@@ -8066,8 +8327,64 @@ void MainComponent::auditSelecciones()
     }
     std::cout << "]}" << std::endl;
 
-    //  La banda: dos carriles x los 24 primeros pasos, o sea MEDIO bloque y un
-    //  poco. Es exactamente «copiar medio patron».
+    //  Y UN CLIP DE AUDIO QUE ASOMA POR EL FILO, que es la otra mitad de la
+    //  banda y no la miraba nadie.
+    //
+    //  `songCopiaSel` recorta los clips «con la misma cuenta de muestras que
+    //  `parteClip`» y esa frase estaba escrita en el codigo sin una sola regla
+    //  detras: un recorte que se llevara el clip entero, o que empezara por el
+    //  principio del fichero en vez de por donde lo corta la banda, pasaba las
+    //  trece reglas de `sel.py` y las trece de `clips.py`.
+    //
+    //  Y SE MIDEN LOS DOS FILOS CON UN SOLO CLIP, que es lo unico que separa
+    //  «recorta» de «recorta bien». El clip empieza en el paso 0 y dura 30
+    //  pasos; la banda va del 8 al 24, o sea SOBRA por los dos lados: 8 pasos
+    //  por delante y 6 por detras.
+    //
+    //  Dos cifras y ninguna sobra. El LARGO tiene que volver 16 -y no 30, ni
+    //  22, que es lo que sale recortando un solo filo- y el `desde` tiene que
+    //  AVANZAR ocho pasos de muestras: un recorte que mueva la cabeza del clip
+    //  sin mover por donde entra al fichero deja la toma sonando ocho pasos
+    //  antes de lo que se ve, que es el mismo fallo de «el clip suena donde no
+    //  se dibuja» en un sitio nuevo. Y se pregunta en MUESTRAS, que es como el
+    //  clip guarda su desfase: en pasos la cuenta se redondea y el error de
+    //  media muestra por paso se esconde.
+    //
+    //  Va aqui y no en `clips.py` porque la banda vive aqui: medirlo alli
+    //  seria arrancar el binario otra vez para juzgar el mismo contrato.
+    const double porPaso = engine.muestrasPorCompas() / (double) pc;
+    clips.clear();
+    {
+        ClipUI c;
+        c.pad = 0; c.pista = 1; c.compas = 0; c.paso = 0;
+        c.desde = 0; c.largo = (int) (30.0 * porPaso);
+        c.gain = 1.0f;
+        clips.push_back (c);
+    }
+    publicaClips();
+
+    songBanda (0, 8, 1, 24);
+    songCopiaSel();
+    std::cout << "{\"sel\":\"cancion clip\",\"por paso\":" << juce::String (porPaso, 2)
+              << ",\"antes pasos\":" << juce::String (30.0, 1)
+              << ",\"banda pasos\":" << songPortapapeles.pasos
+              << ",\"clips\":[";
+    {
+        bool primero = true;
+        for (const auto& k : songPortapapeles.clips)
+        {
+            std::cout << (primero ? "" : ",") << "[" << k.pista << ","
+                      << (k.compas * pc + k.paso) << ","
+                      << juce::String ((double) k.largo / porPaso, 2) << ","
+                      << k.desde << "]";
+            primero = false;
+        }
+    }
+    std::cout << "]}" << std::endl;
+
+    //  Y la banda de verdad para las cuatro reglas de abajo: dos carriles x los
+    //  24 primeros pasos, o sea MEDIO bloque y un poco. Es exactamente «copiar
+    //  medio patron», y se vuelve a marcar porque la de arriba empezaba en el 8.
     songBanda (0, 0, 1, 24);
     songCopiaSel();
     std::cout << "{\"sel\":\"cancion copiado\",\"carriles\":" << songPortapapeles.carriles

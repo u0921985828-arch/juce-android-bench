@@ -98,8 +98,9 @@ def main():
 
     f = corre()
     faltan = [k for k in ("sec original", "sec copiado", "sec pegado", "sec borrado",
-                          "cancion inicial", "cancion copiado", "cancion pegado",
-                          "cancion borrado", "cancion corte") if k not in f]
+                          "cancion inicial", "cancion clip", "cancion copiado",
+                          "cancion pegado", "cancion borrado", "cancion corte")
+              if k not in f]
     if faltan:
         print ("FALLA  la sonda no dijo: %s" % ", ".join (faltan))
         return 1
@@ -149,13 +150,42 @@ def main():
     juzga ("borrado, parte con offset",  f["cancion borrado"]["bloques"],
                                          [[0, 0, 24, 4 * pc - 24, 8], [1, 1, 2 * pc, pc, 0],
                                           [0, 0, 5 * pc + 8, 24, 0]])
+    #  Y LA BANDA RECORTA UN CLIP DE AUDIO POR SUS DOS FILOS.
+    #
+    #  `songCopiaSel` recorta los clips «con la misma cuenta de muestras que
+    #  `parteClip`», y esa frase llevaba una tanda entera escrita en el codigo
+    #  sin una sola regla detras: las trece de arriba y las trece de `clips.py`
+    #  dan verde igual si el recorte se lleva el clip ENTERO, o si lo corta
+    #  bien y lo deja empezando por el principio del fichero.
+    #
+    #  El clip va del paso 0 al 30 y la banda del 8 al 24, o sea sobra por los
+    #  dos lados. Dos cifras, y la segunda es la que hace falta:
+    #
+    #   - el LARGO vuelve 16 pasos. Con 30 no se recorto nada; con 22 se
+    #     recorto un filo y no el otro, que es el fallo mas facil de escribir.
+    #   - y el `desde` AVANZA ocho pasos de muestras. Es el desfase dentro del
+    #     fichero: sin moverlo, el trozo copiado empieza por donde empezaba el
+    #     original y la toma suena ocho pasos antes de donde se ve -a 120 BPM
+    #     con el paso en 1/16, medio segundo- sin que nada falle y sin verse
+    #     hasta que suena.
+    #
+    #  En MUESTRAS y no en pasos, que es como el clip guarda el desfase: la
+    #  cuenta en pasos redondea y esconde el error de media muestra por paso.
+    cl = f["cancion clip"]
+    porPaso = cl["por paso"]
+    #  El control: la banda mide 16 pasos, o sea el clip de 30 sobra de verdad.
+    juzga ("la banda corta el clip",   [cl["banda pasos"], cl["antes pasos"] > 16],
+                                       [16, True])
+    juzga ("el clip, por sus dos filos", cl["clips"],
+                                       [[1, 0, 16.0, round (8 * porPaso)]])
+
     #  CORTE ES UNA SOLA ENTRADA DE DESHACER. Si BORRAR metiera la suya,
     #  deshacer una vez dejaria el trozo copiado pero no borrado.
     juzga ("corte, una entrada de undo", f["cancion corte"]["undo"], 1)
 
     print ()
     if fallos:
-        print ("FALLA  %d de %d: %s" % (len (fallos), 13, ", ".join (fallos)))
+        print ("FALLA  %d de %d: %s" % (len (fallos), 15, ", ".join (fallos)))
         return 1
     print ("las dos bandas recortan por sus filos, y lo que copian viaja entero")
     return 0

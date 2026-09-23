@@ -63,7 +63,14 @@ def corre(size="412x915"):
             continue
         if "arr" in d: song[d["arr"]] = d
         if "pat" in d: pat[d["pat"]] = d
-        if "vuelta" in d: vuelta = d
+        #  Y LA DE «GUARDAR Y VOLVER» SE PIDE POR EXCLUSION, que es la unica
+        #  forma de que no la pise la siguiente sonda que use la palabra. Esta
+        #  linea es la unica cuyo NOMBRE es `vuelta`; las demas la llevan como
+        #  un campo mas -«rejilla largo» publica cuanto mide la redonda al
+        #  volver de 1/32- y sin el `"arr" not in d` la ultima que pasara se
+        #  quedaba con el sitio: la medida reventaba con KeyError('mudos') a
+        #  cuarenta lineas de distancia de la sonda que lo causaba.
+        if "vuelta" in d and "arr" not in d: vuelta = d
         if "golpe" in d: golpe = d
         if "celda" in d: celda = d
     return song, pat, vuelta, golpe, celda
@@ -114,28 +121,48 @@ BLOQUE = {
 #  Y LO MISMO SOBRE LA LISTA, que es donde vive el largo de verdad.
 #
 #  Cada bloque sale como [carril, banco, desdePaso, largo, offset, mudo], todo en
-#  PASOS ABSOLUTOS. Con 64 pasos por compas, el bloque de partida arranca en el
-#  paso 64 -el compas 1- y mide 128 pasos -dos compases-; el vecino esta en el
-#  256 -el compas 4- y mide 64. ACORTAR lo deja en 64, ALARGAR en 128 y otra vez
-#  en 192, y contra el vecino se queda en 192: el cuarto tiron no mueve ni un
-#  paso porque el 256 ya esta ocupado.
+#  PASOS ABSOLUTOS. El bloque de partida arranca en el compas 1 y mide dos
+#  compases; el vecino esta en el 4 y mide uno. ACORTAR lo deja en uno, ALARGAR
+#  en dos y otra vez en tres, y contra el vecino se queda en tres: el cuarto
+#  tiron no mueve ni un paso porque el compas 4 ya esta ocupado.
 #
 #  Cuatro cifras mas que la rejilla, y ninguna sobra:
-#    - la CABEZA sigue en el paso 64 en los cinco estados. Un asa que acorta
+#    - la CABEZA sigue en el compas 1 en los cinco estados. Un asa que acorta
 #      moviendo el arranque en vez del final pinta las MISMAS celdas y la fila de
 #      arriba la aprueba;
-#    - el `largo` en pasos, que es lo unico que separa 64 de 65;
+#    - el `largo` en pasos, que es lo unico que separa un compas de un compas y
+#      un paso;
 #    - el `offset` sigue en 0 -recortar por la derecha no toca por donde arranca
 #      el patron-; y
-#    - el vecino sigue entero en [256, 64], o sea que ALARGAR no se lo comio a
-#      medias.
-BLOQUES = {
-    "bloque inicial":     [[0, 0, 64, 128, 0, 0], [0, 1, 256, 64, 0, 0]],
-    "acortado":           [[0, 0, 64,  64, 0, 0], [0, 1, 256, 64, 0, 0]],
-    "alargado":           [[0, 0, 64, 128, 0, 0], [0, 1, 256, 64, 0, 0]],
-    "alargado otra vez":  [[0, 0, 64, 192, 0, 0], [0, 1, 256, 64, 0, 0]],
-    "y contra el vecino": [[0, 0, 64, 192, 0, 0], [0, 1, 256, 64, 0, 0]],
-}
+#    - el vecino sigue entero en [4 compases, 1 compas], o sea que ALARGAR no se
+#      lo comio a medias.
+#
+#  Y SE DERIVAN DE `pc`, QUE ES LO QUE CAMBIO.
+#
+#  Estaban escritas 64, 128, 192 y 256, con un guardia debajo que exigia
+#  `pc == 64` «porque las cifras estan escritas con 64». Ese guardia hizo su
+#  trabajo: canto. Y lo que canto no es un fallo de estas cinco reglas sino que
+#  la pagina de cancion NO SIEMPRE abre con la misma rejilla: de OCHO corridas,
+#  tres dieron `pc 16` y cinco `pc 64`, con el mismo binario, el mismo tamano y
+#  el mismo `ZATI_OPEN`. La causa NO esta medida -el reparto de la ficha va por
+#  temporizador y quien mide puede llegar antes o despues, pero eso es una
+#  sospecha y no una cifra-; lo que si esta medido es que el numero baila, y con
+#  el las seis reglas de aqui abajo, en rojo y con la app haciendo lo suyo. Es
+#  la misma figura que ya costo una tarde en `sel.py` («esperaba 16 y veia 64»).
+#
+#  Lo que estas reglas dicen no es «64 pasos» sino «un compas», y eso es cierto
+#  con cualquier rejilla. Asi que se derivan, y el guardia se cae solo: lo que
+#  median —la cabeza que no se mueve, el largo que crece de uno en uno y el
+#  vecino intacto— se mide igual, y deja de depender de con que cuadradito
+#  abrio la pagina.
+def bloquesDe(pc):
+    return {
+        "bloque inicial":     [[0, 0, pc, 2 * pc, 0, 0], [0, 1, 4 * pc, pc, 0, 0]],
+        "acortado":           [[0, 0, pc, 1 * pc, 0, 0], [0, 1, 4 * pc, pc, 0, 0]],
+        "alargado":           [[0, 0, pc, 2 * pc, 0, 0], [0, 1, 4 * pc, pc, 0, 0]],
+        "alargado otra vez":  [[0, 0, pc, 3 * pc, 0, 0], [0, 1, 4 * pc, pc, 0, 0]],
+        "y contra el vecino": [[0, 0, pc, 3 * pc, 0, 0], [0, 1, 4 * pc, pc, 0, 0]],
+    }
 
 #  UN PASO SON NUEVE CAMPOS, y hasta aqui esto medi­a tres.
 #
@@ -210,13 +237,14 @@ def main():
     mira ("copiar y pegar", song["pegar el 2 en el 5"]["carriles"], PEGADO,
           song["pegar el 2 en el 5"]["largo"], 8)
 
-    #  Las cifras de arriba -64, 128, 192- solo quieren decir "uno, dos y tres
-    #  compases" mientras un compas sean 64 pasos. Si alguien mueve el paso
-    #  guardado, la lista de bloques sigue cuadrando consigo misma y las tres
-    #  dejan de medir lo que dicen, asi que se pregunta.
-    if song["bloque inicial"]["pc"] != 64:
-        malas.append ("un compas son %d pasos y las cifras de esta prueba estan "
-                      "escritas con 64" % song["bloque inicial"]["pc"])
+    #  El compas lo dice la app y las cifras se derivan de el: ver `bloquesDe`.
+    #  El unico control que hace falta es que sea una rejilla de verdad, porque
+    #  con `pc` a cero o negativo la tabla derivada cuadra consigo misma y las
+    #  cinco reglas de abajo dejan de medir nada.
+    BLOQUES = bloquesDe (song["bloque inicial"]["pc"])
+    if song["bloque inicial"]["pc"] < 4:
+        malas.append ("un compas son %d pasos, que no es ninguna de las siete "
+                      "rejillas" % song["bloque inicial"]["pc"])
 
     for k, v in BLOQUE.items():
         mira (k, song[k]["carriles"], v, song[k]["largo"], 8)
@@ -312,24 +340,35 @@ def main():
     #  sobre los dos que ya habia: banco -9999 y banco 999999 son imposibles, y
     #  el pad 63 -banco -64- es el valido.
     #
-    #  LA REGLA ES UN TOPE Y NO UNA IGUALDAD, y hay que decir por que, porque es
-    #  una regla mas floja que la que sustituye. `llegan` es la diferencia de
-    #  `engine.numBloques()`, y ese contador es `bloquesVivos`, que se escribe en
-    #  EL HILO DE AUDIO cuando adopta la tabla publicada. Esta medida corre sin
-    #  un solo bloque de audio por medio, asi que de los 3 metidos hoy llegan 0 —
-    #  la mitad de "y lo bueno pasa" ya no se puede escribir desde aqui. Lo que
-    #  la cifra si sigue diciendo es la otra mitad: de los tres, al motor no
-    #  puede llegar mas que UNO. Con 2 o con 3 la puerta esta abierta.
+    #  `LLEGAN` ERA UN TOPE Y NO UNA IGUALDAD, Y ASI LA REGLA NO SERVIA ENTERA.
+    #  `llegan` es la diferencia de `engine.numBloques()`, y ese contador es
+    #  `bloquesVivos`, que se escribe en EL HILO DE AUDIO cuando adopta la tabla
+    #  publicada. Esta medida corre sin un solo bloque de audio por medio, asi
+    #  que de los 3 metidos llegan 0 CON el guardia puesto y 0 SIN el: la mitad
+    #  de "y lo bueno pasa" no se podia escribir desde aqui, y se quedo escrito
+    #  que no se podia en vez de buscarle otro sitio.
+    #
+    #  EL SITIO ERA LA CARA. La puerta esta en `MainComponent::publicaBloques`,
+    #  que ya contaba cuantos bloques superaban sus cuatro guardias antes de
+    #  entregar la tabla y tiraba el numero al ser `void`; ahora lo devuelve, la
+    #  sonda lo publica como `validos` y la regla vuelve a ser una IGUALDAD, que
+    #  es lo que un tope nunca dice: de los 5 de la cara pasan EXACTAMENTE 3
+    #  -los dos del golpe suelto mas el pad 63-, y los dos bancos imposibles
+    #  -9999 y 999999- se quedan fuera. Quitando `if (b.bank >= kNumPatterns)
+    #  continue;` sale 4 y no 3, medido.
     if celda is None:
         print ("%-22s %s" % ("celda acotada", "MAL - sin respuesta")); malas.append ("celda")
     else:
-        print ("%-22s %d bloques en la cara, %d llegan al motor"
-               % ("celda acotada", celda["puestos"], celda["llegan"]))
-        #  El control, sin el cual el tope de abajo lo cumple una medida que se
-        #  olvido de meter los tres: dos del golpe suelto mas los tres a mano.
+        print ("%-22s %d bloques en la cara, %d pasan la puerta, %d llegan al motor"
+               % ("celda acotada", celda["puestos"], celda["validos"], celda["llegan"]))
+        #  El control, sin el cual la igualdad de abajo la cumple una medida que
+        #  se olvido de meter los tres: dos del golpe suelto mas los tres a mano.
         if celda["puestos"] != 5:
             malas.append ("la cara tiene %d bloques y la medida mete 5: los tres imposibles "
                           "no se llegaron a pedir" % celda["puestos"])
+        if celda["validos"] != 3:
+            malas.append ("la puerta deja pasar %d bloques de los 5 de la cara y tienen que ser "
+                          "3: los dos del golpe suelto y el pad 63" % celda["validos"])
         if celda["llegan"] > 1:
             malas.append ("la puerta deja llegar al motor %d de los 3 bloques metidos, y solo "
                           "uno -el pad 63- existe" % celda["llegan"])
@@ -822,6 +861,103 @@ def main():
         if negadas:
             malas.append ("saliendo de un compas limpio se niegan %d cambios de rejilla: %s"
                           % (len (negadas), ", ".join (negadas[:6])))
+
+    #  MEDIO PATRON SUENA, Y SUENA POR SU MITAD.
+    #
+    #  Es la afirmacion central de la tanda que trajo los bloques en pasos y la
+    #  unica que no se puede ver desde fuera: un bloque colocado en el paso 8
+    #  con `offset 8` tiene que disparar los pasos 8..15 del patron y NO los
+    #  0..7. Con el modelo de celdas esto no se podia ni escribir -una celda por
+    #  compas no tiene donde guardar "y empieza por la mitad"- asi que el codigo
+    #  se escribio y se quedo sin una sola medida detras: `getUltimoDisparo`
+    #  existia, su comentario decia "lo lee la auditoria" y no habia ni un hit
+    #  en toda la casa.
+    #
+    #  Se rueda audio de verdad -`renderNextBlock` en bucle- y se recoge el paso
+    #  del patron que el motor dice haber disparado, quedandose solo con los
+    #  CAMBIOS. La regla es de rango y no de lista literal porque el muestreo va
+    #  por bloques de audio: cuantos pasos se vean depende del tamano del bloque,
+    #  pero NINGUNO puede caer en 0..7.
+    #
+    #  Y las tres cifras de control estan porque una lista vacia cumple "ninguno
+    #  cae en 0..7" sin medir nada: la primera version salio [] porque otra
+    #  sonda habia dejado los carriles mudos, y solo se vio al pedir los bloques
+    #  que el motor tiene, los compases y el largo del patron. Ignorando el
+    #  `offset` en el disparo la lista sale 0..7, medido.
+    medio = song.get ("medio patron suena")
+    if not medio:
+        print ("%-22s %s" % ("medio patron", "MAL - sin respuesta"))
+        malas.append ("medio patron suena")
+    else:
+        print ("%-22s bancos %s   pasos %s   %d bloque(s) en el motor, %d compases, patron de %d"
+               % ("medio patron", medio["bancos"], medio["pasos"],
+                  medio["bloques en el motor"], medio["compases"],
+                  medio["largo del patron"]))
+        if medio["bloques en el motor"] != 1:
+            malas.append ("el motor adopto %d bloques y la medida puso 1: no se esta midiendo "
+                          "el bloque sembrado" % medio["bloques en el motor"])
+        if medio["largo del patron"] != medio["pc"]:
+            malas.append ("el patron mide %d pasos y el compas %d: el bloque de 8 pasos no es "
+                          "medio patron" % (medio["largo del patron"], medio["pc"]))
+        if len (medio["pasos"]) < 4:
+            malas.append ("el bloque disparo %d pasos del patron en todo el tramo: %s"
+                          % (len (medio["pasos"]), medio["pasos"]))
+        malos = [p for p in medio["pasos"] if not (8 <= p <= 15)]
+        if malos:
+            malas.append ("el bloque con offset 8 dispara los pasos %s del patron y tenian que "
+                          "caer todos en 8..15: empieza por el principio y no por su mitad"
+                          % (malos,))
+        if any (b != 0 for b in medio["bancos"]):
+            malas.append ("el bloque del banco 0 dispara los bancos %s" % (medio["bancos"],))
+
+    #  UNA REDONDA SOBREVIVE AL CAMBIO DE REJILLA, Y VUELVE ENTERA.
+    #
+    #  `AudioEngine.cpp` afirmaba en un comentario que "Tests/arr.py lo mide:
+    #  32 -> 1/32 -> 1/8 vuelve 32" y esa regla NO EXISTIA. En esta casa un
+    #  comentario que se da por medido y no lo esta es peor que no tener nada:
+    #  el siguiente que lo lea no vuelve a mirarlo.
+    #
+    #  32 cuartos a 1/8 es una redonda -cuatro pulsos-. Al apretar a 1/32 el
+    #  mismo sonido son 128 cuartos, que es ×4 exacto y es justo lo que el techo
+    #  de 63 del `uint8` NO dejaba decir: con el techo viejo el largo salia 63
+    #  -recortado- y la vuelta ya no daba 32. Se elige una pareja de division
+    #  exacta a proposito, porque la `escala` de `remapeaPaso` TRUNCA y un largo
+    #  impar puede perder un cuarto sin que nadie lo cuente; eso queda declarado
+    #  aqui como limite y no fingido como medido.
+    #
+    #  Y `pasos en 1/8` es el control que costo la primera corrida: sin el, tres
+    #  largos iguales los cumple igual una app que NIEGA los dos cambios de
+    #  rejilla -que es lo que pasaba, y con razon: los patrones venian de la
+    #  sonda anterior a 1/64 y a 1/32 no cabian en los 192 pasos de la maquina.
+    #  Tres cifras iguales por refusal no son una ida y vuelta.
+    larg = song.get ("rejilla largo")
+    if not larg:
+        print ("%-22s %s" % ("rejilla largo", "MAL - sin respuesta"))
+        malas.append ("rejilla largo")
+    else:
+        print ("%-22s 1/8 %d -> 1/32 %d -> vuelta %d   pasos %d -> %d   tope %d"
+               % ("rejilla largo", larg["en 1/8"], larg["en 1/32"], larg["vuelta"],
+                  larg["pasos en 1/8"], larg["pasos en 1/32"], larg["tope"]))
+        #  EL CONTROL: la rejilla se movio de verdad. Un compas a 1/32 son
+        #  cuatro veces los pasos que a 1/8.
+        if larg["pasos en 1/32"] != 4 * larg["pasos en 1/8"]:
+            malas.append ("apretar la rejilla de 1/8 a 1/32 deja el patron en %d pasos y eran %d: "
+                          "el cambio se nego y los tres largos son el mismo sin moverse"
+                          % (larg["pasos en 1/32"], 4 * larg["pasos en 1/8"]))
+        if larg["en 1/8"] != 32:
+            malas.append ("la redonda se escribio con %d cuartos y son 32" % larg["en 1/8"])
+        if larg["en 1/32"] != 4 * larg["en 1/8"]:
+            malas.append ("la redonda de %d cuartos pasa a 1/32 y mide %d, y el mismo sonido son "
+                          "%d: el largo esta con techo" % (larg["en 1/8"], larg["en 1/32"],
+                                                           4 * larg["en 1/8"]))
+        if larg["vuelta"] != larg["en 1/8"]:
+            malas.append ("ida y vuelta por 1/32 deja la redonda en %d cuartos y salio con %d"
+                          % (larg["vuelta"], larg["en 1/8"]))
+        #  Y el techo tiene que dar sitio a lo que se acaba de escribir, o la
+        #  ida y vuelta de arriba vuelve a ser suerte.
+        if larg["tope"] < larg["en 1/32"]:
+            malas.append ("el largo maximo es %d cuartos y la redonda a 1/32 pide %d"
+                          % (larg["tope"], larg["en 1/32"]))
 
     print()
     if malas:
