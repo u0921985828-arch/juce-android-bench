@@ -526,6 +526,12 @@ public:
                     {
                         c2->auditArrange();
                     }
+                    //  LAS DOS SELECCIONES DE RANGO, en una sola corrida. Ver
+                    //  Tests/sel.py y auditSelecciones.
+                    else if (UiAudit::env ("ZATI_SEL").isNotEmpty())
+                    {
+                        c2->auditSelecciones();
+                    }
                     else if (UiAudit::env ("ZATI_NUEVO").isNotEmpty())
                     {
                         c2->auditNuevo();

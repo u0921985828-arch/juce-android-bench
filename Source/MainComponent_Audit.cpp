@@ -7922,3 +7922,211 @@ void MainComponent::auditFxPresets()
         closeAllSheets();
     }
 }
+
+//  LAS DOS SELECCIONES DE RANGO: la del secuenciador y la de la cancion.
+//
+//  Se miden JUNTAS y en una sola corrida porque son la misma funcion en dos
+//  lienzos, y separarlas en dos pruebas cuesta dos arranques del binario para
+//  medir el mismo contrato: banda, cuatro acciones, portapapeles relativo.
+//
+//  Lo que cada mitad aporta y la otra no:
+//
+//   - En SEC, los NUEVE campos del paso. Es la leccion que esta casa pago dos
+//     veces -COPIAR PATRON se llevaba TRES de los nueve, DESPLAZAR y DOBLAR
+//     cuatro- y la unica forma de cazarla es escribir un paso con los nueve
+//     fuera de su valor por defecto, pegarlo EN OTRO PATRON y volver a leerlo.
+//     Pegar en el mismo patron no vale: con el original debajo, una copia que
+//     no se lleve un campo lo encuentra ya puesto y la prueba sale verde.
+//
+//   - En la CANCION, el `offset`. Una banda que corta un bloque por la mitad
+//     tiene que dejar el trozo sonando por donde iba: un bloque de 64 pasos
+//     cortado en el 24 sale como bloque de 24 con offset 0 y deja detras uno
+//     de 40 con offset 24. Sin `offset` los dos empezarian por el paso 0 del
+//     patron, que es la mitad del fallo que el modelo de bloques vino a
+//     arreglar y que la rejilla de celdas no puede ni representar.
+void MainComponent::auditSelecciones()
+{
+    auto nueve = [this] (int pat, int st, int pad)
+    {
+        const auto p = engine.leePaso (pat, st, pad);
+        std::cout << "[" << (p.on ? 1 : 0) << "," << (int) p.nota << "," << (int) p.empujon
+                  << "," << (int) p.corte << "," << (int) p.vel << "," << (int) p.roll
+                  << "," << (int) p.largo << "," << (juce::int64) p.acorde
+                  << "," << (juce::int64) p.bloqueos << "]";
+    };
+
+    //  ---- SEC ----------------------------------------------------------
+    //
+    //  Un paso con los NUEVE campos fuera de su defecto, y en el pad 2 / paso
+    //  3 para que el pegado caiga dentro de una banda que empieza en 0: si el
+    //  golpe estuviera en el filo, un recorte de un paso pasaria desapercibido.
+    selectedPattern = 0;
+    currentBank     = 0;
+    engine.setPatternLength (0, 16);
+    engine.setPatternLength (1, 16);
+    for (int st = 0; st < 16; ++st)
+        for (int pad = 0; pad < 8; ++pad)
+        {
+            pattern[0][(size_t) st][(size_t) pad] = false;
+            pattern[1][(size_t) st][(size_t) pad] = false;
+            engine.setStep (0, st, pad, false);
+            engine.setStep (1, st, pad, false);
+            engine.vaciaPaso (0, st, pad);
+            engine.vaciaPaso (1, st, pad);
+        }
+
+    {
+        AudioEngine::Paso p;
+        p.on       = true;
+        p.nota     = 5;
+        p.empujon  = 3;
+        p.corte    = 40;
+        p.vel      = 51;      // 0.4 de 127, que es la cifra con la que se pidio
+        p.roll     = 4;
+        p.largo    = 40;      // diez pasos: no cabia en el uint8 de antes
+        p.acorde   = 0;
+        p.bloqueos = 0;
+        engine.escribePaso (0, 3, 2, p);
+        engine.setStepExtra (0, 3, 2, 0, 4, true);
+        engine.setStepExtra (0, 3, 2, 1, 7, true);
+        pattern[0][3][2] = true;
+        //  Y un segundo golpe FUERA de la banda, para que BORRAR tenga algo
+        //  que NO tocar: una regla que solo mira lo que se borra no distingue
+        //  «borra el rango» de «borra el patron».
+        engine.setStep (0, 12, 2, true);
+        pattern[0][12][2] = true;
+        //  Y un tercero DENTRO y en otro pad: con un solo golpe copiado, un
+        //  portapapeles que se quedara con el ultimo en vez de con todos daria
+        //  la misma cifra que uno correcto.
+        engine.setStep (0, 6, 0, true);
+        pattern[0][6][0] = true;
+    }
+    seqPrimerCelda = 0;
+    refreshStepGrid();
+
+    std::cout << "{\"sel\":\"sec original\",\"paso\":";
+    nueve (0, 3, 2);
+    std::cout << "}" << std::endl;
+
+    //  La banda: tres pads x ocho casillas. Con la rejilla en 1/16 sobre un
+    //  patron de 16, una casilla es un paso.
+    seqBanda (0, 0, 2, 8);
+    seqCopiaSel();
+    std::cout << "{\"sel\":\"sec copiado\",\"entradas\":" << (int) seqPortapapeles.size()
+              << ",\"pads\":" << seqPegPads << ",\"pasos\":" << seqPegPasos << "}" << std::endl;
+
+    //  PEGAR EN OTRO PATRON, que es lo que la peticion pedia y lo unico que
+    //  demuestra que los nueve campos viajan de verdad.
+    selectedPattern = 1;
+    seqPrimerCelda  = 0;
+    refreshStepGrid();
+    seqPegaSel();
+    std::cout << "{\"sel\":\"sec pegado\",\"paso\":";
+    nueve (1, 3, 2);
+    std::cout << "}" << std::endl;
+
+    //  BORRAR la banda del patron original: dentro se va todo -incluida la
+    //  cola de los nueve campos, no solo el «suena»- y fuera se queda el
+    //  golpe del paso 12.
+    selectedPattern = 0;
+    refreshStepGrid();
+    seqBanda (0, 0, 2, 8);
+    seqBorraSel();
+    {
+        int dentro = 0, fuera = 0;
+        for (int st = 0; st < 16; ++st)
+            for (int pad = 0; pad < 3; ++pad)
+                if (engine.leePaso (0, st, pad).on) (st < 8 ? dentro : fuera)++;
+        std::cout << "{\"sel\":\"sec borrado\",\"dentro\":" << dentro << ",\"fuera\":" << fuera
+                  << ",\"resto\":";
+        nueve (0, 3, 2);
+        std::cout << "}" << std::endl;
+    }
+
+    //  ---- CANCION ------------------------------------------------------
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+
+    vaciaCancion();
+    engine.setSongLength (8);
+    //  Un bloque de CUATRO compases en el carril 0 -mas largo que la banda,
+    //  que es la unica forma de que la banda lo CORTE- y otro en el carril 1
+    //  que la banda no toca: si los dos cayeran dentro, «recorta por el filo»
+    //  y «se lleva el bloque entero» darian la misma lista.
+    ponBloqueCompas (0, 0, 1, 4);
+    ponBloqueCompas (1, 2, 2);
+    std::cout << "{\"sel\":\"cancion inicial\",\"pc\":" << pc << ",\"bloques\":[";
+    {
+        bool primero = true;
+        for (const auto& b : bloques)
+        {
+            std::cout << (primero ? "" : ",") << "[" << b.lane << "," << b.bank << ","
+                      << (b.compas * pc + b.paso) << "," << b.largo << "," << b.offset << "]";
+            primero = false;
+        }
+    }
+    std::cout << "]}" << std::endl;
+
+    //  La banda: dos carriles x los 24 primeros pasos, o sea MEDIO bloque y un
+    //  poco. Es exactamente «copiar medio patron».
+    songBanda (0, 0, 1, 24);
+    songCopiaSel();
+    std::cout << "{\"sel\":\"cancion copiado\",\"carriles\":" << songPortapapeles.carriles
+              << ",\"pasos\":" << songPortapapeles.pasos << ",\"bloques\":[";
+    {
+        bool primero = true;
+        for (const auto& b : songPortapapeles.bloques)
+        {
+            std::cout << (primero ? "" : ",") << "[" << b.lane << "," << b.bank << ","
+                      << (b.compas * pc + b.paso) << "," << b.largo << "," << b.offset << "]";
+            primero = false;
+        }
+    }
+    std::cout << "]}" << std::endl;
+
+    //  PEGAR en el compas 5, paso 8: un sitio que no es multiplo de compas,
+    //  que es la mitad que el modelo viejo no podia ni escribir.
+    songMarcaLane = 0;
+    songMarcaPaso = 5 * pc + 8;
+    songPegaSel();
+    std::cout << "{\"sel\":\"cancion pegado\",\"bloques\":[";
+    {
+        bool primero = true;
+        for (const auto& b : bloques)
+        {
+            std::cout << (primero ? "" : ",") << "[" << b.lane << "," << b.bank << ","
+                      << (b.compas * pc + b.paso) << "," << b.largo << "," << b.offset << "]";
+            primero = false;
+        }
+    }
+    std::cout << "]}" << std::endl;
+
+    //  Y BORRAR la banda: el bloque del carril 0 se PARTE por el filo y deja
+    //  vivo lo que asomaba, con su offset corrido. Lo que se borra entero se
+    //  confunde con lo que se parte si solo se cuenta cuantos quedan, asi que
+    //  se imprime la lista.
+    songBanda (0, 0, 1, 24);
+    songBorraSel();
+    std::cout << "{\"sel\":\"cancion borrado\",\"bloques\":[";
+    {
+        bool primero = true;
+        for (const auto& b : bloques)
+        {
+            std::cout << (primero ? "" : ",") << "[" << b.lane << "," << b.bank << ","
+                      << (b.compas * pc + b.paso) << "," << b.largo << "," << b.offset << "]";
+            primero = false;
+        }
+    }
+    std::cout << "]}" << std::endl;
+
+    //  Y CORTE, QUE TIENE QUE SER UNA SOLA ENTRADA DE DESHACER.
+    //
+    //  CORTE es COPIAR mas BORRAR, y esta escrito llamando a los dos. Si
+    //  BORRAR metiera su propio pushUndo, deshacer una vez dejaria el trozo
+    //  cortado a medias -copiado pero no borrado- y harian falta dos. Es la
+    //  misma cuenta que el piano ya mide: una accion, una entrada.
+    const int undoAntes = (int) undoStack.size();
+    songBanda (0, 88, 1, 104);
+    songCortaSel();
+    std::cout << "{\"sel\":\"cancion corte\",\"undo\":" << ((int) undoStack.size() - undoAntes)
+              << ",\"bloques\":" << (int) bloques.size() << "}" << std::endl;
+}

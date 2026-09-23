@@ -1751,6 +1751,15 @@ public:
     //  de ahi, el cambio de pad no repintaba la rejilla, y oir una tecla
     //  afinaba el pad para siempre.
     void auditClips();
+    //  LAS DOS SELECCIONES DE RANGO, en una sola sonda. Ver Tests/sel.py.
+    //
+    //  UNA y no dos porque son la MISMA funcion en dos lienzos -banda, cuatro
+    //  acciones, portapapeles relativo- y arrancar el binario dos veces para
+    //  medir dos mitades del mismo contrato cuesta el doble y mide lo mismo.
+    //  Lo que no se junta es lo que cada una guarda: el paso lleva NUEVE
+    //  campos y el bloque lleva `offset`, y esas dos son las cifras que
+    //  ninguna captura de pantalla puede dar.
+    void auditSelecciones();
     void auditPiano();
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
