@@ -28,7 +28,8 @@ codigo.
 
 | Se toco | Se corre |
 |---|---|
-| cualquier cosa de interfaz | `Tests/expo.py` (1456 corridas, ~7 min) |
+| cualquier cosa de interfaz | `Tests/expo.py` (2160 corridas, ~10 min) |
+| el PRESUPUESTO de una ficha -cuantas filas se piden- | `expo.py` en los CUATRO idiomas: la regla `CELDA` solo lo caza en el idioma cuyos rotulos parten la fila |
 | textos, rotulos, `T()` | `Tests/lang.py` **y** `expo.py` |
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |

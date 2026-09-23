@@ -158,10 +158,29 @@ def run(size, lang, sheet, casa=None):
         #  la corrida siguiente: "SQUEEZE ... CAIDA senal 06 en ficha ... needs
         #  273 has 248". Un banco que informa de su propio andamio ensena a no
         #  leerlo, que es lo que ya paso con la caja de ruta del navegador.
-        try:
-            os.remove(os.path.join(casa, "Music", "ZATI", "zati-bitacora.txt"))
-        except OSError:
-            pass
+        #  Y LA SESION TAMBIEN, POR LO MISMO Y POR MAS.
+        #
+        #  La caja negra era medio problema; el otro es que la app GUARDA. Las
+        #  entradas que siembran algo -`songsel` pone dos bloques y un clip,
+        #  `secsel` pasos, `pianosel` notas- se lo encuentra escrito en
+        #  `.sesion/state.xml` la corrida siguiente del mismo trabajador, y lo
+        #  RESTAURA. Medido en 360x640 con `songsel`, tres vueltas por idioma
+        #  sobre la misma casa: la linea de tiempo salio 44, 88, 92 y 136 px de
+        #  alto con el MISMO binario, el mismo tamano y el mismo idioma, o sea
+        #  que la CELDA que el banco cantaba se movia de idioma en cada corrida
+        #  -es en una tirada, en en la siguiente-. Borrando esto sale 88 en tres
+        #  idiomas y 44 en ingles, las tres veces: el hallazgo era real y estaba
+        #  ENTERRADO bajo el estado de la corrida de antes.
+        #
+        #  Se borra el estado y no la casa entera porque los 64 WAV de fabrica
+        #  viven al lado en `.sesion/samples` y son 30 MB y 400 ms de sintesis:
+        #  eso es lo que la casa compartida existe para ahorrar. Lo que
+        #  contamina es el proyecto, no las muestras.
+        for basura in ("zati-bitacora.txt", os.path.join(".sesion", "state.xml")):
+            try:
+                os.remove(os.path.join(casa, "Music", "ZATI", basura))
+            except OSError:
+                pass
     try:
         out = subprocess.run([BIN], env=env, capture_output=True, timeout=180).stdout.decode("utf8", "replace")
     except subprocess.TimeoutExpired:

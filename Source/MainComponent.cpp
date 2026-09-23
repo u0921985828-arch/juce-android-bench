@@ -9766,6 +9766,21 @@ void MainComponent::retranslateUi()
     seqCorteSelBtn.setButtonText (T ("CORTE"));
     seqPegaBtn    .setButtonText (T ("PEGAR"));
     seqBorraSelBtn.setButtonText (T ("BORRAR"));
+    //  Y LA TERCERA TIRA, que se quedo fuera de aqui al escribirla y por tanto
+    //  se quedaba con el literal del constructor en las cuatro compilaciones.
+    //
+    //  Es EXACTAMENTE el fallo de las pestanas de AJUSTES dos parrafos mas
+    //  abajo, una pantalla mas tarde: la del SECUENCIADOR y la del PIANO si
+    //  estaban, la de la CANCION no, y las tres usan las MISMAS cuatro claves
+    //  -que existen en `Lang.cpp` desde el primer dia: COPY / CUT / PASTE /
+    //  DELETE-. No lo canto nadie durante dos tandas porque la tira solo
+    //  aparece con algo seleccionado y el banco no sabia abrir la pagina asi:
+    //  `songsel` es lo que la abre, y la regla comparativa la canto a la
+    //  primera con 8 hallazgos, dos por cada tapa.
+    songCopiaBtn   .setButtonText (T ("COPIAR"));
+    songCorteSelBtn.setButtonText (T ("CORTE"));
+    songPegaBtn    .setButtonText (T ("PEGAR"));
+    songBorraSelBtn.setButtonText (T ("BORRAR"));
     seqFollowBtn.setButtonText (T ("SEGUIR"));
     patLeftBtn  .setButtonText (T ("ATRAS"));
     patRightBtn .setButtonText (T ("ADELANTE"));

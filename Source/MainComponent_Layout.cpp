@@ -4460,7 +4460,11 @@ void MainComponent::resized()
             for (int w = 200; w <= juce::jmin (340, techo); w += Metrics::xs)
             {
                 colUtil = w;
-                if (moduleBarFits (w - 2 * Metrics::margenFichaX, sm5, 5)) break;
+                //  Con la sangria del panel, que es la misma cuenta que
+                //  `anchoUtil`: la columna que se elige aqui es la que va a
+                //  llevar esas cinco tapas, y se colocan dentro del panel.
+                if (moduleBarFits (w - 2 * Metrics::margenFichaX
+                                     - 2 * Metrics::panelSangria, sm5, 5)) break;
             }
         }
         const bool songDosCol = colUtil > 0;
@@ -4473,8 +4477,26 @@ void MainComponent::resized()
             //  el pie entero -PLAY, el largo y las paginas- quedaba en 72x0:
             //  la ficha de CANCION no tenia boton de play en apaisado, que es
             //  justo la orientacion en la que se pidio.
-            const int anchoUtil = songDosCol ? colUtil - 2 * Metrics::margenFichaX
-                                           : anchoTarjetaInterior (safeArea().getWidth());
+            //  Y EL ANCHO ES EL QUE LA FILA VA A RECIBIR, no el de la
+            //  tarjeta: dentro de esta ficha TODAS las filas se colocan entre
+            //  `abreSong` y `cierraSong`, que hacen `panel.reduce
+            //  (Metrics::panelSangria, 0)` para que el panel las envuelva. Son
+            //  ocho por lado, y preguntar sin ellos es preguntar por una fila
+            //  dieciseis pixeles mas ancha que la que se maqueta.
+            //
+            //  Medido en 360x640 con `ZATI_OPEN=songsel`, que es la corrida que
+            //  lo saco: el presupuesto preguntaba con 299 y la fila se colocaba
+            //  en 283. En espanol las cinco brochas caben en los dos y no pasa
+            //  nada; en INGLES caben en 299 y no en 283, asi que se pedia UNA
+            //  fila y se colocaban DOS. Cuarenta y cuatro pixeles que
+            //  `sheetFromBottom` se lleva de lo ultimo que se maqueta, o sea de
+            //  los cuatro carriles: la celda de la linea de tiempo cayo de 22
+            //  px a ONCE -por debajo de los doce del banco y de los veinte de
+            //  `laneMin`- y solo en uno de los cuatro idiomas. Es, otra vez,
+            //  pedir con una cuenta y colocar con otra.
+            const int anchoUtil = (songDosCol ? colUtil - 2 * Metrics::margenFichaX
+                                              : anchoTarjetaInterior (safeArea().getWidth()))
+                                - 2 * Metrics::panelSangria;
             //  LA MISMA FILA QUE SE VA A MAQUETAR, y no otra parecida: en la
             //  vista de audio son CINCO -las dos brochas, GRABAR, el clic y el
             //  modo- y preguntar por cuatro seria pedir con una cuenta y
