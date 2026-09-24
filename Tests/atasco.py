@@ -102,7 +102,9 @@ def corre (casa, ticks=40, atasco=0, plazo=0, estado=False, tapas=False, revive=
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_LANG="es",
                 ZATI_SIZE="412x915", DISPLAY=PANTALLA,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"))
-    if   revive: env["ZATI_REVIVE"] = "1"
+    if   revive:
+        env["ZATI_REVIVE"] = "1"
+        env["ZATI_SALIDA_PREVIA"] = MUESTRA_ANR
     elif tapas:  env["ZATI_TAPAS"]  = "1"
     elif estado: env["ZATI_ESTADO"] = "1"
     else:        env["ZATI_ARRANQUE"] = str (ticks)
@@ -373,6 +375,9 @@ TOPE_PREGUNTAS_PINTAR = 1
 TOPE_APERTURAS_VOLVER = 1
 TOPE_INTENTOS_60S     = 8
 TOPE_MS_PEDIR         = 250
+#  La traza de muestra de un ANR, con el hilo principal leyendo de FUSE: lo
+#  que Android guarda y la app lee al arrancar (Source/SalidaPrevia.h).
+MUESTRA_ANR           = os.path.join (os.path.dirname (os.path.abspath (__file__)), "anr_muestra.txt")
 
 
 def regla_abrir_el_dispositivo (malas):
@@ -425,6 +430,34 @@ def regla_abrir_el_dispositivo (malas):
                       % (r["ms_pedir_lento"], TOPE_MS_PEDIR))
     if not r["abre_lento"]:
         malas.append ("abrir: la apertura lenta no llego a abrir el dispositivo")
+
+    #  7. UN PAD QUE TARDA TRES SEGUNDOS EN LEERSE. La ultima linea de la caja
+    #  negra del telefono antes del cartel era «ATASCO 1081 ms en pads/cargar»:
+    #  la vuelta mas larga de stepPadJob tiene que ser nada, porque leer va en
+    #  su hebra, y el trabajo tiene que acabar igual.
+    print ("  %d ms la vuelta mas larga cargando un pad que tarda 3000, tope %d; acaba: %s"
+           % (r["peor_paso_pads"], TOPE_MS_PEDIR, "si" if r["pads_acaban"] else "NO"))
+    if r["peor_paso_pads"] > TOPE_MS_PEDIR:
+        malas.append ("pads: %d ms del hilo de mensajes leyendo un pad, tope %d - eso es el cartel"
+                      % (r["peor_paso_pads"], TOPE_MS_PEDIR))
+    if not r["pads_acaban"]:
+        malas.append ("pads: la carga con un pad lento no termina")
+
+    #  8. EL PARTE DE ANDROID. Sobre la traza de muestra: el renglon dice ANR y
+    #  la frase del sistema, y la cabeza es la del hilo "main" -su primera
+    #  linea es la de FUSE, no la del vigilante ni la del Signal Catcher-, de
+    #  ocho lineas como mucho.
+    cabeza = [l.strip() for l in r["salida_cabeza"].split ("|") if l.strip()]
+    print ("  renglon: %s" % r["salida_renglon"])
+    print ("  cabeza del main: %d lineas, la primera: %s" % (len (cabeza), cabeza[0] if cabeza else "-"))
+    if not r["salida_hay"] or not r["salida_fallo"]:
+        malas.append ("android: el parte de muestra no se leyo, o no cuenta como fallo")
+    if not r["salida_renglon"].startswith ("ANR · Input dispatching timed out"):
+        malas.append ("android: el renglon no dice ANR y la frase: %r" % r["salida_renglon"])
+    if not cabeza or "read+8" not in cabeza[0] or len (cabeza) > 8:
+        malas.append ("android: la cabeza no es la del hilo main o pasa de 8 lineas: %r" % cabeza[:3])
+    if any ("write+8" in l or "Object.wait" in l for l in cabeza):
+        malas.append ("android: la cabeza se mete en otro hilo")
 
 
 def main():

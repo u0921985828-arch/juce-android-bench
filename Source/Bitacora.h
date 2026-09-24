@@ -47,6 +47,7 @@ namespace Bitacora
     inline int  salida = -1;          // descriptor abierto una vez
     inline juce::File fichero;
     inline juce::String previa;       // como acabo la vez anterior, para contarlo
+    inline juce::String textoPrevio;  // la bitacora ENTERA de la vez anterior
 
     inline void escribe (const char* texto) noexcept
     {
@@ -258,6 +259,7 @@ namespace Bitacora
         if (fichero.existsAsFile())
         {
             const auto texto = fichero.loadFileAsString().trim();
+            textoPrevio = texto;
             const auto ultimaLinea = texto.fromLastOccurrenceOf ("\n", false, false).trim();
             if (ultimaLinea.isNotEmpty() && ! ultimaLinea.startsWith ("fin limpio"))
                 previa = ultimaLinea;

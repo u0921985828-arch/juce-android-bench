@@ -38,6 +38,8 @@
       <FILE id="srcSKc"  name="SessionKeeper.cpp" compile="1" resource="0" file="Source/SessionKeeper.cpp"/>
       <FILE id="srcASh"  name="AppStorage.h"    compile="0" resource="0" file="Source/AppStorage.h"/>
       <FILE id="srcASc"  name="AppStorage.cpp"  compile="1" resource="0" file="Source/AppStorage.cpp"/>
+      <FILE id="srcSPh"  name="SalidaPrevia.h"  compile="0" resource="0" file="Source/SalidaPrevia.h"/>
+      <FILE id="srcSPc"  name="SalidaPrevia.cpp" compile="1" resource="0" file="Source/SalidaPrevia.cpp"/>
       <FILE id="srcMSc"  name="MediaStore.cpp"  compile="1" resource="0" file="Source/MediaStore.cpp"/>
       <FILE id="srcSKh"  name="SessionKeeper.h"   compile="0" resource="0" file="Source/SessionKeeper.h"/>
       <FILE id="srcLh"   name="SampleLoader.h"    compile="0" resource="0" file="Source/SampleLoader.h"/>

@@ -9148,6 +9148,43 @@ void MainComponent::auditRevive()
     recogeApertura();
     bancoLentoMs = 0;
 
+    //  5. UN PAD QUE TARDA TRES SEGUNDOS EN LEERSE, que es el «ATASCO 1081 ms
+    //     en pads/cargar» de la captura del telefono: FUSE, MediaProvider o un
+    //     instrumento de cinco octavas. Solo el pad 0 se lee -el resto sale de
+    //     el, como un troceado- para que la medida dure tres segundos y no
+    //     sesenta y cuatro veces tres. Lo que se mide es la vuelta MAS LARGA
+    //     de stepPadJob, que es lo que el hilo de mensajes pasa sin latir.
+    double peorPaso = 0.0;
+    bool padsAcaban = false;
+    {
+        bancoLeerLentoMs = 3000;
+        padJob = std::make_unique<PadLoadJob>();
+        padJob->folder = juce::File();
+        padJob->clearMissing = false;
+        for (int i = 1; i < kNumPads; ++i) padJob->source[(size_t) i] = 0;
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        while (padJob != nullptr
+               && juce::Time::getMillisecondCounterHiRes() - t0 < 20000.0)
+        {
+            const double a = juce::Time::getMillisecondCounterHiRes();
+            stepPadJob();
+            peorPaso = juce::jmax (peorPaso, juce::Time::getMillisecondCounterHiRes() - a);
+            juce::Thread::sleep (5);
+        }
+        padsAcaban = padJob == nullptr;
+        padJob.reset();
+        bancoLeerLentoMs = 0;
+    }
+
+    //  6. EL PARTE DE ANDROID, con la traza de muestra que el banco inyecta por
+    //     ZATI_SALIDA_PREVIA: el renglon que veria la persona y la cabeza del
+    //     hilo principal.
+    const auto parte = SalidaPrevia::lee();
+    auto limpio = [] (juce::String t)
+    {
+        return t.replace ("\\", "/").replace ("\"", "'").replace ("\n", " | ");
+    };
+
     juce::String serie;
     double f = kReviveMinMs;
     for (int i = 0; i < 6; ++i)
@@ -9171,5 +9208,11 @@ void MainComponent::auditRevive()
               << ",\"tope\":" << juce::roundToInt (kReviveMaxMs)
               << ",\"ms_pedir_lento\":" << juce::roundToInt (msLento)
               << ",\"abre_lento\":" << (abreTras ? 1 : 0)
+              << ",\"peor_paso_pads\":" << juce::roundToInt (peorPaso)
+              << ",\"pads_acaban\":" << (padsAcaban ? 1 : 0)
+              << ",\"salida_hay\":" << (parte.hay ? 1 : 0)
+              << ",\"salida_fallo\":" << (salidaEsFallo (parte.motivo) ? 1 : 0)
+              << ",\"salida_renglon\":\"" << limpio (renglonSalida (parte)) << "\""
+              << ",\"salida_cabeza\":\"" << limpio (SalidaPrevia::cabezaDelMain (parte.traza)) << "\""
               << "}" << std::endl;
 }

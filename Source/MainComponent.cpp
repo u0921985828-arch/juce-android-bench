@@ -1,4 +1,5 @@
 #include "MainComponentInterno.h"
+#include "SalidaPrevia.h"
 
 #include <csignal>
 #include <cstdlib>
@@ -68,6 +69,10 @@ MainComponent::MainComponent()
     //  hilo mientras tanto seria preparar el motor a medio construir.
     abridor = std::make_unique<AbridorAudio> (*this);
     abridor->startThread (juce::Thread::Priority::normal);
+
+    //  Y LO QUE ANDROID SABE DE LA VEZ ANTERIOR, en una hebra: es JNI y leer
+    //  una traza de cientos de KB. Ver SalidaPrevia.h.
+    lanzaSalidaPrevia();
 
     //  LOS DEFECTOS DE UN PAD, EN UN SOLO SITIO. Ver ponPadPorDefecto.
     //
@@ -18904,15 +18909,71 @@ bool MainComponent::padsBusy()
     return true;
 }
 
+void MainComponent::lanzaHebraPads (PadLoadJob& j)
+{
+    j.lanzada = true;
+    j.gama = gamaDeAqui();
+    j.lentoMs = bancoLeerLentoMs;
+
+    for (int i = 0; i < kNumPads; ++i)
+    {
+        j.fichero[(size_t) i] = j.fromSession ? SessionKeeper::padFile (i)
+                                              : ProjectStore::sampleFile (j.folder, i);
+        //  CON LA RECETA QUE EL FICHERO TRAIGA y no con la fila de la tabla:
+        //  ver stepPadJob. Se resuelve aqui porque `recetaDeTexto` lee un
+        //  String del trabajo y la hebra no debe tocar mas que lo suyo.
+        if (const int receta = j.inst[(size_t) i]; receta >= 0)
+            j.recetaResuelta[(size_t) i] = recetaDeTexto (receta / Sintes::kPresets,
+                                                          receta % Sintes::kPresets,
+                                                          j.receta[(size_t) i]);
+    }
+
+    auto* crudo = &j;
+    j.hebra = std::thread ([crudo]
+    {
+        auto& t = *crudo;
+        for (int i = 0; i < kNumPads; ++i)
+        {
+            if (t.parar.load (std::memory_order_acquire)) return;
+
+            //  Los que salen de otro pad no se leen: se comparten al colocar.
+            const int fuente = t.source[(size_t) i];
+            if (! (fuente >= 0 && fuente < i))
+            {
+                if (const int ms = t.lentoMs; ms > 0) juce::Thread::sleep (ms);
+
+                SampleBuffer::Ptr sb;
+                if (const int receta = t.inst[(size_t) i]; receta >= 0)
+                {
+                    sb = Sintes::sintetiza (receta / Sintes::kPresets, receta % Sintes::kPresets,
+                                            t.recetaResuelta[(size_t) i], t.gama);
+                    t.deSintesis[(size_t) i] = sb != nullptr;
+                }
+                if (sb == nullptr)
+                    sb = ProjectStore::readSample (t.fichero[(size_t) i]);
+                t.rendidos[i] = sb;
+            }
+            t.listo[(size_t) i].store (true, std::memory_order_release);
+        }
+    });
+}
+
 void MainComponent::stepPadJob()
 {
     if (padJob == nullptr) return;
 
     const Bitacora::Tarea marca ("pads/cargar");
 
+    if (! padJob->lanzada) lanzaHebraPads (*padJob);
+
     const double t0 = juce::Time::getMillisecondCounterHiRes();
 
+    //  EN ORDEN y solo lo que la hebra ya haya dejado: un pad que comparte
+    //  audio con otro anterior necesita que ese ya este puesto, y la hebra
+    //  los rinde en el mismo orden, asi que esperar al siguiente no retrasa
+    //  nada que no estuviera retrasado ya.
     while (padJob->next < kNumPads
+           && padJob->listo[(size_t) padJob->next].load (std::memory_order_acquire)
            && juce::Time::getMillisecondCounterHiRes() - t0 < 25.0)
     {
         const int i = padJob->next++;
@@ -18928,38 +18989,29 @@ void MainComponent::stepPadJob()
             continue;
         }
 
-        //  Y SI ERA UN INSTRUMENTO, se vuelve a sintetizar. Es mas rapido que
-        //  leer 2 MB de disco y ademas es lo unico que lo devuelve SIENDO un
-        //  instrumento: con sus cinco octavas y sus dos capas.
+        //  Y SI ERA UN INSTRUMENTO, la hebra lo ha vuelto a sintetizar. Es mas
+        //  rapido que leer 2 MB de disco y ademas es lo unico que lo devuelve
+        //  SIENDO un instrumento: con sus cinco octavas y sus dos capas.
         const int receta = padJob->inst[(size_t) i];
         if (receta >= 0)
         {
-            const int fam = receta / Sintes::kPresets;
-            const int pre = receta % Sintes::kPresets;
-
-            //  CON LA RECETA QUE EL FICHERO TRAIGA y no con la fila de la
-            //  tabla: los ocho mandos son del PAD desde que se pueden mover,
-            //  asi que rendir la fila devolveria un instrumento que suena
+            //  Los ocho mandos son del PAD desde que se pueden mover: rendir
+            //  la fila de la tabla devolveria un instrumento que suena
             //  distinto del que se guardo. Sin la propiedad, `recetaDeTexto`
             //  devuelve la fila, que es como sonaba antes de que existieran.
-            const juce::String& txt = padJob->receta[(size_t) i];
-            padReceta[(size_t) i]       = recetaDeTexto (fam, pre, txt);
-            padRecetaMovida[(size_t) i] = txt.isNotEmpty();
-
-            if (auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) i], gamaDeAqui()))
-            {
-                assignSampleToPad (i, sb, Sintes::nombreDe (fam, pre));
-                ++padJob->restored;
-                continue;
-            }
+            padReceta[(size_t) i]       = padJob->recetaResuelta[(size_t) i];
+            padRecetaMovida[(size_t) i] = padJob->receta[(size_t) i].isNotEmpty();
         }
 
-        const auto f = padJob->fromSession ? SessionKeeper::padFile (i)
-                                           : ProjectStore::sampleFile (padJob->folder, i);
+        auto sb = padJob->rendidos[i];
+        padJob->rendidos[i] = nullptr;
 
-        if (auto sb = ProjectStore::readSample (f))
+        if (sb != nullptr)
         {
-            assignSampleToPad (i, sb, padName[(size_t) i]);
+            assignSampleToPad (i, sb, padJob->deSintesis[(size_t) i]
+                                        ? Sintes::nombreDe (receta / Sintes::kPresets,
+                                                            receta % Sintes::kPresets)
+                                        : padName[(size_t) i]);
             ++padJob->restored;
         }
         else if (padJob->clearMissing)
@@ -19121,12 +19173,66 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
     //  «atasco» de AJUSTES · AUDIO ya lo sabia desde 8920ab9, y la persona no
     //  llego a mirarlo: cinco APK con el cartel y ni un dato del telefono. Lo
     //  que hace falta para arreglarlo tiene que estar en la primera pantalla.
-    if (Bitacora::atascoPrevio.isNotEmpty())
+    //  Lo de Android va por delante de todo: es lo unico que no depende de
+    //  que la app haya alcanzado a escribir.
+    if (salidaPrevia.isNotEmpty())
+        status.setText (T ("Android la cerro la vez anterior: %1", Lang::ltr (salidaPrevia)),
+                        juce::dontSendNotification);
+    else if (Bitacora::atascoPrevio.isNotEmpty())
         status.setText (T ("La vez anterior se paro: %1", Lang::ltr (Bitacora::atascoPrevio)),
                         juce::dontSendNotification);
     else if (Bitacora::previa.isNotEmpty())
         status.setText (T ("La vez anterior se cerro en: %1", Bitacora::previa),
                         juce::dontSendNotification);
+}
+
+//  EL PARTE DE ANDROID. Solo se ensena lo que es un fallo: una salida pedida
+//  por la persona, una actualizacion o un cierre propio no son noticia.
+bool MainComponent::salidaEsFallo (int motivo)
+{
+    return motivo == 2 || motivo == 3 || motivo == 4 || motivo == 5 || motivo == 6
+        || motivo == 7 || motivo == 9 || motivo == 13 || motivo == 14;
+}
+
+juce::String MainComponent::renglonSalida (const SalidaPrevia::Parte& p)
+{
+    //  El motivo y la frase del sistema, recortada: la de un ANR de entrada
+    //  lleva detras la ventana entera y el renglon de estado es uno.
+    auto r = SalidaPrevia::nombreMotivo (p.motivo);
+    if (p.descripcion.isNotEmpty())
+        r << " · " << p.descripcion.substring (0, 90);
+    return r;
+}
+
+void MainComponent::lanzaSalidaPrevia()
+{
+    juce::Component::SafePointer<MainComponent> yo (this);
+    std::thread ([yo]
+    {
+        const auto p = SalidaPrevia::lee();
+        if (! p.hay || ! salidaEsFallo (p.motivo)) return;
+
+        const auto renglon = renglonSalida (p);
+        const auto cabeza  = SalidaPrevia::cabezaDelMain (p.traza);
+
+        //  A la caja negra de ESTA vez, que es la que se va a mandar, y la
+        //  traza entera a ZATI/ para poder mandarla tambien. Desde aqui y no
+        //  desde el hilo de mensajes: escribir en lo publico no tiene tope.
+        Bitacora::linea ("ANDROID la vez anterior: ", renglon.toRawUTF8(), "", "");
+        for (const auto& l : juce::StringArray::fromLines (cabeza))
+            Bitacora::linea ("  main ", l.toRawUTF8(), "", "");
+        if (p.traza.isNotEmpty())
+            ProjectStore::home().getChildFile ("zati-anr.txt")
+                .replaceWithText (renglon + "\n\n" + p.traza);
+
+        juce::MessageManager::callAsync ([yo, renglon]
+        {
+            if (yo == nullptr) return;
+            yo->salidaPrevia = renglon;
+            yo->status.setText (T ("Android la cerro la vez anterior: %1", Lang::ltr (renglon)),
+                                juce::dontSendNotification);
+        });
+    }).detach();
 }
 
 //  RESAMPLE: print the master onto a pad.

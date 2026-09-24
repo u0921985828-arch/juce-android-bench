@@ -57,6 +57,7 @@ target_sources(Zati PRIVATE
     Source/DeviceTier.cpp
     Source/SessionKeeper.cpp
     Source/AppStorage.cpp
+    Source/SalidaPrevia.cpp
     Source/MediaStore.cpp
     Source/Sintes.cpp
 )

@@ -1,3 +1,4 @@
+#include <thread>
 #include <JuceHeader.h>
 #include "MainComponent.h"
 #include "Lang.h"
@@ -155,7 +156,36 @@ public:
         ProjectStore::ensureTree();
         //  La caja negra, antes que nada: si algo de lo de abajo se cae, la
         //  linea que lo dice tiene que estar ya escribible. Ver Bitacora.h.
+       #if JUCE_ANDROID
+        //  EN LA CARPETA PRIVADA, y no en ZATI/. Lo publico pasa por FUSE y por
+        //  MediaProvider, y si eso se atasca se atascan a la vez el hilo de
+        //  mensajes leyendo los WAV y el vigilante escribiendo el parte: la
+        //  captura del telefono traia el «no responde» y DETRAS de la ultima
+        //  linea («ATASCO 1081 ms en pads/cargar») nada, ni un «ATASCO >=»,
+        //  que el vigilante escribe al primer segundo de cualquier parada.
+        //  Una caja negra que se para con el avion no es una caja negra.
+        {
+            const auto privada = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+            privada.createDirectory();
+            const auto vieja = ProjectStore::home().getChildFile ("zati-bitacora.txt");
+            const auto nueva = privada.getChildFile ("zati-bitacora.txt");
+            //  La primera vez con esta APK, la de la vez anterior esta en ZATI/.
+            if (! nueva.existsAsFile() && vieja.existsAsFile())
+                vieja.copyFileTo (nueva);
+            Bitacora::instalar (privada);
+
+            //  Y la de la vez anterior se deja en ZATI/ para poder mandarla,
+            //  desde una hebra: escribir en lo publico es justo lo que puede
+            //  tardar sin tope.
+            if (Bitacora::textoPrevio.isNotEmpty())
+                std::thread ([vieja, texto = Bitacora::textoPrevio]
+                {
+                    vieja.replaceWithText (texto + "\n");
+                }).detach();
+        }
+       #else
         Bitacora::instalar (ProjectStore::home());
+       #endif
         Lang::loadPreference();
         //  Before the window: every component captures colours as it is built,
         //  so a chassis applied afterwards would leave half the face on the

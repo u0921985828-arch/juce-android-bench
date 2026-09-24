@@ -1,0 +1,25 @@
+6
+Input dispatching timed out (a1b2c3 com.artifacts.zati/com.rmsl.juce.JuceActivity (server) is not responding. Waited 5001ms for MotionEvent)
+
+----- pid 12345 at 2026-09-24 18:02:11.123 -----
+Cmd line: com.artifacts.zati
+
+"Signal Catcher" daemon prio=10 tid=4 Runnable
+  at java.lang.Object.wait(Native method)
+
+"main" prio=5 tid=1 Native
+  | group="main" sCount=1 ucsCount=0 flags=1 obj=0x72a3b5c8 self=0xb400007
+  | sysTid=12345 nice=-10 cgrp=top-app sched=0/0 handle=0x7f8a
+  native: #00 pc 000a1b2c  /apex/com.android.runtime/lib64/bionic/libc.so (read+8)
+  native: #01 pc 0004d3e1  /system/lib64/libfuse.so (fuse_read+120)
+  native: #02 pc 01a2b3c4  /data/app/com.artifacts.zati/lib/arm64/libjuce_jni.so (juce::FileInputStream::read+44)
+  at com.rmsl.juce.Java.nativeTimer(Native method)
+  at android.os.Handler.handleCallback(Handler.java:958)
+  at android.os.Handler.dispatchMessage(Handler.java:99)
+  at android.os.Looper.loopOnce(Looper.java:205)
+  at android.os.Looper.loop(Looper.java:294)
+  at android.app.ActivityThread.main(ActivityThread.java:8177)
+  at java.lang.reflect.Method.invoke(Native method)
+
+"zati-atasco" prio=5 tid=20 Native
+  native: #00 pc 000a1b2c  /apex/com.android.runtime/lib64/bionic/libc.so (write+8)

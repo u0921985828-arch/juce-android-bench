@@ -32,6 +32,7 @@
 #include "MidiIo.h"
 #include "Instrumentos.h"
 #include "Sintes.h"
+#include "SalidaPrevia.h"
 #include "MidiArchivo.h"
 
 // ============================================================================
@@ -1598,6 +1599,11 @@ private:
     std::atomic<bool>   aperturaLista { false };
     std::atomic<bool>   cerrarAlAbrir { false };
     std::atomic<double> costeApertura { 0.0 };
+    //  Lo que Android guardo de como murio la vez anterior. Ver SalidaPrevia.h.
+    juce::String salidaPrevia;
+    void lanzaSalidaPrevia();
+    static bool salidaEsFallo (int motivo);
+    static juce::String renglonSalida (const SalidaPrevia::Parte&);
     void pideAbrirSalida();
     bool esperaAbridor (int topeMs);   // true si no queda apertura en curso
     void recogeApertura();             // hilo de mensajes: lo que dejo el hilo
@@ -3224,9 +3230,52 @@ private:
         //  dejo y suena con los de fabrica hasta que alguien mueva uno.
         //  Vacia = la receta es la de la tabla.
         std::array<juce::String, AudioEngine::kNumPads> receta;
-        PadLoadJob() { source.fill (-1); inst.fill (-1); }
+        PadLoadJob()
+        {
+            source.fill (-1); inst.fill (-1);
+            for (auto& f : listo) f.store (false, std::memory_order_relaxed);
+        }
         std::function<void (int restored)> onDone;
+
+        //  Y LEER VA EN UNA HEBRA, como la fabrica.
+        //
+        //  El trozo de 25 ms de arriba solo corta ENTRE pads, y un pad solo
+        //  puede costar mas que eso: la captura del telefono traia «ATASCO
+        //  1081 ms en pads/cargar» como ultima linea de la caja negra antes
+        //  del «no responde». Leer un WAV de ZATI/.sesion pasa por FUSE y por
+        //  MediaProvider -que el sistema actualiza por su cuenta- y rendir un
+        //  instrumento son cinco octavas y dos capas; ninguna de las dos cosas
+        //  tiene tope. Se parte por la misma costura que FabricaJob: LEER y
+        //  RENDIR van a la hebra, COLOCAR se queda en el hilo de mensajes.
+        //
+        //  Lo que la hebra necesita se resuelve ANTES de lanzarla, en el hilo
+        //  de mensajes (`lanzaHebra`): el fichero de cada pad, la receta y la
+        //  gama. La hebra no lee nada de la cara.
+        std::array<juce::File, AudioEngine::kNumPads> fichero;
+        std::array<Sintes::Preset, AudioEngine::kNumPads> recetaResuelta {};
+        Sintes::Gama gama;
+        SampleBuffer::Ptr rendidos[AudioEngine::kNumPads];
+        //  Si lo que hay en `rendidos` es un instrumento y no un WAV: cambia el
+        //  nombre que se le pone al pad.
+        std::array<bool, (size_t) AudioEngine::kNumPads> deSintesis {};
+        std::array<std::atomic<bool>, (size_t) AudioEngine::kNumPads> listo;
+        std::atomic<bool> parar { false };
+        bool lanzada = false;
+        int lentoMs = 0;              // copia de bancoLeerLentoMs
+        std::thread hebra;
+        //  El destructor ESPERA, por lo mismo que el de FabricaJob: una hebra
+        //  que escribe en `rendidos` con el trabajo muerto escribe en memoria
+        //  liberada. `parar` hace que la espera sea de un pad como mucho.
+        ~PadLoadJob()
+        {
+            parar.store (true, std::memory_order_release);
+            if (hebra.joinable()) hebra.join();
+        }
     };
+    void lanzaHebraPads (PadLoadJob&);
+    //  Solo el banco: lo que tarda de mas cada lectura de la hebra, para
+    //  medir que un pad lento no para el hilo de mensajes (atasco.py, regla 7).
+    int bancoLeerLentoMs = 0;
     std::unique_ptr<PadLoadJob> padJob;
     void stepPadJob();
 
