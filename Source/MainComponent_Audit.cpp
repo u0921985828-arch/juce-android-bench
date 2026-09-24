@@ -9052,6 +9052,10 @@ void MainComponent::auditRevive()
 {
     //  El falso entra como un tipo mas y se elige, igual que el telefono elige
     //  Oboe. Y como en el constructor: se abre y se ajusta a la rafaga.
+    //  La apertura del primer tick, si aun va por el hilo que abre, se deja
+    //  acabar: esta prueba cambia el tipo de dispositivo por debajo.
+    esperaAbridor (15000);
+    recogeApertura();
     deviceManager.addAudioDeviceType (std::make_unique<BancoType>());
     deviceManager.setCurrentAudioDeviceType ("BANCO", true);
     setAudioChannels (0, 2);
@@ -9090,6 +9094,8 @@ void MainComponent::auditRevive()
     bancoPreguntas = 0;
     const double t0 = juce::Time::getMillisecondCounterHiRes();
     appResumed();
+    esperaAbridor (15000);
+    recogeApertura();
     const bool vigilanteSuelto = ! Bitacora::avisado.load()
         && (juce::Time::getMillisecondCounter() - Bitacora::latido.load()) < 1000u;
     const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
@@ -9107,7 +9113,11 @@ void MainComponent::auditRevive()
     deviceRevivalTicks = 0.0;
     esperaRevivirMs = kReviveMinMs;
     for (int t = 0; t < 60000; t += 50)
+    {
         reviveSalida (50.0);
+        esperaAbridor (15000);
+    }
+    recogeApertura();
     const int intentosMuerto = bancoAperturas;
 
     //  ...y cuando el HAL vuelve, el vigilante lo recoge en su siguiente
@@ -9115,9 +9125,28 @@ void MainComponent::auditRevive()
     bancoFalla = false;
     bancoAperturas = 0;
     for (int t = 0; t < 20000 && deviceManager.getCurrentAudioDevice() == nullptr; t += 50)
+    {
         reviveSalida (50.0);
+        esperaAbridor (15000);
+        recogeApertura();
+    }
     const bool recupera = deviceManager.getCurrentAudioDevice() != nullptr;
     const double esperaTras = esperaRevivirMs;
+
+    //  4. UN SERVIDOR DE AUDIO QUE TARDA SEIS SEGUNDOS EN CONTESTAR, que es el
+    //     cartel: el dispositivo cerrado, la app delante y el vigilante
+    //     pidiendo. Lo que se mide es lo que el hilo de mensajes pasa DENTRO
+    //     de la peticion -volver del fondo, que es donde se pide- y que la
+    //     apertura acabe llegando igual.
+    shutdownAudio();
+    deviceManager.closeAudioDevice();
+    bancoLentoMs = 6000;
+    const double tl = juce::Time::getMillisecondCounterHiRes();
+    appResumed();
+    const double msLento = juce::Time::getMillisecondCounterHiRes() - tl;
+    const bool abreTras = esperaAbridor (15000) && deviceManager.getCurrentAudioDevice() != nullptr;
+    recogeApertura();
+    bancoLentoMs = 0;
 
     juce::String serie;
     double f = kReviveMinMs;
@@ -9140,5 +9169,7 @@ void MainComponent::auditRevive()
               << ",\"espera_tras\":" << juce::roundToInt (esperaTras)
               << ",\"esperas_caras\":[" << serie << "]"
               << ",\"tope\":" << juce::roundToInt (kReviveMaxMs)
+              << ",\"ms_pedir_lento\":" << juce::roundToInt (msLento)
+              << ",\"abre_lento\":" << (abreTras ? 1 : 0)
               << "}" << std::endl;
 }

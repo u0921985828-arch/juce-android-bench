@@ -372,6 +372,7 @@ def regla_todo_lo_que_se_aprieta (malas):
 TOPE_PREGUNTAS_PINTAR = 1
 TOPE_APERTURAS_VOLVER = 1
 TOPE_INTENTOS_60S     = 8
+TOPE_MS_PEDIR         = 250
 
 
 def regla_abrir_el_dispositivo (malas):
@@ -413,6 +414,17 @@ def regla_abrir_el_dispositivo (malas):
         malas.append ("abrir: una espera pasa del tope de %d ms" % r["tope"])
     if not r["vigilante_suelto"]:
         malas.append ("abrir: tras reanudar la caja negra sigue enganchada en el aviso de antes")
+
+    #  6. UN SERVIDOR DE AUDIO QUE TARDA SEIS SEGUNDOS. Lo que el hilo de
+    #  mensajes pasa dentro de la peticion tiene que ser nada: la apertura va
+    #  por su propio hilo. Y tiene que acabar abriendo igual.
+    print ("  %d ms del hilo de mensajes pidiendo una apertura que tarda 6000, tope %d; abre: %s"
+           % (r["ms_pedir_lento"], TOPE_MS_PEDIR, "si" if r["abre_lento"] else "NO"))
+    if r["ms_pedir_lento"] > TOPE_MS_PEDIR:
+        malas.append ("abrir: %d ms del hilo de mensajes esperando al audio, tope %d - eso es el cartel"
+                      % (r["ms_pedir_lento"], TOPE_MS_PEDIR))
+    if not r["abre_lento"]:
+        malas.append ("abrir: la apertura lenta no llego a abrir el dispositivo")
 
 
 def main():

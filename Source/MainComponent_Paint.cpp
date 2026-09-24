@@ -601,7 +601,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     g.fillRoundedRectangle (area.toFloat(), Metrics::radio);
     auto inner = area.reduced (ZatiLookAndFeel::kAir, 7);
 
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
 
     g.setColour (ZatiColours::lcdDim);
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));

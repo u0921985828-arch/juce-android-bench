@@ -62,8 +62,12 @@ MainComponent::MainComponent()
 
     // Output only at startup so the app always makes sound; the mic input is
     // opened on demand when recording (avoids risking output on a denied perm).
-    setAudioChannels (0, 2);
-    useLowestLatency();
+    //
+    //  Y NO AQUI: en el primer tick, por el hilo que abre. Ver AbridorAudio.
+    //  Aqui el resto del constructor aun no ha puesto los pads, y abrir en otro
+    //  hilo mientras tanto seria preparar el motor a medio construir.
+    abridor = std::make_unique<AbridorAudio> (*this);
+    abridor->startThread (juce::Thread::Priority::normal);
 
     //  LOS DEFECTOS DE UN PAD, EN UN SOLO SITIO. Ver ponPadPorDefecto.
     //
@@ -7668,6 +7672,18 @@ MainComponent::~MainComponent()
     autosave();
     session.flush (2000);
 
+    //  El hilo que abre se va ANTES de cerrar: cerrar con una apertura a medias
+    //  es borrar el dispositivo bajo sus pies. Aqui se le espera lo que haga
+    //  falta, porque lo que viene detras es destruir el componente.
+    if (abridor != nullptr)
+    {
+        abridor->signalThreadShouldExit();
+        abridor->notify();
+        abridor->stopThread (15000);
+        abridor.reset();
+    }
+    abriendoAudio = false;
+
     shutdownAudio();
     setLookAndFeel (nullptr);
 }
@@ -7682,7 +7698,7 @@ void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRat
     //  is sized from it, and this is the only moment it can be: JUCE calls
     //  this before the stream starts, so no callback is inside the buffer.
     int ins = 0;
-    if (auto* dev = deviceManager.getCurrentAudioDevice())
+    if (auto* dev = dispositivo())
         ins = dev->getActiveInputChannels().countNumberOfSetBits();
 
     engine.prepareToPlay (sampleRate, samplesPerBlockExpected, ins);
@@ -14954,6 +14970,9 @@ void MainComponent::ponVistaCompases (int n)
 //  sitio donde vive un sonido, y el clip la referencia como cualquier otro.
 void MainComponent::grabaAlArreglo()
 {
+    //  Con una apertura en curso en el hilo que abre, esto no toca el gestor:
+    //  seria cambiarle el dispositivo a media apertura. Ver AbridorAudio.
+    if (! esperaAbridor (kEsperaCierreMs)) return;
     if (grabandoAlArreglo)
     {
         //  Parar: la toma se cierra por el camino de siempre y ademas cae en la
@@ -16348,7 +16367,7 @@ void MainComponent::pollExport()
     //  costumbre que refreshDeviceStatusLine ya se quito de encima.
     if (setSheet.isVisible())
     {
-        auto* dev = deviceManager.getCurrentAudioDevice();
+        auto* dev = dispositivo();
         //  El PUNTERO del dispositivo, no su nombre: un cambio de ruta
         //  construye un objeto nuevo, y comparar punteros no asigna nada.
         const Readout ahora {
@@ -16484,7 +16503,7 @@ void MainComponent::keepChosenRate()
 {
     if (chosenRate <= 0.0) return;
 
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
     if (dev == nullptr) return;
     if (std::abs (dev->getCurrentSampleRate() - chosenRate) < 0.5) return;
 
@@ -16500,7 +16519,7 @@ void MainComponent::keepChosenRate()
 
 void MainComponent::useLowestLatency()
 {
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
     if (dev == nullptr) return;
 
     const auto sizes = buferesDe (*dev);
@@ -16562,7 +16581,11 @@ void MainComponent::useLowestLatency()
 
 double MainComponent::abreSalida()
 {
-    const Bitacora::Tarea marca ("audio/abrir");
+    //  La etiqueta es del HILO DE MENSAJES: el vigilante la lee para decir en
+    //  que estaba ese hilo. Ponerla desde el que abre culparia al audio de un
+    //  atasco que fuera de otro.
+    std::optional<Bitacora::Tarea> marca;
+    if (! enHiloAbridor()) marca.emplace ("audio/abrir");
     const double t0 = juce::Time::getMillisecondCounterHiRes();
 
     //  La ultima configuracion buena sigue en el gestor: `closeAudioDevice`
@@ -16592,24 +16615,124 @@ double MainComponent::abreSalida()
 
     keepChosenRate();
     useLowestLatency();
-    return juce::Time::getMillisecondCounterHiRes() - t0;
+    const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+
+    //  Y QUEDA ESCRITO: cuanto tardo y si abrio. La proxima captura tiene que
+    //  decir si el cartel fue el audio sin que nadie lo deduzca.
+    char num[12];
+    Bitacora::cifra (juce::roundToInt (ms), num, sizeof (num));
+    Bitacora::linea ("audio/abrir ", num, " ms: ",
+                     dispositivo() != nullptr ? "abre" : "NO ABRE");
+    return ms;
+}
+
+//  ---------------------------------------------------------------------------
+//  EL HILO QUE ABRE.
+//
+//  Una peticion a la vez y ninguna cola: pedir dos aperturas seguidas es pedir
+//  una. Todo lo que `abreSalida` hace -abrir, reloj, rafaga- corre aqui, y
+//  `prepareToPlay` con ello, que JUCE llama desde quien arranca el flujo. El
+//  hilo de mensajes se entera por `aperturaLista` en su siguiente tick: sin
+//  `callAsync`, para que el banco pueda contarlo sin bombear mensajes.
+//  ---------------------------------------------------------------------------
+void MainComponent::AbridorAudio::run()
+{
+    while (! threadShouldExit())
+    {
+        if (! mc.pedidoAbrir.exchange (false))
+        {
+            wait (-1);
+            continue;
+        }
+
+        if (mc.bancoLentoMs > 0) Thread::sleep (mc.bancoLentoMs);
+        const double coste = mc.abreSalida();
+
+        //  Si mientras abria la app se fue al fondo, se cierra aqui mismo: el
+        //  hilo de mensajes no podia hacerlo sin pisar esta apertura.
+        if (mc.cerrarAlAbrir.exchange (false))
+            mc.shutdownAudio();
+
+        mc.costeApertura = coste;
+        mc.aperturaLista = true;
+        mc.abriendoAudio = false;
+    }
+}
+
+bool MainComponent::enHiloAbridor() const noexcept
+{
+    return abridor != nullptr && juce::Thread::getCurrentThread() == abridor.get();
+}
+
+juce::AudioIODevice* MainComponent::dispositivo() const
+{
+    if (abriendoAudio.load (std::memory_order_acquire) && ! enHiloAbridor())
+        return nullptr;
+    return deviceManager.getCurrentAudioDevice();
+}
+
+void MainComponent::pideAbrirSalida()
+{
+    //  Sin hilo -el banco que llama a esto antes de construirlo, o el cierre-
+    //  se abre aqui, como antes.
+    if (abridor == nullptr) { abreSalida(); return; }
+    //  Ya hay una en camino: basta con que no se cierre al acabar, que es lo
+    //  que pidio el fondo si la app se fue y volvio mientras abria.
+    cerrarAlAbrir = false;
+    if (abriendoAudio.exchange (true)) return;
+    pedidoAbrir = true;
+    abridor->notify();
+}
+
+bool MainComponent::esperaAbridor (int topeMs)
+{
+    const auto hasta = juce::Time::getMillisecondCounter() + (juce::uint32) juce::jmax (0, topeMs);
+    while (abriendoAudio.load() && juce::Time::getMillisecondCounter() < hasta)
+        juce::Thread::sleep (5);
+    return ! abriendoAudio.load();
+}
+
+void MainComponent::recogeApertura()
+{
+    if (! aperturaLista.exchange (false)) return;
+    const double coste = costeApertura.load();
+    esperaRevivirMs = dispositivo() != nullptr ? kReviveMinMs
+                                               : siguienteEsperaRevivir (esperaRevivirMs, coste);
+    refreshDeviceStatusLine (true);
+}
+
+//  CERRAR SIN PISAR UNA APERTURA. `onPause` no puede esperar a un servidor de
+//  audio que no contesta -eso es otro cartel-, asi que se espera un poco y, si
+//  sigue abriendo, se le encarga el cierre al propio hilo.
+void MainComponent::cierraAudio()
+{
+    if (! esperaAbridor (kEsperaCierreMs))
+    {
+        cerrarAlAbrir = true;
+        return;
+    }
+    shutdownAudio();
 }
 
 void MainComponent::reviveSalida (double dt)
 {
+    //  Lo que dejo el hilo que abre, lo primero: de ahi sale la espera.
+    recogeApertura();
+    if (abriendoAudio.load())
+    {
+        deviceRevivalTicks = 0.0;
+        return;
+    }
+
     if (appInForeground && ! pausedByFocus && ! focusGivenAway
-        && deviceManager.getCurrentAudioDevice() == nullptr)
+        && dispositivo() == nullptr)
     {
         //  ...same here: wall clock, whatever the tier redraws at. Y la espera
         //  CRECE mientras no abra: ver siguienteEsperaRevivir.
         if ((deviceRevivalTicks += dt) >= esperaRevivirMs)
         {
             deviceRevivalTicks = 0.0;
-            const double coste = abreSalida();
-            refreshDeviceStatusLine (true);
-            esperaRevivirMs = deviceManager.getCurrentAudioDevice() != nullptr
-                                ? kReviveMinMs
-                                : siguienteEsperaRevivir (esperaRevivirMs, coste);
+            pideAbrirSalida();
         }
     }
     else
@@ -16669,6 +16792,7 @@ int MainComponent::loadBurstPreference()
 //  aprender lo mismo.
 void MainComponent::checkXRuns (double dtMs)
 {
+    if (abriendoAudio.load()) return;      // el gestor es del hilo que abre
     //  ZATI_XRUN — LOS CHASQUIDOS COMO ENTRADA DEL BANCO.
     //
     //  Toda esta ley -sube a los cuatro, olvida a los cinco segundos, baja a
@@ -16699,7 +16823,7 @@ void MainComponent::checkXRuns (double dtMs)
                   << ",\"limpio_ms\":" << (int) xrunLimpioMs << "}" << std::endl;
     }
 
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
     if (dev == nullptr && ! guion) { lastXRuns = -1; return; }
 
     int now = 0;
@@ -16760,8 +16884,8 @@ void MainComponent::checkXRuns (double dtMs)
             //  de cambiar y quien eligio esta app por la latencia tiene derecho
             //  a saber en que numero esta.
             status.setText (T ("Audio limpio - buffer a %1 muestras",
-                               Lang::ltr (juce::String (deviceManager.getCurrentAudioDevice() != nullptr
-                                                            ? deviceManager.getCurrentAudioDevice()->getCurrentBufferSizeSamples()
+                               Lang::ltr (juce::String (dispositivo() != nullptr
+                                                            ? dispositivo()->getCurrentBufferSizeSamples()
                                                             : 0))),
                             juce::dontSendNotification);
             refreshDeviceStatusLine (true);
@@ -16788,8 +16912,8 @@ void MainComponent::checkXRuns (double dtMs)
     //  Y SE DICE. Subir la latencia a espaldas de alguien que eligio esta app
     //  por la latencia es exactamente lo que no se puede hacer en silencio.
     status.setText (T ("Audio entrecortado - buffer a %1 muestras",
-                       Lang::ltr (juce::String (deviceManager.getCurrentAudioDevice() != nullptr
-                                                    ? deviceManager.getCurrentAudioDevice()->getCurrentBufferSizeSamples()
+                       Lang::ltr (juce::String (dispositivo() != nullptr
+                                                    ? dispositivo()->getCurrentBufferSizeSamples()
                                                     : 0))),
                     juce::dontSendNotification);
     refreshDeviceStatusLine (true);
@@ -16802,6 +16926,9 @@ void MainComponent::checkXRuns (double dtMs)
 //  but it is a ceiling — the real output-only latency is lower.
 void MainComponent::startMeasure()
 {
+    //  Con una apertura en curso en el hilo que abre, esto no toca el gestor:
+    //  seria cambiarle el dispositivo a media apertura. Ver AbridorAudio.
+    if (! esperaAbridor (kEsperaCierreMs)) return;
     if (measuring) return;
 
     using RP = juce::RuntimePermissions;
@@ -16831,6 +16958,9 @@ void MainComponent::startMeasure()
 
 void MainComponent::finishMeasure()
 {
+    //  Con una apertura en curso en el hilo que abre, esto no toca el gestor:
+    //  seria cambiarle el dispositivo a media apertura. Ver AbridorAudio.
+    if (! esperaAbridor (kEsperaCierreMs)) return;
     if (! measuring || engine.isProbing()) return;
 
     measuredMs = engine.finishLatencyProbe();
@@ -16841,7 +16971,7 @@ void MainComponent::finishMeasure()
     //  the input - which is what this used to do - reads a device that Oboe
     //  has not finished reopening: it answered 4.79 ms out and 0 ms in, and an
     //  input latency of zero does not exist.
-    if (auto* dev = deviceManager.getCurrentAudioDevice())
+    if (auto* dev = dispositivo())
     {
         const double sr = dev->getCurrentSampleRate() > 0.0 ? dev->getCurrentSampleRate() : 48000.0;
         measuredOutMs = (float) (dev->getOutputLatencyInSamples() * 1000.0 / sr);
@@ -16879,7 +17009,7 @@ void MainComponent::finishMeasure()
     //  in milliseconds means nothing without the rate it was taken at. If it
     //  had to move, the line says so instead of quietly reporting a number
     //  from a configuration you did not choose.
-    if (auto* d = deviceManager.getCurrentAudioDevice())
+    if (auto* d = dispositivo())
         measuredRate = d->getCurrentSampleRate();
 
     measureNote = measuredMs < 0.0f
@@ -16958,7 +17088,7 @@ void MainComponent::refreshAudioOptions()
     bufButtons.clear();
     rateButtons.clear();
 
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
     if (dev == nullptr) { resized(); return; }
 
     const int    curBuf  = dev->getCurrentBufferSizeSamples();
@@ -17030,6 +17160,9 @@ void MainComponent::refreshAudioOptions()
 // nothing downstream has to know this happened.
 void MainComponent::applyAudioSetup (int bufferSize, double rate)
 {
+    //  Con una apertura en curso en el hilo que abre, esto no toca el gestor:
+    //  seria cambiarle el dispositivo a media apertura. Ver AbridorAudio.
+    if (! esperaAbridor (kEsperaCierreMs)) return;
     auto setup = deviceManager.getAudioDeviceSetup();
     if (bufferSize > 0) setup.bufferSize = bufferSize;
     if (rate > 0.0)   { setup.sampleRate = rate; chosenRate = rate; }
@@ -17059,7 +17192,7 @@ void MainComponent::applyAudioSetup (int bufferSize, double rate)
 //  there is no device or the driver will not say.
 double MainComponent::outputLatencyMs() const
 {
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
     if (dev == nullptr) return 0.0;
 
     const double sr = dev->getCurrentSampleRate();
@@ -17070,7 +17203,7 @@ double MainComponent::outputLatencyMs() const
 
 void MainComponent::refreshDeviceStatusLine (bool force)
 {
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
     if (dev == nullptr) return;
 
     //  Compare the two numbers before building anything. This runs on every
@@ -18565,7 +18698,7 @@ void MainComponent::appSuspended()
     //  pads that have no other copy anywhere.
     session.flush (2500);
 
-    shutdownAudio();             // releases the output stream and the mic
+    cierraAudio();               // releases the output stream and the mic
     audioFocus.abandon();        // ...and hand the speaker back
     pausedByFocus = false;
     appInForeground = false;
@@ -18593,7 +18726,7 @@ void MainComponent::appResumed()
     focusGivenAway  = false;
     audioFocus.request();
     pausedByFocus = false;
-    abreSalida();
+    pideAbrirSalida();
 
     //  A transport stranded by a trip to the background.
     //
@@ -18643,7 +18776,7 @@ void MainComponent::audioFocusLost (bool permanently)
         ponTransporte (false);
 
     engine.postPanic();
-    shutdownAudio();
+    cierraAudio();
 
     //  Only a transient loss is worth remembering. After a permanent one
     //  Android will not send us a GAIN unless we ask again, which is what
@@ -18696,7 +18829,7 @@ void MainComponent::audioFocusGained()
         return;
 
     pausedByFocus = false;
-    abreSalida();
+    pideAbrirSalida();
 
     //  ...and put the sequence back where it was. This is the half that was
     //  missing: the device came back, the music did not.
@@ -18983,7 +19116,15 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
     //  Y SI LA VEZ ANTERIOR NO ACABO BIEN, se dice. Una app que se cierra sola
     //  y vuelve a abrir como si nada deja a la persona sin nada que contar y a
     //  quien lo arregla sin nada que mirar. Ver Bitacora.h.
-    if (Bitacora::previa.isNotEmpty())
+    //
+    //  Y SI SE QUEDO PARADA, ESO PRIMERO, con la cifra y la tarea. El renglon
+    //  «atasco» de AJUSTES · AUDIO ya lo sabia desde 8920ab9, y la persona no
+    //  llego a mirarlo: cinco APK con el cartel y ni un dato del telefono. Lo
+    //  que hace falta para arreglarlo tiene que estar en la primera pantalla.
+    if (Bitacora::atascoPrevio.isNotEmpty())
+        status.setText (T ("La vez anterior se paro: %1", Lang::ltr (Bitacora::atascoPrevio)),
+                        juce::dontSendNotification);
+    else if (Bitacora::previa.isNotEmpty())
         status.setText (T ("La vez anterior se cerro en: %1", Bitacora::previa),
                         juce::dontSendNotification);
 }
@@ -19044,6 +19185,9 @@ void MainComponent::toggleResample()
 
 void MainComponent::toggleMicSampling()
 {
+    //  Con una apertura en curso en el hilo que abre, esto no toca el gestor:
+    //  seria cambiarle el dispositivo a media apertura. Ver AbridorAudio.
+    if (! esperaAbridor (kEsperaCierreMs)) return;
     if (! recordingActive)
     {
         int slot = (selectedPad >= 0) ? selectedPad : firstEmptyPad();
@@ -19118,7 +19262,7 @@ void MainComponent::toggleMicSampling()
         //  on devices whose capture stream has no timestamps - this phone is
         //  one - and trimming by a guess would be worse than not trimming.
         if (sb != nullptr)
-            if (auto* dev = deviceManager.getCurrentAudioDevice())
+            if (auto* dev = dispositivo())
             {
                 const int lead = dev->getInputLatencyInSamples();
                 const int have = sb->buffer.getNumSamples();
@@ -19211,7 +19355,7 @@ void MainComponent::toggleMicSampling()
 // ============================================================================
 void MainComponent::watchAudioDevice()
 {
-    auto* dev = deviceManager.getCurrentAudioDevice();
+    auto* dev = dispositivo();
     if (dev == nullptr)
         return;
 
@@ -19258,7 +19402,7 @@ void MainComponent::bombeaAudioDePrueba()
     //  Con aparato de verdad el hilo de audio ya renderiza, y la cola de
     //  comandos es de un solo CONSUMIDOR por contrato: dos no la degradan, la
     //  atascan para siempre.
-    if (deviceManager.getCurrentAudioDevice() != nullptr) return;
+    if (dispositivo() != nullptr || abriendoAudio.load()) return;
 
     constexpr int    kRafaga = 128;
     constexpr double kRate   = 48000.0;
@@ -19300,6 +19444,13 @@ void MainComponent::timerCallback()
     //  este hilo y en que. Es lo unico que convierte un «Zati Sampler no
     //  responde» en un dato en vez de en una deduccion.
     Bitacora::late();
+
+    //  LA PRIMERA APERTURA, por el hilo que abre. Ver el constructor.
+    if (! aperturaInicialPedida)
+    {
+        aperturaInicialPedida = true;
+        pideAbrirSalida();
+    }
 
     //  Y EL ATASCO A PROPOSITO, que es lo que hace medible lo de arriba.
     if (atascoBanco > 0 && arranqueTicks >= 6)

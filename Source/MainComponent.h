@@ -6,6 +6,7 @@
 #include <atomic>
 #include <thread>
 #include <utility>
+#include <optional>
 #include "AudioEngine.h"
 #include "FxPresets.h"
 #include "SampleLoader.h"
@@ -1576,6 +1577,36 @@ private:
     //  espera de hasta un segundo a que el flujo arranque. Esta abre una sola
     //  vez con el reloj y el bufer de la ultima buena, y devuelve lo que tardo.
     double abreSalida();
+
+    //  Y SE ABRE EN SU PROPIO HILO. Con la sonda apagada, la APK 50 recompilada
+    //  y cuatro arreglos encima, el «no responde» seguia saliendo unos segundos
+    //  despues de abrir, siempre con `OUT -inf`: el dispositivo no abre, y el
+    //  vigilante reintentaba abrirlo EN ESTE HILO a 1, 2, 4 s... Cuanto tarda
+    //  un intento contra un servidor de audio que no contesta no lo decide la
+    //  app, y un solo intento de mas de cinco segundos es el cartel. Ahora el
+    //  hilo de mensajes solo PIDE la apertura; mientras dura, `dispositivo()`
+    //  contesta que no hay y nadie de este hilo toca `deviceManager`.
+    struct AbridorAudio final : juce::Thread
+    {
+        explicit AbridorAudio (MainComponent& m) : juce::Thread ("zati-abre-audio"), mc (m) {}
+        void run() override;
+        MainComponent& mc;
+    };
+    std::unique_ptr<AbridorAudio> abridor;
+    std::atomic<bool>   pedidoAbrir   { false };
+    std::atomic<bool>   abriendoAudio { false };
+    std::atomic<bool>   aperturaLista { false };
+    std::atomic<bool>   cerrarAlAbrir { false };
+    std::atomic<double> costeApertura { 0.0 };
+    void pideAbrirSalida();
+    bool esperaAbridor (int topeMs);   // true si no queda apertura en curso
+    void recogeApertura();             // hilo de mensajes: lo que dejo el hilo
+    void cierraAudio();                // shutdownAudio sin pisar una apertura
+    bool enHiloAbridor() const noexcept;
+    juce::AudioIODevice* dispositivo() const;
+    //  Banco: cuanto tarda en abrir el dispositivo falso. Ver auditRevive.
+    int bancoLentoMs = 0;
+
     //  El vigilante de silencio, sacado del temporizador para que el banco lo
     //  pueda hacer correr sesenta segundos de reloj sin esperarlos.
     void reviveSalida (double dtMs);
@@ -1599,6 +1630,11 @@ private:
     static double siguienteEsperaRevivir (double antesMs, double costeMs) noexcept;
     static constexpr double kReviveMinMs  = 1000.0;
     static constexpr double kReviveMaxMs  = 16000.0;
+    //  Lo que `onPause` espera a una apertura en curso antes de encargarle el
+    //  cierre al hilo que abre. Corto: detras ya van el guardado y los 2500 ms
+    //  de `session.flush`, y Android cuenta cinco segundos para todo.
+    static constexpr int kEsperaCierreMs = 1000;
+    bool aperturaInicialPedida = false;
     static constexpr double kReviveFactor = 4.0;
     double esperaRevivirMs = kReviveMinMs;
 
