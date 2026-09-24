@@ -8938,3 +8938,200 @@ void MainComponent::auditTapas()
               << ",\"peor\":" << juce::roundToInt (peorMs)
               << ",\"peor_en\":\"" << UiAudit::esc (peorQuien) << "\"}" << std::endl;
 }
+
+//  UN DISPOSITIVO DE BANCO QUE CUENTA COMO CUENTA OBOE.
+//
+//  En este banco no hay tarjeta de sonido -`dispositivo 0`, medido- asi que
+//  sin esto la prueba de abajo contestaba cero aperturas y cero consultas, que
+//  es exactamente lo que contestaria el codigo roto. Este falso copia de Oboe
+//  las tres cosas que importan y nada mas:
+//
+//    - `getAvailableBufferSizes` y `getDefaultBufferSize` son PREGUNTAS AL
+//      DRIVER: en Oboe cada una abre un flujo exclusivo temporal. Se cuentan.
+//    - el bufer por defecto es el de 40 ms de JUCE y la rafaga es 192, asi que
+//      `useLowestLatency` tiene algo que cambiar, como en un telefono.
+//    - `open` se cuenta, y se le puede decir que falle.
+namespace
+{
+    int bancoAperturas = 0, bancoPreguntas = 0;
+    bool bancoFalla = false;
+
+    struct BancoDevice final : juce::AudioIODevice
+    {
+        BancoDevice() : juce::AudioIODevice ("BANCO SALIDA", "BANCO") {}
+        juce::StringArray getOutputChannelNames() override { return { "L", "R" }; }
+        juce::StringArray getInputChannelNames() override  { return {}; }
+        juce::Array<double> getAvailableSampleRates() override { return { 44100.0, 48000.0 }; }
+        juce::Array<int> getAvailableBufferSizes() override
+        {
+            ++bancoPreguntas;
+            return { 192, 384, 576, 768, 960, 1152, 1920 };
+        }
+        int getDefaultBufferSize() override { ++bancoPreguntas; return 1920; }
+        juce::String open (const juce::BigInteger&, const juce::BigInteger& outs,
+                           double sr, int buf) override
+        {
+            ++bancoAperturas;
+            if (bancoFalla) return "banco: el HAL no abre";
+            rate = sr > 0.0 ? sr : 48000.0;
+            block = buf > 0 ? buf : 1920;
+            salidas = outs;
+            abierto = true;
+            return {};
+        }
+        void close() override { stop(); abierto = false; }
+        bool isOpen() override { return abierto; }
+        void start (juce::AudioIODeviceCallback* cb) override
+        {
+            if (cb != nullptr && abierto) { cb->audioDeviceAboutToStart (this); quien = cb; }
+        }
+        void stop() override
+        {
+            if (auto* cb = std::exchange (quien, nullptr)) cb->audioDeviceStopped();
+        }
+        bool isPlaying() override { return quien != nullptr; }
+        juce::String getLastError() override { return {}; }
+        int getCurrentBufferSizeSamples() override { return block; }
+        double getCurrentSampleRate() override { return rate; }
+        int getCurrentBitDepth() override { return 32; }
+        juce::BigInteger getActiveOutputChannels() const override { return salidas; }
+        juce::BigInteger getActiveInputChannels() const override { return {}; }
+        int getOutputLatencyInSamples() override { return block; }
+        int getInputLatencyInSamples() override { return 0; }
+
+        double rate = 48000.0;
+        int block = 1920;
+        bool abierto = false;
+        juce::BigInteger salidas;
+        juce::AudioIODeviceCallback* quien = nullptr;
+    };
+
+    struct BancoType final : juce::AudioIODeviceType
+    {
+        BancoType() : juce::AudioIODeviceType ("BANCO") {}
+        void scanForDevices() override {}
+        juce::StringArray getDeviceNames (bool entrada) const override
+        {
+            return entrada ? juce::StringArray() : juce::StringArray ("BANCO SALIDA");
+        }
+        int getDefaultDeviceIndex (bool) const override { return 0; }
+        int getIndexOfDevice (juce::AudioIODevice* d, bool entrada) const override
+        {
+            return (d != nullptr && ! entrada) ? 0 : -1;
+        }
+        bool hasSeparateInputsAndOutputs() const override { return true; }
+        juce::AudioIODevice* createDevice (const juce::String& salida, const juce::String&) override
+        {
+            return salida.isEmpty() || salida == "BANCO SALIDA" ? new BancoDevice() : nullptr;
+        }
+    };
+}
+
+//  ABRIR EL DISPOSITIVO SIN COLGAR EL HILO DE MENSAJES.
+//
+//  El «no responde» volvio con la caja negra diciendo «reanudada» y nada mas:
+//  la app murio dentro de `appResumed`, que abria el dispositivo dos veces
+//  seguidas, el vigilante de silencio lo repetia cada segundo sin mirar lo que
+//  costaba, y pintar AJUSTES · AUDIO preguntaba al driver en cada repintado.
+//  Oboe no existe en este banco, asi que lo que se mide no es el tiempo del
+//  telefono sino lo que lo multiplicaba, que si es del codigo:
+//
+//    preguntas_pintar  preguntas al driver -flujos temporales en Oboe- al
+//                      pintar sesenta veces la pagina y rehacer sus tapas dos
+//    aperturas_volver  aperturas del dispositivo al volver del fondo
+//    intentos_60s      aperturas en sesenta segundos contra un HAL muerto
+//    vigilante_suelto  que la caja negra vuelva a mirar al reanudar
+void MainComponent::auditRevive()
+{
+    //  El falso entra como un tipo mas y se elige, igual que el telefono elige
+    //  Oboe. Y como en el constructor: se abre y se ajusta a la rafaga.
+    deviceManager.addAudioDeviceType (std::make_unique<BancoType>());
+    deviceManager.setCurrentAudioDeviceType ("BANCO", true);
+    setAudioChannels (0, 2);
+    useLowestLatency();
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    const bool hay = dev != nullptr && dev->getTypeName() == "BANCO";
+    const int bloque = dev != nullptr ? dev->getCurrentBufferSizeSamples() : 0;
+
+    //  1. Pintar la pagina de audio sesenta veces y rehacer sus tapas dos,
+    //     que es lo que hace el telefono mientras la miras. Desde una cache
+    //     vacia, para que la primera pregunta -la unica legitima- se vea.
+    buferesClave.clear();
+    buferesCache.clear();
+    bancoPreguntas = 0;
+    {
+        juce::Image lienzo (juce::Image::ARGB, 480, 360, true);
+        for (int i = 0; i < 60; ++i)
+        {
+            juce::Graphics g (lienzo);
+            paintAudioInfo (g, lienzo.getBounds());
+        }
+    }
+    refreshAudioOptions();
+    refreshAudioOptions();
+    const int preguntasPintar = bancoPreguntas;
+
+    //  2. Irse al fondo y volver, por el camino de verdad. Y con el
+    //     vigilante como lo deja el congelador de Android: el ultimo latido de
+    //     hace diez minutos y el aviso ya gastado en ese hueco falso. Si al
+    //     volver sigue asi, un atasco dentro de `appResumed` no lo apunta
+    //     nadie, que es la captura: «reanudada» y detras nada.
+    appSuspended();
+    Bitacora::latido.store (juce::Time::getMillisecondCounter() - 600000u);
+    Bitacora::avisado.store (true);
+    bancoAperturas = 0;
+    bancoPreguntas = 0;
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    appResumed();
+    const bool vigilanteSuelto = ! Bitacora::avisado.load()
+        && (juce::Time::getMillisecondCounter() - Bitacora::latido.load()) < 1000u;
+    const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+    const int aperturasVolver = bancoAperturas;
+    const int preguntasVolver = bancoPreguntas;
+    auto* d2 = deviceManager.getCurrentAudioDevice();
+    const int bloqueVuelta = d2 != nullptr ? d2->getCurrentBufferSizeSamples() : 0;
+
+    //  3. Un HAL que no abre, sesenta segundos de reloj a pasos de 50 ms por
+    //     el vigilante de verdad. Se cuentan las aperturas intentadas.
+    shutdownAudio();
+    deviceManager.closeAudioDevice();
+    bancoFalla = true;
+    bancoAperturas = 0;
+    deviceRevivalTicks = 0.0;
+    esperaRevivirMs = kReviveMinMs;
+    for (int t = 0; t < 60000; t += 50)
+        reviveSalida (50.0);
+    const int intentosMuerto = bancoAperturas;
+
+    //  ...y cuando el HAL vuelve, el vigilante lo recoge en su siguiente
+    //  espera y la espera vuelve al minimo.
+    bancoFalla = false;
+    bancoAperturas = 0;
+    for (int t = 0; t < 20000 && deviceManager.getCurrentAudioDevice() == nullptr; t += 50)
+        reviveSalida (50.0);
+    const bool recupera = deviceManager.getCurrentAudioDevice() != nullptr;
+    const double esperaTras = esperaRevivirMs;
+
+    juce::String serie;
+    double f = kReviveMinMs;
+    for (int i = 0; i < 6; ++i)
+    {
+        f = siguienteEsperaRevivir (f, 3000.0);
+        serie << (i ? "," : "") << juce::roundToInt (f);
+    }
+
+    std::cout << "{\"revive\":1,\"dispositivo\":" << (hay ? 1 : 0)
+              << ",\"bloque\":" << bloque
+              << ",\"preguntas_pintar\":" << preguntasPintar
+              << ",\"aperturas_volver\":" << aperturasVolver
+              << ",\"preguntas_volver\":" << preguntasVolver
+              << ",\"bloque_vuelta\":" << bloqueVuelta
+              << ",\"ms_volver\":" << juce::roundToInt (ms)
+              << ",\"vigilante_suelto\":" << (vigilanteSuelto ? 1 : 0)
+              << ",\"intentos_60s\":" << intentosMuerto
+              << ",\"recupera\":" << (recupera ? 1 : 0)
+              << ",\"espera_tras\":" << juce::roundToInt (esperaTras)
+              << ",\"esperas_caras\":[" << serie << "]"
+              << ",\"tope\":" << juce::roundToInt (kReviveMaxMs)
+              << "}" << std::endl;
+}

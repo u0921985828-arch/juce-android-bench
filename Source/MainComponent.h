@@ -1567,6 +1567,41 @@ private:
     juce::Rectangle<int> skinRowArea;
     juce::Rectangle<int> bufRowArea, rateRowArea;
     void useLowestLatency();
+
+    //  ABRIR LA SALIDA, UNA VEZ. Volver del fondo, recuperar el foco y el
+    //  vigilante de silencio hacian `setAudioChannels` + `keepChosenRate` +
+    //  `useLowestLatency`: el primero abre con los valores de fabrica y los
+    //  otros dos CIERRAN Y REABREN para poner el reloj y el bufer buenos. Hasta
+    //  tres aperturas Oboe seguidas en el hilo de mensajes, cada una con su
+    //  espera de hasta un segundo a que el flujo arranque. Esta abre una sola
+    //  vez con el reloj y el bufer de la ultima buena, y devuelve lo que tardo.
+    double abreSalida();
+    //  El vigilante de silencio, sacado del temporizador para que el banco lo
+    //  pueda hacer correr sesenta segundos de reloj sin esperarlos.
+    void reviveSalida (double dtMs);
+
+    //  LA LISTA DE BUFERES, UNA VEZ POR RUTA. En Oboe `getAvailableBufferSizes`
+    //  no es una consulta: abre un flujo EXCLUSIVO temporal para leer la
+    //  rafaga (juce_Oboe_android.cpp, getNativeBufferSize), y el propio JUCE
+    //  avisa de que solo vale con el dispositivo cerrado. Se llamaba desde
+    //  `paintAudioInfo` -o sea en CADA repintado de AJUSTES · AUDIO, con
+    //  nuestro flujo exclusivo sonando- y dos veces mas en `refreshAudioOptions`.
+    juce::Array<int> buferesDe (juce::AudioIODevice& dev) const;
+    mutable juce::Array<int> buferesCache;
+    mutable juce::String buferesClave;
+    mutable int consultasBufer = 0;  // cuantas veces se pregunto de verdad al driver
+
+    //  Y SI NO ABRE, SE ESPERA MAS. Reintentar cada segundo contra un HAL que
+    //  tarda en contestar es tener el hilo de mensajes ocupado casi entero.
+    //  La espera siguiente es el doble de la anterior o cuatro veces lo que
+    //  costo el intento, lo mayor, entre uno y dieciseis segundos: el
+    //  vigilante nunca se come mas de una quinta parte del hilo.
+    static double siguienteEsperaRevivir (double antesMs, double costeMs) noexcept;
+    static constexpr double kReviveMinMs  = 1000.0;
+    static constexpr double kReviveMaxMs  = 16000.0;
+    static constexpr double kReviveFactor = 4.0;
+    double esperaRevivirMs = kReviveMinMs;
+
     void checkXRuns (double dtMs);
     static juce::File burstPreferenceFile();
     static int loadBurstPreference();     // one native burst, not JUCE's 40 ms default
@@ -1783,6 +1818,7 @@ public:
     //  Esta abre las fichas una por una, recorre el arbol y aprieta CADA tapa
     //  y CADA mando visible con su reloj al lado.
     void auditTapas();
+    void auditRevive();
 
     //  Y LA PUERTA DEL BANCO A LA FABRICA. Casi todas las entradas de `ZATI_*`
     //  miden sobre la fabrica ya puesta, y desde que se rinde fuera del hilo de

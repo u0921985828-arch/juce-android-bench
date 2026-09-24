@@ -564,6 +564,13 @@ public:
                     {
                         c2->auditTapas();
                     }
+                    //  ABRIR EL DISPOSITIVO: cuantas aperturas cuesta volver
+                    //  del fondo y cuantas veces se pregunta al driver por la
+                    //  rafaga al pintar AJUSTES · AUDIO. Ver auditRevive.
+                    else if (UiAudit::env ("ZATI_REVIVE").isNotEmpty())
+                    {
+                        c2->auditRevive();
+                    }
                     //  LAS DOS SELECCIONES DE RANGO, en una sola corrida. Ver
                     //  Tests/sel.py y auditSelecciones.
                     else if (UiAudit::env ("ZATI_SEL").isNotEmpty())

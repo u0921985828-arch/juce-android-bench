@@ -333,7 +333,18 @@ namespace Bitacora
     //  El tell que lo separa de una caida de verdad sigue intacto: `alCaer`
     //  escribe CON PREFIJO -«CAIDA senal 11 en ...»- asi que un paso desnudo
     //  nunca fue una caida.
-    inline void finLimpio() noexcept { paso ("fin limpio"); }
+    inline void finLimpio() noexcept
+    {
+        paso ("fin limpio");
+        //  Y EL LATIDO SE PARA CON LA APP. En segundo plano Android congela el
+        //  proceso -el «freezer» de las apps en cache- y el temporizador deja
+        //  de latir minutos enteros. Sin esto, al descongelar, el vigilante
+        //  veia un hueco de minutos, apuntaba un atasco que no lo era y se
+        //  quedaba ENGANCHADO en `avisado`, que solo suelta `late()`. Cero es
+        //  «no ha latido aun» y el vigilante no mira.
+        latido.store (0, std::memory_order_release);
+        avisado.store (false, std::memory_order_release);
+    }
 
     //  Y VOLVER A PRIMER PLANO ANOTA UN PASO, que es la otra mitad.
     //
@@ -342,5 +353,19 @@ namespace Bitacora
     //  leeria como un cierre correcto. Es el mismo fallo por el otro lado: un
     //  mecanismo que no avisa nunca pasa la mitad de la prueba que uno que
     //  avisa siempre.
-    inline void reanudada() noexcept { paso ("reanudada"); }
+    //
+    //  Y EL RELOJ DEL VIGILANTE EMPIEZA AQUI, no en el ultimo latido de antes
+    //  de irse. Medido en la captura: la ultima linea de la vez anterior era
+    //  «reanudada» y detras NADA, ni un «ATASCO», con la app muerta por un
+    //  «no responde». Es la firma exacta del enganche: el vigilante habia
+    //  gastado su aviso en el hueco falso del congelador y el atasco de verdad
+    //  -abrir el dispositivo al volver, dentro de esta misma llamada- no lo
+    //  apunto nadie. Con esto lo que tarde `appResumed` se cuenta desde cero y
+    //  queda escrito con su etiqueta.
+    inline void reanudada() noexcept
+    {
+        latido.store (juce::Time::getMillisecondCounter(), std::memory_order_release);
+        avisado.store (false, std::memory_order_release);
+        paso ("reanudada");
+    }
 }

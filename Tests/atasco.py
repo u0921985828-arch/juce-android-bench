@@ -97,12 +97,13 @@ ATASCO_MS = 2600
 PLAZO_MS  = 800
 
 
-def corre (casa, ticks=40, atasco=0, plazo=0, estado=False, tapas=False):
+def corre (casa, ticks=40, atasco=0, plazo=0, estado=False, tapas=False, revive=False):
     """Un arranque en `casa`, que NO se borra: la caja negra vive ahi."""
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_LANG="es",
                 ZATI_SIZE="412x915", DISPLAY=PANTALLA,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"))
-    if   tapas:  env["ZATI_TAPAS"]  = "1"
+    if   revive: env["ZATI_REVIVE"] = "1"
+    elif tapas:  env["ZATI_TAPAS"]  = "1"
     elif estado: env["ZATI_ESTADO"] = "1"
     else:        env["ZATI_ARRANQUE"] = str (ticks)
     if atasco: env["ZATI_ATASCO"]    = str (atasco)
@@ -354,6 +355,66 @@ def regla_todo_lo_que_se_aprieta (malas):
                       % (len (lentas), TOPE_MS, TOPE_CUANTAS))
 
 
+#  5. ABRIR EL DISPOSITIVO. El «no responde» volvio con la caja negra diciendo
+#  «reanudada» y detras nada. Tres cosas del codigo lo multiplicaban en el
+#  telefono, y las tres se cuentan igual aqui con un dispositivo falso que
+#  pregunta y abre como Oboe (ver BancoDevice). Medido con el codigo de antes:
+#
+#    preguntas_pintar   62   cada una, en Oboe, un flujo exclusivo temporal
+#    aperturas_volver    2   con su espera de hasta un segundo cada una
+#    intentos_60s       60   contra un HAL que no abre, uno por segundo
+#    vigilante_suelto    0   el atasco al volver no lo apuntaba nadie
+#
+#  Los topes son los del codigo de ahora, no un numero que quepa: una pregunta
+#  -la primera de la ruta-, una apertura, y la serie 1-2-4-8-16 s da siete
+#  intentos en sesenta segundos; se deja uno de holgura por el redondeo del
+#  reloj.
+TOPE_PREGUNTAS_PINTAR = 1
+TOPE_APERTURAS_VOLVER = 1
+TOPE_INTENTOS_60S     = 8
+
+
+def regla_abrir_el_dispositivo (malas):
+    """5. Volver del fondo abre UNA vez, pintar no pregunta, y un HAL muerto no ocupa el hilo."""
+    casa = tempfile.mkdtemp (prefix="zati-atasco-revive-")
+    try:
+        filas = corre (casa, revive=True)
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+    r = next ((f for f in filas if f.get ("revive") == 1), None)
+    if r is None:
+        malas.append ("abrir: la sonda ZATI_REVIVE no contesto"); return
+    if r.get ("dispositivo") != 1:
+        malas.append ("abrir: el dispositivo de banco no se abrio, y sin el todo sale cero")
+        return
+    print ("  %d preguntas al driver pintando 60 veces AJUSTES - AUDIO, tope %d"
+           % (r["preguntas_pintar"], TOPE_PREGUNTAS_PINTAR))
+    print ("  %d aperturas al volver del fondo, tope %d; bufer %d -> %d"
+           % (r["aperturas_volver"], TOPE_APERTURAS_VOLVER, r["bloque"], r["bloque_vuelta"]))
+    print ("  %d intentos en 60 s con el HAL muerto, tope %d; esperas si cuesta 3 s: %s"
+           % (r["intentos_60s"], TOPE_INTENTOS_60S, r["esperas_caras"]))
+    print ("  la caja negra vuelve a mirar al reanudar: %s"
+           % ("si" if r["vigilante_suelto"] else "NO"))
+    if r["preguntas_pintar"] > TOPE_PREGUNTAS_PINTAR:
+        malas.append ("abrir: %d preguntas al driver pintando, tope %d"
+                      % (r["preguntas_pintar"], TOPE_PREGUNTAS_PINTAR))
+    if r["aperturas_volver"] > TOPE_APERTURAS_VOLVER:
+        malas.append ("abrir: %d aperturas al volver del fondo, tope %d"
+                      % (r["aperturas_volver"], TOPE_APERTURAS_VOLVER))
+    if r["bloque_vuelta"] != r["bloque"]:
+        malas.append ("abrir: vuelve con bufer %d y se fue con %d"
+                      % (r["bloque_vuelta"], r["bloque"]))
+    if r["intentos_60s"] > TOPE_INTENTOS_60S:
+        malas.append ("abrir: %d intentos en 60 s contra un HAL muerto, tope %d"
+                      % (r["intentos_60s"], TOPE_INTENTOS_60S))
+    if not r["recupera"] or r["espera_tras"] != 1000:
+        malas.append ("abrir: cuando el HAL vuelve no se recoge, o la espera no vuelve a 1 s")
+    if max (r["esperas_caras"]) > r["tope"]:
+        malas.append ("abrir: una espera pasa del tope de %d ms" % r["tope"])
+    if not r["vigilante_suelto"]:
+        malas.append ("abrir: tras reanudar la caja negra sigue enganchada en el aviso de antes")
+
+
 def main():
     if not os.path.isfile (APP):
         print ("no hay binario en %s" % APP); return 1
@@ -374,6 +435,10 @@ def main():
     print()
     print ("4. y lo mismo para cada tapa y cada mando de la app")
     regla_todo_lo_que_se_aprieta (malas)
+
+    print()
+    print ("5. y abrir el dispositivo al volver del fondo")
+    regla_abrir_el_dispositivo (malas)
 
     print()
     for m in malas: print ("FALLA ", m)

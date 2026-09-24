@@ -654,7 +654,9 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 
     line (T ("ruta"),  dev->getTypeName() + " / " + dev->getName(), ZatiColours::lcdFg);
     line (T ("reloj"), juce::String ((int) sr) + " Hz", ZatiColours::lcdFg);
-    const auto sizes = dev->getAvailableBufferSizes();
+    //  De la cache y no del driver: en Oboe preguntar abre un flujo exclusivo
+    //  temporal, y esto se pinta en cada repintado de la pagina. Ver buferesDe.
+    const auto sizes = buferesDe (*dev);
     const int  burst  = sizes.isEmpty() ? block : sizes.getFirst();
     line (T ("bufer"), juce::String (block) + " · " + juce::String (msOf (block), 1) + " ms"
                      + (block <= burst ? "  (" + T ("rafaga, el minimo") + ")"

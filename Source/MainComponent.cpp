@@ -16489,7 +16489,7 @@ void MainComponent::useLowestLatency()
     auto* dev = deviceManager.getCurrentAudioDevice();
     if (dev == nullptr) return;
 
-    const auto sizes = dev->getAvailableBufferSizes();
+    const auto sizes = buferesDe (*dev);
     if (sizes.isEmpty()) return;
 
     //  The smallest the driver offers, full stop. On Android that list is
@@ -16544,6 +16544,88 @@ void MainComponent::useLowestLatency()
     //  sea que el aparato al que MAS le cuesta abrir un stream era el que mas
     //  gracia se llevaba - justo al reves de lo que hace falta.
     xrunGraceMs = kXRunGraciaMs;
+}
+
+double MainComponent::abreSalida()
+{
+    const Bitacora::Tarea marca ("audio/abrir");
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+
+    //  La ultima configuracion buena sigue en el gestor: `closeAudioDevice`
+    //  suelta el dispositivo pero no `currentSetup`. Si la hay, se abre CON
+    //  ella en un solo paso -reloj elegido y bufer de la rafaga- y
+    //  `keepChosenRate` y `useLowestLatency` se quedan en su primera linea,
+    //  que es la que dice «ya esta como tiene que estar».
+    //
+    //  Solo la salida: el nombre del dispositivo de entrada se queda fuera a
+    //  proposito, porque si lo ultimo fue una toma con el micro abierto
+    //  volver del fondo pediria permiso y abriria la captura sin que nadie
+    //  este grabando.
+    const auto buena = deviceManager.getAudioDeviceSetup();
+    if (buena.outputDeviceName.isNotEmpty() && buena.bufferSize > 0)
+    {
+        juce::XmlElement x ("DEVICESETUP");
+        x.setAttribute ("deviceType",            deviceManager.getCurrentAudioDeviceType());
+        x.setAttribute ("audioOutputDeviceName", buena.outputDeviceName);
+        x.setAttribute ("audioDeviceRate",       chosenRate > 0.0 ? chosenRate : buena.sampleRate);
+        x.setAttribute ("audioDeviceBufferSize", buena.bufferSize);
+        setAudioChannels (0, 2, &x);
+    }
+    else
+    {
+        setAudioChannels (0, 2);
+    }
+
+    keepChosenRate();
+    useLowestLatency();
+    return juce::Time::getMillisecondCounterHiRes() - t0;
+}
+
+void MainComponent::reviveSalida (double dt)
+{
+    if (appInForeground && ! pausedByFocus && ! focusGivenAway
+        && deviceManager.getCurrentAudioDevice() == nullptr)
+    {
+        //  ...same here: wall clock, whatever the tier redraws at. Y la espera
+        //  CRECE mientras no abra: ver siguienteEsperaRevivir.
+        if ((deviceRevivalTicks += dt) >= esperaRevivirMs)
+        {
+            deviceRevivalTicks = 0.0;
+            const double coste = abreSalida();
+            refreshDeviceStatusLine (true);
+            esperaRevivirMs = deviceManager.getCurrentAudioDevice() != nullptr
+                                ? kReviveMinMs
+                                : siguienteEsperaRevivir (esperaRevivirMs, coste);
+        }
+    }
+    else
+    {
+        deviceRevivalTicks = 0.0;
+        esperaRevivirMs    = kReviveMinMs;
+    }
+}
+
+juce::Array<int> MainComponent::buferesDe (juce::AudioIODevice& dev) const
+{
+    //  La rafaga es de la RUTA -tipo, dispositivo y reloj-, no del objeto:
+    //  el gestor lo destruye y lo vuelve a crear en cada apertura desde cero,
+    //  y con la clave por puntero volver del fondo pagaba otro flujo temporal.
+    const auto clave = dev.getTypeName() + "|" + dev.getName() + "|"
+                     + juce::String (juce::roundToInt (dev.getCurrentSampleRate()));
+    if (clave != buferesClave || buferesCache.isEmpty())
+    {
+        const Bitacora::Tarea marca ("audio/buferes");
+        buferesCache = dev.getAvailableBufferSizes();
+        buferesClave = clave;
+        ++consultasBufer;
+    }
+    return buferesCache;
+}
+
+double MainComponent::siguienteEsperaRevivir (double antesMs, double costeMs) noexcept
+{
+    return juce::jlimit (kReviveMinMs, kReviveMaxMs,
+                         juce::jmax (antesMs * 2.0, costeMs * kReviveFactor));
 }
 
 juce::File MainComponent::burstPreferenceFile()
@@ -16869,9 +16951,9 @@ void MainComponent::refreshAudioOptions()
     const double curRate = dev->getCurrentSampleRate();
     //  The burst, not getDefaultBufferSize(): that one is JUCE's 40 ms
     //  target and marking it "native" is what hid this problem.
-    const int    natBuf  = dev->getAvailableBufferSizes().isEmpty()
-                             ? dev->getCurrentBufferSizeSamples()
-                             : dev->getAvailableBufferSizes().getFirst();
+    const auto   lista   = buferesDe (*dev);
+    const int    natBuf  = lista.isEmpty() ? dev->getCurrentBufferSizeSamples()
+                                           : lista.getFirst();
 
     // Buffer sizes. Everything the driver offers from the burst up, six of
     // them rather than five - they share the row, so more of them just means
@@ -16880,7 +16962,7 @@ void MainComponent::refreshAudioOptions()
     // Nothing below the burst is listed because nothing below it exists: the
     // list Android hands us starts there, and it is one hardware period.
     {
-        auto all = dev->getAvailableBufferSizes();
+        const auto& all = lista;
         juce::Array<int> pick;
         if (all.contains (natBuf)) pick.add (natBuf);
         for (int i = 0; i < all.size() && pick.size() < 6; ++i)
@@ -18497,9 +18579,7 @@ void MainComponent::appResumed()
     focusGivenAway  = false;
     audioFocus.request();
     pausedByFocus = false;
-    setAudioChannels (0, 2);
-    keepChosenRate();
-    useLowestLatency();
+    abreSalida();
 
     //  A transport stranded by a trip to the background.
     //
@@ -18602,9 +18682,7 @@ void MainComponent::audioFocusGained()
         return;
 
     pausedByFocus = false;
-    setAudioChannels (0, 2);
-    keepChosenRate();
-    useLowestLatency();
+    abreSalida();
 
     //  ...and put the sequence back where it was. This is the half that was
     //  missing: the device came back, the music did not.
@@ -19445,23 +19523,7 @@ void MainComponent::timerCallback()
     //  without this the revival would grab the audio device back a second
     //  after you left the app, fight whatever took it, and hand appResumed a
     //  device it did not open.
-    if (appInForeground && ! pausedByFocus && ! focusGivenAway
-        && deviceManager.getCurrentAudioDevice() == nullptr)
-    {
-        //  ...same here: one second of wall clock, whatever the tier redraws at.
-        if ((deviceRevivalTicks += dt) >= 1000.0)
-        {
-            deviceRevivalTicks = 0.0;
-            setAudioChannels (0, 2);
-            keepChosenRate();
-            useLowestLatency();
-            refreshDeviceStatusLine (true);
-        }
-    }
-    else
-    {
-        deviceRevivalTicks = 0.0;
-    }
+    reviveSalida (dt);
 
     //  ...and from then on, every couple of seconds, hand the live pads to the
     //  writer. With nothing changed this is sixteen pointer comparisons.
