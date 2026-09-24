@@ -8751,4 +8751,190 @@ void MainComponent::auditEstado()
     mide ("idioma",  [this] { retranslateUi(); });
     mide ("guardap", [this] { saveProject ("atasco"); });
     mide ("abrep",   [this] { loadProject ("atasco"); });
+
+    //  Y DESHACER, que es lo que `auditTapas` encontro y esta lista escrita a
+    //  mano no tenia. Las tres van juntas y en este orden porque deshacer sin
+    //  pila no hace nada -`if (undoStack.empty()) return;`- y una medida de
+    //  cero seria una medida en verde de una operacion que no corrio.
+    mide ("guardaund", [this] { pushUndo ("atasco"); });
+    mide ("deshacer",  [this] { performUndo(); });
+    mide ("rehacer",   [this] { performRedo(); });
+}
+
+// ============================================================================
+//  TODO LO QUE SE PUEDE APRETAR, CRONOMETRADO UNA TAPA CADA VEZ.
+//
+//  `auditEstado` mide una lista ESCRITA A MANO: la fabrica, maquetar, capturar,
+//  guardar, la carcasa, el idioma, guardar y abrir el proyecto. Con esa lista
+//  se encontro el ANR de la tanda anterior -la fabrica bloqueaba el hilo de
+//  mensajes 1691 ms- y con esa lista no se puede encontrar el siguiente, porque
+//  una lista a mano solo cubre lo que alguien se acordo de apuntar. La app
+//  tiene del orden de seiscientas tapas y mandos, y CUALQUIERA de ellos puede
+//  colgar este hilo: eso es exactamente lo que le paso a la fabrica durante
+//  siete tandas sin que ninguna prueba lo viera.
+//
+//  Asi que esto no enumera: abre las fichas una por una, recorre el arbol
+//  entero, y aprieta lo que este VISIBLE y ENCENDIDO con el reloj al lado. Una
+//  linea por control, con el mismo `{"atasco":"op"}` que ya juzga
+//  `Tests/atasco.py`, para que el presupuesto de 250 ms este escrito UNA vez.
+//
+//  Tres cuidados que la hacen fiable y sin los cuales mediria mentiras:
+//
+//    1. Se aprieta con `pulsaTapa` y NUNCA con `triggerClick()`, que es
+//       `postCommandMessage`: el mensaje no se entrega hasta que esta funcion
+//       entera termina, o sea que el reloj mediria cero y el banco diria que
+//       ninguna tapa cuesta nada. Es el fallo que el fuzz llevaba encima.
+//    2. Cada control se toma por `SafePointer`. Apretar una tapa puede DESTRUIR
+//       a sus hermanas -cambiar de pagina rehace la fila entera- y un
+//       `juce::Array<juce::Button*>` recogido antes se queda con punteros
+//       colgando. Lo que se salta no es una tapa: es el proceso.
+//    3. Y se vuelve a la ficha DESPUES de cada apriete, porque la mitad de las
+//       tapas navegan. Sin esto, la primera que cierre la ficha deja a las
+//       siguientes apretando sobre una pantalla que ya no es la que se dijo, y
+//       el nombre que sale en la linea no es el del control que se midio.
+// ============================================================================
+void MainComponent::auditTapas()
+{
+    const auto cronometro = [] { return juce::Time::getMillisecondCounterHiRes(); };
+
+    //  Y SE PUEDE PEDIR UN PUNADO DE FICHAS: `ZATI_TAPAS=inst,rack`. La corrida
+    //  entera son diez minutos -2442 apretadas, cada una reabriendo su ficha- y
+    //  eso esta bien para el banco y esta mal para perseguir una cifra, que es
+    //  medir, cambiar una linea y volver a medir. Con `1` van todas, que es lo
+    //  que `Tests/atasco.py` pide.
+    juce::StringArray soloEstas;
+    if (const auto q = UiAudit::env ("ZATI_TAPAS"); q.isNotEmpty() && q != "1")
+        soloEstas.addTokens (q, ",", "");
+
+    //  LA APP CON TRABAJO DENTRO, que es la unica forma de que las cifras
+    //  signifiquen algo: una tapa de la mesa sobre 64 pads vacios no toca nada.
+    loadFactoryKits();
+    esperaFabrica();
+    llenaDePrueba();
+
+    //  Las fichas, por el mismo nombre con el que el resto del banco las pide.
+    //  La cadena vacia es LA CARA, que es donde estan el transporte, los cuatro
+    //  bancos y las dieciseis tapas de pad.
+    static const char* kFichas[] = {
+        "", "pads", "pad2", "pad3", "sec", "paso", "secp", "song", "songm",
+        "piano", "pianod", "mix", "mixc", "canal", "xy", "eq", "eqb", "plato",
+        "set", "asp", "lang", "proj", "gest", "midi", "midf", "rack", "rackf",
+        "ranura", "ranural", "preset", "preseteq", "inst", "instg", "instd",
+        "chop", "expo", "manual", "tour", "pick"
+    };
+
+    int apretadas = 0, saltadas = 0;
+    double peorMs = 0.0;
+    juce::String peorQuien;
+
+    for (const char* ficha : kFichas)
+    {
+        const juce::String nombreFicha = (*ficha == 0 ? juce::String ("cara")
+                                                      : juce::String (ficha));
+        if (! soloEstas.isEmpty() && ! soloEstas.contains (nombreFicha)) continue;
+
+        //  Se recogen los controles UNA vez para saber CUANTOS hay y en que
+        //  orden, y despues se vuelve a recorrer en cada vuelta para coger el
+        //  que toca. Recoger punteros crudos y guardarlos entre apretadas es
+        //  justo lo que el cuidado 2 prohibe.
+        const auto cuenta = [this, ficha]
+        {
+            auditOpen (ficha);
+            int n = 0;
+            std::function<void (juce::Component&)> mira = [&] (juce::Component& c)
+            {
+                if (! c.isVisible()) return;
+                if (auto* b = dynamic_cast<juce::Button*> (&c)) { if (tapaDeBanco (*b) && b->isEnabled()) ++n; }
+                else if (dynamic_cast<juce::Slider*> (&c) != nullptr)                                     ++n;
+                for (auto* k : c.getChildren()) mira (*k);
+            };
+            mira (*this);
+            return n;
+        }();
+
+        for (int i = 0; i < cuenta; ++i)
+        {
+            //  De vuelta a la ficha, y a por el i-esimo control de este
+            //  recorrido. El arbol puede haber cambiado entre apretadas, asi
+            //  que el indice puede caer en otro control o en ninguno; las dos
+            //  cosas son correctas y la segunda se cuenta como saltada.
+            auditOpen (ficha);
+
+            juce::Component::SafePointer<juce::Button> tapa;
+            juce::Component::SafePointer<juce::Slider> mando;
+            juce::String quien;
+            int visto = 0;
+
+            std::function<void (juce::Component&)> busca = [&] (juce::Component& c)
+            {
+                if (! c.isVisible() || quien.isNotEmpty()) return;
+
+                if (auto* b = dynamic_cast<juce::Button*> (&c))
+                {
+                    if (tapaDeBanco (*b) && b->isEnabled())
+                    {
+                        if (visto == i)
+                        {
+                            tapa  = b;
+                            quien = b->getButtonText().isNotEmpty() ? b->getButtonText()
+                                                                   : b->getName();
+                        }
+                        ++visto;
+                    }
+                }
+                else if (auto* s = dynamic_cast<juce::Slider*> (&c))
+                {
+                    if (visto == i)
+                    {
+                        mando = s;
+                        quien = s->getName().isNotEmpty() ? s->getName() + "=" : juce::String ("mando=");
+                    }
+                    ++visto;
+                }
+
+                for (auto* k : c.getChildren()) busca (*k);
+            };
+            busca (*this);
+
+            if (quien.isEmpty()) { ++saltadas; continue; }
+
+            //  Y CON ETIQUETA EN LA CAJA NEGRA, que es la otra mitad de la
+            //  medida: si una tapa cuelga esto de verdad, el vigilante escribe
+            //  QUIEN mientras el atasco dura y no despues. Ver Bitacora::Tarea.
+            const Bitacora::Tarea marca ("banco/tapa");
+
+            const double t = cronometro();
+            if (tapa != nullptr)
+            {
+                pulsaTapa (tapa.getComponent());
+            }
+            else if (mando != nullptr)
+            {
+                //  Al medio de su recorrido y no a un extremo: los extremos son
+                //  donde un mando suele tener el camino corto -silencio, cero,
+                //  apagado- y lo que cuesta esta en el resto.
+                const auto lo = mando->getMinimum(), hi = mando->getMaximum();
+                mando->setValue (lo + (hi - lo) * 0.5, juce::sendNotificationSync);
+            }
+            const double ms = cronometro() - t;
+
+            ++apretadas;
+            if (ms > peorMs) { peorMs = ms; peorQuien = nombreFicha + "/" + quien; }
+
+            std::cout << "{\"atasco\":\"op\",\"que\":\"" << UiAudit::esc (nombreFicha + "/" + quien)
+                      << "\",\"ms\":" << juce::roundToInt (ms)
+                      << ",\"tapa\":1}" << std::endl;
+        }
+    }
+
+    //  Y EL RECUENTO, que es lo que impide que esta prueba se apruebe midiendo
+    //  nada. Una regla que recorre un arbol vacio -porque las fichas dejaron de
+    //  abrirse, porque `tapaDeBanco` se volvio falso para todas- sale en VERDE
+    //  con cero lineas, que es la forma mas barata que hay de vaciar una medida
+    //  sin que se note. `Tests/atasco.py` exige un minimo.
+    std::cout << "{\"tapas\":\"total\",\"apretadas\":" << apretadas
+              << ",\"saltadas\":" << saltadas
+              << ",\"fichas\":" << (int) juce::numElementsInArray (kFichas)
+              << ",\"peor\":" << juce::roundToInt (peorMs)
+              << ",\"peor_en\":\"" << UiAudit::esc (peorQuien) << "\"}" << std::endl;
 }

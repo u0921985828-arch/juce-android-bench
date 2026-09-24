@@ -45,6 +45,29 @@ Aqui hay DOS reglas, y las dos hacen falta:
      mismo fallo que uno que no avisa nunca, y esta casa ya lo pago una vez con
      «La vez anterior se cerro en: ...» saliendo en cada arranque.
 
+  4. Y LO MISMO PARA TODO LO QUE SE PUEDE APRETAR, QUE NO ES UNA LISTA. La
+     regla 1 mide una lista ESCRITA A MANO -la fabrica, maquetar, capturar,
+     guardar, la carcasa, el idioma, el proyecto- y con esa lista se encontro
+     el ANR de la tanda anterior. Con esa lista no se encuentra el siguiente:
+     una lista a mano solo cubre lo que alguien se acordo de apuntar, y la
+     fabrica estuvo SIETE tandas colgando este hilo sin que ninguna prueba la
+     mirara, porque nadie la habia apuntado.
+
+     ZATI_TAPAS no enumera: monta la app con trabajo dentro, abre las 39
+     fichas una por una, recorre el arbol entero y aprieta con su reloj al lado
+     CADA tapa y CADA mando que este visible y encendido. Son 2442 apretadas y
+     el mismo presupuesto de la regla 1, escrito una sola vez.
+
+     Encontro esto: **DESHACER y REHACER bloqueaban el hilo de mensajes hasta
+     8805 ms**, contra los 42 que cuesta la misma operacion sobre la pila
+     recien nacida. Mil setecientos sesenta veces el presupuesto y casi el
+     doble de lo que Android tarda en dar la app por colgada. Ninguna de las
+     ocho operaciones de la lista a mano pasaba de 26.
+
+     Y la regla lleva SU PROPIO CONTROL DE POBLACION, porque una prueba que
+     recorre un arbol y no encuentra nada sale en verde con cero lineas: es la
+     forma mas barata que hay de vaciar una medida sin que se note.
+
 ZATI_ATASCO=ms es la entrada: el hilo de mensajes se queda ocupado ese rato a
 proposito, bajo la etiqueta `banco/atasco`. Es la misma figura que ZATI_XRUN y
 ZATI_LASTRE - lo que no pasa en el escritorio se convierte en una ENTRADA, para
@@ -74,18 +97,24 @@ ATASCO_MS = 2600
 PLAZO_MS  = 800
 
 
-def corre (casa, ticks=40, atasco=0, plazo=0, estado=False):
+def corre (casa, ticks=40, atasco=0, plazo=0, estado=False, tapas=False):
     """Un arranque en `casa`, que NO se borra: la caja negra vive ahi."""
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_LANG="es",
                 ZATI_SIZE="412x915", DISPLAY=PANTALLA,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"))
-    if estado: env["ZATI_ESTADO"] = "1"
-    else:      env["ZATI_ARRANQUE"] = str (ticks)
+    if   tapas:  env["ZATI_TAPAS"]  = "1"
+    elif estado: env["ZATI_ESTADO"] = "1"
+    else:        env["ZATI_ARRANQUE"] = str (ticks)
     if atasco: env["ZATI_ATASCO"]    = str (atasco)
     if plazo:  env["ZATI_ATASCO_MS"] = str (plazo)
     try:
+        #  ZATI_TAPAS abre 39 fichas y aprieta 2442 controles, y cada apretada
+        #  vuelve a abrir su ficha antes -ver auditTapas, cuidado 3-, asi que la
+        #  corrida entera esta del orden de diez minutos. Con los 600 de las
+        #  demas, esta prueba salia SIEMPRE por el `except` de abajo diciendo
+        #  «la sonda no contesto», que es una prueba roja que no mide nada.
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
-                              timeout=600).stdout
+                              timeout=1800 if tapas else 600).stdout
     except subprocess.TimeoutExpired:
         return []
     filas = []
@@ -222,6 +251,109 @@ def regla_silencio (malas):
         shutil.rmtree (casa, ignore_errors=True)
 
 
+#  EL PRESUPUESTO DE LA REGLA 4, QUE NO ES EL DE LA REGLA 1, Y POR QUE.
+#
+#  La regla 1 mide OCHO operaciones perseguidas una por una, y con 250 ms le
+#  sobra: la peor cuesta 26. La regla 4 mide 2442, o sea que es un inventario y
+#  no una lista corta, y el inventario dice esto despues de arreglar lo de esta
+#  tanda: 2318 apretadas por debajo de 250 ms y **124 entre 250 y 710**, todas
+#  ellas DESHACER y REHACER sobre la app llena.
+#
+#  Lo que falta para bajarlas es el CUERPO de `applyState` -548 ms medidos, de
+#  los que la cola conocida (seleccionar, refrescar los 64 pads y maquetar) solo
+#  explica 300-, y trocear `applyState` no se puede hacer a medias: o repone el
+#  estado entero o deja la app contando dos verdades. Es una tanda propia y esta
+#  escrito aqui para que no se olvide, en vez de un liston puesto donde caiga.
+#
+#  Asi que hay DOS listones y cada uno mide una cosa distinta:
+#
+#    TOPE_ANR es el duro. 1000 ms contra los 5000 que Android cuenta para dar la
+#    app por colgada: cinco veces de margen sobre una maquina que es varias
+#    veces mas rapida que un telefono. Lo que esta regla existe para que no
+#    vuelva a pasar es lo que se acaba de arreglar -deshacer bloqueaba **8805
+#    ms**, casi el DOBLE del limite de Android- y eso lo caza con sitio de
+#    sobra.
+#
+#    TOPE_CUANTAS es el de poblacion, y es el que impide que la banda de 250 a
+#    1000 se vaya llenando sin que nadie lo note. 200 sobre las 124 de hoy: hay
+#    hueco para que una ficha nueva traiga sus tapas sin poner el banco en rojo,
+#    y no lo hay para que una tanda meta setenta y seis operaciones lentas.
+TOPE_ANR     = 1000
+TOPE_CUANTAS = 200
+
+
+#  CUANTAS APRETADAS TIENE QUE HABER PARA QUE ESTO SEA UNA MEDIDA.
+#
+#  2442 fueron las medidas la primera vez, sobre 39 fichas. El liston se pone
+#  MUY por debajo -2000- porque el numero exacto se mueve con cada tapa que la
+#  app gane o pierda y un liston pegado al ultimo valor convierte cada tanda de
+#  diseno en una prueba roja. Lo que este numero tiene que cazar es el desplome:
+#  que las fichas dejen de abrirse, que `tapaDeBanco` se vuelva falso para
+#  todas, que el recorrido se quede en el primer piso. Eso no baja de 2442 a
+#  2300: baja a decenas.
+MINIMO_TAPAS  = 2000
+MINIMO_FICHAS = 30
+
+
+def regla_todo_lo_que_se_aprieta (malas):
+    """4. Ninguna TAPA ni MANDO pasa del presupuesto, y se aprietan todos."""
+    casa = tempfile.mkdtemp (prefix="zati-atasco-tapas-")
+    try:
+        filas = corre (casa, tapas=True)
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+    total = next ((d for d in filas if d.get ("tapas") == "total"), None)
+    ops   = [d for d in filas if d.get ("atasco") == "op" and d.get ("tapa")]
+
+    if total is None:
+        malas.append ("la sonda ZATI_TAPAS no contesto: no hay nada que juzgar")
+        return
+
+    lentas = [d for d in ops if d["ms"] > TOPE_MS]
+    print ("  %d apretadas en %d fichas, %d saltadas"
+           % (total["apretadas"], total["fichas"], total["saltadas"]))
+    print ("  la peor: %s a %d ms" % (total["peor_en"], total["peor"]))
+    print ("  %d por encima de %d ms, tope de poblacion %d"
+           % (len (lentas), TOPE_MS, TOPE_CUANTAS))
+    print ("  y ninguna puede pasar de %d ms" % TOPE_ANR)
+
+    #  EL CONTROL DE POBLACION VA PRIMERO. Sin el, todo lo de abajo aprueba
+    #  con una lista vacia.
+    if total["apretadas"] < MINIMO_TAPAS:
+        malas.append ("solo se apretaron %d controles y el minimo son %d: la sonda no "
+                      "esta recorriendo la app" % (total["apretadas"], MINIMO_TAPAS))
+    if total["fichas"] < MINIMO_FICHAS:
+        malas.append ("solo se abrieron %d fichas y el minimo son %d"
+                      % (total["fichas"], MINIMO_FICHAS))
+    if len (ops) != total["apretadas"]:
+        malas.append ("el recuento dice %d apretadas y hay %d lineas: una de las dos miente"
+                      % (total["apretadas"], len (ops)))
+
+    #  Y LAS QUE SE PASAN, POR SU NOMBRE. Agrupadas por control y no una linea
+    #  por apretada: la misma tapa sale en varias fichas y un listado de ciento
+    #  veinticuatro renglones esconde que son dos controles.
+    peor = {}
+    for d in lentas:
+        quien = d["que"].split ("/", 1)[-1]
+        if d["ms"] > peor.get (quien, (0, ""))[0]:
+            peor[quien] = (d["ms"], d["que"])
+
+    for quien, (ms, donde) in sorted (peor.items(), key=lambda kv: -kv[1][0])[:8]:
+        print ("    %-28s %5d ms   (la peor de %d apretadas suyas)"
+               % (quien, ms, len ([d for d in lentas
+                                   if d["que"].split ("/", 1)[-1] == quien])))
+
+    for quien, (ms, donde) in sorted (peor.items(), key=lambda kv: -kv[1][0]):
+        if ms > TOPE_ANR:
+            malas.append ("apretar %s bloquea el hilo de mensajes %d ms: con %d Android "
+                          "da la app por colgada" % (donde, ms, 5000))
+
+    if len (lentas) > TOPE_CUANTAS:
+        malas.append ("%d apretadas pasan de %d ms y el tope de poblacion son %d"
+                      % (len (lentas), TOPE_MS, TOPE_CUANTAS))
+
+
 def main():
     if not os.path.isfile (APP):
         print ("no hay binario en %s" % APP); return 1
@@ -238,6 +370,10 @@ def main():
     print()
     print ("3. y no lo apunta cuando no lo hay")
     regla_silencio (malas)
+
+    print()
+    print ("4. y lo mismo para cada tapa y cada mando de la app")
+    regla_todo_lo_que_se_aprieta (malas)
 
     print()
     for m in malas: print ("FALLA ", m)

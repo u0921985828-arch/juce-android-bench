@@ -1776,6 +1776,14 @@ public:
     //  en que hilo se paga. Ver MainComponent_Audit.cpp.
     void auditEstado();
 
+    //  Y LO MISMO PARA TODO LO QUE SE PUEDE APRETAR. Ver auditTapas y
+    //  Tests/atasco.py: `auditEstado` cronometra una lista de operaciones
+    //  ESCRITA A MANO -la fabrica, guardar, la carcasa, el idioma, el
+    //  proyecto- y eso solo protege de lo que alguien se acordo de apuntar.
+    //  Esta abre las fichas una por una, recorre el arbol y aprieta CADA tapa
+    //  y CADA mando visible con su reloj al lado.
+    void auditTapas();
+
     //  Y LA PUERTA DEL BANCO A LA FABRICA. Casi todas las entradas de `ZATI_*`
     //  miden sobre la fabrica ya puesta, y desde que se rinde fuera del hilo de
     //  mensajes -ver FabricaJob- no lo esta cuando la medida empieza. Esto
@@ -2040,7 +2048,12 @@ private:
     //  Ver el .cpp: la zona que se enseña de un instrumento, y cuanto dura.
     bool zonaVisible (int pad, int& ini, int& fin) const;
     int  padVisibleLength (int pad) const;
-    void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {});
+    //  `seleccionar` existe por `restorePads`: cargar un sonido en un pad te
+    //  lleva a ese pad, y reponer los sesenta y cuatro de una foto de deshacer
+    //  hacia eso sesenta y cuatro veces -8163 ms de hilo de mensajes, medido
+    //  con ZATI_TAPAS-. Por omision sigue siendo `true`.
+    void assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name = {},
+                            bool seleccionar = true);
     //  Los defectos de un pad, escritos UNA vez. Ver ponPadPorDefecto.
     void ponPadPorDefecto (int i);
     void toggleRecordArm();     // REC: live pad performance -> the pattern

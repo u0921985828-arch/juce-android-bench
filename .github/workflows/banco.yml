@@ -31,7 +31,7 @@ env:
 jobs:
   banco:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
 
@@ -289,6 +289,20 @@ jobs:
       - name: Las costuras de la cara
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/costuras.py
+
+      #  EL HILO DE MENSAJES, que es lo que Android llama «no responde». No
+      #  estaba aqui: la prueba nacio en la tanda anterior y se corria a mano,
+      #  o sea que la unica regla que caza un ANR dependia de que alguien se
+      #  acordara. Se pago a la vuelta: DESHACER bloqueaba este hilo **8805
+      #  ms** -casi el doble de los 5000 con los que Android da la app por
+      #  colgada- y ninguna corrida de CI lo miraba.
+      #
+      #  Es la mas larga del banco despues de expo: su regla 4 abre las 39
+      #  fichas y aprieta las 2442 tapas y mandos, una por una, reabriendo la
+      #  ficha entre apretada y apretada. Del orden de doce minutos.
+      - name: El hilo de mensajes, y las 2442 tapas
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/atasco.py
 
       #  El grande, y el ultimo: 1036 corridas. En paralelo son ~2 min.
       - name: La maqueta, en las siete pantallas y los cuatro idiomas

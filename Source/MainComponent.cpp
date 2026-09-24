@@ -1863,6 +1863,12 @@ MainComponent::MainComponent()
         // system picker always reaches them (and gets its own access grant).
         styleButton (browseSystemButton, kKey);
         browseSystemButton.onClick = [this] { launchSystemPicker(); };
+        //  Y ESTA ES LA UNICA QUE EL BANCO NO PUEDE APRETAR. `launchAsync` abre
+        //  un dialogo NATIVO, y en un banco sin nadie delante ese dialogo no se
+        //  cierra: la corrida se queda ahi hasta que el temporizador de la
+        //  prueba la mate, midiendo cero. La marca la descarta en `pulsaTodo` y
+        //  en el fuzz, y por su nombre y no por su rotulo -que esta traducido-.
+        sinBanco (browseSystemButton, "abre un dialogo nativo que nadie cierra");
         browseSheet.addAndMakeVisible (browseSystemButton);
 
         //  MIS KITS: la puerta que le faltaba a ZATI/Kits.
@@ -1940,6 +1946,10 @@ MainComponent::MainComponent()
 
     styleButton (micButton, kKey);
     micButton.onClick = [this] { toggleMicSampling(); };
+    //  Y esta tampoco: abre el dispositivo de CAPTURA y en Android pide permiso,
+    //  o sea que lo que mediria el banco no es la app sino lo que tarde el
+    //  sistema en contestar -o en no contestar, que es lo que pasa aqui-.
+    sinBanco (micButton, "abre el dispositivo de captura y pide permiso");
     padSheet.donde().addAndMakeVisible (micButton);
 
     styleButton (resampleButton, kKey);
@@ -9666,7 +9676,8 @@ void MainComponent::ponPadPorDefecto (int i)
     for (int f = 0; f < AudioEngine::kNumFx; ++f) engine.setPadRecorte (i, f, 1.0f);
 }
 
-void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name)
+void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const juce::String& name,
+                                       bool seleccionar)
 {
     if (sb == nullptr || ! juce::isPositiveAndBelow (index, kNumPads)) return;
     padHasSample[(size_t) index] = true;
@@ -9736,7 +9747,14 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     if (auto* p = pads[index]) p->setSampleInfo (uiSample[(size_t) index], padName[(size_t) index],
                                                  padStart01[(size_t) index], padEnd01[(size_t) index]);
 
-    selectPad (index);
+    //  LLEVARTE AL PAD ES CORRECTO CUANDO SE CARGA UNO, Y NO CUANDO SE REPONEN
+    //  SESENTA Y CUATRO. Ver `restorePads`: alli esto costaba 8163 ms de hilo
+    //  de mensajes por deshacer, sesenta y tres selecciones de las cuales
+    //  ninguna llego a verse. El valor por omision es `true`, asi que los
+    //  dieciseis caminos que cargan UN sonido -LOAD, el kit, el troceado, el
+    //  instrumento, el remuestreo y la toma- siguen haciendo lo mismo.
+    if (seleccionar)
+        selectPad (index);
 }
 
 void MainComponent::rebuildChain()
@@ -10433,13 +10451,43 @@ void MainComponent::capturePads (PadSet& into) const
 //  Put the buffers back, then let applyState put the numbers back over them:
 //  assignSampleToPad resets the trim to the whole file, so it has to run
 //  BEFORE the state that knows the real one.
+//
+//  Y SE SELECCIONA UN PAD, NO SESENTA Y CUATRO. Esto es el ANR de esta tanda.
+//
+//  `assignSampleToPad` termina en `selectPad (index)` -que es lo correcto
+//  cuando alguien acaba de cargar UN sonido en UN pad: te lleva a el-, y esta
+//  funcion la llama sesenta y cuatro veces seguidas. Las sesenta y tres
+//  primeras selecciones las borra la siguiente sin que nadie las vea, y cada
+//  una arrastra `updateControlsFromPad`, `waveform.setSample`, las asas del
+//  recorte, los dos rotulos de tiempo y `refreshWaveformSegments`.
+//
+//  Medido con `ZATI_TAPAS`, que es la sonda que existe para esto: DESHACER
+//  sobre la app llena bloqueaba el hilo de mensajes **8685 ms**, y de esos
+//  **8163 eran este bucle** -128 ms por pad- contra 419 de `applyState` y 3 de
+//  capturar. Android da una app por colgada a los 5000, o sea que deshacer era
+//  un ANR y medio, y la lista de operaciones escrita a mano de `auditEstado`
+//  lo daba en 42 ms porque medía la pila recien nacida.
+//
+//  Lo caro no es reponer los pads: es la parte de INTERFAZ de seleccionar, que
+//  solo tiene sentido una vez. Asi que la reposicion va con `seleccionar=false`
+//  y aqui no se selecciona NADA: los dos unicos que llaman a esta funcion
+//  -`performUndo` y `performRedo`- llaman a `applyState` justo despues, y
+//  `applyState` termina en `selectPad (jmax (0, selectedPad))`. Poner aqui otra
+//  seleccion «por si acaso» seria una linea que no hace nada con un comentario
+//  que dice que si, que es peor que no tenerla.
+//
+//  Y DE PASO ARREGLA UN ESPEJO QUE NADIE HABIA MIRADO: como cada apretada
+//  dejaba `selectedPad = i`, al salir de este bucle valia 63, y el `selectPad`
+//  de `applyState` te dejaba en el pad 64 cada vez que deshacias. Ahora
+//  `selectedPad` no lo toca nadie aqui, asi que deshacer te deja en el pad en
+//  el que estabas.
 void MainComponent::restorePads (const PadSet& from)
 {
     for (int i = 0; i < kNumPads; ++i)
     {
         if (from[(size_t) i] != nullptr)
         {
-            assignSampleToPad (i, from[(size_t) i], padName[(size_t) i]);
+            assignSampleToPad (i, from[(size_t) i], padName[(size_t) i], false);
         }
         else if (uiSample[(size_t) i] != nullptr)
         {
@@ -10450,6 +10498,11 @@ void MainComponent::restorePads (const PadSet& from)
             if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
         }
     }
+
+    //  Y LA UNICA SELECCION, al final. Sin esta linea la onda, los mandos de la
+    //  ficha y las asas del recorte se quedarian ensenando el pad de antes de
+    //  deshacer, que es la clase de arreglo que cambia un atasco por un espejo
+    //  roto.
 }
 
 //  Ver kTapSlots. Se usa Time::getMillisecondCounterHiRes porque es monotono:

@@ -213,38 +213,13 @@ inline void filaDeRadio (juce::Button& b, const char* fila, int grupo,
         b.getProperties().set ("filaVacia", 1);
 }
 
-//  PULSAR UNA TAPA COMO LA PULSA UN DEDO.
+//  PULSAR UNA TAPA COMO LA PULSA UN DEDO: se mudo a `UiAudit.h`.
 //
 //  Los ganchos del banco llamaban a `b->onClick()` a pelo, y eso estaba escrito
 //  OCHO veces en `MainComponent_Audit.cpp` -la misma regla copiada ocho veces-.
-//  Y para una tapa suelta es correcto; para un CHIP DE RADIO se salta
-//  exactamente el codigo donde vive lo que hay que medir: `internalClickCallback`
-//  hace `setToggleState (true, sendNotification)`, que apaga a las hermanas Y
-//  DISPARA SUS `onClick`. Ese callback espurio es la causa de los dos bancos
-//  encendidos a la vez en la mesa, y con `onClick()` a pelo no existe: es *un
-//  gesto que no se puede llamar es un gesto que no se mide*, otra vez.
-//
-//  Esto es `Button::internalClickCallback` escrito con la API publica. No vale
-//  `triggerClick()`, que es `postCommandMessage`: en el banco no hay bucle de
-//  mensajes que lo recoja.
-inline void pulsaTapa (juce::Button* b)
-{
-    if (b == nullptr)
-        return;
-
-    if (b->getClickingTogglesState())
-    {
-        const bool quiere = (b->getRadioGroupId() != 0 || ! b->getToggleState());
-        if (quiere != b->getToggleState())
-        {
-            b->setToggleState (quiere, juce::sendNotification);
-            return;
-        }
-    }
-
-    if (b->onClick)
-        b->onClick();
-}
+//  Vivia aqui, y aqui solo la ven las cuatro unidades de MainComponent: `Main.cpp`
+//  -donde vive el fuzz- NO incluye esta cabecera por contrato, asi que apretaba
+//  con `triggerClick()` y no apretaba nada. Ver `pulsaTapa` en `UiAudit.h`.
 
 // Cycle the 3 primaries across the 8 pattern banks so each has its own
 // colour identity in the chain-include row.

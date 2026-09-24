@@ -25,6 +25,13 @@ extern "C" int zatiOboeInputPreset = 9;
 //  que llaman a FileChooser quedan fuera a proposito: en un banco sin pantalla
 //  un dialogo nativo no vuelve, y la sesion se quedaria colgada ahi para
 //  siempre en vez de medir nada.
+//
+//  QUIENES SON lo dice la MARCA y no el rotulo. Esto descartaba por subcadena
+//  del texto -«CARGAR», «LOAD», «EXPORT», «MIC», «REC»- y esa lista fallaba por
+//  los dos lados a la vez: en chino y en arabe no acierta ninguna, «RECORTE» y
+//  «RECORTAR» caian por contener «REC» sin tener nada que ver, y SISTEMA -la
+//  UNICA que abre un dialogo nativo- no contenia ninguna de las cinco. Ver
+//  `sinBanco` en `UiAudit.h`.
 static void recogeControles (juce::Component& c,
                              juce::Array<juce::Button*>& botones,
                              juce::Array<juce::Slider*>& mandos)
@@ -33,9 +40,7 @@ static void recogeControles (juce::Component& c,
 
     if (auto* b = dynamic_cast<juce::Button*> (&c))
     {
-        const auto t = b->getButtonText().toUpperCase();
-        if (! t.contains ("CARGAR") && ! t.contains ("LOAD") && ! t.contains ("EXPORT")
-            && ! t.contains ("MIC") && ! t.contains ("REC"))
+        if (tapaDeBanco (*b))
             botones.add (b);
     }
     else if (auto* s = dynamic_cast<juce::Slider*> (&c))
@@ -90,7 +95,12 @@ static void fuzz (MainComponent& mc, int semilla, int sesiones, int acciones)
             }
             else if (! botones.isEmpty())
             {
-                botones[r.nextInt (botones.size())]->triggerClick();
+                //  `pulsaTapa` y no `triggerClick()`: aquel es
+                //  `postCommandMessage` y el bucle de mensajes no vuelve hasta
+                //  que este fuzz entero ha terminado, asi que esta rama -una de
+                //  cada tres acciones- no apretaba NADA y las dos reglas de
+                //  abajo juzgaban el estado anterior a la accion.
+                pulsaTapa (botones[r.nextInt (botones.size())]);
             }
 
             mc.resized();
@@ -545,6 +555,14 @@ public:
                     else if (UiAudit::env ("ZATI_ESTADO").isNotEmpty())
                     {
                         c2->auditEstado();
+                    }
+                    //  Y LO QUE CUESTA CADA TAPA Y CADA MANDO, uno por uno. La
+                    //  otra mitad de Tests/atasco.py: ZATI_ESTADO mide una
+                    //  lista escrita a mano y esto no enumera nada. Ver
+                    //  auditTapas.
+                    else if (UiAudit::env ("ZATI_TAPAS").isNotEmpty())
+                    {
+                        c2->auditTapas();
                     }
                     //  LAS DOS SELECCIONES DE RANGO, en una sola corrida. Ver
                     //  Tests/sel.py y auditSelecciones.

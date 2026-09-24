@@ -60,6 +60,7 @@ codigo.
 | el buffer de audio: cuando sube, cuando baja y que aprende | `Tests/buffer.py` |
 | la sonda del carril rapido: que `usage` se le pasa a JUCE, si se fuerza 16b, y cuantos bytes mide un cuadro en cada formato de AAudio | `Tests/audio.py` |
 | **cualquier cosa que corra en el hilo de mensajes**: la fabrica, guardar, maquetar, abrir un proyecto, o un troceo nuevo | `Tests/atasco.py` (presupuesto de 250 ms por tramo, y la caja negra apuntando el atasco) |
+| **una tapa o un mando nuevos, en cualquier ficha** | el mismo `Tests/atasco.py`, regla 4: `ZATI_TAPAS` abre las 39 fichas y aprieta las 2442 con el reloj al lado. Diez minutos. Para perseguir una cifra, `ZATI_TAPAS=inst,rack` mide solo esas |
 | las dos bandas de seleccion: los nueve campos del paso, el offset del bloque y el recorte de un clip | `Tests/sel.py` |
 | titulos y rotulos pintados, los gestos escondidos | `Tests/plano.py` |
 | la ANATOMIA de una ficha: marco, cabecera, pie | `Tests/maqueta.py` **y** `expo.py` (regla `ANATOMIA`) |

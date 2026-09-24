@@ -1721,3 +1721,70 @@ namespace UiAudit
         }
     }
 }
+
+// ============================================================================
+//  PULSAR UNA TAPA COMO LA PULSA UN DEDO, Y SABER CUAL NO SE PUEDE PULSAR.
+//
+//  Vivia en `MainComponentInterno.h`, que las cuatro unidades de MainComponent
+//  incluyen y `Main.cpp` NO -lo dice su propia cabecera: «no se incluye desde
+//  fuera»-. Asi que `Main.cpp`, donde vive el fuzz, no la tenia y apretaba con
+//  `triggerClick()`, que es `postCommandMessage`: el mensaje se encola y el
+//  bucle no vuelve hasta que el fuzz ENTERO ha terminado y la app ha cerrado.
+//  Medido leyendo `juce_Button.cpp:359`. O sea que la rama de botones del fuzz
+//  -una de cada tres acciones sorteadas- no ha apretado nunca nada, y las dos
+//  reglas que comprueba despues juzgaban el estado de antes de la accion.
+//  Se muda aqui, que es la cabecera que los dos lados SI comparten.
+//
+//  Y la otra mitad: `Button::internalClickCallback` hace
+//  `setToggleState (true, sendNotification)`, que apaga a las hermanas del
+//  grupo de radio Y DISPARA SUS `onClick`. Ese callback espurio es la causa de
+//  los dos bancos encendidos a la vez en la mesa, y con `onClick()` a pelo no
+//  existe: *un gesto que no se puede llamar es un gesto que no se mide*.
+inline void pulsaTapa (juce::Button* b)
+{
+    if (b == nullptr)
+        return;
+
+    if (b->getClickingTogglesState())
+    {
+        const bool quiere = (b->getRadioGroupId() != 0 || ! b->getToggleState());
+        if (quiere != b->getToggleState())
+        {
+            b->setToggleState (quiere, juce::sendNotification);
+            return;
+        }
+    }
+
+    if (b->onClick)
+        b->onClick();
+}
+
+//  LA TAPA QUE EL BANCO NO PUEDE APRETAR SE MARCA, NO SE ADIVINA POR EL ROTULO.
+//
+//  El fuzz descartaba por texto: `! t.contains ("CARGAR") && ! t.contains
+//  ("LOAD") && ! t.contains ("EXPORT") && ! t.contains ("MIC") && ! t.contains
+//  ("REC")`. Tres fallos medidos en esa linea:
+//
+//    1. El rotulo esta TRADUCIDO. En chino CARGAR es 加载 y en arabe تحميل, asi
+//       que la lista solo protegia dos de los cuatro idiomas y el fuzz en `zh`
+//       apretaba justo lo que la lista existe para no apretar.
+//    2. Descartaba de mas por subcadena: «RECORTE» y «RECORTAR» contienen
+//       «REC», asi que dos tapas inofensivas del recorte llevaban sin medirse
+//       desde que la lista existe, y nadie podia saberlo leyendola.
+//    3. Y descartaba de menos donde importa: la unica tapa que abre un dialogo
+//       NATIVO es SISTEMA (`launchSystemPicker` → `FileChooser::launchAsync`),
+//       y «SISTEMA» no contiene ninguna de las cinco palabras. Con
+//       `triggerClick()` no pasaba nada porque no se apretaba; en cuanto se
+//       aprieta de verdad, esa es la que cuelga el banco.
+//
+//  Se marca en el constructor, donde se sabe POR QUE, y la marca no depende del
+//  idioma ni del rotulo que la tapa lleve ese dia.
+inline void sinBanco (juce::Button& b, const char* porque)
+{
+    b.getProperties().set ("sinBanco", juce::String (porque));
+}
+
+inline bool tapaDeBanco (const juce::Button& b)
+{
+    return ! b.getProperties().contains ("sinBanco");
+}
