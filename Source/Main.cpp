@@ -346,6 +346,16 @@ public:
             auto* cc = content();
             if (cc == nullptr) { quit(); return; }
 
+            //  LA FABRICA, PUESTA ANTES DE MEDIR NADA.
+            //
+            //  Desde que se rinde fuera del hilo de mensajes -ver FabricaJob,
+            //  eran 1691 ms de este hilo- los sesenta y cuatro sonidos van
+            //  llegando por el temporizador, y estos 400 ms no dan para los
+            //  cuatro bancos. Sin esto, TODAS las entradas del banco que miden
+            //  con sonido dentro medirian un banco a medio llenar, que es la
+            //  clase de fallo que pone las pruebas en verde midiendo otra cosa.
+            cc->esperaFabrica();
+
             for (int i = 0; i < cycles; ++i)
             {
                 cc->appSuspended();
@@ -530,6 +540,11 @@ public:
                     else if (UiAudit::env ("ZATI_AUDIO").isNotEmpty())
                     {
                         c2->auditAudio();
+                    }
+                    //  LO QUE CUESTA GUARDAR EL ESTADO. Ver Tests/atasco.py.
+                    else if (UiAudit::env ("ZATI_ESTADO").isNotEmpty())
+                    {
+                        c2->auditEstado();
                     }
                     //  LAS DOS SELECCIONES DE RANGO, en una sola corrida. Ver
                     //  Tests/sel.py y auditSelecciones.
@@ -835,6 +850,9 @@ public:
         //  La ultima linea. Sin ella, "el ultimo paso" no significa nada: es la
         //  que separa cerrarse a la mitad de cerrarse bien.
         Bitacora::finLimpio();
+        //  Y el vigilante de atascos, que mira el descriptor que esto acaba de
+        //  dejar de usar. Ver Bitacora::para.
+        Bitacora::para();
     }
 
     void systemRequestedQuit() override

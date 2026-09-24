@@ -8610,3 +8610,145 @@ void MainComponent::auditAudio()
                   << ",\"por\":"  << AudioPath::bytesPorMuestra (f)
                   << "}" << std::endl;
 }
+
+// ============================================================================
+//  LO QUE CUESTA GUARDAR EL ESTADO, Y EN QUE HILO SE PAGA. Ver Tests/atasco.py.
+//
+//  La app se quedo «no responde» con el audio SONANDO -medidor a -11 dB, forma
+//  de onda viva, 94 BPM- o sea con el hilo de audio intacto y el de mensajes
+//  parado. Eso descarta el dispositivo y senala a lo unico que este hilo hace
+//  a solas y sin tope: guardar.
+//
+//  Y guardar el estado no es escribir un fichero. Es, en este orden y todo
+//  seguido: construir el arbol entero, COPIARLO, serializarlo a XML,
+//  escribirlo, VOLVERLO A LEER DE DISCO Y PARSEARLO para comprobar que no se
+//  trunco, y renombrar. Mas, en `autosave`, una SEGUNDA serializacion del mismo
+//  arbol para `project.xml`. Cada veinte segundos, en el hilo que atiende el
+//  dedo.
+//
+//  Esta sonda pone la app con trabajo dentro y le pone numero a cada tramo,
+//  porque la cifra que decide es el reparto y no el total: si la parte que
+//  obliga a estar en el hilo de mensajes -leer la interfaz- es el 5 % y el
+//  resto es serializar y disco, entonces el resto se puede ir a otro hilo y
+//  esto se arregla. Si fuera al reves, no.
+// ============================================================================
+void MainComponent::auditEstado()
+{
+    const auto cronometro = [] { return juce::Time::getMillisecondCounterHiRes(); };
+
+    //  LA FABRICA, que es el primer arranque de cualquiera: 64 pads
+    //  sintetizados. Se mide ANTES de llenar nada, que es el orden en el que la
+    //  app la corre.
+    //
+    //  Y SE MIDE EL TROZO MAS LARGO, no el total. Lo que cuelga una app de
+    //  Android no es que una tarea dure tres segundos: es que el hilo de
+    //  mensajes se pase tres segundos sin volver al bucle. Con la fabrica
+    //  rindiendo en su hebra, el reloj de pared es el mismo de antes y lo que
+    //  cambia -que es lo unico que Android mira- es que ningun tramo de este
+    //  hilo pase de unos milisegundos. Se publican los dos: `ms` es el peor
+    //  tramo y `reloj` lo que tardo entera.
+    {
+        const double t0 = cronometro();
+        double peor = 0.0;
+
+        const double tA = cronometro();
+        loadFactoryKits();
+        peor = juce::jmax (peor, cronometro() - tA);
+
+        const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+        while ((fabricaJob != nullptr || ! fabricaCola.empty())
+               && juce::Time::getMillisecondCounter() < tope)
+        {
+            const double tB = cronometro();
+            stepFabricaJob();
+            peor = juce::jmax (peor, cronometro() - tB);
+            if (fabricaJob != nullptr) juce::Thread::sleep (2);
+        }
+
+        std::cout << "{\"atasco\":\"op\",\"que\":\"fabrica\",\"ms\":"
+                  << juce::roundToInt (peor)
+                  << ",\"reloj\":" << juce::roundToInt (cronometro() - t0)
+                  << "}" << std::endl;
+    }
+
+    llenaDePrueba();
+
+    //  Y EL MAQUETADO ENTERO, que es lo que corre en cada giro de pantalla.
+    {
+        const double t = cronometro();
+        resized();
+        std::cout << "{\"atasco\":\"op\",\"que\":\"maqueta\",\"ms\":"
+                  << juce::roundToInt (cronometro() - t) << "}" << std::endl;
+    }
+
+    const auto reloj = cronometro;
+
+    const double t0 = reloj();
+    const auto estado = captureState();
+    const double msCaptura = reloj() - t0;
+
+    const double t1 = reloj();
+    const auto texto = estado.toXmlString();
+    const double msXml = reloj() - t1;
+
+    //  La copia que `writeState` hace por dentro, medida aparte: es el unico
+    //  tramo que tendria que quedarse en el hilo de mensajes si el resto se va,
+    //  porque es lo que convierte el arbol compartido en uno que otro hilo
+    //  puede leer sin carreras.
+    const double t2 = reloj();
+    auto copia = estado.createCopy();
+    const double msCopia = reloj() - t2;
+    juce::ignoreUnused (copia);
+
+    const double t3 = reloj();
+    session.writeState (estado, currentProject);
+    const double msEscribe = reloj() - t3;
+
+    //  Y EL PARSEO DE VUELTA A SOLAS, que es el tramo que nadie sospecha: la
+    //  comprobacion de que el fichero no salio truncado cuesta leer y parsear
+    //  otra vez el XML entero.
+    const double t4 = reloj();
+    const auto vuelta = juce::parseXML (SessionKeeper::stateFile());
+    const double msParseo = reloj() - t4;
+
+    //  Y EL GUARDADO COMPLETO tal y como la app lo hace: `autosave` es lo que
+    //  corre en `onPause` y lo que el temporizador acaba llamando.
+    const double t5 = reloj();
+    autosave();
+    const double msAuto = reloj() - t5;
+
+    std::cout << "{\"estado\":\"coste\""
+              << ",\"bytes\":"   << (int) texto.getNumBytesAsUTF8()
+              << ",\"captura\":" << juce::roundToInt (msCaptura)
+              << ",\"xml\":"     << juce::roundToInt (msXml)
+              << ",\"copia\":"   << juce::roundToInt (msCopia)
+              << ",\"escribe\":" << juce::roundToInt (msEscribe)
+              << ",\"parseo\":"  << juce::roundToInt (msParseo)
+              << ",\"auto\":"    << juce::roundToInt (msAuto)
+              << ",\"vuelve\":"  << (vuelta != nullptr ? 1 : 0)
+              << "}" << std::endl;
+
+    //  Y las mismas cifras en la forma que `Tests/atasco.py` juzga: una linea
+    //  por operacion del hilo de mensajes, con su presupuesto comun.
+    std::cout << "{\"atasco\":\"op\",\"que\":\"captura\",\"ms\":"
+              << juce::roundToInt (msCaptura) << "}" << std::endl;
+    std::cout << "{\"atasco\":\"op\",\"que\":\"guarda\",\"ms\":"
+              << juce::roundToInt (msAuto) << "}" << std::endl;
+
+    const auto mide = [&cronometro] (const char* que, auto&& fn)
+    {
+        const double t = cronometro();
+        fn();
+        std::cout << "{\"atasco\":\"op\",\"que\":\"" << que << "\",\"ms\":"
+                  << juce::roundToInt (cronometro() - t) << "}" << std::endl;
+    };
+
+    //  Y EL RESTO DE LO QUE UNA PERSONA APRIETA Y ESTE HILO HACE ENTERO.
+    //  Un banco de fabrica solo -la tapa FABRICA de la ficha de pads-, la
+    //  carcasa, el idioma, y guardar y abrir el proyecto que se acaba de
+    //  llenar. Son las operaciones sin trocear que quedan.
+    mide ("carcasa", [this] { applySkin(); });
+    mide ("idioma",  [this] { retranslateUi(); });
+    mide ("guardap", [this] { saveProject ("atasco"); });
+    mide ("abrep",   [this] { loadProject ("atasco"); });
+}

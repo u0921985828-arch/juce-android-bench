@@ -4853,7 +4853,8 @@ void MainComponent::ponIconos()
 
 
 void MainComponent::applySkin()
-{
+{    const Bitacora::Tarea marca ("carcasa");
+
     //  LA LISTA DE PROYECTOS, que no es una tapa y por eso se quedaba fuera.
     //
     //  juce::ListBox guarda el color que se le da, y el suyo se ponia UNA vez
@@ -7732,8 +7733,24 @@ juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<i
     //  empezo a apuntarse. Repartido es una condicion NECESARIA -un texto de
     //  ancho W no cabe en N renglones de menos de W/N- asi que no puede dar un
     //  falso positivo por el reparto de palabras, que es el lado seguro.
+    //  Y SE REDONDEA UNA SOLA VEZ, que es de donde salia un pixel de la nada.
+    //
+    //  Esto era `ceil (pide * minimo / lineas)` con `pide` YA redondeado hacia
+    //  arriba, o sea DOS redondeos sobre la misma medida. Quien decide si el
+    //  texto cabe -`cabeEntero` y `campoAcampo`- hace uno solo:
+    //  `ceil (ancho * apreton)`. Con un ancho de 76.4 px y el apreton de 0.85
+    //  de los titulos de ficha, el dibujo calcula `ceil (64.94) = 65` y coloca
+    //  el campo; esta linea calculaba `ceil (77 * 0.85) = ceil (65.45) = 66` y
+    //  `expo.py` cantaba `CORTADO "PASOS · PAD 61" pide 66 tiene 65` sobre un
+    //  rotulo que se lee entero. La regla estaba bien y la medida mal, que es
+    //  el orden en el que hay que dudar.
+    //
+    //  Solo puede BAJAR el numero publicado, y como mucho un pixel: no tapa
+    //  ningun recorte de verdad, deja de inventar el que no existe.
     UiAudit::rotulo (real, texto, tipo,
-                     (int) std::ceil (pide * minimo / juce::jmax (1, lineas)),
+                     (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                          g.getCurrentFont(), texto)
+                                          * minimo / (float) juce::jmax (1, lineas)),
                      g.getCurrentFont().getHeight(), lineas);
     return real;
 }
@@ -9391,8 +9408,21 @@ int MainComponent::padSourceLength (int pad) const
 //  `static` que se monta una vez bajo su guardia y del que solo se LEE.
 //  Repartir y esperar, que el reparto lo hace el sistema mejor que un troceo
 //  por ticks: aqui no hay nada que dibujar mientras tanto.
-static void rindeFabrica (int primero, int cuantos, SampleBuffer::Ptr* salida)
+//  Y CON UNA BANDERA POR HUECO, para quien no quiera esperar a las cuatro.
+//
+//  `listo` es opcional y es lo que convierte esto en algo que se puede consumir
+//  a trozos: cada hebra publica su pad con `release` en cuanto lo tiene, y el
+//  hilo de mensajes lo recoge con `acquire` sin esperar a los demas. Sin ella
+//  el unico modo de saber que hay algo es el `join`, que es justo lo que colgaba
+//  la app 1691 ms en el primer arranque. Ver MainComponent::FabricaJob.
+static void rindeFabrica (int primero, int cuantos, SampleBuffer::Ptr* salida,
+                          std::atomic<bool>* listo = nullptr)
 {
+    const auto publica = [listo] (int i)
+    {
+        if (listo != nullptr) listo[i].store (true, std::memory_order_release);
+    };
+
     const int hilos = juce::jlimit (1, 4, juce::SystemStats::getNumCpus());
     //  LA GAMA SE LEE UNA VEZ Y FUERA DE LAS HEBRAS: `DeviceTier::profile()`
     //  inicializa un estatico local la primera vez, y cuatro hilos entrando a la
@@ -9400,7 +9430,11 @@ static void rindeFabrica (int primero, int cuantos, SampleBuffer::Ptr* salida)
     const bool est = DeviceTier::profile().instrumentoEstereo;
     if (hilos <= 1 || cuantos <= 1)
     {
-        for (int i = 0; i < cuantos; ++i) salida[i] = Kits::render (primero + i, est);
+        for (int i = 0; i < cuantos; ++i)
+        {
+            salida[i] = Kits::render (primero + i, est);
+            publica (i);
+        }
         return;
     }
 
@@ -9411,25 +9445,73 @@ static void rindeFabrica (int primero, int cuantos, SampleBuffer::Ptr* salida)
         hebras.emplace_back ([&]
         {
             for (int i = siguiente.fetch_add (1); i < cuantos; i = siguiente.fetch_add (1))
+            {
                 salida[i] = Kits::render (primero + i, est);
+                publica (i);
+            }
         });
     for (auto& x : hebras) x.join();
 }
 
 void MainComponent::cargaFabricaEnBanco (int origen, int destino)
-{
+{    const Bitacora::Tarea marca ("fabrica/lanzar");
+
     origen  = juce::jlimit (0, kNumBanks - 1, origen);
     destino = juce::jlimit (0, kNumBanks - 1, destino);
 
-    SampleBuffer::Ptr rendidos[kPadsPerBank];
-    rindeFabrica (origen * kPadsPerBank, kPadsPerBank, rendidos);
+    //  UNO CADA VEZ, y el resto en cola. Cuatro bancos a la vez serian
+    //  dieciseis hebras peleandose por cuatro nucleos: mas lento de reloj de
+    //  pared y con el telefono caliente, para acabar en el mismo sitio.
+    if (fabricaJob != nullptr)
+    {
+        fabricaCola.emplace_back (origen, destino);
+        return;
+    }
+
+    auto trabajo = std::make_unique<FabricaJob>();
+    trabajo->origen  = origen;
+    trabajo->destino = destino;
+
+    auto* crudo = trabajo.get();
+    const int primero = origen * kPadsPerBank;
+    trabajo->hebra = std::thread ([crudo, primero]
+    {
+        rindeFabrica (primero, kPadsPerBank, crudo->rendidos, crudo->listo.data());
+    });
+
+    fabricaJob = std::move (trabajo);
+
+    if (! fabricaBarra) { fabricaBarra = true; beginBusy (T ("Preparando sonidos")); }
+    setBusyProgress (0.0f);
+}
+
+//  EL REPARTO, QUE ES LA MITAD QUE SI ES DE ESTE HILO.
+//
+//  Rendir un sonido no toca ni el motor ni la cara; colocarlo toca los dos, y
+//  por eso esto se queda aqui y cuesta lo que cuesta - medio milisegundo por
+//  pad - en vez de los 1691 ms que costaba esperar a que estuvieran los
+//  sesenta y cuatro. Se recoge lo que haya listo en cada vuelta del
+//  temporizador, en el orden en que las hebras lo vayan dejando.
+void MainComponent::stepFabricaJob()
+{
+    if (fabricaJob == nullptr) return;
+
+    const Bitacora::Tarea marca ("fabrica/repartir");
+
+    auto& j = *fabricaJob;
 
     for (int i = 0; i < kPadsPerBank; ++i)
     {
-        const int src = origen  * kPadsPerBank + i;
-        const int dst = destino * kPadsPerBank + i;
-        //  El reparto SI es del hilo de mensajes: toca el motor y la cara.
-        if (auto sb = rendidos[i])
+        if (j.puesto[(size_t) i]) continue;
+        if (! j.listo[(size_t) i].load (std::memory_order_acquire)) continue;
+
+        j.puesto[(size_t) i] = true;
+        ++j.colocados;
+
+        const int src = j.origen  * kPadsPerBank + i;
+        const int dst = j.destino * kPadsPerBank + i;
+
+        if (auto sb = j.rendidos[i])
         {
             //  EL PAD SE VACIA ANTES DE RECIBIR. Ver ponPadPorDefecto: sin esto
             //  la fabrica entraba con la afinacion, el filtro y el choke del
@@ -9444,17 +9526,60 @@ void MainComponent::cargaFabricaEnBanco (int origen, int destino)
             //  El color del pad lo pone Zati::forPad y no se toca: el orden de
             //  corte manda sobre cualquier idea decorativa.
             padHasSample[(size_t) dst] = true;
+            refreshPad (dst);
         }
     }
 
-    for (int i = 0; i < kPadsPerBank; ++i) refreshPad (destino * kPadsPerBank + i);
+    setBusyProgress ((float) j.colocados / (float) kPadsPerBank);
+
+    if (j.colocados < kPadsPerBank) return;
+
+    //  Los dieciseis puestos: la hebra ya no tiene nada que escribir, asi que
+    //  este `join` no espera - solo recoge. Se hace igual, y no se deja para el
+    //  destructor, porque el trabajo siguiente lanza la suya y dos tandas de
+    //  hebras vivas a la vez es justo lo que la cola existe para evitar.
+    if (j.hebra.joinable()) j.hebra.join();
+    fabricaJob.reset();
     selectPad (juce::jmax (0, selectedPad));
+
+    if (! fabricaCola.empty())
+    {
+        const auto siguiente = fabricaCola.front();
+        fabricaCola.erase (fabricaCola.begin());
+        cargaFabricaEnBanco (siguiente.first, siguiente.second);
+        return;
+    }
+
+    if (fabricaBarra) { fabricaBarra = false; endBusy(); }
+}
+
+//  Y LA PUERTA DEL BANCO. Ver la declaracion en la cabecera: casi todas las
+//  entradas de `ZATI_*` miden sobre la fabrica puesta, y desde que se rinde
+//  fuera de este hilo no lo esta cuando la medida empieza. El tope de sesenta
+//  segundos es para que una hebra que no vuelva deje una prueba que FALLA en
+//  vez de un banco colgado.
+void MainComponent::esperaFabrica()
+{
+    //  Y CON ETIQUETA, porque esto SI atasca el hilo de mensajes -es su
+    //  trabajo- y sin ella el vigilante de la caja negra apuntaria un atasco de
+    //  la app donde solo hay uno del banco. Ver Bitacora::Tarea.
+    const Bitacora::Tarea marca ("banco/espera-fabrica");
+
+    const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+
+    while ((fabricaJob != nullptr || ! fabricaCola.empty())
+           && juce::Time::getMillisecondCounter() < tope)
+    {
+        stepFabricaJob();
+        if (fabricaJob != nullptr) juce::Thread::sleep (2);
+    }
 }
 
 void MainComponent::loadFactoryKits (int onlyBank)
 {
     //  Cada banco en el suyo, que es lo que significa "la fabrica" al arrancar
-    //  y lo que significaba esta funcion antes de que hubiera catalogo.
+    //  y lo que significaba esta funcion antes de que hubiera catalogo. El
+    //  primero arranca y los otros tres esperan en la cola; ninguno bloquea.
     if (onlyBank >= 0) { cargaFabricaEnBanco (onlyBank, onlyBank); return; }
     for (int b = 0; b < kNumBanks; ++b) cargaFabricaEnBanco (b, b);
 }
@@ -9720,7 +9845,8 @@ void MainComponent::refreshAccessibleNames()
 }
 
 void MainComponent::retranslateUi()
-{
+{    const Bitacora::Tarea marca ("idioma");
+
     refreshAccessibleNames();
 
     //  SINGULAR, que es lo que abre. Esta pestana no lleva a los pads -esos
@@ -12474,7 +12600,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
 }
 
 void MainComponent::saveProject (const juce::String& rawName)
-{
+{    const Bitacora::Tarea marca ("proyecto/guardar");
+
     //  Guardar es el mismo bucle de 64 ficheros que abrir, y por el mismo
     //  hilo, solo que escribiendo - que en almacenamiento compartido de
     //  Android no es mas barato que leer. Asi que se trocea igual, con dos
@@ -12501,7 +12628,8 @@ void MainComponent::saveProject (const juce::String& rawName)
 }
 
 void MainComponent::stepPadSaveJob()
-{
+{    const Bitacora::Tarea marca ("pads/guardar");
+
     if (padSaveJob == nullptr) return;
 
     const double t0 = juce::Time::getMillisecondCounterHiRes();
@@ -12581,7 +12709,8 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
 
 
 void MainComponent::loadProject (const juce::String& name)
-{
+{    const Bitacora::Tarea marca ("proyecto/abrir");
+
     if (padsBusy()) return;
 
     const auto folder = ProjectStore::folderFor (name);
@@ -18268,7 +18397,8 @@ void MainComponent::esperaExport (bool cancelar, int vueltas)
 
 
 void MainComponent::appSuspended()
-{
+{    const Bitacora::Tarea marca ("pausa");
+
     //  Stop the recording first, while the input stream is still alive and its
     //  buffer can still be collected. Doing it after shutdownAudio would throw
     //  away whatever had been captured.
@@ -18302,7 +18432,8 @@ void MainComponent::appSuspended()
 }
 
 void MainComponent::appResumed()
-{
+{    const Bitacora::Tarea marca ("reanudar");
+
     //  LO PRIMERO, que es lo que hace util al «fin limpio» de appSuspended:
     //  mientras la app este delante, la ultima linea no puede decir que se
     //  cerro bien. Sin esto, una caida DESPUES de volver de segundo plano se
@@ -18350,7 +18481,8 @@ void MainComponent::appResumed()
 //  what we stopped and never something the user had deliberately left silent.
 // ============================================================================
 void MainComponent::audioFocusLost (bool permanently)
-{
+{    const Bitacora::Tarea marca ("foco/pierde");
+
     if (recordingActive)
         toggleMicSampling();
 
@@ -18401,7 +18533,8 @@ void MainComponent::audioFocusDucked()
 }
 
 void MainComponent::audioFocusGained()
-{
+{    const Bitacora::Tarea marca ("foco/vuelve");
+
     //  Un-duck first and unconditionally: whatever else is true, the master
     //  must not be left turned down.
     if (duckedByFocus)
@@ -18442,7 +18575,8 @@ void MainComponent::audioFocusGained()
 //  The project copy only exists when a project is open, and it goes over that
 //  project's own project.xml, next to the samples its last save wrote.
 void MainComponent::autosave()
-{
+{    const Bitacora::Tarea marca ("guardar/sesion");
+
     const auto state = captureState();
 
     session.sync (uiSample.data(), kNumPads);
@@ -18482,7 +18616,11 @@ void MainComponent::autosave()
 //  con las del que se guardaba. Se dice que espere, y se dice cual.
 bool MainComponent::padsBusy()
 {
-    if (padJob == nullptr && padSaveJob == nullptr) return false;
+    //  Y LA FABRICA TAMBIEN OCUPA LOS PADS desde que se reparte a trozos:
+    //  abrir un proyecto mientras las hebras siguen colocando sonidos dejaria
+    //  el banco mezclado, que es el mismo fallo que esta funcion ya evitaba
+    //  entre abrir y guardar.
+    if (padJob == nullptr && padSaveJob == nullptr && fabricaJob == nullptr) return false;
     status.setText (T ("Espera a que termine %1", busyWhat.toLowerCase()),
                     juce::dontSendNotification);
     return true;
@@ -18491,6 +18629,8 @@ bool MainComponent::padsBusy()
 void MainComponent::stepPadJob()
 {
     if (padJob == nullptr) return;
+
+    const Bitacora::Tarea marca ("pads/cargar");
 
     const double t0 = juce::Time::getMillisecondCounterHiRes();
 
@@ -18569,7 +18709,8 @@ void MainComponent::stepPadJob()
 }
 
 void MainComponent::restoreSession()
-{
+{    const Bitacora::Tarea marca ("sesion/recuperar");
+
     if (! SessionKeeper::exists())
     {
         //  PRIMERA VEZ: la maquina viene con sonidos dentro.
@@ -19009,6 +19150,26 @@ void MainComponent::bombeaAudioDePrueba()
 //  tenia que haber milisegundos»— sin aplicar al propio reloj que los cuenta.
 void MainComponent::timerCallback()
 {
+    //  EL LATIDO, LO PRIMERO. Ver Bitacora: un hilo aparte mira este numero y,
+    //  en cuanto se queda viejo, escribe en la caja negra cuanto lleva parado
+    //  este hilo y en que. Es lo unico que convierte un «Zati Sampler no
+    //  responde» en un dato en vez de en una deduccion.
+    Bitacora::late();
+
+    //  Y EL ATASCO A PROPOSITO, que es lo que hace medible lo de arriba.
+    if (atascoBanco > 0 && arranqueTicks >= 6)
+    {
+        const int cuanto = atascoBanco;
+        atascoBanco = 0;
+        const Bitacora::Tarea marca ("banco/atasco");
+        //  Espera ACTIVA: lo que se simula es este hilo OCUPADO, que es como se
+        //  cuelga una app de Android. Dormirlo mediria otra cosa.
+        const double hasta = juce::Time::getMillisecondCounterHiRes() + (double) cuanto;
+        volatile double basura = 0.0;
+        while (juce::Time::getMillisecondCounterHiRes() < hasta) basura += 1.0;
+        juce::ignoreUnused (basura);
+    }
+
     const double ahora = juce::Time::getMillisecondCounterHiRes();
     //  Acotado por arriba: si el proceso se queda parado -el depurador, una
     //  suspension, el sistema robando el hilo- un salto de dos segundos
@@ -19025,6 +19186,10 @@ void MainComponent::timerCallback()
 
     stepPadJob();
     stepPadSaveJob();
+    //  Y EL REPARTO DE LA FABRICA, que es lo unico que este hilo hace de ella.
+    //  Ver FabricaJob: rendir los 64 sonidos costaba 1691 ms de este hilo, de
+    //  un tiron, y eso en un telefono es el «no responde» del primer arranque.
+    stepFabricaJob();
     checkXRuns (dt);
 
     //  La exportacion SI sabe cuanto falta - cuenta pasadas y bloques - asi
@@ -19152,7 +19317,15 @@ void MainComponent::timerCallback()
                   //  en `Tests/` era `expo.py` BORRANDOLA- y por eso el parte
                   //  falso salia en cada arranque. Ver Bitacora.h.
                   << "],\"previa\":\""
-                  << Bitacora::previa.replaceCharacter ('"', '\'') << "\"}" << std::endl;
+                  << Bitacora::previa.replaceCharacter ('"', '\'') << "\""
+                  //  Y EL PEOR ATASCO DE LA VEZ ANTERIOR, por la misma razon y
+                  //  por la misma puerta: es lo unico que deja una app que no
+                  //  se cae sino que se queda quieta, y sin publicarlo el banco
+                  //  no puede comprobar que la lectura de vuelta funciona. Ver
+                  //  Bitacora::atascoPrevio y Tests/atasco.py.
+                  << ",\"atasco_previo\":\""
+                  << Bitacora::atascoPrevio.replaceCharacter ('"', '\'') << "\"}"
+                  << std::endl;
         if (arranqueTicks == bancoArranque) juce::JUCEApplication::getInstance()->systemRequestedQuit();
     }
 

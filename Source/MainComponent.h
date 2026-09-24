@@ -2,6 +2,10 @@
 
 #include <JuceHeader.h>
 #include <vector>
+#include <array>
+#include <atomic>
+#include <thread>
+#include <utility>
 #include "AudioEngine.h"
 #include "FxPresets.h"
 #include "SampleLoader.h"
@@ -1177,7 +1181,11 @@ private:
     //  Lo que mide el recuadro de AUDIO, que es texto pintado y por tanto no
     //  lo dice ningun componente. Ver estAltoAudio: estaba escrito a mano en
     //  cuatro sitios.
-    static constexpr int kAltoAudioInfo = 158;
+    //  172 y no 158: el renglon de ATASCO de esta misma tanda es una fila mas
+    //  de `bandaSubtitulo`. Escrito como suma y no como numero nuevo, que es de
+    //  donde salio el 158 repetido en cuatro sitios que este campo vino a
+    //  borrar.
+    static constexpr int kAltoAudioInfo = 158 + Metrics::bandaSubtitulo;
     //  ...MAS LOS SEIS RENGLONES DE LA SONDA, cuando los hay.
     //
     //  Los intentos solo se pintan con el carril NEGADO -si hay exclusiva no
@@ -1705,6 +1713,16 @@ private:
     //  ...»- y sin las dos, un mecanismo que no avisa nunca pasa la primera
     //  comprobacion sola y el de ayer -que avisaba siempre- pasaba la segunda.
     const int bancoMuere = juce::SystemStats::getEnvironmentVariable ("ZATI_MUERE", "0").getIntValue();
+
+    //  ZATI_ATASCO=ms — UN ATASCO DEL HILO DE MENSAJES, A PROPOSITO.
+    //
+    //  Es la misma figura que ZATI_XRUN y ZATI_LASTRE: lo que no pasa nunca en
+    //  el escritorio se convierte en una ENTRADA, para que la regla que lo caza
+    //  pueda verse fallar. Aqui lo que no pasa es que este hilo se quede
+    //  parado, y lo que se quiere comprobar es que la caja negra lo apunta
+    //  -con su cifra y con el nombre de lo que estaba haciendo- ANTES de que
+    //  el sistema mate el proceso. Ver Bitacora::Vigilante y Tests/atasco.py.
+    int atascoBanco = juce::SystemStats::getEnvironmentVariable ("ZATI_ATASCO", "0").getIntValue();
     const int bancoSenal = juce::SystemStats::getEnvironmentVariable ("ZATI_SENAL", "0").getIntValue();
 
     int lastDeviceBlock = 0, lastDeviceRate = 0;   // compared before a string is built
@@ -1753,6 +1771,17 @@ public:
     //  auditAudio y Tests/audio.py: la sonda de verdad habla con libaaudio y
     //  no corre en un escritorio, pero lo que se DECIDE con su respuesta si.
     void auditAudio();
+
+    //  auditEstado y Tests/atasco.py: lo que cuesta guardar, tramo a tramo, y
+    //  en que hilo se paga. Ver MainComponent_Audit.cpp.
+    void auditEstado();
+
+    //  Y LA PUERTA DEL BANCO A LA FABRICA. Casi todas las entradas de `ZATI_*`
+    //  miden sobre la fabrica ya puesta, y desde que se rinde fuera del hilo de
+    //  mensajes -ver FabricaJob- no lo esta cuando la medida empieza. Esto
+    //  bombea el troceo hasta el final y solo lo llama el banco: la app de
+    //  verdad no espera a nada.
+    void esperaFabrica();
 
     //  CON QUE ABRE LA MAQUINA. Ver auditNuevo: vuelca el proyecto tal y como
     //  nace -sonidos, cancion y envios- y otra vez despues de NUEVO, que es el
@@ -3123,6 +3152,59 @@ private:
         int next = 0, written = 0, failed = 0;
     };
     std::unique_ptr<PadSaveJob> padSaveJob;
+
+    //  LA FABRICA, QUE ERA LO UNICO SIN TROCEAR Y LO MAS CARO QUE HAY.
+    //
+    //  `loadFactoryKits` rinde los sesenta y cuatro sonidos de fabrica y los
+    //  reparte, y lo hacia ENTERO dentro del hilo de mensajes: se lanzaban
+    //  cuatro hebras, se las esperaba con un `join` y hasta que no volvian las
+    //  cuatro este hilo no atendia ni un dedo. Medido con la sonda ZATI_ESTADO
+    //  en esta maquina de cuatro nucleos: **1691 ms** de un tiron, contra 6 de
+    //  guardar el estado entero, 5 de traducir la app y 4 de maquetarla. Un
+    //  telefono es varias veces mas lento que esto y Android cuenta cinco
+    //  segundos sin atender un toque como app colgada: eso es el «Zati Sampler
+    //  no responde» del primer arranque, con el audio sonando porque su hilo
+    //  no tiene nada que ver con este.
+    //
+    //  El troceo no puede ser el de `stepPadJob` -rendir en trozos de 25 ms en
+    //  este mismo hilo- porque perderia las cuatro hebras y multiplicaria por
+    //  cuatro el reloj de pared. Se parte por donde de verdad esta la costura:
+    //  RENDIR va a una hebra propia y COLOCAR se queda aqui. Colocar un pad es
+    //  medio milisegundo; lo que costaba era esperar.
+    struct FabricaJob
+    {
+        int origen = 0, destino = 0;
+        SampleBuffer::Ptr rendidos[AudioEngine::kPadsPerBank];
+        //  Una bandera por hueco y no un contador: las cuatro hebras se
+        //  reparten los indices con un `fetch_add`, asi que terminan
+        //  DESORDENADOS y un contador monotono mentiria sobre cual esta listo.
+        //  Se publica con `release` despues de escribir el puntero, y este hilo
+        //  lo lee con `acquire` antes de tocarlo.
+        std::array<std::atomic<bool>, (size_t) AudioEngine::kPadsPerBank> listo;
+        //  Cual se ha repartido ya. Solo lo toca el hilo de mensajes, asi que
+        //  no necesita ser atomico: `listo` dice «hay sonido», `puesto` dice
+        //  «ya lo he colocado», y son dos preguntas distintas.
+        std::array<bool, (size_t) AudioEngine::kPadsPerBank> puesto {};
+        int colocados = 0;
+        std::thread hebra;
+        FabricaJob() { for (auto& f : listo) f.store (false, std::memory_order_relaxed); }
+        //  El destructor ESPERA. Una hebra que escribe en `rendidos` despues de
+        //  que el trabajo muera escribe en memoria liberada, y eso en un movil
+        //  es una caida sin sintoma en el sitio del fallo.
+        ~FabricaJob() { if (hebra.joinable()) hebra.join(); }
+    };
+    std::unique_ptr<FabricaJob> fabricaJob;
+    //  Los bancos que faltan, como pares (origen, destino). `loadFactoryKits`
+    //  encola los cuatro y cada uno arranca cuando el anterior ha colocado sus
+    //  dieciseis: cuatro hebras a la vez por banco son las que hay, y lanzar
+    //  cuatro bancos a la vez serian dieciseis hebras peleandose por cuatro
+    //  nucleos - mas lento y con el telefono caliente.
+    std::vector<std::pair<int, int>> fabricaCola;
+    //  Una sola barra para la cadena entera, no una por banco: cuatro
+    //  `beginBusy` y cuatro `endBusy` cuadran la cuenta pero encienden y apagan
+    //  la barra cuatro veces en el primer arranque, que es lo que se ve.
+    bool fabricaBarra = false;
+    void stepFabricaJob();
     bool padsBusy();
     void stepPadSaveJob();
     void finishProjectSave (const juce::String& name, const juce::File& folder,

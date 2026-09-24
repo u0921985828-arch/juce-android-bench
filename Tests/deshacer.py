@@ -59,9 +59,15 @@ SIN_RED = {
     "selectionChanged":     "es la escucha del navegador: un toque en la lista carga"
                             " y dispara, y la foto -con lo de ANTES de oir- la toma"
                             " CARGAR. Ver loadBrowserSelection",
-    "cargaFabricaEnBanco":  "la foto la toma quien llama: loadFactoryKits -primera"
-                            " vez que se abre la app- no la quiere y la ficha de"
-                            " instrumentos si",
+    #  Se llamaba `cargaFabricaEnBanco` hasta que rendir la fabrica se fue a su
+    #  propia hebra -1691 ms de un tiron en el hilo de mensajes, y eso es un ANR
+    #  en un telefono-. Ahora esa funcion LANZA y no pisa ningun pad; quien lo
+    #  pisa es el que reparte lo que las hebras van dejando, y la foto se sigue
+    #  tomando en el mismo sitio: ANTES de lanzar.
+    "stepFabricaJob":       "reparte lo que la hebra de la fabrica va rindiendo:"
+                            " la foto la toma quien lanzo, y loadFactoryKits"
+                            " -primera vez que se abre la app- no la quiere"
+                            " mientras que la ficha de instrumentos si",
     #  Se llamaba `ponInstrumentoEnPad` hasta que la sintesis se fue a su
     #  propio hilo -473 ms de mediana congelaban la cara-. Ahora esa funcion
     #  encola y NO pisa el pad; quien lo pisa es el que vacia el buzon, y la

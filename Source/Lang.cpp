@@ -1615,6 +1615,11 @@ namespace
         //  porque nombran el mismo trabajo: los tres son 64 ficheros.
         { "Iniciando",      "",         "Starting up", "正在启动",   "جارٍ البدء" },
         { "Recuperando sesion", "",     "Restoring session", "正在恢复会话", "جارٍ استعادة الجلسة" },
+        { "Preparando sonidos", "",    "Preparing sounds",  "正在准备音色", "جارٍ تحضير الأصوات" },
+        //  El renglon de atascos de AJUSTES · AUDIO. Ver Bitacora::Vigilante.
+        { "atasco", "",                "stall",             "卡顿", "تجمّد" },
+        { "ninguno", "",               "none",              "无", "لا شيء" },
+        { "la vez anterior", "",       "last time",         "上一次", "المرة السابقة" },
         { "Abriendo proyecto", "",      "Opening project",   "正在打开工程", "جارٍ فتح المشروع" },
         { "Guardando proyecto", "",     "Saving project",    "正在保存工程", "جارٍ حفظ المشروع" },
         { "Espera a que termine %1", "", "Wait until %1 finishes", "请等待%1结束", "انتظر حتى ينتهي %1" },

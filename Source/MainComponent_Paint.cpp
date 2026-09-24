@@ -711,6 +711,45 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
         : fastPath.mmapUsed  ? ZatiColours::yellow   // shared, but still MMAP
                              : ZatiColours::red);    // AudioFlinger's mixer
 
+    //  ...Y SI ESTE HILO SE HA QUEDADO PARADO ALGUNA VEZ, CUANTO Y EN QUE.
+    //
+    //  Es el renglon que le faltaba a esta pantalla para poder contestar la
+    //  pregunta que trajo aqui dos veces: «Zati Sampler no responde». Lo de
+    //  arriba explica la LATENCIA, que es otra cosa; un «no responde» es el
+    //  hilo de mensajes parado, y hasta esta tanda la app no lo media ni lo
+    //  contaba - se dedujo leyendo codigo a partir de una captura de pantalla,
+    //  que es exactamente lo que esta casa no acepta como medida.
+    //
+    //  Se enseña lo de ESTA sesion si lo hay, y si no lo peor de la anterior,
+    //  que es el caso que importa: despues de un «Aceptar» el proceso muere y
+    //  la app vuelve a abrir sin memoria de nada. Ver Bitacora.
+    {
+        const int peor = Bitacora::peorMs.load (std::memory_order_relaxed);
+        juce::String valor;
+        juce::Colour color = ZatiColours::lcdDim;
+
+        if (peor > 0)
+        {
+            valor = Lang::ltr (juce::String (peor) + " ms") + "  "
+                      + juce::String (Bitacora::peorDonde);
+            //  Rojo a partir de tres segundos porque a los cinco Android da la
+            //  app por colgada: lo que hay que ver en rojo no es el atasco que
+            //  ya colgo la app, es el que iba de camino.
+            color = peor >= 3000 ? ZatiColours::red : ZatiColours::yellow;
+        }
+        else if (Bitacora::atascoPrevio.isNotEmpty())
+        {
+            valor = T ("la vez anterior") + ": " + Lang::ltr (Bitacora::atascoPrevio);
+            color = ZatiColours::yellow;
+        }
+        else
+        {
+            valor = T ("ninguno");
+        }
+
+        line (T ("atasco"), valor, color);
+    }
+
     //  ...Y LOS SEIS INTENTOS QUE LLEVARON A ESE RENGLON.
     //
     //  La pantalla ensenaba la conclusion -«compartida MEZCLADOR»- y con el
