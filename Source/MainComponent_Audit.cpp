@@ -8609,6 +8609,13 @@ void MainComponent::auditAudio()
         std::cout << "{\"bytes\":" << f
                   << ",\"por\":"  << AudioPath::bytesPorMuestra (f)
                   << "}" << std::endl;
+
+    //  Y LO QUE DE VERDAD LE LLEGA A OBOE AL ARRANCAR. Las tablas de arriba
+    //  prueban la decision; esto prueba que el constructor no la toma: ni
+    //  sonda al arrancar ni ajuste de usage o formato sobre el flujo de verdad.
+    std::cout << "{\"arranque_audio\":1,\"sonda\":" << (kSondaAlArrancar ? 1 : 0)
+              << ",\"usage\":" << zatiOboeUsage
+              << ",\"i16\":" << zatiOboeForceI16 << "}" << std::endl;
 }
 
 // ============================================================================

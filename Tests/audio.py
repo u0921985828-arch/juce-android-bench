@@ -82,6 +82,7 @@ ESPERADO = {
 
 
 bytes_ = {}
+arranque_ = {}
 
 
 def corre():
@@ -107,6 +108,8 @@ def corre():
             continue
         if "audio" in d:
             filas[d["audio"]] = d
+        elif "arranque_audio" in d:
+            arranque_.update (d)
         elif "bytes" in d:
             bytes_[int (d["bytes"])] = int (d["por"])
     return filas
@@ -155,6 +158,21 @@ def main():
                               "  <- el I24 empaquetado, el que desbordo" if f == 3 else ""))
     print ("bytes por muestra  " + "  ".join ("%d:%s" % (f, bytes_.get (f))
                                               for f in sorted (BYTES)))
+
+    #  EL ARRANQUE NO TOCA EL FLUJO DE VERDAD. La APK 50 no tuvo nunca el
+    #  «no responde» y la 51 fue la primera; lo unico de audio entre las dos es
+    #  que la sonda paso a arrancar seis flujos en el constructor y a abrir el
+    #  de verdad con usage GAME e I16. Hasta que un telefono diga lo contrario
+    #  con una traza, ni sonda al arrancar ni un ajuste sobre Oboe.
+    if not arranque_:
+        fallos.append ("la app no dijo que le pasa a Oboe al arrancar")
+    else:
+        print ("al arrancar: sonda %d  usage %d  i16 %d"
+               % (arranque_["sonda"], arranque_["usage"], arranque_["i16"]))
+        if arranque_["sonda"] or arranque_["usage"] or arranque_["i16"]:
+            fallos.append ("al arrancar: sonda %d usage %d i16 %d - es el cambio de la "
+                           "APK 51, la primera con «no responde»"
+                           % (arranque_["sonda"], arranque_["usage"], arranque_["i16"]))
 
     print()
     if fallos:

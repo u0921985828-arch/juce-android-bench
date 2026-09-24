@@ -35,7 +35,21 @@ MainComponent::MainComponent()
     // Ask the phone what it will actually grant BEFORE opening the real
     // device - the answer decides how the real device gets opened, and the
     // probe needs the output free to ask for an exclusive stream at all.
-    fastPath = AudioPath::probeFastPath (48000, 2);
+    //
+    //  Y AHORA NO SE PREGUNTA, y el flujo de verdad se abre como lo abre JUCE.
+    //  Cinco APK seguidas volvieron con «no responde» y la frontera es una
+    //  sola: la 50 (81b858e) no lo tuvo nunca y la 51 (a2ff825) fue la primera
+    //  en 16 340 renglones de bitacora. Lo unico de audio entre las dos es esta
+    //  sonda: desde a2ff825 ARRANCA seis flujos AAudio aqui, en el constructor,
+    //  concluye «exclusiva» en ese telefono y el flujo de verdad pasa a abrirse
+    //  con usage GAME y, si toca, en I16 -ci/patch_juce_oboe.py-, una forma que
+    //  ese telefono no habia visto nunca. Las cuatro tandas siguientes
+    //  arreglaron cosas reales y dejaron esto intacto, y el cartel siguio.
+    //  Se apaga entero y reversible: `kSondaAlArrancar` y nada mas. La sonda y
+    //  `concluye` se quedan -Tests/audio.py las sigue midiendo- para cuando
+    //  haya una traza del telefono que diga que el carril exclusivo es seguro.
+    if (kSondaAlArrancar)
+        fastPath = AudioPath::probeFastPath (48000, 2);
     zatiOboeUsage    = fastPath.exclusive ? fastPath.usage : 0;
     zatiOboeForceI16 = (fastPath.exclusive && fastPath.useI16) ? 1 : 0;
 

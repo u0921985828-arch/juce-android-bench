@@ -1610,6 +1610,9 @@ private:
     //  device of ours existed. This is the only honest answer to "are we on
     //  the fast lane", and it also configures the real stream.
     AudioPath::Fast fastPath;
+    //  Apagado: ver el constructor. Es la frontera entre la APK 50, sin
+    //  «no responde», y la 51, la primera con el.
+    static constexpr bool kSondaAlArrancar = false;
 
 
     //  The measurement. Everything else in this panel is the device's own
