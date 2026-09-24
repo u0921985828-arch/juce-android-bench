@@ -30,6 +30,22 @@
 #    del START es leer una intencion. Gana el que arranco.
 #  - `sin isMMapUsed`: si el simbolo oculto no esta, no decimos saberlo.
 #
+#  Y DESDE LA TANDA 20, LA SEGUNDA MITAD: EL TAMANO DE UN CUADRO.
+#
+#  La sonda que esta prueba estrenaba entrego un ANR. Su callback de datos
+#  -tiempo real, sobre el bufer MMAP que AAudio comparte con el kernel- se
+#  rellenaba de ceros calculando los bytes con un BOOLEANO: `canales * (i16 ?
+#  2 : 4)`, o sea «no es de 16 bits» = «son 4 bytes». AAudio concede cuatro
+#  formatos y dos no miden cuatro: PCM_I24_PACKED son TRES bytes. 128 cuadros
+#  estereo en I24 son 768 bytes y se escribian 1024. Con el HAL de audio por
+#  delante, el dispositivo ya no abria -`OUT -inf`, VU plano- y el vigilante
+#  arrastraba otra sonda entera cada segundo hasta el «no responde».
+#
+#  El callback no lo puede correr esta maquina. La CUENTA si, y por eso esta
+#  fuera del `#if JUCE_ANDROID` y por eso se mide aqui: los cuatro formatos con
+#  su tamano, y el desconocido devolviendo CERO -que es lo que hace que el
+#  callback no escriba nada en vez de adivinar-.
+#
 #      python3 Tests/audio.py
 # ============================================================================
 import json, os, shutil, subprocess, sys, tempfile
@@ -42,6 +58,16 @@ APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 kGAME = 14
 
+#  Formato de AAudio -> bytes por muestra. 0 y cualquier otro son «no se sabe»
+#  y valen CERO a proposito: el callback no toca el bufer antes que adivinar su
+#  tamano.
+BYTES = {0: 0,    # AAUDIO_FORMAT_UNSPECIFIED
+         1: 2,    # PCM_I16
+         2: 4,    # PCM_FLOAT
+         3: 3,    # PCM_I24_PACKED  <- el que desbordaba
+         4: 4,    # PCM_I32
+         5: 0}    # no existe
+
 #  Lo esperado, tabla a tabla. Solo los campos que DECIDEN: `usage` e `i16` son
 #  los que viajan al flujo de verdad, `excl` y `gano` son de que fila salieron.
 ESPERADO = {
@@ -53,6 +79,9 @@ ESPERADO = {
     "sin isMMapUsed":              {"ran": 1, "excl": 0, "usage": 0,     "i16": 0, "gano": 0,
                                     "mmap": 0},
 }
+
+
+bytes_ = {}
 
 
 def corre():
@@ -78,6 +107,8 @@ def corre():
             continue
         if "audio" in d:
             filas[d["audio"]] = d
+        elif "bytes" in d:
+            bytes_[int (d["bytes"])] = int (d["por"])
     return filas
 
 
@@ -113,11 +144,24 @@ def main():
                            "el flujo de verdad sin ninguna medida detras"
                            % (que, d["usage"], d["i16"]))
 
+    #  EL TAMANO DE UN CUADRO. Es una cuenta de seis renglones y se mide
+    #  entera porque los seis importan: el que fallaba era el 3, y el 0 y el 5
+    #  -«no se sabe»- son los que impiden que el callback invente un tamano.
+    for f in sorted (BYTES):
+        dio = bytes_.get (f)
+        if dio != BYTES[f]:
+            fallos.append ("bytesPorMuestra(%d) = %s y se esperaba %s%s"
+                           % (f, dio, BYTES[f],
+                              "  <- el I24 empaquetado, el que desbordo" if f == 3 else ""))
+    print ("bytes por muestra  " + "  ".join ("%d:%s" % (f, bytes_.get (f))
+                                              for f in sorted (BYTES)))
+
     print()
     if fallos:
         for f in fallos: print ("FALLA  " + f)
         return 1
-    print ("las %d tablas deciden lo que tienen que decidir" % len (ESPERADO))
+    print ("las %d tablas deciden lo que tienen que decidir, y los %d formatos "
+           "miden lo que miden" % (len (ESPERADO), len (BYTES)))
     return 0
 
 

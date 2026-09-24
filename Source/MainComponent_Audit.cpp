@@ -8596,4 +8596,17 @@ void MainComponent::auditAudio()
         t[0] = ok (0, 0, false, true, false);
         fila ("sin isMMapUsed", t, 1, false);
     }
+
+    //  Y EL TAMANO DE UN CUADRO, que es lo que provoco el ANR.
+    //
+    //  El callback de la sonda se pasaba de largo el bufer de AAudio porque
+    //  calculaba los bytes con un booleano -«no es de 16 bits» = «son 4 bytes»-
+    //  y hay dos formatos concedibles que no miden cuatro. Ese callback no lo
+    //  puede correr esta maquina; esta cuenta SI, asi que se publica formato a
+    //  formato y `Tests/audio.py` la mide. Los cinco valores, y el desconocido,
+    //  que tiene que dar CERO para que el callback no escriba nada.
+    for (int f = 0; f <= 5; ++f)
+        std::cout << "{\"bytes\":" << f
+                  << ",\"por\":"  << AudioPath::bytesPorMuestra (f)
+                  << "}" << std::endl;
 }

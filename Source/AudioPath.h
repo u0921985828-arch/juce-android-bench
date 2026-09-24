@@ -4,6 +4,7 @@
 #include "Lang.h"
 
 #include <array>
+#include <atomic>
 #include <cstring>
 
 #if JUCE_ANDROID
@@ -172,6 +173,12 @@ namespace AudioPath
         std::array<Intento, kIntentos> intentos {};
         int nIntentos = 0;
         int gano      = -1;
+
+        //  Lo que costo la sonda entera, en milisegundos. Se publica porque la
+        //  sonda ya provoco un ANR una vez y la siguiente captura de pantalla
+        //  tiene que poder decir si el tiempo se va aqui o en otro sitio, en
+        //  vez de volver a deducirlo leyendo codigo.
+        int ms = 0;
     };
 
     // ========================================================================
@@ -237,6 +244,46 @@ namespace AudioPath
         return r;
     }
 
+    // ========================================================================
+    //  EL TAMANO DE UN CUADRO SALE DEL FORMATO CONCEDIDO, NUNCA DE UN BOOLEANO.
+    //
+    //  La primera version del callback de la sonda escribia
+    //  `canales * (i16 ? 2 : 4)`, o sea que trataba «no es de 16 bits» como «es
+    //  de 4 bytes». AAudio concede CUATRO formatos y dos de ellos no miden
+    //  cuatro: PCM_I24_PACKED son TRES bytes por muestra, y con el simbolo
+    //  `AAudioStream_getFormat` ausente -que no estaba en la lista de
+    //  obligatorios- la cuenta daba 4 sobre un bufer de 2.
+    //
+    //  En los dos casos el callback -que corre en el hilo de tiempo real de
+    //  AAudio, sobre el bufer MMAP compartido con el kernel- se pasaba de largo
+    //  el final: 128 cuadros estereo concedidos en I24 son 768 bytes y se
+    //  escribian 1024, o sea 256 bytes fuera. Eso se llevo por delante el HAL de
+    //  audio, el dispositivo de verdad ya no abria -la pantalla se quedo en
+    //  `OUT -inf` con el VU plano- y el vigilante, que reintenta cada segundo,
+    //  arrastraba otra sonda entera por el hilo de mensajes hasta que Android
+    //  canto «Zati Sampler no responde». Un ANR por un `memset` mal medido.
+    //
+    //  Formato que no se reconoce devuelve CERO y el callback no escribe nada.
+    //  Un bloque sin tocar es como mucho un chasquido de unos milisegundos en un
+    //  flujo que se cierra acto seguido; pasarse del bufer es corromper memoria
+    //  ajena y no hay vuelta atras de eso.
+    //
+    //  Vive FUERA del `#if JUCE_ANDROID` a proposito: la sonda no la puede
+    //  correr el banco de escritorio, y por eso este desbordamiento se entrego.
+    //  Esta cuenta si se puede, asi que se mide (`Tests/audio.py`).
+    // ========================================================================
+    inline int bytesPorMuestra (int formatoAAudio)
+    {
+        switch (formatoAAudio)
+        {
+            case 1:  return 2;   // AAUDIO_FORMAT_PCM_I16
+            case 2:  return 4;   // AAUDIO_FORMAT_PCM_FLOAT
+            case 3:  return 3;   // AAUDIO_FORMAT_PCM_I24_PACKED
+            case 4:  return 4;   // AAUDIO_FORMAT_PCM_I32
+            default: return 0;   // no se sabe: no se toca el bufer
+        }
+    }
+
    #if JUCE_ANDROID
     //  EL CALLBACK VACIO, Y POR QUE EXISTE.
     //
@@ -251,13 +298,21 @@ namespace AudioPath
     //
     //  Se rellena de ceros y no se deja como venga porque ESTO SUENA POR EL
     //  ALTAVOZ: AAudio no promete el bloque limpio, y silencio en los dos
-    //  formatos que se piden -PCM_I16 y float- es un bloque de ceros.
-    inline int zatiProbeBytesPerFrame = 0;
+    //  formatos que se piden -PCM_I16 y float- es un bloque de ceros. Cuantos
+    //  bytes son lo dice `bytesPorMuestra`, arriba, que esta fuera del
+    //  `#if JUCE_ANDROID` justamente para que el banco pueda medirlo.
+    //
+    //  Atomico y no un `int` a secas porque quien lo escribe es el hilo de
+    //  mensajes y quien lo lee es el hilo de tiempo real de AAudio. Es una
+    //  carga sin cerrojo -`is_always_lock_free` en todo lo que Android ejecuta-
+    //  asi que no rompe la regla del hilo de audio.
+    inline std::atomic<int> zatiProbeBytesPerFrame { 0 };
 
     inline int probeCallback (void*, void*, void* audioData, int32_t numFrames)
     {
-        if (audioData != nullptr && numFrames > 0 && zatiProbeBytesPerFrame > 0)
-            std::memset (audioData, 0, (size_t) numFrames * (size_t) zatiProbeBytesPerFrame);
+        const int bpf = zatiProbeBytesPerFrame.load (std::memory_order_acquire);
+        if (audioData != nullptr && numFrames > 0 && bpf > 0)
+            std::memset (audioData, 0, (size_t) numFrames * (size_t) bpf);
         return 0;   // AAUDIO_CALLBACK_RESULT_CONTINUE
     }
 
@@ -337,6 +392,7 @@ namespace AudioPath
 
         std::array<Intento, kIntentos> tabla {};
         int n = 0;
+        const auto t0 = juce::Time::getMillisecondCounter();
 
         for (const auto& a : attempts)
         {
@@ -374,12 +430,22 @@ namespace AudioPath
             t.canales  = getChans != nullptr ? getChans (s) : 0;
             t.rate     = getRate  != nullptr ? getRate  (s) : 0;
             t.capacity = getCap   != nullptr ? getCap   (s) : 0;
-            t.i16      = (getFmt  != nullptr && getFmt  (s) == 1);
+
+            const int formatoDado = (getFmt != nullptr ? getFmt (s) : 0);
+            t.i16 = (formatoDado == 1);
 
             //  Cuanto hay que poner a cero en el callback. Se calcula ANTES del
             //  START porque despues del START el callback ya puede haber
             //  entrado, y un cero tarde es el ruido que se venia a evitar.
-            zatiProbeBytesPerFrame = juce::jmax (0, t.canales) * (t.i16 ? 2 : 4);
+            //
+            //  Y se calcula con el formato QUE CONCEDIO AAudio, no con `i16`:
+            //  ver el comentario de `bytesPorMuestra`, que esta ahi porque esta
+            //  cuenta con un booleano escribia 4 bytes donde cabian 2 o 3 y
+            //  acabo en un ANR. Sin formato reconocido o sin canales, cero: el
+            //  callback no toca el bufer.
+            const int bpm = bytesPorMuestra (formatoDado);
+            zatiProbeBytesPerFrame.store (t.canales > 0 ? bpm * t.canales : 0,
+                                          std::memory_order_release);
 
             if (start != nullptr)
             {
@@ -413,17 +479,43 @@ namespace AudioPath
             if (getBurst != nullptr) t.burst = getBurst (s);
             if (getRate  != nullptr) t.rate  = getRate  (s);
 
+            //  SE ESPERA A STOPPED ANTES DE CERRAR. `requestStop` es una
+            //  peticion: deja el flujo en STOPPING y el callback de tiempo real
+            //  puede entrar una vez mas. Cerrar ahi libera el bufer bajo los
+            //  pies de un callback que aun esta escribiendo en el, que es la
+            //  misma corrupcion por otra puerta. 100 ms de tope, que es de
+            //  sobra para un flujo que ya se paro, y si se agota se cierra
+            //  igual porque no hay nada mejor que hacer.
             if (stopIt != nullptr)
+            {
                 stopIt (s);
+                if (waitSt != nullptr)
+                {
+                    int32_t parado = 0;
+                    waitSt (s, 9 /* AAUDIO_STREAM_STATE_STOPPING */, &parado, 100000000LL);
+                }
+            }
+            zatiProbeBytesPerFrame.store (0, std::memory_order_release);
             closeIt (s);
-            zatiProbeBytesPerFrame = 0;
 
             if (t.exclusiva && t.arranco)
+                break;
+
+            //  TOPE DE TIEMPO PARA LA SONDA ENTERA, y no solo por intento. Seis
+            //  intentos que esperen su tope son 6 x 120 ms de arranque mas 6 x
+            //  100 ms de parada mas las aperturas: 1.3 s largos en el hilo de
+            //  mensajes, y esto corre en el constructor. Android cuenta cinco
+            //  segundos de hilo principal parado como ANR y esta sonda ya
+            //  provoco uno. Con 400 ms gastados se para y se contesta con lo
+            //  que haya: media sonda es una respuesta, una app colgada no.
+            if (juce::Time::getMillisecondCounter() - t0 >= 400u)
                 break;
         }
 
         dlclose (lib);
-        return concluye (tabla, n, isMmap != nullptr);
+        auto r = concluye (tabla, n, isMmap != nullptr);
+        r.ms = (int) (juce::Time::getMillisecondCounter() - t0);
+        return r;
     }
    #else
     inline Fast probeFastPath (int, int) { return {}; }
@@ -490,12 +582,13 @@ namespace AudioPath
 //  the probe above, which runs with no audio device open - so the real stream
 //  opens with whatever configuration the phone was willing to grant MMAP for.
 //
-//  Y SE VUELVEN A ESCRIBIR, que es lo que faltaba. Decia «set once ... and
-//  never touched again», y eso era el fallo y no el contrato: si la sonda del
-//  arranque cayo en el momento en que otra app tenia el extremo exclusivo, la
-//  sesion entera se quedaba en el mezclador sin forma de reintentarlo. Ver
-//  MainComponent::resondeaCarrilRapido, que las reescribe al volver al primer
-//  plano y siempre con el dispositivo cerrado.
+//  Y SE ESCRIBEN UNA SOLA VEZ, en el constructor. Hubo una version que las
+//  reescribia al volver al primer plano, para el caso -real y avisado por la
+//  propia sonda- de arrancar mientras otra app tiene el extremo exclusivo. Se
+//  quito: re-sondear son hasta seis aperturas con su START y su STOP, y los
+//  tres sitios donde cabia son callbacks del hilo principal de Android, que es
+//  donde se cuentan los ANR. Ver el comentario de MainComponent.cpp donde
+//  estaba la funcion.
 //
 //  Zero means "leave JUCE alone", which is what every other platform sees.
 // ============================================================================

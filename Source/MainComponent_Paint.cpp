@@ -725,7 +725,14 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     {
         g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
         g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
-        g.drawFittedText (T ("intentos"), inner.removeFromTop (Metrics::bandaFina),
+        //  Y LO QUE COSTO LA SONDA, en el mismo renglon del rotulo. Se publica
+        //  porque esta sonda ya provoco un ANR -seis flujos abiertos, arrancados
+        //  y cerrados en el hilo de mensajes- y la siguiente captura de pantalla
+        //  tiene que poder decir si el tiempo se va aqui, en vez de que haya que
+        //  deducirlo leyendo el codigo como hubo que hacer la primera vez.
+        g.drawFittedText (T ("intentos") + "  "
+                            + Lang::ltr (juce::String (fastPath.ms) + " ms"),
+                          inner.removeFromTop (Metrics::bandaFina),
                           juce::Justification::centredLeft, 1, 0.7f);
 
         for (int i = 0; i < fastPath.nIntentos; ++i)

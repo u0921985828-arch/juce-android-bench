@@ -1568,19 +1568,6 @@ private:
     //  the fast lane", and it also configures the real stream.
     AudioPath::Fast fastPath;
 
-    //  ...Y SE VUELVE A PREGUNTAR, que es lo que faltaba. El veredicto se
-    //  escribia UNA vez en el constructor y nadie lo volvia a tocar, asi que
-    //  una app que arranco mientras otra tenia el extremo exclusivo abierto
-    //  -el caso que la propia sonda avisa de que existe- pasaba la sesion
-    //  ENTERA por el mezclador y no habia forma de reintentarlo sin matarla.
-    //  La sonda necesita la salida libre, asi que solo cabe en los tres sitios
-    //  que ya reabren el dispositivo teniendolo cerrado.
-    void resondeaCarrilRapido();
-    //  Una re-sonda por vuelta al primer plano, y ninguna si ya hay exclusiva:
-    //  sondear cuesta abrir, arrancar y cerrar hasta seis flujos, y un movil
-    //  que no la concede nunca no puede pagar eso cada vez que se desbloquea.
-    bool resondeoPermitido = false;
-    bool dispositivoVisto  = false;
 
     //  The measurement. Everything else in this panel is the device's own
     //  claim about itself; this is a click emitted and heard back.
