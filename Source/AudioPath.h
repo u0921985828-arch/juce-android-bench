@@ -3,6 +3,9 @@
 #include <JuceHeader.h>
 #include "Lang.h"
 
+#include <array>
+#include <cstring>
+
 #if JUCE_ANDROID
  #include <sys/system_properties.h>
  #include <dlfcn.h>
@@ -122,6 +125,35 @@ namespace AudioPath
         kUsageGame  = 14   // AAUDIO_USAGE_GAME
     };
 
+    //  SEIS INTENTOS, Y LA TABLA ENTERA SE PUBLICA.
+    //
+    //  Antes solo sobrevivia la conclusion -«compartida MEZCLADOR»- y con el
+    //  telefono delante eso no es una respuesta sino el principio de cinco
+    //  tandas a ciegas: no se sabia si el aparato habia negado los seis, si
+    //  habia concedido el tercero y lo habia tumbado el START, o si libaaudio
+    //  ni siquiera traia el simbolo. La medida de campo decia `via compartida
+    //  MEZCLADOR` con `mmap disponible · excl disponible`, o sea que el aparato
+    //  concede el carril y la app no lo coge, y no habia ni un dato mas.
+    //  Son seis renglones y valen una semana.
+    static constexpr int kIntentos = 6;
+
+    struct Intento
+    {
+        int  usage     = 0;      // lo que se pidio; 0 = los terminos del aparato
+        int  pidio     = 0;      // formato pedido: 0 cualquiera, 1 i16, 2 float
+        bool abrio     = false;
+        bool arranco   = false;  // ...y AAudio lo llevo a STARTED
+        bool exclusiva = false;
+        bool mmap      = false;
+        bool baja      = false;  // LOW_LATENCY concedido
+        bool i16       = false;  // el formato que CONCEDIO
+        int  burst     = 0;
+        int  capacity  = 0;
+        int  canales   = 0;
+        int  rate      = 0;
+        int  error     = 0;      // el codigo de AAudio que lo tumbo, 0 si ninguno
+    };
+
     struct Fast
     {
         bool ran        = false;  // libaaudio was there and a stream opened
@@ -135,16 +167,105 @@ namespace AudioPath
         int  capacity   = 0;
         int  channels   = 0;      // what the granted stream actually is
         int  rate       = 0;
+
+        //  La tabla de arriba, y cual de sus filas decidio. -1 = ninguna.
+        std::array<Intento, kIntentos> intentos {};
+        int nIntentos = 0;
+        int gano      = -1;
     };
 
-   #if JUCE_ANDROID
-    inline Fast probeFastPath (int sampleRate, int channels)
+    // ========================================================================
+    //  LA DECISION, SEPARADA DEL CONTACTO CON AAUDIO.
+    //
+    //  `probeFastPath` vive tras `#if JUCE_ANDROID`, asi que el banco de
+    //  escritorio no la puede correr - y una regla que no puede fallar no es una
+    //  regla, es una linea que imprime OK. Lo que SI se puede medir es la otra
+    //  mitad: dada la tabla de seis respuestas, que `usage` se le pasa a JUCE,
+    //  si se le fuerza el formato de 16 bits y que texto se pinta. Eso es esta
+    //  funcion, es pura, y `Tests/audio.py` la ejercita con tablas sinteticas.
+    //
+    //  LIMITE DECLARADO, en vez de fingirlo medido: que la llamada lleve
+    //  callback de datos y arranque el flujo antes de leer el veredicto solo lo
+    //  comprueba un telefono. Aqui se mide lo que se decide con la respuesta, no
+    //  la respuesta.
+    // ========================================================================
+    inline Fast concluye (const std::array<Intento, kIntentos>& tabla, int n, bool mmapKnown)
     {
         Fast r;
+        r.intentos  = tabla;
+        r.nIntentos = juce::jlimit (0, kIntentos, n);
+        r.mmapKnown = mmapKnown;
 
+        //  UN FLUJO QUE ABRE Y NO ARRANCA NO ES UN CARRIL. AAudio puede conceder
+        //  el constructor y negar el START, que es donde de verdad se compromete
+        //  el MMAP: preguntar por el modo de reparto antes del START es leer una
+        //  intencion y no un hecho. Se queda como suelo -un flujo abierto sigue
+        //  informando de los terminos nativos del aparato, que es lo que se
+        //  pinta cuando no hay nada mejor- pero nunca le gana a uno que arranco.
+        auto grado = [] (const Intento& x)
+        {
+            if (! x.abrio)   return 0;
+            if (! x.arranco) return 1;
+            return x.exclusiva ? 3 : 2;
+        };
+
+        for (int i = 0; i < r.nIntentos; ++i)
+        {
+            if (! tabla[(size_t) i].abrio)
+                continue;
+            if (r.gano < 0 || grado (tabla[(size_t) i]) > grado (tabla[(size_t) r.gano]))
+                r.gano = i;
+        }
+
+        if (r.gano < 0)
+            return r;
+
+        const auto& g = tabla[(size_t) r.gano];
+        r.ran        = true;
+        r.exclusive  = g.exclusiva && g.arranco;
+        r.mmapUsed   = mmapKnown && g.mmap;
+        r.lowLatency = g.baja;
+        r.useI16     = g.i16;
+        //  Solo se le tuerce el brazo a JUCE cuando esto ha GANADO algo. Si la
+        //  exclusiva no se concedio, pedirle una `usage` distinta de la de por
+        //  defecto es cambiar el flujo de verdad sin ninguna medida detras.
+        r.usage      = r.exclusive ? g.usage : 0;
+        r.burst      = g.burst;
+        r.capacity   = g.capacity;
+        r.channels   = g.canales;
+        r.rate       = g.rate;
+        return r;
+    }
+
+   #if JUCE_ANDROID
+    //  EL CALLBACK VACIO, Y POR QUE EXISTE.
+    //
+    //  La sonda abria los seis intentos SIN callback de datos y leia el
+    //  veredicto. En el fichero de al lado, JUCE documenta lo contrario para su
+    //  propia sonda de rafaga (juce_Oboe_android.cpp:383): «providing a callback
+    //  is required on some devices to get a FAST track, so we pass an empty one
+    //  to the temp stream». El flujo de verdad SI lleva callback, asi que una
+    //  sonda sin el puede contestar «no hay exclusiva» por una razon que no
+    //  existe cuando se toca: pedir con una cuenta y tocar con otra, que es la
+    //  figura que ya costo dos tandas en otros sitios de esta casa.
+    //
+    //  Se rellena de ceros y no se deja como venga porque ESTO SUENA POR EL
+    //  ALTAVOZ: AAudio no promete el bloque limpio, y silencio en los dos
+    //  formatos que se piden -PCM_I16 y float- es un bloque de ceros.
+    inline int zatiProbeBytesPerFrame = 0;
+
+    inline int probeCallback (void*, void*, void* audioData, int32_t numFrames)
+    {
+        if (audioData != nullptr && numFrames > 0 && zatiProbeBytesPerFrame > 0)
+            std::memset (audioData, 0, (size_t) numFrames * (size_t) zatiProbeBytesPerFrame);
+        return 0;   // AAUDIO_CALLBACK_RESULT_CONTINUE
+    }
+
+    inline Fast probeFastPath (int sampleRate, int channels)
+    {
         void* lib = dlopen ("libaaudio.so", RTLD_NOW);
         if (lib == nullptr)
-            return r;
+            return {};
 
         using Builder = void*;
         using Stream  = void*;
@@ -159,6 +280,7 @@ namespace AudioPath
         auto setChans = (void (*) (Builder, int32_t))  sym ("AAudioStreamBuilder_setChannelCount");
         auto setRate  = (void (*) (Builder, int32_t))  sym ("AAudioStreamBuilder_setSampleRate");
         auto setUsage = (void (*) (Builder, int32_t))  sym ("AAudioStreamBuilder_setUsage");  // API 28
+        auto setCb    = (void (*) (Builder, void*, void*)) sym ("AAudioStreamBuilder_setDataCallback");
         auto openIt   = (int  (*) (Builder, Stream*))  sym ("AAudioStreamBuilder_openStream");
         auto delBuild = (int  (*) (Builder))           sym ("AAudioStreamBuilder_delete");
         auto getShare = (int32_t (*) (Stream))         sym ("AAudioStream_getSharingMode");
@@ -168,6 +290,10 @@ namespace AudioPath
         auto getChans = (int32_t (*) (Stream))         sym ("AAudioStream_getChannelCount");
         auto getRate  = (int32_t (*) (Stream))         sym ("AAudioStream_getSampleRate");
         auto getFmt   = (int32_t (*) (Stream))         sym ("AAudioStream_getFormat");
+        auto start    = (int  (*) (Stream))            sym ("AAudioStream_requestStart");
+        auto stopIt   = (int  (*) (Stream))            sym ("AAudioStream_requestStop");
+        auto waitSt   = (int  (*) (Stream, int32_t, int32_t*, int64_t))
+                                                       sym ("AAudioStream_waitForStateChange");
         auto closeIt  = (int  (*) (Stream))            sym ("AAudioStream_close");
 
         //  No esta en las cabeceras del NDK, pero libaaudio lo exporta y es la
@@ -183,7 +309,7 @@ namespace AudioPath
              || getShare == nullptr)
         {
             dlclose (lib);
-            return r;
+            return {};
         }
 
         //  El primer intento no fija NADA. Un extremo exclusivo es una pieza de
@@ -199,7 +325,7 @@ namespace AudioPath
         //  el cambio mas pequeno sobre el flujo de verdad.
         constexpr int kAny = 0;   // AAUDIO_UNSPECIFIED
         struct Attempt { int usage; int format; int chans; int rate; };
-        const Attempt attempts[] =
+        const Attempt attempts[kIntentos] =
         {
             { kAny,        kAny, kAny,     kAny       },   // the device's own terms
             { kUsageGame,  kAny, kAny,     kAny       },
@@ -209,8 +335,16 @@ namespace AudioPath
             { kUsageMedia, 1,    channels, sampleRate }
         };
 
+        std::array<Intento, kIntentos> tabla {};
+        int n = 0;
+
         for (const auto& a : attempts)
         {
+            auto& t = tabla[(size_t) n];
+            ++n;
+            t.usage = a.usage;
+            t.pidio = a.format;
+
             Builder b = nullptr;
             if (create (&b) != 0 || b == nullptr)
                 continue;
@@ -222,6 +356,7 @@ namespace AudioPath
             if (setChans != nullptr && a.chans  != kAny) setChans (b, a.chans);
             if (setRate  != nullptr && a.rate   != kAny) setRate  (b, a.rate);
             if (setUsage != nullptr && a.usage  != kAny) setUsage (b, a.usage);
+            if (setCb    != nullptr) setCb (b, (void*) &probeCallback, nullptr);
 
             Stream s = nullptr;
             const int result = openIt (b, &s);
@@ -230,36 +365,65 @@ namespace AudioPath
                 delBuild (b);
 
             if (result != 0 || s == nullptr)
-                continue;
-
-            const bool exclusive = (getShare (s) == 0);
-
-            //  Se guarda el primer flujo que llegue a abrirse, para que un
-            //  telefono que no concede MMAP nunca informe igual de su burst real
-            //  en vez de no informar de nada.
-            if (! r.ran || (exclusive && ! r.exclusive))
             {
-                r.ran        = true;
-                r.exclusive  = exclusive;
-                r.mmapKnown  = (isMmap != nullptr);
-                r.mmapUsed   = (isMmap != nullptr && isMmap (s));
-                r.lowLatency = (getPerf != nullptr && getPerf (s) == 12);
-                r.useI16     = (getFmt  != nullptr && getFmt  (s) == 1);
-                r.usage      = exclusive ? a.usage : 0;
-                r.burst      = getBurst != nullptr ? getBurst (s) : 0;
-                r.capacity   = getCap   != nullptr ? getCap   (s) : 0;
-                r.channels   = getChans != nullptr ? getChans (s) : 0;
-                r.rate       = getRate  != nullptr ? getRate  (s) : 0;
+                t.error = result;
+                continue;
             }
 
-            closeIt (s);
+            t.abrio    = true;
+            t.canales  = getChans != nullptr ? getChans (s) : 0;
+            t.rate     = getRate  != nullptr ? getRate  (s) : 0;
+            t.capacity = getCap   != nullptr ? getCap   (s) : 0;
+            t.i16      = (getFmt  != nullptr && getFmt  (s) == 1);
 
-            if (r.exclusive)
+            //  Cuanto hay que poner a cero en el callback. Se calcula ANTES del
+            //  START porque despues del START el callback ya puede haber
+            //  entrado, y un cero tarde es el ruido que se venia a evitar.
+            zatiProbeBytesPerFrame = juce::jmax (0, t.canales) * (t.i16 ? 2 : 4);
+
+            if (start != nullptr)
+            {
+                const int rs = start (s);
+                if (rs == 0)
+                {
+                    //  120 ms y no mas: son seis intentos y esto corre en el
+                    //  arranque de la app. El caso normal vuelve en cuanto el
+                    //  estado deja de ser STARTING, que son unos pocos
+                    //  milisegundos; el tope solo acota al aparato que se cuelga.
+                    int32_t estado = 0;
+                    if (waitSt != nullptr)
+                        waitSt (s, 3 /* AAUDIO_STREAM_STATE_STARTING */, &estado, 120000000LL);
+                    //  Sin waitForStateChange no hay forma de confirmarlo y
+                    //  suponerlo seria volver a lo de antes; se cree al codigo
+                    //  de retorno, que es lo unico que hay.
+                    t.arranco = (waitSt == nullptr || estado == 4 /* STARTED */);
+                }
+                else
+                {
+                    t.error = rs;
+                }
+            }
+
+            //  Y EL VEREDICTO SE LEE CON EL FLUJO ANDANDO, que es la otra mitad
+            //  de esta tanda: la rafaga y el reloj se renegocian en el START, y
+            //  el modo de reparto de un flujo que nunca arranco es una promesa.
+            t.exclusiva = (getShare (s) == 0);
+            t.mmap      = (isMmap  != nullptr && isMmap (s));
+            t.baja      = (getPerf != nullptr && getPerf (s) == 12);
+            if (getBurst != nullptr) t.burst = getBurst (s);
+            if (getRate  != nullptr) t.rate  = getRate  (s);
+
+            if (stopIt != nullptr)
+                stopIt (s);
+            closeIt (s);
+            zatiProbeBytesPerFrame = 0;
+
+            if (t.exclusiva && t.arranco)
                 break;
         }
 
         dlclose (lib);
-        return r;
+        return concluye (tabla, n, isMmap != nullptr);
     }
    #else
     inline Fast probeFastPath (int, int) { return {}; }
@@ -292,6 +456,29 @@ namespace AudioPath
                  + (f.useI16 ? " · 16b" : "")
                  + (f.burst > 0 ? " · burst " + juce::String (f.burst) : juce::String());
     }
+
+    //  QUE SE PIDIO EN UN INTENTO, y que contesto. Dos funciones y no una
+    //  porque la pantalla las pinta en dos columnas: a la izquierda lo que
+    //  pedimos -que es nuestro- y a la derecha lo que dijo el aparato.
+    inline juce::String pideIntento (const Intento& t)
+    {
+        return (t.usage == kUsageGame  ? juce::String ("game")
+              : t.usage == kUsageMedia ? juce::String ("media")
+                                       : T ("libre"))
+             + (t.pidio == 1 ? " 16b" : t.pidio == 2 ? " float" : "");
+    }
+
+    inline juce::String describeIntento (const Intento& t)
+    {
+        const juce::String codigo = t.error != 0 ? " " + juce::String (t.error) : juce::String();
+
+        if (! t.abrio)   return T ("no abrio")   + codigo;
+        if (! t.arranco) return T ("no arranco") + codigo;
+
+        return (t.exclusiva ? T ("EXCLUSIVA")
+                            : T ("compartida") + " " + (t.mmap ? T ("MMAP") : T ("MEZCLADOR")))
+             + (t.burst > 0 ? " · " + juce::String (t.burst) : juce::String());
+    }
 }
 
 // ============================================================================
@@ -299,10 +486,16 @@ namespace AudioPath
 //
 //  juce_Oboe_android.cpp is patched at build time (ci/patch_juce_oboe.py) to
 //  read these before opening the output stream: the usage it requests, and
-//  whether to skip the float attempt and go straight to 16-bit. Both are set
-//  once from the probe above, before any audio device exists, and never
-//  touched again - so the real stream opens with whatever configuration the
-//  phone was willing to grant MMAP for.
+//  whether to skip the float attempt and go straight to 16-bit. Both come from
+//  the probe above, which runs with no audio device open - so the real stream
+//  opens with whatever configuration the phone was willing to grant MMAP for.
+//
+//  Y SE VUELVEN A ESCRIBIR, que es lo que faltaba. Decia «set once ... and
+//  never touched again», y eso era el fallo y no el contrato: si la sonda del
+//  arranque cayo en el momento en que otra app tenia el extremo exclusivo, la
+//  sesion entera se quedaba en el mezclador sin forma de reintentarlo. Ver
+//  MainComponent::resondeaCarrilRapido, que las reescribe al volver al primer
+//  plano y siempre con el dispositivo cerrado.
 //
 //  Zero means "leave JUCE alone", which is what every other platform sees.
 // ============================================================================

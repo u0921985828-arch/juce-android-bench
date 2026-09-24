@@ -702,6 +702,11 @@ namespace Metrics
     //  `Metrics::hit`. Ver `centraEnRenglon`, que es quien la centra.
     static constexpr int bandaTitulo    = 16;
     static constexpr int bandaSubtitulo = 14;
+    //  Y LA BANDA DE PIE DE PAGINA, que estaba escrita a mano. Los renglones
+    //  de `fFine` -las notas del recuadro de AUDIO, los seis intentos de la
+    //  sonda del carril rapido- pedian `removeFromTop (11)` con el 11 suelto,
+    //  que es exactamente el numero que se queda viejo en un sitio de tres.
+    static constexpr int bandaFina      = 11;
 
     //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
     //  que NO es el mismo por los cuatro lados.

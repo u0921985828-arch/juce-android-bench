@@ -2724,7 +2724,7 @@ void MainComponent::resized()
         //  exactamente el tipo de numero que se queda viejo en tres sitios de
         //  cuatro. Es cuanto texto pinta paintAudioInfo, o sea suyo.
         const int estAltoAudio = Metrics::bandaTitulo + Metrics::sm + tabsH
-                               + kAltoAudioInfo + Metrics::xs + filasChips
+                               + altoAudioInfo() + Metrics::xs + filasChips
                                + Metrics::xs + Metrics::bandaSubtitulo + Metrics::hit + Metrics::sm;
         //  DOS COLUMNAS CUANDO LA DE UNA NO CABE, y la pregunta es esa y no
         //  otra. La condicion anterior comparaba la altura consigo misma menos
@@ -2767,7 +2767,7 @@ void MainComponent::resized()
         const int wanted = onMidi ? midiH
             : onAudio
             ? Ficha::cromoDesnudo (tabsH, false)
-                + kAltoAudioInfo + Metrics::xs
+                + altoAudioInfo() + Metrics::xs
                 + Metrics::bandaSubtitulo + Metrics::hit + Metrics::sm
                 + (Metrics::hit + Metrics::xs) * kFilasChipsAudio + Metrics::sm
             : onAsp
@@ -2986,7 +2986,7 @@ void MainComponent::resized()
             {
                 auto izda = inner.removeFromLeft (inner.getWidth() / 2 - Metrics::sm);
                 inner.removeFromLeft (Metrics::sm);
-                audioInfoArea = izda.removeFromTop (juce::jmin (kAltoAudioInfo, izda.getHeight()));
+                audioInfoArea = izda.removeFromTop (juce::jmin (altoAudioInfo(), izda.getHeight()));
                 ponPruebas (izda);
                 columnaChips = inner.reduced (Metrics::panelSangria, 0);
             }
@@ -3006,7 +3006,7 @@ void MainComponent::resized()
                 const int chipsNecesarios = kFilasChipsAudio * (Metrics::hit + Metrics::xs)
                                           + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
                 audioInfoArea = inner.removeFromTop (
-                                    juce::jlimit (0, kAltoAudioInfo, inner.getHeight() - Metrics::xs - chipsNecesarios));
+                                    juce::jlimit (0, altoAudioInfo(), inner.getHeight() - Metrics::xs - chipsNecesarios));
                 inner.removeFromTop (Metrics::xs);
                 ponPruebas (inner);
                 columnaChips = inner.reduced (Metrics::panelSangria, 0);

@@ -1178,6 +1178,15 @@ private:
     //  lo dice ningun componente. Ver estAltoAudio: estaba escrito a mano en
     //  cuatro sitios.
     static constexpr int kAltoAudioInfo = 158;
+    //  ...MAS LOS SEIS RENGLONES DE LA SONDA, cuando los hay.
+    //
+    //  Los intentos solo se pintan con el carril NEGADO -si hay exclusiva no
+    //  hay nada que explicar- y en un escritorio la sonda no corre nunca, asi
+    //  que este alto vale 158 clavado en todo el banco y solo crece en el unico
+    //  sitio donde la informacion hace falta: un telefono que se quedo en el
+    //  mezclador. Derivado y no otra constante, que es como se llega a un 158
+    //  escrito cuatro veces.
+    int altoAudioInfo() const;
 
     void padPorDefecto (int i);
     void newProject();
@@ -1481,6 +1490,11 @@ private:
         bool ran = false, mmapKnown = false, mmapUsed = false, exclusive = false;
         int politicaMmap = -1, politicaExcl = -1;
         int nota = 0;
+        //  Y LA TABLA DE LA SONDA, porque desde que se re-sondea puede cambiar
+        //  sin que ninguna de las de arriba se mueva: seis intentos que fallan
+        //  de otra manera dejan `ran`, `mmapUsed` y `exclusive` clavados y los
+        //  seis renglones pintados con lo de la vez anterior.
+        int intentos = 0, gano = -1;
 
         bool operator== (const Readout& o) const noexcept
         {
@@ -1488,7 +1502,8 @@ private:
                 && midiendo == o.midiendo && medido == o.medido && relojMedido == o.relojMedido
                 && ran == o.ran && mmapKnown == o.mmapKnown && mmapUsed == o.mmapUsed
                 && exclusive == o.exclusive && politicaMmap == o.politicaMmap
-                && politicaExcl == o.politicaExcl && nota == o.nota;
+                && politicaExcl == o.politicaExcl && nota == o.nota
+                && intentos == o.intentos && gano == o.gano;
         }
     };
     Readout lastReadout;
@@ -1552,6 +1567,20 @@ private:
     //  device of ours existed. This is the only honest answer to "are we on
     //  the fast lane", and it also configures the real stream.
     AudioPath::Fast fastPath;
+
+    //  ...Y SE VUELVE A PREGUNTAR, que es lo que faltaba. El veredicto se
+    //  escribia UNA vez en el constructor y nadie lo volvia a tocar, asi que
+    //  una app que arranco mientras otra tenia el extremo exclusivo abierto
+    //  -el caso que la propia sonda avisa de que existe- pasaba la sesion
+    //  ENTERA por el mezclador y no habia forma de reintentarlo sin matarla.
+    //  La sonda necesita la salida libre, asi que solo cabe en los tres sitios
+    //  que ya reabren el dispositivo teniendolo cerrado.
+    void resondeaCarrilRapido();
+    //  Una re-sonda por vuelta al primer plano, y ninguna si ya hay exclusiva:
+    //  sondear cuesta abrir, arrancar y cerrar hasta seis flujos, y un movil
+    //  que no la concede nunca no puede pagar eso cada vez que se desbloquea.
+    bool resondeoPermitido = false;
+    bool dispositivoVisto  = false;
 
     //  The measurement. Everything else in this panel is the device's own
     //  claim about itself; this is a click emitted and heard back.
@@ -1733,6 +1762,10 @@ public:
     //  moverse - que es exactamente como se perdio la relacion de un troceado
     //  al guardar y volver.
     void auditArrange();
+    //  LA DECISION DEL CARRIL RAPIDO sobre tablas sinteticas. Ver
+    //  auditAudio y Tests/audio.py: la sonda de verdad habla con libaaudio y
+    //  no corre en un escritorio, pero lo que se DECIDE con su respuesta si.
+    void auditAudio();
 
     //  CON QUE ABRE LA MAQUINA. Ver auditNuevo: vuelca el proyecto tal y como
     //  nace -sonidos, cancion y envios- y otra vez despues de NUEVO, que es el

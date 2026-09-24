@@ -46,6 +46,10 @@
 //                                queda en su guardia de silencio, o sea que la
 //                                pieza mas grande de la cara no se repinta
 //                                nunca en el banco
+//      ZATI_AUDIO=1              la decision del carril rapido sobre tablas
+//                                sinteticas: la sonda de verdad habla con
+//                                libaaudio y no corre aqui, pero lo que se
+//                                DECIDE con su respuesta si (ver audio.py)
 //      ZATI_KIT=nombre           guarda el banco de delante como kit y lo vuelca
 //      ZATI_INSETS=t,l,b,r       margenes del sistema simulados (ver abajo)
 //      ZATI_INSETS_TICK=n        y a partir de que tick contestan

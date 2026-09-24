@@ -16163,7 +16163,8 @@ void MainComponent::pollExport()
             measuring, measuredMs, measuredRate,
             fastPath.ran, fastPath.mmapKnown, fastPath.mmapUsed, fastPath.exclusive,
             (int) AudioPath::mmapPolicy(), (int) AudioPath::exclusivePolicy(),
-            measureNote.hashCode()
+            measureNote.hashCode(),
+            fastPath.nIntentos, fastPath.gano
         };
 
         if (! (ahora == lastReadout))
@@ -16256,6 +16257,59 @@ void MainComponent::pollExport()
 //  before the click was even emitted, so the app measured 48 and told you 48
 //  while the chip still said 44.1. The measurement has to be of the thing you
 //  actually chose or it is not a measurement.
+//  SE VUELVE A PREGUNTAR POR EL CARRIL RAPIDO, en vez de congelar el arranque.
+//
+//  El veredicto se escribia UNA vez en el constructor y nadie lo volvia a
+//  tocar. La propia sonda avisa de que AAudio niega la exclusiva si OTRO tiene
+//  el extremo abierto, asi que una app que arranco en ese momento se pasaba la
+//  sesion ENTERA por el mezclador de AudioFlinger -las decenas de milisegundos
+//  que `AudioPath.h` nombra- y la unica forma de reintentarlo era matar la app.
+//  La medida de campo decia exactamente eso: `via compartida MEZCLADOR` con
+//  `mmap disponible · excl disponible`, o sea el aparato concediendo y la app
+//  sin cogerlo.
+//
+//  Tres condiciones, y las tres son por lo que cuesta:
+//
+//  - CON LA SALIDA LIBRE. La sonda pide un extremo exclusivo; con nuestro
+//    propio dispositivo abierto se lo negaria a si misma y fabricaria la
+//    negativa que viene a detectar. Por eso solo cabe en los tres sitios que
+//    reabren el dispositivo teniendolo cerrado.
+//  - SOLO SI NO HAY EXCLUSIVA. Si ya la tenemos no hay nada que ganar.
+//  - UNA POR VUELTA AL PRIMER PLANO. Sondear abre, arranca y cierra hasta seis
+//    flujos; un movil que no la concede nunca no puede pagar eso cada vez que
+//    se desbloquea.
+void MainComponent::resondeaCarrilRapido()
+{
+    if (fastPath.exclusive)                              return;
+    if (! resondeoPermitido)                             return;
+    if (deviceManager.getCurrentAudioDevice() != nullptr) return;
+
+    resondeoPermitido = false;
+
+    const int altoAntes = altoAudioInfo();
+
+    fastPath = AudioPath::probeFastPath (48000, 2);
+    zatiOboeUsage    = fastPath.exclusive ? fastPath.usage : 0;
+    zatiOboeForceI16 = (fastPath.exclusive && fastPath.useI16) ? 1 : 0;
+
+    //  El recuadro de AUDIO crece con los seis renglones de la sonda y encoge
+    //  cuando la exclusiva se concede, asi que esto es un cambio de MAQUETADO y
+    //  no solo de pintura: con un repaint a secas los renglones se dibujarian
+    //  fuera del rectangulo que el maquetado reservo. Solo cuando cambia, que
+    //  es como mucho una vez por vuelta al primer plano.
+    if (altoAudioInfo() != altoAntes)
+        resized();
+}
+
+//  Ver la declaracion: 158 clavados salvo cuando hay seis intentos que contar.
+int MainComponent::altoAudioInfo() const
+{
+    if (! fastPath.ran || fastPath.exclusive || fastPath.nIntentos <= 0)
+        return kAltoAudioInfo;
+
+    return kAltoAudioInfo + Metrics::bandaFina * (fastPath.nIntentos + 1);
+}
+
 void MainComponent::keepChosenRate()
 {
     if (chosenRate <= 0.0) return;
@@ -18262,6 +18316,10 @@ void MainComponent::appSuspended()
     audioFocus.abandon();        // ...and hand the speaker back
     pausedByFocus = false;
     appInForeground = false;
+    //  ...y se rearma la sonda del carril rapido. Aqui, y no al volver, porque
+    //  aqui es donde se suelta la salida: quien nos negase la exclusiva puede
+    //  haber terminado mientras estabamos detras. Ver resondeaCarrilRapido.
+    resondeoPermitido = true;
 
     //  Y LA ULTIMA LINEA DE LA CAJA NEGRA, aqui y no solo en `shutdown()`.
     //
@@ -18286,6 +18344,9 @@ void MainComponent::appResumed()
     focusGivenAway  = false;
     audioFocus.request();
     pausedByFocus = false;
+    //  ANTES de abrir el dispositivo: la sonda pide un extremo exclusivo y con
+    //  el nuestro abierto se lo negaria a si misma. Ver resondeaCarrilRapido.
+    resondeaCarrilRapido();
     setAudioChannels (0, 2);
     keepChosenRate();
     useLowestLatency();
@@ -18338,6 +18399,7 @@ void MainComponent::audioFocusLost (bool permanently)
 
     engine.postPanic();
     shutdownAudio();
+    resondeoPermitido = true;   // ver resondeaCarrilRapido
 
     //  Only a transient loss is worth remembering. After a permanent one
     //  Android will not send us a GAIN unless we ask again, which is what
@@ -18389,6 +18451,7 @@ void MainComponent::audioFocusGained()
         return;
 
     pausedByFocus = false;
+    resondeaCarrilRapido();     // ver appResumed: antes de abrir, no despues
     setAudioChannels (0, 2);
     keepChosenRate();
     useLowestLatency();
@@ -19192,6 +19255,19 @@ void MainComponent::timerCallback()
     //  without this the revival would grab the audio device back a second
     //  after you left the app, fight whatever took it, and hand appResumed a
     //  device it did not open.
+    //  Y EL CANTO DEL APARATO QUE SE MUERE, que es lo unico que rearma la sonda
+    //  del carril rapido fuera de un viaje al fondo: un dispositivo que se cae
+    //  suelta el extremo, y al volver a abrirlo puede haber exclusiva donde no
+    //  la habia. UNA por muerte y no una por segundo -la revivificacion lo
+    //  intenta cada mil milisegundos- porque sondear cuesta abrir, arrancar y
+    //  cerrar hasta seis flujos.
+    {
+        const bool hayAparato = deviceManager.getCurrentAudioDevice() != nullptr;
+        if (dispositivoVisto && ! hayAparato)
+            resondeoPermitido = true;
+        dispositivoVisto = hayAparato;
+    }
+
     if (appInForeground && ! pausedByFocus && ! focusGivenAway
         && deviceManager.getCurrentAudioDevice() == nullptr)
     {
@@ -19199,6 +19275,7 @@ void MainComponent::timerCallback()
         if ((deviceRevivalTicks += dt) >= 1000.0)
         {
             deviceRevivalTicks = 0.0;
+            resondeaCarrilRapido();
             setAudioChannels (0, 2);
             keepChosenRate();
             useLowestLatency();

@@ -526,6 +526,11 @@ public:
                     {
                         c2->auditArrange();
                     }
+                    //  LA DECISION DEL CARRIL RAPIDO. Ver Tests/audio.py.
+                    else if (UiAudit::env ("ZATI_AUDIO").isNotEmpty())
+                    {
+                        c2->auditAudio();
+                    }
                     //  LAS DOS SELECCIONES DE RANGO, en una sola corrida. Ver
                     //  Tests/sel.py y auditSelecciones.
                     else if (UiAudit::env ("ZATI_SEL").isNotEmpty())

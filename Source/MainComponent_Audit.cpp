@@ -8447,3 +8447,153 @@ void MainComponent::auditSelecciones()
     std::cout << "{\"sel\":\"cancion corte\",\"undo\":" << ((int) undoStack.size() - undoAntes)
               << ",\"bloques\":" << (int) bloques.size() << "}" << std::endl;
 }
+
+// ==========================================================================
+//  LA DECISION DEL CARRIL RAPIDO, MEDIDA SOBRE TABLAS SINTETICAS.
+//
+//  `AudioPath::probeFastPath` vive tras `#if JUCE_ANDROID` y habla con
+//  libaaudio, asi que en un escritorio no corre y NUNCA ha podido fallar - y
+//  una regla que no puede fallar no es una regla, es una linea que imprime OK.
+//  Se partio en dos: el contacto con AAudio, que solo lo comprueba un telefono
+//  y se declara como limite, y `AudioPath::concluye`, que es pura y es la que
+//  decide que `usage` se le pasa a JUCE y si se le fuerza el formato de 16
+//  bits. Eso es lo que se mide aqui, con las cinco tablas que importan.
+//
+//  La quinta no estaba en el plan y es la regla que esta tanda ANADE: un flujo
+//  que abre y no arranca no es un carril. Dejarla sin medir seria repetir el
+//  fallo que la tanda viene a arreglar.
+//
+//  Ver Tests/audio.py.
+// ==========================================================================
+void MainComponent::auditAudio()
+{
+    using AudioPath::Intento;
+
+    //  Un intento que abrio y arranco, con los terminos de un movil normal.
+    auto ok = [] (int usage, int pidio, bool excl, bool mmap, bool i16) -> Intento
+    {
+        Intento t;
+        t.usage = usage;  t.pidio = pidio;
+        t.abrio = true;   t.arranco = true;
+        t.exclusiva = excl; t.mmap = mmap; t.baja = true; t.i16 = i16;
+        t.burst = excl ? 96 : 192;
+        t.capacity = t.burst * 2;
+        t.canales = 2;    t.rate = 48000;
+        return t;
+    };
+
+    auto nada = [] (int usage, int pidio, int error) -> Intento
+    {
+        Intento t;
+        t.usage = usage;  t.pidio = pidio;  t.error = error;
+        return t;
+    };
+
+    //  Abre y NO arranca: AAudio concedio el constructor y nego el START, que
+    //  es donde de verdad se compromete el MMAP.
+    auto muerto = [] (int usage, int pidio, bool excl) -> Intento
+    {
+        Intento t;
+        t.usage = usage;  t.pidio = pidio;
+        t.abrio = true;   t.arranco = false;
+        t.exclusiva = excl; t.mmap = excl; t.baja = true;
+        t.burst = 96;  t.canales = 2;  t.rate = 48000;  t.error = -895;
+        return t;
+    };
+
+    auto fila = [] (const char* que, const std::array<Intento, AudioPath::kIntentos>& tabla,
+                    int n, bool mmapKnown)
+    {
+        const auto f = AudioPath::concluye (tabla, n, mmapKnown);
+
+        //  Y LOS DOS NUMEROS QUE DE VERDAD SALEN DE AQUI, calculados igual que
+        //  en el constructor: son los que el parche de JUCE lee antes de abrir
+        //  el flujo de verdad, y por tanto lo unico de esta funcion que cambia
+        //  el sonido de la maquina.
+        const int oboeUsage = f.exclusive ? f.usage : 0;
+        const int oboeI16   = (f.exclusive && f.useI16) ? 1 : 0;
+
+        std::cout << "{\"audio\":\"" << que
+                  << "\",\"ran\":"   << (f.ran ? 1 : 0)
+                  << ",\"excl\":"    << (f.exclusive ? 1 : 0)
+                  << ",\"mmap\":"    << (f.mmapUsed ? 1 : 0)
+                  << ",\"gano\":"    << f.gano
+                  << ",\"burst\":"   << f.burst
+                  << ",\"rate\":"    << f.rate
+                  << ",\"usage\":"   << oboeUsage
+                  << ",\"i16\":"     << oboeI16
+                  << ",\"texto\":\"" << UiAudit::esc (AudioPath::describe (f))
+                  << "\"}" << std::endl;
+    };
+
+    const int kGame  = AudioPath::kUsageGame;
+    const int kMedia = AudioPath::kUsageMedia;
+
+    //  1. NINGUNO ABRE. libaaudio esta, los seis dan error: no hay respuesta y
+    //     no se le toca nada a JUCE.
+    {
+        std::array<Intento, AudioPath::kIntentos> t {};
+        t[0] = nada (0,      0, -895);
+        t[1] = nada (kGame,  0, -895);
+        t[2] = nada (kGame,  2, -895);
+        t[3] = nada (kGame,  1, -895);
+        t[4] = nada (kMedia, 2, -895);
+        t[5] = nada (kMedia, 1, -895);
+        fila ("ninguno abre", t, 6, true);
+    }
+
+    //  2. EL PRIMERO ABRE EN COMPARTIDO, y ninguno mejora. Es el caso del
+    //     telefono de la bitacora: `via compartida MEZCLADOR`.
+    {
+        std::array<Intento, AudioPath::kIntentos> t {};
+        t[0] = ok (0,      0, false, false, false);
+        t[1] = ok (kGame,  0, false, false, false);
+        t[2] = ok (kGame,  2, false, false, false);
+        t[3] = ok (kGame,  1, false, false, true);
+        t[4] = ok (kMedia, 2, false, false, false);
+        t[5] = ok (kMedia, 1, false, false, true);
+        fila ("compartido siempre", t, 6, true);
+    }
+
+    //  3. EL TERCERO DA EXCLUSIVA en float con GAME. Es el reparto que el
+    //     comentario de la sonda describe: MEDIA cae en el posproceso del
+    //     fabricante y GAME lo esquiva.
+    {
+        std::array<Intento, AudioPath::kIntentos> t {};
+        t[0] = ok (0,     0, false, false, false);
+        t[1] = ok (kGame, 0, false, false, false);
+        t[2] = ok (kGame, 2, true,  true,  false);
+        fila ("game float exclusiva", t, 3, true);
+    }
+
+    //  4. EXCLUSIVA SOLO EN 16 BITS. El cuarto intento es el unico que la
+    //     consigue, y con el va el `forceI16` que salta la tentativa float de
+    //     JUCE. Sin esta tabla, ese 1 no lo comprueba nadie.
+    {
+        std::array<Intento, AudioPath::kIntentos> t {};
+        t[0] = ok (0,     0, false, false, false);
+        t[1] = ok (kGame, 0, false, false, false);
+        t[2] = ok (kGame, 2, false, false, false);
+        t[3] = ok (kGame, 1, true,  true,  true);
+        fila ("game 16b exclusiva", t, 4, true);
+    }
+
+    //  5. ABRE EXCLUSIVA Y NO ARRANCA, y otro arranca compartido. Gana el que
+    //     arranco: leer el modo de reparto sobre un flujo que nunca llego a
+    //     START es leer una intencion, y publicarla como exclusiva le manda a
+    //     JUCE una `usage` que no ha ganado nada.
+    {
+        std::array<Intento, AudioPath::kIntentos> t {};
+        t[0] = nada   (0,      0, -895);
+        t[1] = muerto (kGame,  0, true);
+        t[2] = ok     (kGame,  2, false, true, false);
+        fila ("abre exclusiva y no arranca", t, 3, true);
+    }
+
+    //  6. Y SIN EL SIMBOLO OCULTO: compartido, y no decimos saber si hay MMAP.
+    {
+        std::array<Intento, AudioPath::kIntentos> t {};
+        t[0] = ok (0, 0, false, true, false);
+        fila ("sin isMMapUsed", t, 1, false);
+    }
+}

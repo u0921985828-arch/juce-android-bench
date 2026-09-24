@@ -689,7 +689,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
         else
             note += " - " + T ("el resto es el telefono, no lo pone nadie mas bajo");
     }
-    g.drawFittedText (note, inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
+    g.drawFittedText (note, inner.removeFromTop (Metrics::bandaFina), juce::Justification::centredLeft, 1, 0.7f);
 
     //  Whether the phone allows the fast lane at all. JUCE already asks Oboe
     //  for exclusive + low latency, so if the answer here is "no soportado"
@@ -711,6 +711,44 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
         : fastPath.mmapUsed  ? ZatiColours::yellow   // shared, but still MMAP
                              : ZatiColours::red);    // AudioFlinger's mixer
 
+    //  ...Y LOS SEIS INTENTOS QUE LLEVARON A ESE RENGLON.
+    //
+    //  La pantalla ensenaba la conclusion -«compartida MEZCLADOR»- y con el
+    //  telefono delante eso no es una respuesta: no dice si el aparato nego los
+    //  seis, si concedio el tercero y lo tumbo el START, o si libaaudio ni
+    //  siquiera traia el simbolo. Es la diferencia entre una tanda y cinco.
+    //
+    //  Solo con el carril NEGADO: con exclusiva no hay nada que explicar, y el
+    //  alto que esto cuesta lo reserva `altoAudioInfo` con la misma condicion -
+    //  pintar seis renglones que el maquetado no reservo es pintarlos fuera.
+    if (fastPath.ran && ! fastPath.exclusive && fastPath.nIntentos > 0)
+    {
+        g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
+        g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
+        g.drawFittedText (T ("intentos"), inner.removeFromTop (Metrics::bandaFina),
+                          juce::Justification::centredLeft, 1, 0.7f);
+
+        for (int i = 0; i < fastPath.nIntentos; ++i)
+        {
+            const auto& t = fastPath.intentos[(size_t) i];
+            auto r = inner.removeFromTop (Metrics::bandaFina);
+            r.removeFromLeft (Metrics::sm);
+
+            //  El mismo semaforo que la linea de arriba, para que no haya que
+            //  aprender dos: verde lo que se concedio, amarillo el MMAP
+            //  compartido -que cuesta un punado de milisegundos y no decenas-,
+            //  rojo el mezclador, y apagado lo que ni llego a abrir.
+            g.setColour (! t.abrio || ! t.arranco ? ZatiColours::lcdDim
+                       : t.exclusiva             ? ZatiColours::lcdFg
+                       : t.mmap                  ? ZatiColours::yellow
+                                                 : ZatiColours::red);
+            g.setFont (ZatiColours::monoFont (Metrics::fFine, i == fastPath.gano));
+            g.drawFittedText (Lang::ltr (juce::String (i + 1)) + " " + AudioPath::pideIntento (t)
+                                + "  " + AudioPath::describeIntento (t),
+                              r, juce::Justification::centredLeft, 1, 0.7f);
+        }
+    }
+
     //  The measurement, kept visually apart from everything the device
     //  merely claims about itself.
     if (measuring)
@@ -727,7 +765,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
     g.drawFittedText (measureNote.isNotEmpty() ? measureNote
                                                : T ("MEDIR emite un click y lo escucha con el micro"),
-                      inner.removeFromTop (11), juce::Justification::centredLeft, 1, 0.7f);
+                      inner.removeFromTop (Metrics::bandaFina), juce::Justification::centredLeft, 1, 0.7f);
 }
 
 //  The AUDIO card. What the device is doing, and the language it says it in.

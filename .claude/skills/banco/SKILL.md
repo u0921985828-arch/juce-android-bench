@@ -58,6 +58,7 @@ codigo.
 | la tasa de refresco, cualquier constante de tiempo visual | `Tests/fps.py` |
 | que la cadencia no aletee: el salto de vblanks, el techo de dibujo | `Tests/fluidez.py` |
 | el buffer de audio: cuando sube, cuando baja y que aprende | `Tests/buffer.py` |
+| la sonda del carril rapido: que `usage` se le pasa a JUCE y si se fuerza 16b | `Tests/audio.py` |
 | las dos bandas de seleccion: los nueve campos del paso, el offset del bloque y el recorte de un clip | `Tests/sel.py` |
 | titulos y rotulos pintados, los gestos escondidos | `Tests/plano.py` |
 | la ANATOMIA de una ficha: marco, cabecera, pie | `Tests/maqueta.py` **y** `expo.py` (regla `ANATOMIA`) |
