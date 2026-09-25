@@ -50,6 +50,10 @@
 # ============================================================================
 import json, math, os, re, shutil, subprocess, sys, tempfile
 
+#  Lo que puede pasar el hilo de mensajes soltando un mando: el de pedir una
+#  apertura en atasco.py. Rendir en ese hilo eran 473 ms de mediana.
+TOPE_RESINTESIS_MS = 250
+
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import (APP, ROOT, BANDS, ENVBINS, FLOOR, NFFT, MAX_LOUD_SPREAD_DB,
                   MAX_PEAK, MIN_LOUD, MIN_PEAK, PANTALLA, descriptor, display_alive,
@@ -401,6 +405,7 @@ def corre (dirtemp):
             extra["cuales"] = d.get ("cuales", "")
         elif d.get ("instr") == "ref":    extra["msKits"] = d["msKits"]
         elif d.get ("instr") == "vuelta": extra["vuelta"] = d
+        elif d.get ("instr") == "resintesis": extra["resintesis"] = d
         elif d.get ("instr") == "destino": extra["destino"] = d
         elif d.get ("instr") == "receta":  extra["receta"] = d
         elif d.get ("instr") == "pestana": extra["pestana"] = d
@@ -1036,6 +1041,46 @@ def main():
             if v["escribeWav"]:
                 fallos.append ("el pad escribiria su audio a disco: son 2 MB por pad "
                                "para devolver algo que ya no seria un instrumento")
+
+        # ---- MOVER UN MANDO NO PARA LA INTERFAZ (Tribunal 2026-09, 4.2) --
+        #
+        #  Soltar un mando de la ficha re-sintetizaba en el hilo de mensajes:
+        #  473 ms de mediana y 1610 el peor. Ahora va a la hebra de sintesis y
+        #  la llamada vuelve en nada; el pad acaba con un buffer NUEVO de la
+        #  misma familia y conserva su recorte.
+        rs = extra.get ("resintesis")
+        if rs is None:
+            fallos.append ("no hay linea de resintesis: el mando no se probo")
+        else:
+            print ("resintesis: %d ms del hilo de mensajes (tope %d)  nuevo %d  familia %d  inicio %.2f"
+                   % (rs["ms"], TOPE_RESINTESIS_MS, rs["nuevo"], rs["fam"], rs["inicio"]))
+            if rs["ms"] > TOPE_RESINTESIS_MS:
+                fallos.append ("resintesis: %d ms del hilo de mensajes al soltar un mando, tope %d"
+                               % (rs["ms"], TOPE_RESINTESIS_MS))
+            if rs["nuevo"] != 1 or rs["fam"] != 3:
+                fallos.append ("resintesis: el pad no acabo con un buffer nuevo de la familia 3")
+            if abs (rs["inicio"] - 0.25) > 1e-3:
+                fallos.append ("resintesis: el recorte se perdio (inicio %.2f y era 0.25)" % rs["inicio"])
+
+        # ---- EL CIERRE CON UNA SINTESIS EN VUELO (Tribunal 2026-09, 3.2) --
+        #
+        #  Los miembros se destruyen al reves de como se declaran: con el pool
+        #  delante del buzon, cerrar la app con una sintesis en vuelo destruia
+        #  `sintesHechos` y `sintesLock` y DESPUES esperaba a la hebra, que al
+        #  acabar escribia en los dos. Sin ASan en este banco eso no se ve
+        #  correr, asi que se mide donde vive: el orden en la cabecera.
+        cab = open (os.path.join (os.path.dirname (os.path.abspath (__file__)),
+                                  "..", "Source", "MainComponent.h")).read()
+        pos = {k: cab.find (k) for k in ("juce::ThreadPool sintesPool",
+                                         "juce::CriticalSection  sintesLock",
+                                         "std::vector<Rendido>   sintesHechos")}
+        print ("cierre: sintesPool en %d, sintesLock en %d, sintesHechos en %d"
+               % (pos["juce::ThreadPool sintesPool"], pos["juce::CriticalSection  sintesLock"],
+                  pos["std::vector<Rendido>   sintesHechos"]))
+        if min (pos.values()) < 0 or pos["juce::ThreadPool sintesPool"] < max (
+                pos["juce::CriticalSection  sintesLock"], pos["std::vector<Rendido>   sintesHechos"]):
+            fallos.append ("cierre: sintesPool se declara antes que su buzon - al cerrar con una "
+                           "sintesis en vuelo, la hebra escribe en memoria ya soltada")
 
         # ---- EL DESTINO SE ELIGE ---------------------------------------
         #

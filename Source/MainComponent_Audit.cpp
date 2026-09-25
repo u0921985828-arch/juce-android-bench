@@ -2178,6 +2178,26 @@ void MainComponent::auditInstr()
                   << "}" << std::endl;
     }
 
+    //  Y MOVER UN MANDO NO PARA LA INTERFAZ. Soltar un mando de la ficha
+    //  re-sintetizaba en el hilo de mensajes: 473 ms de mediana, 1610 el peor
+    //  (Tribunal 2026-09, 4.2). Se mide lo que tarda la llamada y que el pad
+    //  acabe con un buffer NUEVO de la misma familia y con su recorte.
+    {
+        const int pad = kBancoInstr * kPadsPerBank + 3;
+        padReceta[(size_t) pad].brillo *= 0.5f;
+        padStart01[(size_t) pad] = 0.25f;
+        auto* antes = uiSample[(size_t) pad].get();
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        resintetizaInstrumento (pad);
+        const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+        esperaInstrumentos();
+        auto* sb = uiSample[(size_t) pad].get();
+        std::cout << "{\"instr\":\"resintesis\",\"ms\":" << juce::roundToInt (ms)
+                  << ",\"nuevo\":" << ((sb != nullptr && sb != antes) ? 1 : 0)
+                  << ",\"fam\":" << (sb ? sb->familia : -1)
+                  << ",\"inicio\":" << padStart01[(size_t) pad] << "}" << std::endl;
+    }
+
     // ------------------------------------------------------------------
     //  Y QUE LA RECETA SEA DEL PAD: que se pueda mover, que se OIGA, que
     //  VOLVER la devuelva y que vuelva del fichero.
@@ -7648,6 +7668,11 @@ void MainComponent::auditTomas()
     {
         pulsaTapa (&songRecBtn);
         if (! grabandoAlArreglo) return -1;         // no habia sitio: no arranco
+        //  Y SE ESPERA A QUE ABRA. Desde que grabar abre en el hilo abridor
+        //  (Tribunal 2026-09, 4.3), la toma se arma al recoger la apertura y no
+        //  al apretar; medir sin esperar medía el estado a medio arranque y
+        //  sacaba las dos tomas en el mismo pad.
+        esperaAbridor (15000);
         const int slot = recordingSlot;
         engine.startRecording (slot, true);         // el master en vez del micro
         engine.setPlaying (true);
@@ -8962,6 +8987,10 @@ namespace
 {
     int bancoAperturas = 0, bancoPreguntas = 0;
     bool bancoFalla = false;
+    //  Lo que tarda CADA apertura, dentro del driver: asi paga igual quien
+    //  abre desde el hilo de mensajes que quien abre desde el suyo, y la
+    //  medida distingue los dos (Tribunal 2026-09, 4.1 y 4.3).
+    int bancoOpenLentoMs = 0;
 
     struct BancoDevice final : juce::AudioIODevice
     {
@@ -8979,6 +9008,7 @@ namespace
                            double sr, int buf) override
         {
             ++bancoAperturas;
+            if (bancoOpenLentoMs > 0) juce::Thread::sleep (bancoOpenLentoMs);
             if (bancoFalla) return "banco: el HAL no abre";
             rate = sr > 0.0 ? sr : 48000.0;
             block = buf > 0 ? buf : 1920;
@@ -9148,6 +9178,122 @@ void MainComponent::auditRevive()
     recogeApertura();
     bancoLentoMs = 0;
 
+    //  4b. OTRA APP SE QUEDA EL ALTAVOZ PARA SIEMPRE, con la app delante: la
+    //      cortina con el PLAY de otra app, o la pantalla partida. Tres
+    //      segundos de vigilante no pueden reabrir -eso seria sonar encima de
+    //      quien lo cogio- y PLAY si, porque es la persona pidiendo sonido
+    //      (Tribunal 2026-09, 5.2). Antes: nada la sacaba del silencio.
+    int focoRespeta = -1, focoVuelve = -1;
+    {
+        appInForeground = true;
+        audioFocusLost (true);
+        for (int t = 0; t < 3000; t += 50)
+        {
+            reviveSalida (50.0);
+            esperaAbridor (15000);
+        }
+        recogeApertura();
+        focoRespeta = deviceManager.getCurrentAudioDevice() == nullptr ? 1 : 0;
+
+        ponTransporte (true);
+        esperaAbridor (15000);
+        recogeApertura();
+        focoVuelve = deviceManager.getCurrentAudioDevice() != nullptr ? 1 : 0;
+        ponTransporte (false);
+    }
+
+    //  4c. LOS CHASQUIDOS Y LOS GESTOS QUE REABREN, con un driver que tarda
+    //      1500 ms en CADA apertura. Subir el bufer por chasquidos -`checkXRuns`-
+    //      y GRABAR, MEDIR y un chip de AUDIO llamaban a `setAudioDeviceSetup`
+    //      en este hilo: ese tiempo, y el doble o el triple con dos o tres
+    //      aperturas por gesto (Tribunal 2026-09, 4.1 y 4.3). Se mide lo que
+    //      pasa este hilo DENTRO de cada llamada y las aperturas de cada gesto.
+    int msXrun = -1, buferXrun = 0, msGrabar = -1, abreGrabar = -1, buferGrabar = 0,
+        msParar = -1, abreParar = -1, msMedir = -1, abreMedir = -1, msChip = -1, buferChip = 0;
+    {
+        auto reloj = [] { return juce::Time::getMillisecondCounterHiRes(); };
+        auto bloqueAhora = [this]
+        {
+            auto* d = deviceManager.getCurrentAudioDevice();
+            return d != nullptr ? d->getCurrentBufferSizeSamples() : 0;
+        };
+        esperaAbridor (15000);
+        recogeApertura();
+        if (deviceManager.getCurrentAudioDevice() == nullptr)
+        {
+            pideAbrirSalida();
+            esperaAbridor (15000);
+            recogeApertura();
+        }
+        const int prefGuardada = loadBurstPreference();
+        burstMult = 1;
+        burstSuelo = 1;
+        useLowestLatency();
+
+        //  Cuatro chasquidos de golpe: la ley sube un nivel, 192 -> 384.
+        xrunGuion = "0:10";
+        xrunEscala = 1.0;
+        xrunRelojMs = 0.0;
+        xrunGraceMs = 0.0;
+        lastXRuns = 0;
+        xrunsSeen = 0;
+        bancoOpenLentoMs = 1500;
+        double a = reloj();
+        checkXRuns (50.0);
+        msXrun = juce::roundToInt (reloj() - a);
+        esperaAbridor (15000);
+        recogeApertura();
+        buferXrun = bloqueAhora();
+        xrunGuion = {};
+        burstMult = 1;
+        ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (prefGuardada));
+        bancoOpenLentoMs = 0;
+        useLowestLatency();
+
+        //  GRABAR y PARAR del micro.
+        bancoOpenLentoMs = 1500;
+        bancoAperturas = 0;
+        a = reloj();
+        toggleMicSampling();
+        msGrabar = juce::roundToInt (reloj() - a);
+        esperaAbridor (15000);
+        abreGrabar = bancoAperturas;
+        buferGrabar = recordingActive ? bloqueAhora() : -1;
+        bancoAperturas = 0;
+        a = reloj();
+        toggleMicSampling();
+        msParar = juce::roundToInt (reloj() - a);
+        esperaAbridor (15000);
+        recogeApertura();
+        abreParar = bancoAperturas;
+
+        //  MEDIR: solo la mitad que abre -la otra espera a que el audio oiga
+        //  el clic, y aqui no hay audio que lo oiga-, y se deja como estaba.
+        bancoAperturas = 0;
+        a = reloj();
+        startMeasure();
+        msMedir = juce::roundToInt (reloj() - a);
+        esperaAbridor (15000);
+        abreMedir = bancoAperturas;
+        engine.finishLatencyProbe();
+        measuring = false;
+        measureButton.setEnabled (true);
+        pideEncargoAudio ([this] { abreCon (0); });
+        esperaAbridor (15000);
+
+        //  Un chip de AUDIO: bufer a 384.
+        a = reloj();
+        applyAudioSetup (384, 0.0);
+        msChip = juce::roundToInt (reloj() - a);
+        esperaAbridor (15000);
+        recogeApertura();
+        buferChip = bloqueAhora();
+        bancoOpenLentoMs = 0;
+        applyAudioSetup (192, 0.0);
+        esperaAbridor (15000);
+        recogeApertura();
+    }
+
     //  5. UN PAD QUE TARDA TRES SEGUNDOS EN LEERSE, que es el «ATASCO 1081 ms
     //     en pads/cargar» de la captura del telefono: FUSE, MediaProvider o un
     //     instrumento de cinco octavas. Solo el pad 0 se lee -el resto sale de
@@ -9208,11 +9354,159 @@ void MainComponent::auditRevive()
               << ",\"tope\":" << juce::roundToInt (kReviveMaxMs)
               << ",\"ms_pedir_lento\":" << juce::roundToInt (msLento)
               << ",\"abre_lento\":" << (abreTras ? 1 : 0)
+              << ",\"foco_respeta\":" << focoRespeta
+              << ",\"foco_vuelve\":" << focoVuelve
+              << ",\"tarea\":\"" << Bitacora::tarea.load() << "\""
+              << ",\"ms_xrun\":" << msXrun
+              << ",\"bufer_xrun\":" << buferXrun
+              << ",\"ms_grabar\":" << msGrabar
+              << ",\"abre_grabar\":" << abreGrabar
+              << ",\"bufer_grabar\":" << buferGrabar
+              << ",\"ms_parar\":" << msParar
+              << ",\"abre_parar\":" << abreParar
+              << ",\"ms_medir\":" << msMedir
+              << ",\"abre_medir\":" << abreMedir
+              << ",\"ms_chip\":" << msChip
+              << ",\"bufer_chip\":" << buferChip
               << ",\"peor_paso_pads\":" << juce::roundToInt (peorPaso)
               << ",\"pads_acaban\":" << (padsAcaban ? 1 : 0)
               << ",\"salida_hay\":" << (parte.hay ? 1 : 0)
               << ",\"salida_fallo\":" << (salidaEsFallo (parte.motivo) ? 1 : 0)
               << ",\"salida_renglon\":\"" << limpio (renglonSalida (parte)) << "\""
               << ",\"salida_cabeza\":\"" << limpio (SalidaPrevia::cabezaDelMain (parte.traza)) << "\""
+              << "}" << std::endl;
+}
+
+
+//  GUARDAR SIN HUECOS. Tribunal 2026-09, 7.1 a 7.5: lo que la persona no puede
+//  recuperar si se pierde. Ver Tests/guardado.py, que ademas corre esto bajo
+//  strace para contar los borrados del destino antes de cada rename.
+void MainComponent::auditGuardado()
+{
+    //  La fabrica entera, como en el primer arranque: sin pads con audio no
+    //  hay troceado que medir.
+    loadFactoryKits();
+    {
+        const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+        while ((fabricaJob != nullptr || ! fabricaCola.empty())
+               && juce::Time::getMillisecondCounter() < tope)
+        {
+            stepFabricaJob();
+            if (fabricaJob != nullptr) juce::Thread::sleep (2);
+        }
+    }
+
+    //  Punto de partida en disco: los 64 WAV y un estado que los describe.
+    autosave();
+    session.flush (30000);
+
+    //  1. EL RELEVO, tres veces sobre fichero que ya existe: es el caso en
+    //     el que `moveFileTo` borraba antes de renombrar. strace lo cuenta.
+    for (int i = 0; i < 3; ++i)
+    {
+        session.writeState (captureState(), "relevo " + juce::String (i));
+        ProjectStore::escribeTexto (ProjectStore::home().getChildFile ("relevo.txt"),
+                                    "relevo " + juce::String (i));
+        if (uiSample[0] != nullptr)
+            ProjectStore::writeSample (ProjectStore::home().getChildFile ("relevo.wav"),
+                                       uiSample[0]->buffer, uiSample[0]->sourceSampleRate);
+    }
+
+    //  2. EL TEMPORAL QUE SE RESCATA: una muerte entre escribirlo y ponerlo
+    //     encima deja state.xml.tmp validado y ningun state.xml.
+    bool rescata = false;
+    {
+        const auto st  = SessionKeeper::stateFile();
+        const auto tmp = st.getSiblingFile ("state.xml.tmp");
+        //  Por rename y no copiando y borrando: la sonda no puede abrir el
+        //  hueco que strace esta contando.
+        std::rename (st.getFullPathName().toRawUTF8(), tmp.getFullPathName().toRawUTF8());
+        rescata = SessionKeeper::exists() && st.existsAsFile() && ! tmp.existsAsFile();
+    }
+
+    //  3. UN TROCEADO: el estado en disco tiene que decir que los trozos salen
+    //     del pad 0 cuando el escritor ya ha borrado sus WAV. Por el camino
+    //     del temporizador -sync con el estado delante- y sin el guardado de
+    //     cada veinte segundos, que es el que llegaba tarde.
+    constexpr int trozos = 8;
+    session.writeState (captureState(), currentProject);
+    session.flush (30000);
+    chopSlices    = trozos;
+    chopOnlyEmpty = false;
+    chopByHits    = false;
+    selectPad (0);
+    applyAutoChop();
+    session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
+    session.flush (30000);
+
+    int alDia = 0, borrados = 0;
+    if (auto xml = juce::parseXML (SessionKeeper::stateFile()))
+    {
+        const auto padsV = juce::ValueTree::fromXml (*xml).getChildWithName ("PADS");
+        for (int i = 1; i < trozos; ++i)
+        {
+            for (int m = 0; m < padsV.getNumChildren(); ++m)
+            {
+                const auto p = padsV.getChild (m);
+                if ((int) p.getProperty ("i", -1) == i && (int) p.getProperty ("fuente", -1) == 0)
+                    ++alDia;
+            }
+            if (! SessionKeeper::padFile (i).existsAsFile()) ++borrados;
+        }
+    }
+
+    //  4. EL MISMO ESTADO DOS VECES NO SE ESCRIBE DOS VECES.
+    const int escritosAntes = session.estadosEscritos();
+    const int igualesAntes  = session.estadosIguales();
+    session.pideEstado (textoSesion());
+    session.flush (10000);
+    session.pideEstado (textoSesion());
+    session.flush (10000);
+    const int escritos = session.estadosEscritos() - escritosAntes;
+    const int iguales  = session.estadosIguales()  - igualesAntes;
+
+    //  5. UNA ESCRITURA QUE FALLA NO DICE «GUARDADO». Un directorio donde va
+    //     state.xml hace fallar el rename sin tocar nada mas.
+    int fallaDevuelve = -1, fallaApunta = -1;
+    {
+        const auto st = SessionKeeper::stateFile();
+        const auto guardado = st.getSiblingFile ("state.xml.banco");
+        std::rename (st.getFullPathName().toRawUTF8(), guardado.getFullPathName().toRawUTF8());
+        st.createDirectory();
+        const auto antes = session.ultimaEscrituraMs();
+        juce::Thread::sleep (20);
+        fallaDevuelve = session.writeState (captureState(), "falla") ? 1 : 0;
+        fallaApunta   = session.ultimaEscrituraMs() != antes ? 1 : 0;
+        st.deleteRecursively();
+        std::rename (guardado.getFullPathName().toRawUTF8(), st.getFullPathName().toRawUTF8());
+    }
+
+    //  6. EL PROYECTO ABIERTO NO SE REESCRIBE AL IRSE AL FONDO. Su project.xml
+    //     describe las muestras de su ultimo guardado y nada mas.
+    int intacto = -1;
+    {
+        const auto carpeta = ProjectStore::folderFor ("BANCO_GUARDADO");
+        carpeta.createDirectory();
+        const auto px = carpeta.getChildFile ("project.xml");
+        const juce::String marca ("<ZATI marca=\"guardado por la persona\"/>");
+        px.replaceWithText (marca);
+        const auto antes = currentProject;
+        currentProject = "BANCO_GUARDADO";
+        autosave();
+        session.flush (10000);
+        intacto = px.loadFileAsString() == marca ? 1 : 0;
+        currentProject = antes;
+    }
+
+    std::cout << "{\"guardado\":1"
+              << ",\"rescata\":" << (rescata ? 1 : 0)
+              << ",\"trozos\":" << trozos
+              << ",\"estado_al_dia\":" << alDia
+              << ",\"wav_borrados\":" << borrados
+              << ",\"escritos\":" << escritos
+              << ",\"iguales\":" << iguales
+              << ",\"falla_devuelve\":" << fallaDevuelve
+              << ",\"falla_apunta\":" << fallaApunta
+              << ",\"proyecto_intacto\":" << intacto
               << "}" << std::endl;
 }

@@ -7850,6 +7850,8 @@ bool MainComponent::pintaAyuda (juce::Graphics& g, juce::Rectangle<int> banda,
 //  anada manana entra sola.
 void MainComponent::ponTransporte (bool on)
 {
+    if (on) recuperaFoco();
+
     //  PARAR DESARMA AUTO, y eso no es una comodidad: un modo de escritura que
     //  se queda puesto es como se borra una automatizacion buena en la pasada
     //  siguiente sin haber tocado nada a proposito. Ademas `ponAutoArmado`
@@ -8162,6 +8164,7 @@ void MainComponent::padNotaOn (int index, float vel)
     //  Con LOAD armado el toque es para cargar, no para sonar: lo recoge el
     //  click, que llega al levantar.
     if (loadArmed) return;
+    recuperaFoco();
 
     const auto d = disparoDe (index);
     if (! padHasSample[(size_t) d.pad]) return;
@@ -8233,6 +8236,8 @@ void MainComponent::padClicked (int index)
     //  Dispararla otra vez aqui seria un golpe de mas por toque - el mismo
     //  fallo que la prueba de la cancion tuvo con el compas que vuelve a cero.
     if (pads[index] != nullptr && pads[index]->enModoNota()) return;
+
+    recuperaFoco();
 
     //  DIECISEIS NIVELES: la rejilla deja de ser dieciseis pads y pasa a ser UN
     //  pad a dieciseis fuerzas. Ver disparoDe.
@@ -15024,30 +15029,42 @@ void MainComponent::grabaAlArreglo()
     {
         recordingActive = true;               // el camino de PARAR es el del micro
         grabandoAlArreglo = true;
-        setAudioChannels (2, 2);
-        useLowestLatency();                   // ver toggleMicSampling
-        aplicaMonitor (false);
-        engine.setSongMode (true);
-        //  Con la cuenta a cero la toma entra YA y el transporte arranca igual:
-        //  grabar al arreglo sin transporte no es grabar al arreglo.
-        if (! armaCuentaSiToca (slot))
+        //  Una apertura, en el hilo que abre: ver toggleMicSampling. Y la
+        //  frontera va por donde duele: lo que es ESTADO DE LA APP -tapas,
+        //  rotulo, «estoy grabando»- va YA, porque quien aprieta PARAR a
+        //  continuacion tiene que encontrarse grabando; lo que ARMA LA TOMA va
+        //  DETRAS de la apertura y no delante, porque abrir es `prepareToPlay`
+        //  y `prepareToPlay` vacia el bufer de toma y pone `recordPos` a cero
+        //  (Tribunal 2026-09, 1.3): una toma armada antes de que la apertura
+        //  termine pierde su principio entero. Medido: con el armado delante,
+        //  `Tests/tomas.py` sacaba las DOS tomas en el mismo pad (C01) y el
+        //  nombre sin cambiar -«VINYL» en vez de «TOMA 1»- porque ninguna de
+        //  las dos llegaba a tener una sola muestra.
+        pideEncargoAudio ([this] { abreCon (2); }, [this, slot]
         {
-            engine.startRecording (slot);
-            engine.setPlaying (true);
-        }
-        songClickBtn.setToggleState (engine.isClick(), juce::dontSendNotification);
-        styleButton (micButton, kRec);        // la misma tapa que cierra la toma
-        micButton.setButtonText (T ("PARAR"));
-        styleButton (songRecBtn, kRec);
-        songRecBtn.setButtonText (T ("PARAR"));
-        //  Y SE DICE DONDE VA A CAER, antes y no despues: es lo unico que
-        //  convierte «graba» en «graba ahi». Va en el renglon de estado, que es
-        //  texto pintado y no cuesta un pixel; en la tapa no, que esa fila se
-        //  reparte por el TEXTO y un rotulo que crece le quita el dedo a sus
-        //  hermanas.
-        status.setText (T ("La toma va al pad %1", etiquetaPad (slot)),
-                        juce::dontSendNotification);
-        refreshSong (true);
+            aplicaMonitor (false);
+            engine.setSongMode (true);
+            //  Con la cuenta a cero la toma entra YA y el transporte arranca igual:
+            //  grabar al arreglo sin transporte no es grabar al arreglo.
+            if (! armaCuentaSiToca (slot))
+            {
+                engine.startRecording (slot);
+                engine.setPlaying (true);
+            }
+            songClickBtn.setToggleState (engine.isClick(), juce::dontSendNotification);
+            refreshSong (true);
+        });
+            styleButton (micButton, kRec);        // la misma tapa que cierra la toma
+            micButton.setButtonText (T ("PARAR"));
+            styleButton (songRecBtn, kRec);
+            songRecBtn.setButtonText (T ("PARAR"));
+            //  Y SE DICE DONDE VA A CAER, antes y no despues: es lo unico que
+            //  convierte «graba» en «graba ahi». Va en el renglon de estado, que es
+            //  texto pintado y no cuesta un pixel; en la tapa no, que esa fila se
+            //  reparte por el TEXTO y un rotulo que crece le quita el dedo a sus
+            //  hermanas.
+            status.setText (T ("La toma va al pad %1", etiquetaPad (slot)),
+                            juce::dontSendNotification);
     };
 
     if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
@@ -16592,34 +16609,7 @@ double MainComponent::abreSalida()
     std::optional<Bitacora::Tarea> marca;
     if (! enHiloAbridor()) marca.emplace ("audio/abrir");
     const double t0 = juce::Time::getMillisecondCounterHiRes();
-
-    //  La ultima configuracion buena sigue en el gestor: `closeAudioDevice`
-    //  suelta el dispositivo pero no `currentSetup`. Si la hay, se abre CON
-    //  ella en un solo paso -reloj elegido y bufer de la rafaga- y
-    //  `keepChosenRate` y `useLowestLatency` se quedan en su primera linea,
-    //  que es la que dice «ya esta como tiene que estar».
-    //
-    //  Solo la salida: el nombre del dispositivo de entrada se queda fuera a
-    //  proposito, porque si lo ultimo fue una toma con el micro abierto
-    //  volver del fondo pediria permiso y abriria la captura sin que nadie
-    //  este grabando.
-    const auto buena = deviceManager.getAudioDeviceSetup();
-    if (buena.outputDeviceName.isNotEmpty() && buena.bufferSize > 0)
-    {
-        juce::XmlElement x ("DEVICESETUP");
-        x.setAttribute ("deviceType",            deviceManager.getCurrentAudioDeviceType());
-        x.setAttribute ("audioOutputDeviceName", buena.outputDeviceName);
-        x.setAttribute ("audioDeviceRate",       chosenRate > 0.0 ? chosenRate : buena.sampleRate);
-        x.setAttribute ("audioDeviceBufferSize", buena.bufferSize);
-        setAudioChannels (0, 2, &x);
-    }
-    else
-    {
-        setAudioChannels (0, 2);
-    }
-
-    keepChosenRate();
-    useLowestLatency();
+    abreCon (0);
     const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
 
     //  Y QUEDA ESCRITO: cuanto tardo y si abrio. La proxima captura tiene que
@@ -16629,6 +16619,79 @@ double MainComponent::abreSalida()
     Bitacora::linea ("audio/abrir ", num, " ms: ",
                      dispositivo() != nullptr ? "abre" : "NO ABRE");
     return ms;
+}
+
+void MainComponent::abreCon (int entradas)
+{
+    //  La ultima configuracion buena sigue en el gestor: `closeAudioDevice`
+    //  suelta el dispositivo pero no `currentSetup`. Si la hay, se abre CON
+    //  ella en un solo paso -reloj elegido y bufer de la rafaga- y
+    //  `keepChosenRate` y `useLowestLatency` se quedan en su primera linea,
+    //  que es la que dice «ya esta como tiene que estar».
+    //
+    //  Con cero entradas, solo la salida: el nombre del dispositivo de
+    //  entrada se queda fuera a proposito, porque si lo ultimo fue una toma
+    //  con el micro abierto volver del fondo pediria permiso y abriria la
+    //  captura sin que nadie este grabando. Con entradas -GRABAR, MEDIR- va el
+    //  de por defecto del tipo, que es el que elegia `setAudioChannels (2, 2)`
+    //  sin XML; la diferencia es que el bufer y el reloj entran en la MISMA
+    //  apertura y no en dos mas detras (Tribunal 2026-09, 4.3: 2 aperturas por
+    //  gesto medidas en el banco, 3 con un reloj elegido).
+    const auto buena = deviceManager.getAudioDeviceSetup();
+    if (buena.outputDeviceName.isNotEmpty() && buena.bufferSize > 0)
+    {
+        juce::XmlElement x ("DEVICESETUP");
+        x.setAttribute ("deviceType",            deviceManager.getCurrentAudioDeviceType());
+        x.setAttribute ("audioOutputDeviceName", buena.outputDeviceName);
+        if (entradas > 0)
+            if (auto* tipo = deviceManager.getCurrentDeviceTypeObject())
+            {
+                const auto nombres = tipo->getDeviceNames (true);
+                const auto cual = nombres[juce::jmax (0, tipo->getDefaultDeviceIndex (true))];
+                if (cual.isNotEmpty()) x.setAttribute ("audioInputDeviceName", cual);
+            }
+        x.setAttribute ("audioDeviceRate",       chosenRate > 0.0 ? chosenRate : buena.sampleRate);
+        x.setAttribute ("audioDeviceBufferSize", buena.bufferSize);
+        setAudioChannels (entradas, 2, &x);
+    }
+    else
+    {
+        setAudioChannels (entradas, 2);
+    }
+
+    //  Y detras las dos de siempre, que con la apertura buena se quedan en su
+    //  primera linea: solo reabren si el driver no dio lo que se le pidio.
+    keepChosenRate();
+    useLowestLatency();
+}
+
+bool MainComponent::pideEncargoAudio (std::function<void()> hazlo, std::function<void()> despues)
+{
+    ++bancoEncargos;
+    //  Sin hilo -el banco antes de construirlo, o el cierre- se hace aqui.
+    if (abridor == nullptr)
+    {
+        if (hazlo) hazlo();
+        if (despues) despues();
+        return true;
+    }
+    //  El carril esta ocupado: quien pide ya ha esperado con `esperaAbridor`,
+    //  asi que esto solo pasa si lo que ocupa es de otro. Se deja: el que
+    //  llego primero va a reabrir igual.
+    if (abriendoAudio.exchange (true)) return false;
+    encargoAudio = std::move (hazlo);
+    trasEncargo  = std::move (despues);
+    pedidoEncargo = true;
+    abridor->notify();
+    return true;
+}
+
+void MainComponent::recogeEncargo()
+{
+    if (! encargoListo.exchange (false)) return;
+    auto t = std::move (trasEncargo);
+    trasEncargo = nullptr;
+    if (t) t();
 }
 
 //  ---------------------------------------------------------------------------
@@ -16644,22 +16707,42 @@ void MainComponent::AbridorAudio::run()
 {
     while (! threadShouldExit())
     {
-        if (! mc.pedidoAbrir.exchange (false))
+        const bool abrir   = mc.pedidoAbrir.exchange (false);
+        const bool encargo = ! abrir && mc.pedidoEncargo.exchange (false);
+        if (! abrir && ! encargo)
         {
             wait (-1);
             continue;
         }
 
         if (mc.bancoLentoMs > 0) Thread::sleep (mc.bancoLentoMs);
-        const double coste = mc.abreSalida();
+        double coste = 0.0;
+        if (abrir)
+        {
+            coste = mc.abreSalida();
+        }
+        else
+        {
+            //  La etiqueta la lleva el hilo de mensajes, no este: ver abreSalida.
+            auto hazlo = std::move (mc.encargoAudio);
+            mc.encargoAudio = nullptr;
+            if (hazlo) hazlo();
+        }
 
         //  Si mientras abria la app se fue al fondo, se cierra aqui mismo: el
         //  hilo de mensajes no podia hacerlo sin pisar esta apertura.
         if (mc.cerrarAlAbrir.exchange (false))
             mc.shutdownAudio();
 
-        mc.costeApertura = coste;
-        mc.aperturaLista = true;
+        if (abrir)
+        {
+            mc.costeApertura = coste;
+            mc.aperturaLista = true;
+        }
+        else
+        {
+            mc.encargoListo = true;
+        }
         mc.abriendoAudio = false;
     }
 }
@@ -16694,11 +16777,17 @@ bool MainComponent::esperaAbridor (int topeMs)
     const auto hasta = juce::Time::getMillisecondCounter() + (juce::uint32) juce::jmax (0, topeMs);
     while (abriendoAudio.load() && juce::Time::getMillisecondCounter() < hasta)
         juce::Thread::sleep (5);
-    return ! abriendoAudio.load();
+    //  Y lo que dejo un encargo se remata YA: quien espera es un gesto que va
+    //  a mirar el estado -`recordingActive`, `measuring`- y lo tiene que ver
+    //  como quedo, no como estaba antes de reabrir.
+    if (abriendoAudio.load()) return false;
+    recogeEncargo();
+    return true;
 }
 
 void MainComponent::recogeApertura()
 {
+    recogeEncargo();
     if (! aperturaLista.exchange (false)) return;
     const double coste = costeApertura.load();
     esperaRevivirMs = dispositivo() != nullptr ? kReviveMinMs
@@ -16884,16 +16973,19 @@ void MainComponent::checkXRuns (double dtMs)
             ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (burstMult));
             xrunLimpioMs = 0.0;
             burstBajoMs  = 0.0;
-            useLowestLatency();
+            //  Por el hilo que abre: ver pideEncargoAudio (Tribunal 2026-09, 4.1).
             //  Y SE DICE, por lo mismo que se dice al subir: la latencia acaba
             //  de cambiar y quien eligio esta app por la latencia tiene derecho
             //  a saber en que numero esta.
-            status.setText (T ("Audio limpio - buffer a %1 muestras",
-                               Lang::ltr (juce::String (dispositivo() != nullptr
-                                                            ? dispositivo()->getCurrentBufferSizeSamples()
-                                                            : 0))),
-                            juce::dontSendNotification);
-            refreshDeviceStatusLine (true);
+            pideEncargoAudio ([this] { useLowestLatency(); }, [this]
+            {
+                status.setText (T ("Audio limpio - buffer a %1 muestras",
+                                   Lang::ltr (juce::String (dispositivo() != nullptr
+                                                                ? dispositivo()->getCurrentBufferSizeSamples()
+                                                                : 0))),
+                                juce::dontSendNotification);
+                refreshDeviceStatusLine (true);
+            });
         }
         return;
     }
@@ -16912,16 +17004,26 @@ void MainComponent::checkXRuns (double dtMs)
     ++burstMult;
     ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (burstMult));
     xrunsSeen = 0;
-    useLowestLatency();
 
+    //  SUBIR EL BUFER ES REABRIR, y reabrir no es de este hilo. Esto llamaba a
+    //  `useLowestLatency` aqui mismo: un cierre y una apertura Oboe dentro del
+    //  temporizador, justo cuando el telefono ya va justo -por eso crepita-.
+    //  Con el driver del banco tardando 3000 ms el hilo de mensajes se quedaba
+    //  esos 3000 ms dentro de esta funcion (Tribunal 2026-09, 4.1). Ahora se
+    //  encarga al hilo que abre y el aviso sale al recogerlo, con el numero
+    //  que de verdad quedo.
+    //
     //  Y SE DICE. Subir la latencia a espaldas de alguien que eligio esta app
     //  por la latencia es exactamente lo que no se puede hacer en silencio.
-    status.setText (T ("Audio entrecortado - buffer a %1 muestras",
-                       Lang::ltr (juce::String (dispositivo() != nullptr
-                                                    ? dispositivo()->getCurrentBufferSizeSamples()
-                                                    : 0))),
-                    juce::dontSendNotification);
-    refreshDeviceStatusLine (true);
+    pideEncargoAudio ([this] { useLowestLatency(); }, [this]
+    {
+        status.setText (T ("Audio entrecortado - buffer a %1 muestras",
+                           Lang::ltr (juce::String (dispositivo() != nullptr
+                                                        ? dispositivo()->getCurrentBufferSizeSamples()
+                                                        : 0))),
+                        juce::dontSendNotification);
+        refreshDeviceStatusLine (true);
+    });
 }
 
 //  Emit a click, hear it back, and report the gap. This needs the microphone
@@ -16943,12 +17045,18 @@ void MainComponent::startMeasure()
         measuredMs = -1.0f;
         measureNote = T ("midiendo...");
         measureButton.setEnabled (false);
-        setAudioChannels (1, 2);         // the probe has to hear itself
-        keepChosenRate();                // ...at the clock YOU picked
-        useLowestLatency();
-        measuredOutMs = measuredInMs = 0.0f;   // filled in finishMeasure()
-        engine.startLatencyProbe();
         setSheet.repaint();
+        //  The probe has to hear itself, at the clock YOU picked - in ONE
+        //  opening and on the opening thread: `setAudioChannels (1, 2)` plus
+        //  `keepChosenRate` and `useLowestLatency` were up to three Oboe
+        //  openings in a row on the message thread (Tribunal 2026-09, 4.3).
+        //  The click goes out once the duplex stream exists.
+        pideEncargoAudio ([this] { abreCon (1); }, [this]
+        {
+            measuredOutMs = measuredInMs = 0.0f;   // filled in finishMeasure()
+            engine.startLatencyProbe();
+            setSheet.repaint();
+        });
     };
 
     if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
@@ -16981,11 +17089,14 @@ void MainComponent::finishMeasure()
         const double sr = dev->getCurrentSampleRate() > 0.0 ? dev->getCurrentSampleRate() : 48000.0;
         measuredOutMs = (float) (dev->getOutputLatencyInSamples() * 1000.0 / sr);
         measuredInMs  = (float) (dev->getInputLatencyInSamples()  * 1000.0 / sr);
+        //  ...and the clock too, from the SAME duplex stream: read after going
+        //  back to output-only it was the playing clock, not the measured one.
+        measuredRate = sr;
     }
 
-    setAudioChannels (0, 2);             // back to output-only
-    keepChosenRate();
-    useLowestLatency();
+    //  Back to output-only: one opening, on the opening thread (Tribunal
+    //  2026-09, 4.3). Everything below reads what was measured, not the device.
+    pideEncargoAudio ([this] { abreCon (0); });
     measureButton.setEnabled (true);
 
     //  Sound travels about 34 cm per millisecond, so holding the phone at
@@ -17013,10 +17124,8 @@ void MainComponent::finishMeasure()
     //  the rate you picked - some phones only capture at 48 - and a latency
     //  in milliseconds means nothing without the rate it was taken at. If it
     //  had to move, the line says so instead of quietly reporting a number
-    //  from a configuration you did not choose.
-    if (auto* d = dispositivo())
-        measuredRate = d->getCurrentSampleRate();
-
+    //  from a configuration you did not choose. `measuredRate` was read above,
+    //  from the duplex stream itself.
     measureNote = measuredMs < 0.0f
                     ? T ("no oi el click - sube el volumen y no tapes el micro")
                     : T ("con micro abierto: salida %1 + entrada %2 ms%3",
@@ -17172,19 +17281,25 @@ void MainComponent::applyAudioSetup (int bufferSize, double rate)
     if (bufferSize > 0) setup.bufferSize = bufferSize;
     if (rate > 0.0)   { setup.sampleRate = rate; chosenRate = rate; }
 
-    const auto err = deviceManager.setAudioDeviceSetup (setup, true);
-
-    if (err.isNotEmpty())
+    //  El cambio es una reapertura: en el hilo que abre, como las demas
+    //  (Tribunal 2026-09, 4.3). El error viaja de un hilo al otro dentro del
+    //  encargo; `encargoListo` es la barrera que lo publica.
+    auto err = std::make_shared<juce::String>();
+    pideEncargoAudio ([this, setup, err] { *err = deviceManager.setAudioDeviceSetup (setup, true); },
+                      [this, err]
     {
-        status.setText (T ("AUDIO") + ": " + Lang::ltr (err), juce::dontSendNotification);
-        deviceLine.clear();          // a real message: the timer must not touch it
-    }
-    else
-    {
-        refreshDeviceStatusLine (true);
-    }
+        if (err->isNotEmpty())
+        {
+            status.setText (T ("AUDIO") + ": " + Lang::ltr (*err), juce::dontSendNotification);
+            deviceLine.clear();          // a real message: the timer must not touch it
+        }
+        else
+        {
+            refreshDeviceStatusLine (true);
+        }
 
-    refreshAudioOptions();
+        refreshAudioOptions();
+    });
 }
 
 //  Write the "N muestras · R Hz" line from what the device reports RIGHT NOW,
@@ -18026,7 +18141,10 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset,
 
     beginBusy (T ("Creando instrumento"));
 
-    sintesPool.addJob ([this, pad, fam, pre, rec, gama, marca, nombre]
+    //  `yo` y no `this` en el mensaje: si la app se cierra con una sintesis en
+    //  vuelo, el mensaje llega despues del destructor (Tribunal 2026-09, 3.2).
+    juce::Component::SafePointer<MainComponent> yo (this);
+    sintesPool.addJob ([this, yo, pad, fam, pre, rec, gama, marca, nombre]
     {
         Rendido r;
         r.pad = pad; r.marca = marca; r.nombre = nombre;
@@ -18034,7 +18152,7 @@ void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset,
 
         { const juce::ScopedLock sl (sintesLock); sintesHechos.push_back (std::move (r)); }
 
-        juce::MessageManager::callAsync ([this] { drenaInstrumentos(); });
+        juce::MessageManager::callAsync ([yo] { if (yo != nullptr) yo->drenaInstrumentos(); });
     });
 }
 
@@ -18048,6 +18166,14 @@ void MainComponent::drenaInstrumentos()
 
     for (auto& r : lote)
     {
+        //  Una re-sintesis no puso barra, asi que no la quita.
+        if (r.resintesis)
+        {
+            if (r.sb != nullptr && juce::isPositiveAndBelow (r.pad, kNumPads)
+                && sintesMarca[(size_t) r.pad] == r.marca && padEsInstrumento (r.pad))
+                montaResintesis (r.pad, r.sb);
+            continue;
+        }
         endBusy();
         //  La marca dice quien pidio esto. Si el pad cambio de instrumento
         //  mientras se rendia -dos toques seguidos en la lista- lo que ha
@@ -18152,9 +18278,28 @@ void MainComponent::resintetizaInstrumento (int pad)
     auto* viejo = uiSample[(size_t) pad].get();
     const int fam = viejo->familia, pre = viejo->preset;
 
-    auto sb = Sintes::sintetiza (fam, pre, padReceta[(size_t) pad], gamaDeAqui());
-    if (sb == nullptr) return;
+    //  EN LA HEBRA DE SINTESIS, como elegir el instrumento. Esto rendia aqui
+    //  mismo: soltar un mando de la ficha paraba la interfaz lo que cuesta
+    //  rendir -473 ms de mediana y 1610 el peor en `Tests/instr.py`- (Tribunal
+    //  2026-09, 4.2). La marca es la misma que la de elegir: si mientras rinde
+    //  se suelta otro mando o se elige otro instrumento, lo que llega es viejo
+    //  y se tira.
+    const auto rec   = padReceta[(size_t) pad];
+    const auto gama  = gamaDeAqui();
+    const int  marca = ++sintesMarca[(size_t) pad];
+    juce::Component::SafePointer<MainComponent> yo (this);
+    sintesPool.addJob ([this, yo, pad, fam, pre, rec, gama, marca]
+    {
+        Rendido r;
+        r.pad = pad; r.marca = marca; r.resintesis = true;
+        r.sb = Sintes::sintetiza (fam, pre, rec, gama);
+        { const juce::ScopedLock sl (sintesLock); sintesHechos.push_back (std::move (r)); }
+        juce::MessageManager::callAsync ([yo] { if (yo != nullptr) yo->drenaInstrumentos(); });
+    });
+}
 
+void MainComponent::montaResintesis (int pad, SampleBuffer::Ptr sb)
+{
     //  SE SUELTA LO QUE ESTE SONANDO ANTES DE CAMBIAR LA MUESTRA, por lo mismo
     //  que al elegir preset: debajo del pad se cambian el buffer y sus diez
     //  zonas, y una voz viva se quedaria leyendo la ventana de la zona anterior
@@ -18801,6 +18946,29 @@ void MainComponent::audioFocusLost (bool permanently)
     deviceLine.clear();
 }
 
+//  LA PERSONA PIDE SONIDO, Y ESO ES PEDIR EL ALTAVOZ.
+//
+//  Tras una perdida PERMANENTE Android no devuelve el foco solo, y el
+//  vigilante no reabre -eso seria sonar encima de quien lo cogio-, asi que la
+//  unica salida era irse al escritorio y volver. Con la app delante no hay
+//  vuelta: bajar la cortina y dar a PLAY en otra app, o la pantalla partida,
+//  no pasan por onPause. Zati se quedaba MUDA delante de la persona, que es lo
+//  que la invariante «ningun camino deja la app en silencio» prohibe (Tribunal
+//  2026-09, 5.2).
+//
+//  El contrato del foco se sigue cumpliendo: no se reabre SOLA. Se reabre
+//  cuando alguien pulsa PLAY o toca un pad, que es pedir el altavoz.
+void MainComponent::recuperaFoco()
+{
+    if (! focusGivenAway || ! appInForeground)
+        return;
+
+    focusGivenAway = false;
+    audioFocus.request();
+    pideAbrirSalida();
+    refreshDeviceStatusLine (true);
+}
+
 //  A notification, not an interruption. Turn down, keep playing, come back.
 //
 //  Nothing is stopped and nothing is released, so there is no rebuilt device
@@ -18847,35 +19015,31 @@ void MainComponent::audioFocusGained()
     refreshDeviceStatusLine (true);
 }
 
-//  Two copies, and they answer different questions.
+//  UNA COPIA, LA DE LA SESION.
 //
-//  The session copy is unconditional: it is the only trace of work that was
-//  never given a name, which is the state a sampler spends its first hour in.
-//  The audio behind it has been written continuously by SessionKeeper's own
-//  thread, so all that is left here is the small XML - which matters, because
-//  onPause is not a moment Android lets an app take its time in.
+//  It is unconditional: it is the only trace of work that was never given a
+//  name, which is the state a sampler spends its first hour in. The audio
+//  behind it has been written continuously by SessionKeeper's own thread, so
+//  all that is left here is the small XML - which matters, because onPause is
+//  not a moment Android lets an app take its time in.
 //
-//  The project copy only exists when a project is open, and it goes over that
-//  project's own project.xml, next to the samples its last save wrote.
+//  EL PROYECTO YA NO SE REESCRIBE AQUI. Habia una segunda copia sobre el
+//  project.xml del proyecto abierto, «junto a las muestras de su ultimo
+//  guardado», y la cabecera nueva describia pads que ya no casaban con esas
+//  muestras: trocear el pad 1 e ir al fondo dejaba fuente=0 en los pads 2 a 16
+//  sobre los quince WAV viejos, y al reabrir salian como trozos del pad01.wav
+//  ANTIGUO; un GUARDAR despues pisaba los quince originales (Tribunal 2026-09,
+//  7.2). Y a mitad de un GUARDAR escribia la cabecera antes que las muestras
+//  (7.4). La sesion ya lleva el nombre del proyecto y vuelve con el: lo que
+//  la persona no guardo no se confirma en su proyecto.
 void MainComponent::autosave()
 {    const Bitacora::Tarea marca ("guardar/sesion");
 
-    const auto state = captureState();
-
+    //  EL ESTADO ANTES QUE LOS PADS: sync encola los borrados de los pads que
+    //  pasan a salir de otro, y el escritor los haria antes de que state.xml
+    //  dijera que sobran. Ver SessionKeeper::sync.
+    session.writeState (captureState(), currentProject);
     session.sync (uiSample.data(), kNumPads);
-    session.writeState (state, currentProject);
-
-    if (currentProject.isEmpty()) return;
-
-    const auto folder = ProjectStore::folderFor (currentProject);
-    if (! folder.isDirectory()) return;
-
-    //  Y POR LA MISMA PUERTA QUE LA SESION. Esto era un replaceWithText a pelo
-    //  ocho lineas debajo de la llamada a writeState, que lleva doce lineas de
-    //  comentario explicando por que eso pierde ficheros. Y corre en cada
-    //  onPause, o sea en el instante en el que Android mata el proceso.
-    ProjectStore::escribeTexto (folder.getChildFile ("project.xml"),
-                                state.toXmlString(), ProjectStore::esXmlLegible);
 }
 
 //  Coming back from a cold start. Same shape as loadProject, from the folder
@@ -19279,7 +19443,7 @@ void MainComponent::toggleResample()
         assignSampleToPad (resamplingSlot, sb, "TOMA " + juce::String (resamplingSlot % kPadsPerBank + 1));
         refreshPad (resamplingSlot);
         refreshPadArt (resamplingSlot);
-        session.sync (uiSample.data(), kNumPads);
+        session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
         status.setText (T ("Pad %1 remuestreado", juce::String (resamplingSlot + 1)),
                         juce::dontSendNotification);
     }
@@ -19309,34 +19473,47 @@ void MainComponent::toggleMicSampling()
             //  stereo, and one that has a single capsule hands back one
             //  channel and the take stays mono. Asking for two and being
             //  given one is the normal case, not a failure.
-            setAudioChannels (2, 2);
+            //  UNA apertura con el micro, el reloj y la rafaga, y en el hilo que
+            //  abre. Antes eran `setAudioChannels (2, 2)` -que abre con el bufer
+            //  por defecto del driver- y `useLowestLatency` detras, que CIERRA Y
+            //  REABRE para poner la rafaga: 2 aperturas por toma medidas en el
+            //  banco, las dos en el hilo de mensajes (Tribunal 2026-09, 4.3). El
+            //  resto del arranque corre al recogerlo, con el dispositivo ya en
+            //  duplex: la ruta de `aplicaMonitor` se pregunta al aparato nuevo.
+            //
             //  Y EL BURST MAS CORTO TAMBIEN AL ABRIR, que solo se pedia al
-            //  CERRAR: `setAudioChannels` reabre el dispositivo en duplex con
-            //  el tamano por defecto del driver, asi que la toma entera corria
-            //  con el bloque grande. No se notaba mientras no hubiera monitor
-            //  —lo que se graba llega igual— y con monitor es latencia de
-            //  monitor regalada, que es justo lo que un cantante oye.
-            useLowestLatency();
-            recordingSlot = slot;
-            //  Y la ruta se vuelve a preguntar AQUI, con el dispositivo ya
-            //  reabierto: los cascos se enchufan justo antes de grabar, que es
-            //  cuando mas probable es. Ver `aplicaMonitor`.
-            aplicaMonitor (false);
-            //  Y AQUI TAMBIEN LA CUENTA ATRAS, que era la mitad que faltaba: una
-            //  toma que entra a ojo entra corrida, la grabes sobre el arreglo o
-            //  sola. El mecanismo es el mismo que ya usaba el otro camino - lo
-            //  unico que no se hace aqui es poner el modo cancion, porque
-            //  muestrear una guitarra suelta no es tocar el arreglo.
-            const bool espera = armaCuentaSiToca (slot);
-            if (! espera) engine.startRecording (slot);
-            recordingActive = true;
-            styleButton (micButton, kRec);
-            micButton.setButtonText (T ("PARAR"));
-            status.setText (espera
-                              ? T ("Cuenta atras: la toma entra en el compas")
-                              : T ("Grabando pad %1  %2s / %3s", etiquetaPad (slot), "0.0",
-                                   juce::String ((int) engine.getRecordLimitSeconds())),
-                            juce::dontSendNotification);
+            //  CERRAR: con el bufer por defecto la toma entera corria con el
+            //  bloque grande, y con monitor es latencia de monitor regalada.
+            //
+            //  Y LA TOMA SE ARMA AL RECOGERLO, no antes: abrir es
+            //  `prepareToPlay`, que vacia el bufer de toma y pone `recordPos` a
+            //  cero (Tribunal 2026-09, 1.3), asi que armar delante es regalarle
+            //  a la toma la apertura entera de principio perdido. Lo que se
+            //  puede saber ya se sabe ya: si va a haber cuenta atras lo dice
+            //  `cuentaCompases`, que es una preferencia y no depende del
+            //  aparato, y con eso el rotulo sale sin esperar a nadie.
+            const bool espera = cuentaCompases > 0;
+            pideEncargoAudio ([this] { abreCon (2); }, [this, slot]
+            {
+                aplicaMonitor (false);
+                //  Y AQUI TAMBIEN LA CUENTA ATRAS, que era la mitad que faltaba: una
+                //  toma que entra a ojo entra corrida, la grabes sobre el arreglo o
+                //  sola. El mecanismo es el mismo que ya usaba el otro camino - lo
+                //  unico que no se hace aqui es poner el modo cancion, porque
+                //  muestrear una guitarra suelta no es tocar el arreglo.
+                if (! armaCuentaSiToca (slot)) engine.startRecording (slot);
+            });
+            {
+                recordingSlot = slot;
+                recordingActive = true;
+                styleButton (micButton, kRec);
+                micButton.setButtonText (T ("PARAR"));
+                status.setText (espera
+                                  ? T ("Cuenta atras: la toma entra en el compas")
+                                  : T ("Grabando pad %1  %2s / %3s", etiquetaPad (slot), "0.0",
+                                       juce::String ((int) engine.getRecordLimitSeconds())),
+                                juce::dontSendNotification);
+            }
         };
 
         if (! RP::isRequired (RP::recordAudio) || RP::isGranted (RP::recordAudio))
@@ -19409,8 +19586,9 @@ void MainComponent::toggleMicSampling()
             }
         }
 
-        setAudioChannels (0, 2);          // release the mic input, back to output-only
-        useLowestLatency();               // ...and take the fast path back with it
+        //  Soltar el micro y volver a la rafaga: una apertura, en el hilo que
+        //  abre (Tribunal 2026-09, 4.3). La toma ya esta en la mano.
+        pideEncargoAudio ([this] { abreCon (0); });
         styleButton (micButton, kKey);
         micButton.setButtonText (T ("GRABAR MIC"));
         if (sb != nullptr)
@@ -19461,6 +19639,17 @@ void MainComponent::toggleMicSampling()
 // ============================================================================
 void MainComponent::watchAudioDevice()
 {
+    //  LO QUE EL HILO DE AUDIO ARREGLO SIN DECIRLO, a la caja negra: un bloque
+    //  mas largo que el preparado (Tribunal 2026-09, 1.1) no deberia pasar
+    //  nunca, y si pasa en algun telefono es lo primero que hay que saber.
+    if (const int g = engine.takeBloquesGrandes())
+    {
+        char num[12];
+        Bitacora::cifra (g, num, sizeof (num));
+        Bitacora::linea ("audio/bloque mayor que el preparado x", num);
+    }
+    engine.takeGolpesViejos();
+
     auto* dev = dispositivo();
     if (dev == nullptr)
         return;
@@ -19487,8 +19676,8 @@ void MainComponent::watchAudioDevice()
         && (std::abs (rate - enginePreparedRate) > 0.5 || block != enginePreparedBlock))
     {
         ++engineResyncs;
-        deviceManager.restartLastAudioDevice();
-        keepChosenRate();
+        //  Por el hilo que abre, como todo lo que reabre (Tribunal 2026-09, 4.1).
+        pideEncargoAudio ([this] { deviceManager.restartLastAudioDevice(); keepChosenRate(); });
         return;                       // prepareToPlay will land on its own
     }
 
@@ -19496,10 +19685,7 @@ void MainComponent::watchAudioDevice()
     //  lifeboat already carried the tap, so the user heard their pad; this
     //  puts the transport itself back on its feet for the next one.
     if (engine.takeDroppedCommands() > 0)
-    {
-        deviceManager.restartLastAudioDevice();
-        keepChosenRate();
-    }
+        pideEncargoAudio ([this] { deviceManager.restartLastAudioDevice(); keepChosenRate(); });
 }
 
 //  EL APARATO DE SONIDO DEL BANCO. Ver la nota de `bancoSonando`.
@@ -19551,6 +19737,19 @@ void MainComponent::timerCallback()
     //  responde» en un dato en vez de en una deduccion.
     Bitacora::late();
 
+    //  Y LA ETIQUETA DE DONDE ESTA ESTE HILO. `Bitacora::tarea` nace en
+    //  «arranque» y nadie la movia despues: un atasco en el temporizador, o en
+    //  un toque sin marca propia, salia en la caja negra como «arranque» una
+    //  hora despues de arrancar (Tribunal 2026-09, 4.5). El primer latido
+    //  cierra el arranque -lo que venga entre latidos es «eventos», un toque
+    //  o un repintado- y el latido entero va marcado como lo que es.
+    if (! arranqueCerrado)
+    {
+        arranqueCerrado = true;
+        Bitacora::tarea.store ("eventos", std::memory_order_release);
+    }
+    const Bitacora::Tarea marcaLatido ("temporizador");
+
     //  LA PRIMERA APERTURA, por el hilo que abre. Ver el constructor.
     if (! aperturaInicialPedida)
     {
@@ -19592,7 +19791,10 @@ void MainComponent::timerCallback()
     //  Ver FabricaJob: rendir los 64 sonidos costaba 1691 ms de este hilo, de
     //  un tiron, y eso en un telefono es el «no responde» del primer arranque.
     stepFabricaJob();
-    checkXRuns (dt);
+    {
+        const Bitacora::Tarea marca ("audio/chasquidos");
+        checkXRuns (dt);
+    }
 
     //  La exportacion SI sabe cuanto falta - cuenta pasadas y bloques - asi
     //  que la barra deja de ir y venir y dice el numero.
@@ -19807,7 +20009,7 @@ void MainComponent::timerCallback()
     if ((sessionSyncMs += dt) >= kSyncSesionMs)
     {
         sessionSyncMs = 0.0;
-        session.sync (uiSample.data(), kNumPads);
+        session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
         refreshSystemInsets();
 
         //  ...and the state itself every twenty seconds or so. onPause writes
@@ -19817,14 +20019,21 @@ void MainComponent::timerCallback()
         if ((sessionStateMs += kSyncSesionMs) >= kEstadoSesionMs)
         {
             sessionStateMs = 0.0;
-            session.writeState (captureState(), currentProject);
+            //  AL ESCRITOR, no aqui: eran 85 KB por FUSE en el hilo de
+            //  mensajes cada veinte segundos (Tribunal 2026-09, 4.6), y si no
+            //  cambio nada ni se escribe (8.4).
+            const Bitacora::Tarea marca ("guardar/periodico");
+            session.pideEstado (textoSesion());
         }
     }
 
     engine.collectRetiredSamples();
     pollExport();
     refreshDeviceStatusLine();      // Oboe settles a beat after we ask it to
-    watchAudioDevice();
+    {
+        const Bitacora::Tarea marca ("audio/ruta");
+        watchAudioDevice();
+    }
 
     //  UNA CONFIRMACION ARMADA QUE NADIE CONTESTO vuelve a ser un boton
     //  normal, para que un SEGURO? rojo no se quede olvidado en una ficha.

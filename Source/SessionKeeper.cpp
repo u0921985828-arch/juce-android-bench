@@ -34,6 +34,17 @@ juce::File SessionKeeper::folder()
 
 juce::File SessionKeeper::stateFile() { return folder().getChildFile ("state.xml"); }
 
+bool SessionKeeper::exists()
+{
+    if (stateFile().existsAsFile()) return true;
+
+    const auto tmp = stateFile().getSiblingFile ("state.xml.tmp");
+    if (tmp.existsAsFile() && juce::parseXML (tmp) != nullptr)
+        ProjectStore::ponEncima (tmp, stateFile());
+
+    return stateFile().existsAsFile();
+}
+
 juce::File SessionKeeper::padFile (int pad)
 {
     return folder().getChildFile ("samples")
@@ -55,12 +66,45 @@ juce::File SessionKeeper::padFile (int pad)
 //  pad 1 de un troceado deja al 2 de dueno, y su puntero no se ha movido, asi
 //  que sin recalcular nadie escribiria ese WAV y el troceado entero se perderia
 //  al siguiente arranque.
-void SessionKeeper::sync (const SampleBuffer::Ptr* live, int numPads)
+void SessionKeeper::sync (const SampleBuffer::Ptr* live, int numPads,
+                          const std::function<juce::String()>& estado)
 {
     bool anything = false;
     const int n = juce::jmin (numPads, kMaxPads);
+
+    //  PRIMERO SE MIRA, SIN TOCAR NADA, si algo cambio. Si cambio y hay quien
+    //  construya el estado, el texto se hace aqui -fuera del cerrojo, que el
+    //  escritor no tiene por que esperar a captureState- y entra en la cola
+    //  en la MISMA seccion que los pads. Encargarlo despues dejaba un hueco:
+    //  el escritor, ya despierto, cogia el pad y lo borraba antes de ver el
+    //  estado. Los pads vivos solo los mueve este hilo, asi que lo que se
+    //  mira aqui es lo que se encola abajo.
+    juce::String texto;
+    if (estado != nullptr)
+    {
+        bool cambia = false;
+        {
+            const juce::ScopedLock sl (lock);
+            for (int i = 0; i < n && ! cambia; ++i)
+            {
+                int dueno = -1;
+                if (live[i] != nullptr)
+                {
+                    dueno = i;
+                    for (int j = 0; j < i; ++j)
+                        if (live[j].get() == live[i].get()) { dueno = j; break; }
+                }
+                cambia = live[i].get() != seen[(size_t) i].get() || dueno != ownedBy[(size_t) i];
+            }
+        }
+        if (cambia) texto = estado();
+    }
+
     {
         const juce::ScopedLock sl (lock);
+
+        if (texto.isNotEmpty())
+            estadoPendiente = texto;
 
         for (int i = 0; i < n; ++i)
         {
@@ -128,19 +172,55 @@ void SessionKeeper::adopt (const SampleBuffer::Ptr* live, int numPads)
     }
 }
 
-void SessionKeeper::writeState (const juce::ValueTree& state, const juce::String& projectName)
+juce::String SessionKeeper::textoDe (const juce::ValueTree& state, const juce::String& projectName)
 {
-    //  El otro lado de la misma carrera: este hilo crea .sesion mientras el de
-    //  sesion crea .sesion/samples, y el createDirectory de JUCE se da por
-    //  vencido si el mkdir devuelve EEXIST. Ver ProjectStore::ensureDirectory.
-    if (! ProjectStore::ensureDirectory (folder())) return;
-
     //  The name of the open project rides along in the session's own copy of
     //  the tree, so coming back restores the header too - and a project.xml
     //  written from the same state never carries it.
     auto copy = state.createCopy();
     copy.setProperty ("sesion", true, nullptr);
     copy.setProperty ("proyecto", projectName, nullptr);
+    return copy.toXmlString();
+}
+
+void SessionKeeper::pideEstado (juce::String texto)
+{
+    {
+        const juce::ScopedLock sl (lock);
+        estadoPendiente = std::move (texto);
+    }
+    notify();
+}
+
+bool SessionKeeper::writeState (const juce::ValueTree& state, const juce::String& projectName)
+{
+    //  Lo que hubiera encargado queda viejo: se escribe esto, que es de ahora.
+    {
+        const juce::ScopedLock sl (lock);
+        estadoPendiente.clear();
+    }
+    return escribeEstado (textoDe (state, projectName));
+}
+
+bool SessionKeeper::escribeEstado (const juce::String& text)
+{
+    const juce::ScopedLock el (escribiendoEstado);
+
+    //  IGUAL AL QUE YA ESTA EN DISCO: no se escribe. Con la app quieta el
+    //  estado no cambia y se reescribian 85 KB cada veinte segundos, 180 por
+    //  hora, por FUSE (Tribunal 2026-09, 8.4). Lo que hay en disco ES el
+    //  trabajo de ahora, asi que la banda puede decir que esta a salvo.
+    if (text == ultimoEstado && stateFile().existsAsFile())
+    {
+        ++iguales;
+        escrituraMs.store (juce::Time::currentTimeMillis(), std::memory_order_relaxed);
+        return true;
+    }
+
+    //  El otro lado de la misma carrera: este hilo crea .sesion mientras el de
+    //  sesion crea .sesion/samples, y el createDirectory de JUCE se da por
+    //  vencido si el mkdir devuelve EEXIST. Ver ProjectStore::ensureDirectory.
+    if (! ProjectStore::ensureDirectory (folder())) return false;
 
     //  Written beside the real name, read back, and only then moved into
     //  place. replaceWithText hides two failures at once - it discards the
@@ -149,42 +229,51 @@ void SessionKeeper::writeState (const juce::ValueTree& state, const juce::String
     //  true. Next launch parseXML gives nullptr, restoreSession bails, and the
     //  whole session is gone even though all sixteen WAVs are intact beside
     //  it. Nothing anywhere saw an error.
-    const auto text = copy.toXmlString();
     const auto tmp  = stateFile().getSiblingFile ("state.xml.tmp");
 
     tmp.deleteFile();
     if (! tmp.replaceWithText (text))
     {
         tmp.deleteFile();
-        return;
+        return false;
     }
 
     if (juce::parseXML (tmp) == nullptr)     // the only check that means anything
     {
         tmp.deleteFile();
-        return;
+        return false;
     }
 
-    //  Mover encima, sin borrar antes: rename(2) sobreescribe y es atomico, y
-    //  el deleteFile() que habia aqui solo creaba un instante - corto, pero
-    //  real, y este proceso lo mata Android sin avisar - en el que existia el
-    //  temporal validado y NO existia la sesion. Justo lo que este fichero
-    //  entero se escribio para que no pasara.
-    tmp.moveFileTo (stateFile());
+    //  Mover encima, sin borrar antes. Este comentario ya lo decia y el codigo
+    //  no lo hacia: `moveFileTo` BORRA el destino y despues renombra, asi que
+    //  el instante sin sesion seguia ahi. Ver ProjectStore::ponEncima.
+    //
+    //  Y SI FALLA, SE DICE: el resultado se tiraba y la banda de continuidad
+    //  decia «GUARDADO HACE 3 s» sobre un rename que no habia ocurrido
+    //  (Tribunal 2026-09, 7.5).
+    if (! ProjectStore::ponEncima (tmp, stateFile()))
+    {
+        tmp.deleteFile();
+        return false;
+    }
+
+    ultimoEstado = text;
+    ++escritos;
 
     //  Y QUEDA APUNTADO, que es lo que la banda de continuidad lee para poder
     //  decir «GUARDADO HACE 3 s». Aqui y no al entrar: lo que tranquiliza es lo
     //  que acabo en disco, no lo que se intento — es la misma figura que
-    //  `ensureDirectory` contra `canReallyWriteInto`. Las dos salidas de error
-    //  de arriba vuelven sin tocarlo a proposito.
+    //  `ensureDirectory` contra `canReallyWriteInto`. Las salidas de error de
+    //  arriba vuelven sin tocarlo a proposito.
     escrituraMs.store (juce::Time::currentTimeMillis(), std::memory_order_relaxed);
+    return true;
 }
 
 bool SessionKeeper::isIdle() const
 {
     const juce::ScopedLock sl (lock);
 
-    if (writing)
+    if (writing || estadoPendiente.isNotEmpty())
         return false;
 
     for (int i = 0; i < kMaxPads; ++i)
@@ -243,11 +332,22 @@ void SessionKeeper::run()
     {
         int pad = -1;
         SampleBuffer::Ptr sb;
+        juce::String estado;
 
         {
             const juce::ScopedLock sl (lock);
 
-            for (int i = 0; i < kMaxPads; ++i)
+            //  EL ESTADO VA DELANTE de cualquier pad: es lo que dice que
+            //  ficheros sobran, y borrar uno antes de que el estado diga que
+            //  sobra es el hueco de 7.3. Ver sync().
+            if (estadoPendiente.isNotEmpty())
+            {
+                estado = std::move (estadoPendiente);
+                estadoPendiente.clear();
+                writing = true;
+            }
+
+            for (int i = 0; i < kMaxPads && estado.isEmpty(); ++i)
             {
                 if (! dirty[(size_t) i])
                     continue;
@@ -259,6 +359,14 @@ void SessionKeeper::run()
                 writing = true;
                 break;
             }
+        }
+
+        if (estado.isNotEmpty())
+        {
+            escribeEstado (estado);
+            const juce::ScopedLock sl (lock);
+            writing = false;
+            continue;
         }
 
         if (pad < 0)
@@ -278,9 +386,10 @@ void SessionKeeper::run()
         //  y preset- y al volver se sintetiza: escribir el audio serian 2 MB
         //  por pad para devolver algo que ya no seria un instrumento. Ver
         //  captureState y MainComponent::stepPadJob.
+        bool quedo = false;
         if (sb != nullptr && sb->familia >= 0)
         {
-            dest.deleteFile();
+            quedo = dest.deleteFile();
         }
         else if (sb != nullptr && sb->buffer.getNumSamples() > 0)
         {
@@ -289,17 +398,21 @@ void SessionKeeper::run()
             //  tenia esta red. Envolverlo otra vez aqui no anadia nada y si
             //  quitaba: el deleteFile() antes del moveFileTo abria una ventana
             //  sin fichero ninguno que rename(2) no tiene.
-            ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate);
+            quedo = ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate);
         }
         else
         {
-            dest.deleteFile();      // the pad was emptied
+            quedo = dest.deleteFile();      // the pad was emptied
         }
 
         sb = nullptr;               // release it here, off the message thread
 
         //  Un pad escrito tambien es trabajo a salvo. Ver ultimaEscrituraMs().
-        escrituraMs.store (juce::Time::currentTimeMillis(), std::memory_order_relaxed);
+        //  SOLO SI QUEDO: con el disco lleno writeSample devuelve false y esto
+        //  se apuntaba igual, asi que la banda decia «GUARDADO» justo en el
+        //  caso para el que existe (Tribunal 2026-09, 7.5).
+        if (quedo)
+            escrituraMs.store (juce::Time::currentTimeMillis(), std::memory_order_relaxed);
 
         {
             const juce::ScopedLock sl (lock);

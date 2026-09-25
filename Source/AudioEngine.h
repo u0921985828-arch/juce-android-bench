@@ -773,6 +773,17 @@ public:
     //  How much of the pool is in use. Read by the UI for a polyphony readout
     //  and by the offline checks; a benign race with the audio thread is fine
     //  for both, since neither acts on the number.
+    //  Lo que el hilo de audio tuvo que arreglar y nadie mas ve: bloques mas
+    //  largos que el preparado, partidos, y golpes que esperaban en la cola
+    //  mientras el flujo estaba parado, tirados. Se leen y se ponen a cero.
+    int takeBloquesGrandes() noexcept { return bloquesGrandes.exchange (0, std::memory_order_relaxed); }
+    //  Cuantos eventos tiene la ultima tabla de AUTO publicada. Banco.
+    int automacionPublicada() const noexcept
+    {
+        const juce::SpinLock::ScopedLockType sl (autoCopiaLock);
+        return autoCopia->n;
+    }
+    int takeGolpesViejos() noexcept   { return golpesViejos.exchange (0, std::memory_order_relaxed); }
     int getActiveVoiceCount() const noexcept
     {
         int n = 0;
@@ -2473,6 +2484,16 @@ private:
     //  de mensajes, que es la regla de la casa y no un detalle de este caso.
     TablaAuto*                autom        = nullptr;   // solo el hilo de audio
     std::atomic<TablaAuto*>   pendingAuto  { nullptr };
+    //  LA ULTIMA TABLA PUBLICADA, COPIADA, para quien clona el motor. El
+    //  rebote leia `s.autom` -que es del hilo de audio y que el hilo de
+    //  mensajes borra al recoger las retiradas- y `s.pendingAuto` -que el
+    //  siguiente `publicaAutomacion` borra-, las dos desde el hilo de exportar
+    //  y sin nada que las sostuviera: exportar con AUTO armado mientras se
+    //  mueve un mando podia leer memoria ya soltada (Tribunal 2026-09, 1.4).
+    //  Ningun hilo de audio toca esto: lo escriben quien publica y lo lee quien
+    //  copia, y el cerrojo es solo entre esos dos.
+    mutable juce::SpinLock    autoCopiaLock;
+    std::unique_ptr<TablaAuto> autoCopia { std::make_unique<TablaAuto>() };
     AutoQueue                 autoRetiradas;
     std::atomic<int>          autoVivos    { 0 };
     std::atomic<bool>         autoEscribe  { false };
@@ -2790,6 +2811,10 @@ private:
 
     // Recording.
     std::atomic<bool> recording { false };
+    //  Ver prepareToPlay y renderNextBlock (Tribunal 2026-09, 1.1 y 1.2).
+    std::atomic<bool> recienPreparado { false };
+    std::atomic<int>  bloquesGrandes  { 0 };
+    std::atomic<int>  golpesViejos    { 0 };
     std::atomic<bool> recordFromMaster { false };
     std::atomic<int>  recordPos { 0 };
     juce::AudioBuffer<float> recordBuffer;   // allocated in prepareToPlay, never in the callback

@@ -431,6 +431,50 @@ def regla_abrir_el_dispositivo (malas):
     if not r["abre_lento"]:
         malas.append ("abrir: la apertura lenta no llego a abrir el dispositivo")
 
+    #  6b. OTRA APP SE QUEDA EL ALTAVOZ PARA SIEMPRE con la app delante. El
+    #  vigilante no reabre -seria sonar encima- y PLAY si: es la persona
+    #  pidiendo sonido. Antes nada la sacaba del silencio (Tribunal 2026-09,
+    #  5.2), que es la invariante «ningun camino deja la app en silencio».
+    print ("  foco perdido para siempre: el vigilante respeta %s, PLAY vuelve a sonar %s"
+           % ("si" if r.get ("foco_respeta") == 1 else "NO",
+              "si" if r.get ("foco_vuelve") == 1 else "NO"))
+    if r.get ("foco_respeta") != 1:
+        malas.append ("foco: tras una perdida permanente el vigilante reabrio solo")
+    if r.get ("foco_vuelve") != 1:
+        malas.append ("foco: tras una perdida permanente PLAY no devuelve el sonido - la app se queda muda delante")
+
+    #  6c. LO QUE REABRE, FUERA DE ESTE HILO. Con un driver que tarda 1500 ms en
+    #  cada apertura: subir el bufer por chasquidos, GRABAR, PARAR, MEDIR y un
+    #  chip de AUDIO llamaban a `setAudioDeviceSetup` en el hilo de mensajes
+    #  (Tribunal 2026-09, 4.1), y GRABAR y MEDIR abrian dos o tres veces por
+    #  gesto (4.3). Cada gesto, por debajo del mismo tope que pedir una
+    #  apertura; una apertura por gesto; y el bufer que tenia que quedar.
+    for clave, nombre in (("xrun", "chasquidos"), ("grabar", "GRABAR"), ("parar", "PARAR"),
+                          ("medir", "MEDIR"), ("chip", "chip de AUDIO")):
+        ms = r.get ("ms_" + clave, -1)
+        abre = r.get ("abre_" + clave)
+        print ("  %-14s %4d ms del hilo de mensajes con aperturas de 1500, tope %d%s"
+               % (nombre, ms, TOPE_MS_PEDIR,
+                  "" if abre is None else "; %d aperturas, tope 1" % abre))
+        if ms < 0 or ms > TOPE_MS_PEDIR:
+            malas.append ("%s: %d ms del hilo de mensajes reabriendo el audio, tope %d"
+                          % (nombre, ms, TOPE_MS_PEDIR))
+        if abre is not None and abre > 1:
+            malas.append ("%s: %d aperturas en un gesto, tope 1" % (nombre, abre))
+    #  6d. LA CAJA NEGRA DICE DONDE. Pasado el arranque, la etiqueta del hilo
+    #  de mensajes no puede seguir diciendo «arranque» (Tribunal 2026-09, 4.5).
+    print ("  etiqueta del hilo de mensajes pasado el arranque: %s" % r.get ("tarea", "?"))
+    if r.get ("tarea") in (None, "arranque"):
+        malas.append ("caja negra: pasado el arranque la etiqueta sigue en \"%s\"" % r.get ("tarea"))
+    print ("  bufer tras chasquidos %d (384), grabando %d (192), tras el chip %d (384)"
+           % (r.get ("bufer_xrun", 0), r.get ("bufer_grabar", 0), r.get ("bufer_chip", 0)))
+    if r.get ("bufer_xrun") != 384:
+        malas.append ("chasquidos: el bufer quedo en %d y tenia que subir a 384" % r.get ("bufer_xrun", 0))
+    if r.get ("bufer_grabar") != 192:
+        malas.append ("GRABAR: grabando con bufer %d y no con la rafaga 192 (o sin grabar)" % r.get ("bufer_grabar", 0))
+    if r.get ("bufer_chip") != 384:
+        malas.append ("chip de AUDIO: el bufer quedo en %d y no en 384" % r.get ("bufer_chip", 0))
+
     #  7. UN PAD QUE TARDA TRES SEGUNDOS EN LEERSE. La ultima linea de la caja
     #  negra del telefono antes del cartel era «ATASCO 1081 ms en pads/cargar»:
     #  la vuelta mas larga de stepPadJob tiene que ser nada, porque leer va en

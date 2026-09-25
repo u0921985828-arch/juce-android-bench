@@ -83,3 +83,10 @@ __pycache__/
 /ESTUDIO-2026.md
 /FERIA-2026.md
 /BITACORA.md
+#  Y el acta del tribunal, por lo mismo: son 51 hallazgos con su medida y su
+#  verificador, material de trabajo de la tanda que los arregla. Vivia solo en
+#  .git/info/exclude, que no esta en el repositorio y se muere con el
+#  contenedor: la siguiente sesion que lo clone se lo encuentra sin ignorar y
+#  lo cuela en un commit sin querer. Una regla que solo existe en el disco de
+#  quien trabaja no protege al de al lado.
+/TRIBUNAL-2026-09.md

@@ -18,6 +18,8 @@
 //  (MainComponent lo lleva dentro y MainComponent es del monton), asi que esto
 //  no medía un riesgo real de la app: medía el suyo propio.
 #include <memory>
+#include <thread>
+#include <vector>
 #include <functional>
 #include "../Source/AudioEngine.h"
 #include "../Source/Denoise.h"
@@ -3828,6 +3830,162 @@ int main()
         std::printf ("%-34s a 0 dB %.5f   a +12 dB %.5f   sube %+.2f dB   %s\n",
                      "el fader del master SUENA", unidad, arriba, subida,
                      ok ? "OK" : zatiFalla());
+    }
+
+    //  Y A +12 dB CON EL PAD A TOPE, LO QUE SALE NO PASA DEL TECHO.
+    //
+    //  La de arriba deja el pad a 0.1 para que la subida quepa, asi que no
+    //  podia ver que el fader iba DETRAS del limitador: con material cerca del
+    //  techo, +12 dB sacaba x3.98 por el DAC y recortaba duro (Tribunal
+    //  2026-09, 2.1). Se mide con el pad a 1.0 y el master arriba del todo: el
+    //  pico no puede pasar de 1.0 - el codo deja 0.944 + 0.056 = 1.0 como
+    //  mucho. Roto a proposito -el codo de esta etapa apagado- sale 1.2841.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        enCanalCero (e);
+        e.setMasterUser (AudioEngine::kMasterMaxGain);
+        e.setPadGain (0, 1.0f);
+        e.publishSample (0, makeSample (48000.0, 1.0, 400.0f));
+
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.postNoteOn (0, 1.0f);
+
+        double pico = 0.0;
+        for (int blk = 0; blk < 24; ++blk)
+        {
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            if (blk < 8) continue;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    pico = juce::jmax (pico, (double) std::abs (b.getSample (ch, i)));
+        }
+        const bool ok = pico > 0.5 && pico <= 1.0;
+        std::printf ("%-34s pico a +12 dB con el pad a tope %.4f, techo 1.0   %s\n",
+                     "el fader no rompe el techo", pico, ok ? "OK" : zatiFalla());
+    }
+
+    //  UN BLOQUE MAS LARGO QUE EL PREPARADO SE PARTE (Tribunal 2026-09, 1.1).
+    //
+    //  Preparado a 512 y pedido de 2048: los buffers de trabajo miden 512 y lo
+    //  de abajo escribia 2048 en ellos. Se mide que se cuente -una vez- y que
+    //  el ultimo cuarto suene: partido bien, el golpe sigue sonando ahi.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2);
+        enCanalCero (e);
+        e.setPadGain (0, 0.5f);
+        e.publishSample (0, makeSample (48000.0, 1.0, 400.0f));
+        juce::AudioBuffer<float> b (2, 2048);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.postNoteOn (0, 1.0f);
+        //  Ocho bloques antes, como la fila del techo: la salida llega con el
+        //  retardo de la cadena, y medir antes es medir el silencio de delante.
+        for (int blk = 0; blk < 8; ++blk) { b.clear(); e.renderNextBlock (b, 0, 512); }
+        b.clear(); e.renderNextBlock (b, 0, 2048);
+        const int partidos = e.takeBloquesGrandes();
+        const float cola = b.getMagnitude (0, 1536, 512);
+        const bool ok = partidos == 1 && cola > 0.01f;
+        std::printf ("%-34s partidos %d (1), ultimo cuarto %.4f   %s\n",
+                     "bloque mayor que el preparado", partidos, (double) cola,
+                     ok ? "OK" : zatiFalla());
+    }
+
+    //  LO TOCADO CON EL FLUJO PARADO NO SALE TODO JUNTO (Tribunal 2026-09, 1.2).
+    //
+    //  Ocho pads tocados mientras el flujo estaba parado -una llamada- y el
+    //  flujo que vuelve: prepareToPlay y un bloque. Antes sonaban los ocho en
+    //  el mismo instante; ahora el ultimo, que es el que reabre. Contra un
+    //  testigo: las voces de UN golpe en un motor limpio.
+    {
+        auto vocesTras = [] (int golpes)
+        {
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (16, 2);
+            enCanalCero (e);
+            for (int p = 0; p < 8; ++p) e.publishSample (p, makeSample (48000.0, 1.0, 200.0f + 50.0f * (float) p));
+            juce::AudioBuffer<float> b (2, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            for (int p = 0; p < golpes; ++p) e.postNoteOn (p, 1.0f);
+            e.prepareToPlay (48000.0, 512);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            return std::make_pair (e.getActiveVoiceCount(), e.takeGolpesViejos());
+        };
+        const auto uno  = vocesTras (1);
+        const auto ocho = vocesTras (8);
+        const bool ok = uno.first > 0 && ocho.first == uno.first && ocho.second == 7;
+        std::printf ("%-34s voces %d (testigo %d), tirados %d (7)   %s\n",
+                     "golpes con el flujo parado", ocho.first, uno.first, ocho.second,
+                     ok ? "OK" : zatiFalla());
+    }
+
+    //  LA TOMA EMPIEZA EN CERO TRAS VOLVER DEL FONDO (Tribunal 2026-09, 1.3).
+    //
+    //  Una toma armada que corre unos bloques, y el flujo que se rehace: el
+    //  buffer se vacia en prepareToPlay, asi que la posicion tiene que volver
+    //  a cero con el. Antes seguia en lo grabado: 0.064 s aqui.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512, 1); e.setPolyphony (8, 2);
+        juce::AudioBuffer<float> b (2, 512);
+        e.startRecording (0);
+        for (int blk = 0; blk < 6; ++blk)
+        {
+            for (int i = 0; i < 512; ++i) b.setSample (0, i, 0.25f), b.setSample (1, i, 0.25f);
+            e.renderNextBlock (b, 0, 512);
+        }
+        const float antes = e.getRecordSeconds();
+        e.prepareToPlay (48000.0, 512, 1);
+        const float despues = e.getRecordSeconds();
+        const bool ok = antes > 0.01f && despues == 0.0f;
+        std::printf ("%-34s grabado %.3f s, tras preparar %.3f s (0)   %s\n",
+                     "la toma vuelve a cero al preparar", (double) antes, (double) despues,
+                     ok ? "OK" : zatiFalla());
+    }
+
+    //  EXPORTAR CON AUTO MIENTRAS SE MUEVE UN MANDO (Tribunal 2026-09, 1.4).
+    //
+    //  Tres hilos como en la app: el de audio renderiza y adopta, el de
+    //  mensajes publica tablas nuevas -y al publicar borra las retiradas-, y
+    //  el de exportar clona. El clon leia `autom` y `pendingAuto` del motor
+    //  vivo sin sostenerlas. Se mide que cada clon salga con una tabla ENTERA
+    //  -uno de los dos tamanos publicados, nunca otro- y, bajo TSan, que no
+    //  haya carrera.
+    {
+        const auto monton_s = std::make_unique<AudioEngine>();
+        AudioEngine& s = *monton_s; s.prepareToPlay (48000.0, 256); s.setPolyphony (8, 2);
+        std::vector<AudioEngine::EventoAuto> corta (3), larga (AudioEngine::kMaxAuto);
+        for (int i = 0; i < (int) larga.size(); ++i) larga[(size_t) i].paso = i;
+        s.publicaAutomacion (corta.data(), (int) corta.size());
+        std::atomic<bool> fin { false };
+        std::thread audio ([&]
+        {
+            juce::AudioBuffer<float> b (2, 256);
+            while (! fin.load()) { b.clear(); s.renderNextBlock (b, 0, 256); }
+        });
+        std::thread mensajes ([&]
+        {
+            for (int k = 0; ! fin.load(); ++k)
+                (k & 1) ? s.publicaAutomacion (larga.data(), (int) larga.size())
+                        : s.publicaAutomacion (corta.data(), (int) corta.size());
+        });
+        int clones = 0, raros = 0;
+        const auto hasta = juce::Time::getMillisecondCounter() + 400;
+        while (juce::Time::getMillisecondCounter() < hasta)
+        {
+            const auto monton_d = std::make_unique<AudioEngine>();
+            monton_d->prepareToPlay (48000.0, 256);
+            monton_d->copyStateFrom (s);
+            const int n = monton_d->automacionPublicada();
+            if (n != (int) corta.size() && n != (int) larga.size()) ++raros;
+            ++clones;
+        }
+        fin = true;
+        audio.join(); mensajes.join();
+        const bool ok = clones > 10 && raros == 0;
+        std::printf ("%-34s %d clones, %d con una tabla a medias   %s\n",
+                     "exportar con AUTO sin carrera", clones, raros, ok ? "OK" : zatiFalla());
     }
 
     //  UN GOLPE FLOJO NO ES UN GOLPE FUERTE BAJADO DE VOLUMEN.

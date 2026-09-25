@@ -601,6 +601,11 @@ public:
                     {
                         c2->auditRevive();
                     }
+                    //  GUARDAR SIN HUECOS. Ver Tests/guardado.py.
+                    else if (UiAudit::env ("ZATI_GUARDADO").isNotEmpty())
+                    {
+                        c2->auditGuardado();
+                    }
                     //  LAS DOS SELECCIONES DE RANGO, en una sola corrida. Ver
                     //  Tests/sel.py y auditSelecciones.
                     else if (UiAudit::env ("ZATI_SEL").isNotEmpty())

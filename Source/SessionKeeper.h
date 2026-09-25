@@ -46,20 +46,44 @@ public:
     static juce::File padFile (int pad);
 
     //  Hay algo a lo que volver?
-    static bool exists() { return stateFile().existsAsFile(); }
+    //
+    //  Y SI SOLO QUEDA EL TEMPORAL YA VALIDADO, se rescata: es lo que deja una
+    //  muerte entre escribirlo y ponerlo encima, y es la sesion entera. Sin
+    //  esto el arranque cargaba la fabrica y el escritor pisaba los 64 WAV.
+    static bool exists();
 
     //  Hilo de mensajes. Compara los pads vivos con el ultimo juego escrito y
     //  encola lo que se haya movido. Sale bastante barato como para llamarlo
     //  desde el latido de la interfaz: sin cambios son dieciseis comparaciones
     //  de punteros.
-    void sync (const SampleBuffer::Ptr* live, int numPads);
+    //
+    //  Y SI HAY CAMBIOS, EL ESTADO VA DELANTE. `estado` construye el texto de
+    //  state.xml y solo se llama cuando algun pad cambio: el escritor lo pone
+    //  en disco ANTES de tocar ningun WAV. Sin eso un troceado borraba pad02 a
+    //  pad16.wav a los dos segundos y state.xml seguia diciendo durante hasta
+    //  veinte que esos quince pads tenian audio propio - una muerte en esa
+    //  ventana (ANR, caida) volvia con quince pads «sin audio» (Tribunal
+    //  2026-09, 7.3).
+    void sync (const SampleBuffer::Ptr* live, int numPads,
+               const std::function<juce::String()>& estado = {});
+
+    //  El texto de state.xml para un estado y un proyecto. Hilo de mensajes:
+    //  copiar el arbol es lo que lo hace legible desde otro hilo.
+    static juce::String textoDe (const juce::ValueTree& state, const juce::String& projectName);
+
+    //  Encarga el estado al escritor y vuelve. Es el guardado de cada veinte
+    //  segundos: escribirlo aqui eran 85 KB por FUSE en el hilo de mensajes
+    //  (Tribunal 2026-09, 4.6). Si el texto es el mismo que ya esta en disco
+    //  no se escribe (8.4): con la app quieta eran 180 escrituras por hora.
+    void pideEstado (juce::String texto);
 
     //  Dar por escritos los pads vivos, sin encolar nada. Se usa justo despues
     //  de una recuperacion: esos buffers salieron de esta misma carpeta.
     void adopt (const SampleBuffer::Ptr* live, int numPads);
 
-    //  Hilo de mensajes, sincrono, pequeno.
-    void writeState (const juce::ValueTree& state, const juce::String& projectName);
+    //  Sincrono: lo usa `onPause`, que no puede fiarse de que el proceso siga
+    //  vivo para ver acabar a otro hilo. Devuelve si quedo en disco.
+    bool writeState (const juce::ValueTree& state, const juce::String& projectName);
 
     //  Espera a que la cola se vacie. Devuelve false si se agota el plazo, y
     //  quien llama sigue de todas formas: que la espera tenga tope es el
@@ -89,9 +113,16 @@ public:
     juce::int64 ultimaEscrituraMs() const noexcept
         { return escrituraMs.load (std::memory_order_relaxed); }
 
+    //  Banco: cuantos estados se escribieron y cuantos se ahorraron por ser
+    //  iguales al que ya estaba en disco.
+    int estadosEscritos() const noexcept { return escritos.load(); }
+    int estadosIguales()  const noexcept { return iguales.load(); }
+
+
 private:
     void run() override;
     bool isIdle() const;
+    bool escribeEstado (const juce::String& texto);
 
     juce::CriticalSection lock;
 
@@ -126,6 +157,16 @@ private:
     //  cosas son «tu trabajo esta a salvo» y contar solo una mentiria la mitad
     //  del tiempo.
     std::atomic<juce::int64> escrituraMs { 0 };
+
+    //  El estado encargado y todavia no escrito, bajo `lock`. Vacio es nada.
+    juce::String estadoPendiente;
+
+    //  Lo ultimo que llego a disco, y el cerrojo que serializa las dos manos
+    //  que escriben state.xml: el escritor y `writeState` desde `onPause`. Sin
+    //  el, las dos escribirian el MISMO state.xml.tmp a la vez.
+    juce::CriticalSection escribiendoEstado;
+    juce::String ultimoEstado;
+    std::atomic<int> escritos { 0 }, iguales { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SessionKeeper)
 };

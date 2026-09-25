@@ -109,7 +109,11 @@ AudioFocus::AudioFocus (Listener& l) : listener (l)
         //  de negativo dice si va a volver.
         switch (change)
         {
-            case -1: listener.audioFocusLost (true);  break;   // LOSS
+            //  LOSS: el foco ya no es nuestro, y `held` tiene que decirlo.
+            //  Se quedaba en true y `request()` contestaba «lo tengo» sin
+            //  preguntar a Android, asi que pedirlo otra vez desde delante no
+            //  hacia nada (Tribunal 2026-09, 5.2).
+            case -1: held = false; listener.audioFocusLost (true);  break;
             case -2: listener.audioFocusLost (false); break;   // LOSS_TRANSIENT
             case -3: listener.audioFocusDucked();     break;   // ...CAN_DUCK
             case  1: listener.audioFocusGained();     break;   // GAIN

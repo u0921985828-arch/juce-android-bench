@@ -216,6 +216,15 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         }
 
         recordBuffer.clear();
+        //  Y LA POSICION CON EL. El buffer se acaba de vaciar -o de rehacer
+        //  con otro tamano-, asi que una posicion que no sea cero apunta a
+        //  silencio, o fuera: la toma siguiente tras volver del fondo empezaba
+        //  donde se quedo la anterior y perdia su principio (Tribunal 2026-09,
+        //  1.3). Aqui no hay callback dentro: JUCE prepara con el flujo parado.
+        recordPos.store (0, std::memory_order_relaxed);
+        //  Y LO QUE SE TOCO CON EL FLUJO PARADO NO SALE TODO JUNTO. Ver el
+        //  drenado de la cola en renderNextBlock (Tribunal 2026-09, 1.2).
+        recienPreparado.store (true, std::memory_order_release);
 
         //  Y EL BUFFER DEL MONITOR, por lo mismo y aqui mismo: la entrada hay
         //  que guardarla en la etapa 0 porque el `out.clear` de la etapa 2 la
@@ -670,6 +679,33 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                    int startSample, int numSamples) noexcept
 {
     juce::ScopedNoDenormals noDenormals;
+
+    //  00. UN BLOQUE MAS LARGO QUE EL PREPARADO SE PARTE. `padScratch`, `fxBus`
+    //      y `secoDeCanal` miden `maxBlock`, y todo lo de abajo escribe
+    //      `numSamples` en ellos sin mirar: un driver que entregue mas de lo
+    //      que dijo -Oboe lo permite tras un cambio de ruta- escribia fuera del
+    //      buffer (Tribunal 2026-09, 1.1). Partido en trozos del tamano
+    //      preparado suena igual, y se cuenta para que la caja negra diga si
+    //      pasa en algun telefono.
+    //
+    //      Cada trozo como un bloque que EMPIEZA EN CERO, sobre una vista de
+    //      `out` y no con `startSample + o`: los buffers de trabajo se indexan
+    //      con el mismo `startSample` que la salida, asi que el trozo cuarto
+    //      escribia en `fxBus` desde la muestra 1536 de 512 -el mismo fallo, en
+    //      otro sitio-; el banco lo vio con el ultimo cuarto en silencio. La
+    //      vista no reserva: por debajo de 32 canales JUCE usa su tabla interna.
+    if (maxBlock > 0 && numSamples > maxBlock)
+    {
+        bloquesGrandes.fetch_add (1, std::memory_order_relaxed);
+        for (int o = 0; o < numSamples; o += maxBlock)
+        {
+            const int n = juce::jmin (maxBlock, numSamples - o);
+            juce::AudioBuffer<float> trozo (out.getArrayOfWritePointers(), out.getNumChannels(),
+                                            startSample + o, n);
+            renderNextBlock (trozo, 0, n);
+        }
+        return;
+    }
 
     //  0a. One renderer at a time. A phone changes audio route by tearing the
     //      stream down and building a new one, and the old callback thread can
@@ -1240,8 +1276,31 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  cuando solo se puede esperar.
     const bool quantiseNow = liveQuant.load (std::memory_order_relaxed)
                           && playing.load (std::memory_order_relaxed);
+
+    //  EL PRIMER BLOQUE TRAS PREPARAR: los golpes que esperaban en la cola
+    //  mientras el flujo estaba parado -una llamada, la app al fondo, un cambio
+    //  de ruta- salian TODOS en este bloque, en el mismo instante: ocho pads
+    //  tocados durante una llamada sonaban como un solo golpe de ocho
+    //  (Tribunal 2026-09, 1.2). Se queda el ULTIMO, que es el que despierta el
+    //  audio cuando es un toque el que lo reabre, y el resto se tira y se
+    //  cuenta. Solo los NoteOn: un NoteOff, un Panic o un cambio de estado se
+    //  aplican siempre.
+    int golpeQueQueda = -1;
+    const bool tiraViejos = recienPreparado.load (std::memory_order_acquire);
+    if (tiraViejos)
+    {
+        recienPreparado.store (false, std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i)
+            if (local[i].type == Command::Type::NoteOn) golpeQueQueda = i;
+    }
+
     for (int i = 0; i < n; ++i)
     {
+        if (tiraViejos && local[i].type == Command::Type::NoteOn && i != golpeQueQueda)
+        {
+            golpesViejos.fetch_add (1, std::memory_order_relaxed);
+            continue;
+        }
         if (quantiseNow && local[i].type == Command::Type::NoteOn && numPending < (int) pending.size())
         {
             const double sps = samplesPerStepNow();
@@ -3889,11 +3948,33 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             float* w[2] = { nullptr, nullptr };
             for (int ch = 0; ch < outCh; ++ch) w[ch] = out.getWritePointer (ch, startSample);
 
+            //  Y EL TECHO OTRA VEZ, DETRAS DEL FADER. El limitador de arriba
+            //  deja la señal en 1.0 y este fader la subia hasta x3.98: un
+            //  patron de fabrica de 0.566 de pico salia a 2.25, +7 dB sobre
+            //  el DAC, y recortaba DURO desde +4.9 dB de fader - el limitador
+            //  prometia justo lo contrario (Tribunal 2026-09, 2.1). No se
+            //  mueve el de arriba: el remuestreo y el rebote en vivo capturan
+            //  antes del fader, y eso tiene que seguir siendo asi. El mismo
+            //  codo, solo si hay limitador y solo en esta etapa, que ya se
+            //  salta entera con el master en la unidad.
+            constexpr float techo = 0.944f;       // el mismo -0.5 dBFS de arriba
+            const bool limitar = safetyLimiter.load (std::memory_order_relaxed);
+
             float gain = masterGain;
             for (int i = 0; i < numSamples; ++i)
             {
                 gain += (target - gain) * k;
-                for (int ch = 0; ch < outCh; ++ch) w[ch][i] *= gain;
+                for (int ch = 0; ch < outCh; ++ch)
+                {
+                    float v = w[ch][i] * gain;
+                    if (limitar && (v > techo || v < -techo))
+                    {
+                        const float sign = (v < 0.0f) ? -1.0f : 1.0f;
+                        const float over = (v * sign - techo) / (1.0f - techo);
+                        v = sign * (techo + (1.0f - techo) * fastTanh (over));
+                    }
+                    w[ch][i] = v;
+                }
             }
             masterGain = gain;
         }
@@ -4374,6 +4455,10 @@ void AudioEngine::publicaAutomacion (const EventoAuto* entrada, int cuantos) noe
     auto* t = new TablaAuto();
     t->n = juce::jlimit (0, kMaxAuto, cuantos);
     for (int i = 0; i < t->n; ++i) t->e[(size_t) i] = entrada[i];
+    {
+        const juce::SpinLock::ScopedLockType sl (autoCopiaLock);
+        *autoCopia = *t;
+    }
 
     //  Y se recoge lo anterior ANTES de publicar, como con los clips.
     autoRetiradas.drain ([] (TablaAuto* v) { delete v; });
@@ -5159,14 +5244,19 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  Y LA AUTOMATIZACION, que es la mitad de por que existe: el rebote tiene
     //  que sonar como lo tocaste, y sin esta linea sale con el numero que
     //  estuviera puesto al exportar - o sea justo lo que la automatizacion
-    //  existe para arreglar. Se copia la tabla que el motor de escucha tiene
-    //  ADOPTADA, no la que espera: la publicada puede no haberse adoptado
-    //  todavia si nadie ha renderizado un bloque desde el ultimo cambio, asi
-    //  que se miran las dos y manda la mas nueva.
+    //  existe para arreglar. Y la ultima PUBLICADA, no la adoptada: puede no
+    //  haberse adoptado todavia si nadie ha renderizado un bloque desde el
+    //  ultimo cambio.
     {
-        const TablaAuto* fuente = s.pendingAuto.load (std::memory_order_acquire);
-        if (fuente == nullptr) fuente = s.autom;
-        if (fuente != nullptr && fuente->n > 0)
+        //  De la COPIA, bajo su cerrojo, y no de las dos tablas vivas: ver
+        //  `autoCopia` (Tribunal 2026-09, 1.4). La publicada es la mas nueva
+        //  por definicion, se haya adoptado o no.
+        auto fuente = std::make_unique<TablaAuto>();
+        {
+            const juce::SpinLock::ScopedLockType sl (s.autoCopiaLock);
+            *fuente = *s.autoCopia;
+        }
+        if (fuente->n > 0)
             publicaAutomacion (fuente->e.data(), fuente->n);
     }
     //  Y el modo de ESCRITURA no viaja: un rebote no graba automatizacion, la

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdio>
+
 #include <JuceHeader.h>
 #include "SampleBuffer.h"
 #include "AppStorage.h"
@@ -463,6 +465,29 @@ public:
         return dir.isDirectory();
     }
 
+    //  EL RELEVO QUE NO DEJA HUECO. JUCE `moveFileTo` BORRA el destino y
+    //  despues renombra (juce_File.cpp:300-315), asi que entre las dos
+    //  llamadas no existe ni el fichero viejo ni el nuevo: si Android mata el
+    //  proceso ahi, state.xml no esta, el arranque siguiente carga la fabrica
+    //  y el escritor PISA los 64 WAV de la sesion. `replaceFileIn` con destino
+    //  existente va a rename(2)... y si rename falla, JUCE copia a un
+    //  temporal y vuelve a entrar por el camino que BORRA el destino antes
+    //  (juce_SharedCode_posix.h:409-424): medido en Tests/guardado.py con un
+    //  directorio en el sitio de state.xml, lo borro y escribio encima
+    //  diciendo que si. Asi que rename(2) directo y nada mas: sustituye sin
+    //  hueco, y si no puede, dice que no y deja el bueno donde estaba. Los tres
+    //  sitios que escriben al lado y mueven pasan por aqui (Tribunal 2026-09,
+    //  7.1 y 7.5).
+    static bool ponEncima (const juce::File& tmp, const juce::File& dest)
+    {
+       #if JUCE_WINDOWS
+        return tmp.replaceFileIn (dest);     // alli rename no sustituye
+       #else
+        return std::rename (tmp.getFullPathName().toRawUTF8(),
+                            dest.getFullPathName().toRawUTF8()) == 0;
+       #endif
+    }
+
     //  ESCRIBIR UN FICHERO DE TEXTO SIN PERDER EL QUE HABIA.
     //
     //  `replaceWithText` esconde dos fallos a la vez -se come el resultado del
@@ -476,7 +501,8 @@ public:
     //
     //  Se escribe al lado, se vuelve a leer, y solo entonces se mueve encima:
     //  rename(2) sobreescribe y es atomico, asi que no existe el instante en el
-    //  que el bueno ya no esta y el nuevo todavia no.
+    //  que el bueno ya no esta y el nuevo todavia no. POR `ponEncima` y no por
+    //  `moveFileTo`, que borraba antes y abria justo ese instante.
     //
     //  `valida` es la unica comprobacion que significa algo, y por eso la pone
     //  quien llama: para un XML es parseXML, y para la lista de licencias es
@@ -493,7 +519,7 @@ public:
 
         if (! tmp.replaceWithText (texto))          { tmp.deleteFile(); return false; }
         if (valida != nullptr && ! valida (tmp))    { tmp.deleteFile(); return false; }
-        if (tmp.moveFileTo (dest))                  return true;
+        if (ponEncima (tmp, dest))                  return true;
 
         tmp.deleteFile();
         return false;
@@ -521,7 +547,8 @@ public:
     //  un proyecto que acababa de quedarse mudo.
     //
     //  La red va DENTRO, para que ninguna ruta pueda saltarsela. rename(2) es
-    //  atomico y sobreescribe, asi que no hay ni un instante sin fichero.
+    //  atomico y sobreescribe, asi que no hay ni un instante sin fichero -
+    //  siempre que se llame a rename(2) y no a `moveFileTo`. Ver ponEncima.
     static bool writeSample (const juce::File& dest, const juce::AudioBuffer<float>& buffer,
                              double sampleRate)
     {
@@ -531,7 +558,7 @@ public:
         tmp.deleteFile();
 
         if (! writeSampleTo (tmp, buffer, sampleRate)) { tmp.deleteFile(); return false; }
-        if (tmp.moveFileTo (dest))                     return true;
+        if (ponEncima (tmp, dest))                     return true;
 
         tmp.deleteFile();
         return false;

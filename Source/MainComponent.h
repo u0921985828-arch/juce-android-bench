@@ -1599,6 +1599,26 @@ private:
     std::atomic<bool>   aperturaLista { false };
     std::atomic<bool>   cerrarAlAbrir { false };
     std::atomic<double> costeApertura { 0.0 };
+
+    //  Y TODO LO QUE REABRE, POR EL MISMO HILO (Tribunal 2026-09, 4.1 y 4.3).
+    //  La apertura del fondo ya iba por aqui; los chasquidos -`checkXRuns`
+    //  subiendo el bufer-, GRABAR, MEDIR, los chips de AUDIO y el vigilante de
+    //  ruta seguian llamando a `setAudioDeviceSetup` desde el hilo de mensajes,
+    //  y cada llamada es un cierre y una apertura Oboe con su espera de hasta un
+    //  segundo. Medido en el banco con un driver que tarda 3000 ms: el hilo de
+    //  mensajes se quedaba esos 3000 ms dentro de `checkXRuns`. Ahora se ENCARGA:
+    //  `hazlo` corre en el hilo que abre, `despues` en el de mensajes al
+    //  recogerlo. Mismo carril que la apertura, asi que nunca van dos a la vez.
+    std::function<void()> encargoAudio, trasEncargo;
+    std::atomic<bool> pedidoEncargo { false };
+    std::atomic<bool> encargoListo  { false };
+    bool pideEncargoAudio (std::function<void()> hazlo, std::function<void()> despues = {});
+    void recogeEncargo();
+    //  Abrir con N entradas en UNA apertura: reloj elegido y bufer de la
+    //  rafaga metidos en la misma peticion. Ver abreSalida.
+    void abreCon (int entradas);
+    //  Banco: aperturas y ms del hilo de mensajes por gesto. Ver auditRevive.
+    int bancoEncargos = 0;
     //  Lo que Android guardo de como murio la vez anterior. Ver SalidaPrevia.h.
     juce::String salidaPrevia;
     void lanzaSalidaPrevia();
@@ -1864,6 +1884,8 @@ public:
     //  y CADA mando visible con su reloj al lado.
     void auditTapas();
     void auditRevive();
+    //  Banco: guardar sin huecos. Ver Tests/guardado.py.
+    void auditGuardado();
 
     //  Y LA PUERTA DEL BANCO A LA FABRICA. Casi todas las entradas de `ZATI_*`
     //  miden sobre la fabrica ya puesta, y desde que se rinde fuera del hilo de
@@ -1942,6 +1964,8 @@ public:
 
 private:
     void autosave();
+    //  El texto de state.xml de ahora. Ver SessionKeeper::sync.
+    juce::String textoSesion() { return SessionKeeper::textoDe (captureState(), currentProject); }
 
     //  The work that was never given a name. Written continuously in the
     //  background and read back on the next launch, so a process the system
@@ -1996,6 +2020,8 @@ private:
     //  Somebody else owns the speaker until we ask again. Set by a PERMANENT
     //  focus loss, cleared by coming back to the foreground.
     bool focusGivenAway = false;
+    void recuperaFoco();
+    bool arranqueCerrado = false;   // ver timerCallback: Bitacora::tarea (Tribunal 2026-09, 4.5)
     static constexpr int kDuckWatchdogMs = 6000;     // longer than any notification
 
     //  LAS CONSTANTES DE TIEMPO, EN MILISEGUNDOS Y NO POR CUADRO.
@@ -2987,6 +3013,7 @@ private:
     //  setenta y siete milisegundos por fotograma, o sea un mando que no se
     //  puede mover. Mientras el dedo esta encima solo se escribe el numero.
     void resintetizaInstrumento (int pad);
+    void montaResintesis (int pad, SampleBuffer::Ptr sb);
     void refrescaMandosVst();
     void paintVstSheetContent (juce::Graphics& g);
     void paintMidiSheetContent (juce::Graphics& g);
@@ -3987,8 +4014,7 @@ private:
     //  termina, o sea justo cuando ya no hace falta.
     //
     //  Uno solo y en cola: dos sintesis a la vez se pelearian por los hilos que
-    //  `Sintes` ya reparte por zonas.
-    juce::ThreadPool sintesPool { 1 };
+    //  `Sintes` ya reparte por zonas. Declarado mas abajo, detras del buzon.
     //  QUIEN PIDIO LO QUE VUELVE. Si mientras se rendia el pad cambio de
     //  instrumento -dos toques seguidos en la lista-, lo que llega es de nadie
     //  y se tira; pisarlo pondria el penultimo elegido.
@@ -4001,9 +4027,16 @@ private:
     //  esta a cero en esta app a proposito, asi que `runDispatchLoopUntil` no
     //  existe y no hay forma de bombearlo. Con el buzon, el que espera lo vacia
     //  el mismo y el mensaje se encuentra la bandeja limpia.
-    struct Rendido { int pad = -1, marca = 0; SampleBuffer::Ptr sb; juce::String nombre; };
+    struct Rendido { int pad = -1, marca = 0; SampleBuffer::Ptr sb; juce::String nombre;
+                     bool resintesis = false; };
     juce::CriticalSection  sintesLock;
     std::vector<Rendido>   sintesHechos;
+    //  EL POOL VA DETRAS DEL BUZON Y DE SU CERROJO, y no delante: los miembros
+    //  se destruyen al reves de como se declaran, asi que con el pool arriba
+    //  el cierre destruia `sintesHechos` y `sintesLock` y DESPUES esperaba a la
+    //  sintesis en vuelo, que al acabar escribia en los dos (Tribunal 2026-09,
+    //  3.2). Asi el pool espera a su trabajo con el buzon todavia vivo.
+    juce::ThreadPool sintesPool { 1 };
     void drenaInstrumentos();
 
     //  Los tres del zoom, encima de la propia onda y no en una fila suya: la
