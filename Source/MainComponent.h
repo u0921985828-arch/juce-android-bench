@@ -2371,7 +2371,20 @@ private:
     //  banco D- asi que el de las tomas es el ultimo que no lo es.
     static constexpr int kBancoTomasDeFabrica = kNumBanks - 2;   // C
     int bancoTomas = kBancoTomasDeFabrica;
-    void selectBank (int bank);
+
+    //  DOS CONTADORES PARA EL BANCO, del mismo tipo que `bancoAperturas`: no
+    //  cambian lo que la app hace, cuentan lo que hace. Existen porque «cargar
+    //  un instrumento tarda 7 s» se puede arreglar por casualidad -cualquier
+    //  cosa que baje los milisegundos pasa por buena- y lo que hace falta saber
+    //  es CUANTAS VECES se toco la rejilla. `bancoRefrescos` cuenta las
+    //  llamadas a `refreshPad`; `bancoTintes`, las de `setModoNota`, que es la
+    //  cifra cuadratica: `refreshPad` llamaba a `refreshModoNota`, que recorre
+    //  los 64, y `selectPad` llama a `refreshPad` 64 veces.
+    int bancoRefrescos = 0;
+    int bancoTintes    = 0;
+    //  `padDestino` >= 0 es «y quedate en ESE pad», que ahorra el cuerpo
+    //  entero de un segundo `selectPad`: ver la cabecera de selectBank.
+    void selectBank (int bank, int padDestino = -1);
     juce::OwnedArray<juce::TextButton> bankButtons;
     //  Two chips at each end of the seam, not four bunched at one end: the
     //  engraved PADS sits between them and the seam reads as balanced.
@@ -3006,6 +3019,7 @@ private:
     void padNotaOn (int index, float vel);
     void padNotaOff (int index);
     void refreshModoNota();
+    void modoNotaDe (int i);           // el modo tecla de UNO: ver refreshPad
     std::array<int, AudioEngine::kNumPads> notaViva {};
     void refreshVst();
     //  RE-SINTETIZAR AL SOLTAR EL MANDO Y NO AL MOVERLO. Un preset son diez

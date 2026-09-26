@@ -2199,6 +2199,83 @@ void MainComponent::auditInstr()
     }
 
     // ------------------------------------------------------------------
+    //  Y CARGAR UN INSTRUMENTO TAMPOCO PARA LA INTERFAZ.
+    //
+    //  Llego del telefono: con un ritmo ya montado, cargar el GRAND tardo
+    //  SIETE SEGUNDOS y saco el cuadro de «no responde» de Android. No era el
+    //  render -eso corre en `sintesPool` desde antes de la Tanda 27- sino lo
+    //  que el gesto hace DESPUES de pedirlo, todo en el hilo de mensajes.
+    //
+    //  Y ninguna regla lo medía: `atasco.py` tiene su tabla de gesto -> ms para
+    //  los chasquidos, GRABAR, PARAR, MEDIR y el chip de AUDIO, y la de aqui
+    //  arriba mide la re-sintesis, pero CARGAR no lo miraba nadie. Un gesto sin
+    //  regla es un gesto que puede tardar siete segundos sin que el banco se
+    //  entere, que es exactamente lo que paso.
+    //
+    //  CON TRES CIFRAS Y NO UNA. «ms» solo dice que tarda; `refrescos` y
+    //  `tintes` dicen POR QUE, y sin ellas cualquier cosa que baje los
+    //  milisegundos por casualidad pasaria por arreglo. Y con la app LLENA, que
+    //  es la condicion en la que la persona lo sufrio: medir la rejilla vacia
+    //  seria medir otra app.
+    //
+    //  Se mide solo la parte SINCRONA -no se llama a `esperaInstrumentos`
+    //  dentro del cronometro-, porque lo que congela la interfaz es esa y no el
+    //  render.
+    {
+        llenaDePrueba();
+        instCatalogo = Instrumentos::lee();
+        instPack = 0;                                   // SINTES va el primero
+        //  GRAND es la familia 0, y la celda es la del MENU y no la familia:
+        //  ver la medida del destino, que ya se equivoco una vez por esto.
+        int celda = 0;
+        for (int i = 0; i < (int) instCatalogo[0].instr.size(); ++i)
+            if (instCatalogo[0].instr[(size_t) i].familiaSintes == 0) { celda = i; break; }
+
+        int llenos = 0;
+        for (int i = 0; i < kNumPads; ++i) if (padHasSample[(size_t) i]) ++llenos;
+
+        //  Lo que cuesta la foto del deshacer, aparte: si es ella la que pesa,
+        //  el arreglo es otro (Tribunal 2026-09, 6.2) y conviene saberlo antes
+        //  de tocar la rejilla.
+        undoStack.clear();
+        const double u0 = juce::Time::getMillisecondCounterHiRes();
+        pushUndo ("MEDIDA");
+        const int undoMs = juce::roundToInt (juce::Time::getMillisecondCounterHiRes() - u0);
+        undoStack.clear();
+
+        //  1. EL NAVEGADOR. El destino en otro banco a proposito: es el caso
+        //     caro, el que ademas cambia de banco.
+        instDestPad = 2 * kPadsPerBank + 5;
+        currentBank = 0;
+        bancoRefrescos = 0; bancoTintes = 0;
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        cargaInstrumento (celda);
+        const int msNav = juce::roundToInt (juce::Time::getMillisecondCounterHiRes() - t0);
+        const int refNav = bancoRefrescos, tinNav = bancoTintes;
+        esperaInstrumentos();
+
+        std::cout << "{\"instr\":\"cargar\",\"gesto\":\"navegador\",\"ms\":" << msNav
+                  << ",\"refrescos\":" << refNav << ",\"tintes\":" << tinNav
+                  << ",\"undo_ms\":" << undoMs << ",\"llenos\":" << llenos << "}" << std::endl;
+
+        //  2. LA FICHA. El otro camino que la persona nombro: mantener un pad
+        //     abre su ficha y desde alli se elige el sonido. Comparte
+        //     `pushUndo` y el render, pero no el bloque de refrescos, asi que
+        //     medirlos por separado es lo que dice cual de las dos mitades pesa.
+        vstPad = instDestPad;
+        bancoRefrescos = 0; bancoTintes = 0;
+        const double t1 = juce::Time::getMillisecondCounterHiRes();
+        eligePreset (4);
+        const int msFicha = juce::roundToInt (juce::Time::getMillisecondCounterHiRes() - t1);
+        const int refFicha = bancoRefrescos, tinFicha = bancoTintes;
+        esperaInstrumentos();
+
+        std::cout << "{\"instr\":\"cargar\",\"gesto\":\"ficha\",\"ms\":" << msFicha
+                  << ",\"refrescos\":" << refFicha << ",\"tintes\":" << tinFicha
+                  << ",\"undo_ms\":" << undoMs << ",\"llenos\":" << llenos << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
     //  Y QUE LA RECETA SEA DEL PAD: que se pueda mover, que se OIGA, que
     //  VOLVER la devuelva y que vuelva del fichero.
     //
@@ -5124,6 +5201,19 @@ void MainComponent::auditViejos (const juce::String& carpeta)
         ProjectStore::ensureDirectory (destino);
         f.copyFileTo (destino.getChildFile ("project.xml"));
         loadProject (f.getFileNameWithoutExtension());
+        //  Y SE ESPERA A QUE TERMINE, que es la linea que faltaba. Desde que
+        //  la Tanda 26 puso los pads en su hebra, `loadProject` solo ARRANCA
+        //  el trabajo -`PadLoadJob` lee y rinde fuera, y `applyState` corre en
+        //  `finishProjectOpen`, o sea despues-, asi que leer el estado en la
+        //  linea siguiente lee el del proyecto ANTERIOR. Y peor: con el
+        //  trabajo en vuelo, `padsBusy()` sigue puesto y el `loadProject` de
+        //  la vuelta siguiente se va por su primera linea sin abrir nada.
+        //  Medido: los SIETE ficheros congelados salian con las mismas cifras
+        //  -las de «ayer»: g0.20 p0.90 c300 canal5- y `Tests/session.py`
+        //  imprimia «HEREDA DEL ANTERIOR» siete veces y salia con 1. La misma
+        //  espera que `auditDisperso` ya hacia veinte lineas mas arriba; una
+        //  prueba que no espera al trabajo que mide no mide ese trabajo.
+        while (padJob != nullptr) stepPadJob();
 
         //  Cuantos compases de la cancion llevan algo: con <song> ausente tiene
         //  que ser CERO, y antes salia el arreglo del proyecto anterior.

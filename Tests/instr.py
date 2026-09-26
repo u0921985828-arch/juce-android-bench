@@ -54,6 +54,28 @@ import json, math, os, re, shutil, subprocess, sys, tempfile
 #  apertura en atasco.py. Rendir en ese hilo eran 473 ms de mediana.
 TOPE_RESINTESIS_MS = 250
 
+#  Y CARGAR UN INSTRUMENTO, que es el gesto que llego del telefono: con un ritmo
+#  ya montado, el GRAND tardo 7 s y saco el cuadro de «no responde». El mismo
+#  tope, porque es el mismo hilo y el mismo dedo esperando.
+TOPE_CARGAR_MS = 250
+
+#  Y EL TOPE DE TOQUES A LA REJILLA, que es la cifra que dice POR QUE. Sin ella,
+#  cualquier cosa que baje los milisegundos por casualidad pasaria por arreglo.
+#  `refreshPad` llamaba a `refreshModoNota`, que recorre los 64, asi que
+#  `selectPad` -que llama a `refreshPad` 64 veces- costaba 4096 `setModoNota`, y
+#  cargar un instrumento, que ademas hace `selectBank` y otros 16 refrescos,
+#  pasaba de 9000. Cuadratico. El tope es generoso a proposito -tres pasadas por
+#  la rejilla y algo de margen- porque lo que caza no es un numero fino sino un
+#  orden de magnitud.
+TOPE_TINTES = 256
+
+#  Y CUANTAS VECES SE REFRESCA UN PAD, que es la otra mitad del por que y la que
+#  sobrevive al arreglo del modo tecla. Cargar un instrumento hacia `selectBank`
+#  -que lleva un `selectPad` dentro, o sea 64 refrescos-, luego los 16 del banco
+#  a mano, y luego otro `selectPad`: 144 medidos, para cambiar un pad. Una sola
+#  pasada por la rejilla es 64; el tope deja margen y caza la segunda.
+TOPE_REFRESCOS = 80
+
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import (APP, ROOT, BANDS, ENVBINS, FLOOR, NFFT, MAX_LOUD_SPREAD_DB,
                   MAX_PEAK, MIN_LOUD, MIN_PEAK, PANTALLA, descriptor, display_alive,
@@ -406,6 +428,8 @@ def corre (dirtemp):
         elif d.get ("instr") == "ref":    extra["msKits"] = d["msKits"]
         elif d.get ("instr") == "vuelta": extra["vuelta"] = d
         elif d.get ("instr") == "resintesis": extra["resintesis"] = d
+        elif d.get ("instr") == "cargar":
+            extra.setdefault ("cargar", {})[d["gesto"]] = d
         elif d.get ("instr") == "destino": extra["destino"] = d
         elif d.get ("instr") == "receta":  extra["receta"] = d
         elif d.get ("instr") == "pestana": extra["pestana"] = d
@@ -1061,6 +1085,45 @@ def main():
                 fallos.append ("resintesis: el pad no acabo con un buffer nuevo de la familia 3")
             if abs (rs["inicio"] - 0.25) > 1e-3:
                 fallos.append ("resintesis: el recorte se perdio (inicio %.2f y era 0.25)" % rs["inicio"])
+
+        # ---- Y CARGAR UN INSTRUMENTO TAMPOCO PARA LA INTERFAZ --------------
+        #
+        #  Llego del telefono: con un ritmo montado, cargar el GRAND tardo SIETE
+        #  SEGUNDOS y saco el cuadro de «no responde» de Android. No era el
+        #  render -eso corre en la hebra de sintesis desde antes de la Tanda
+        #  27-: era lo que el gesto hace despues de pedirlo, en el hilo de
+        #  mensajes, y sobre todo `refreshPad` llamando a la vuelta entera de la
+        #  rejilla.
+        #
+        #  CON TRES CIFRAS Y NO UNA, y la del medio es la que importa: «ms» dice
+        #  que tarda, `tintes` dice por que. Y con la app LLENA, que es como lo
+        #  sufrio la persona.
+        cg = extra.get ("cargar") or {}
+        if not cg:
+            fallos.append ("no hay lineas de cargar: el gesto no se probo")
+        for gesto in ("navegador", "ficha"):
+            d = cg.get (gesto)
+            if d is None:
+                fallos.append ("cargar: falta el gesto «%s»" % gesto)
+                continue
+            print ("cargar %-10s %4d ms del hilo de mensajes (tope %d)   "
+                   "%d refrescos (tope %d), %d tintes (tope %d)   deshacer %d ms   %d pads llenos"
+                   % (gesto, d["ms"], TOPE_CARGAR_MS, d["refrescos"], TOPE_REFRESCOS,
+                      d["tintes"], TOPE_TINTES, d["undo_ms"], d["llenos"]))
+            if d["llenos"] < 16:
+                fallos.append ("cargar %s: se midio con %d pads llenos, y la queja"
+                               " llego con la app llena" % (gesto, d["llenos"]))
+            if d["ms"] > TOPE_CARGAR_MS:
+                fallos.append ("cargar %s: %d ms del hilo de mensajes, tope %d"
+                               % (gesto, d["ms"], TOPE_CARGAR_MS))
+            if d["refrescos"] > TOPE_REFRESCOS:
+                fallos.append ("cargar %s: %d refrescos de pad, tope %d - mas de una"
+                               " pasada por la rejilla para cambiar un pad"
+                               % (gesto, d["refrescos"], TOPE_REFRESCOS))
+            if d["tintes"] > TOPE_TINTES:
+                fallos.append ("cargar %s: %d toques al modo tecla de la rejilla, tope %d"
+                               " - la vuelta entera desde cada pad"
+                               % (gesto, d["tintes"], TOPE_TINTES))
 
         # ---- EL CIERRE CON UNA SINTESIS EN VUELO (Tribunal 2026-09, 3.2) --
         #

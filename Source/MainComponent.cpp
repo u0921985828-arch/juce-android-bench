@@ -8192,10 +8192,29 @@ void MainComponent::padNotaOff (int index)
 //  con 16 NIVELES no es el pad que se toca sino el capturado.
 void MainComponent::refreshModoNota()
 {
-    const int destino = nivel16 ? juce::jlimit (0, kNumPads - 1, nivelPad) : -1;
-    for (int i = 0; i < kNumPads; ++i)
-        if (auto* p = pads[i])
-            p->setModoNota (padEsInstrumento (destino >= 0 ? destino : i));
+    for (int i = 0; i < kNumPads; ++i) modoNotaDe (i);
+}
+
+//  EL MODO TECLA DE **UN** PAD, que es lo que `refreshPad` necesita.
+//
+//  Esto era el cuerpo de `refreshModoNota` -un bucle por los 64- y `refreshPad`
+//  lo llamaba entero para refrescar UNO. Como `selectPad` llama a `refreshPad`
+//  64 veces, seleccionar un pad costaba **4096** `setModoNota`, y cargar un
+//  instrumento, que hace `selectBank` (que selecciona) + 16 `refreshPad` +
+//  `selectPad`, costaba **9216**. Es cuadratico y no se veia porque cada mitad,
+//  leida sola, parece razonable: una funcion que pone el modo de la rejilla, y
+//  otra que refresca un pad. Llego del telefono: cargar el GRAND con un ritmo
+//  ya montado tardo 7 s y saco el cuadro de «no responde» de Android.
+//
+//  Es la tercera vez que aparece la misma figura -la Tanda 22 midio
+//  `restorePads` seleccionando 64 veces en 8163 ms-, y por eso ahora hay un
+//  contador en el banco y no solo un cronometro.
+void MainComponent::modoNotaDe (int i)
+{
+    ++bancoTintes;
+    const int destino = nivel16 ? juce::jlimit (0, kNumPads - 1, nivelPad) : i;
+    if (auto* p = pads[i])
+        p->setModoNota (padEsInstrumento (destino));
 }
 
 void MainComponent::padClicked (int index)
@@ -8577,11 +8596,19 @@ void MainComponent::refreshPadArt (int index)
 
 void MainComponent::refreshPad (int index)
 {
+    ++bancoRefrescos;
     //  El modo tecla se decide aqui porque aqui pasa TODO lo que cambia lo que
     //  un pad tiene: cargar, vaciar, deshacer, abrir un proyecto y el reparto
     //  de un kit. Ponerlo en assignSampleToPad habria dejado fuera al que
     //  vacia, y un pad vaciado se habria quedado esperando un "suelta".
-    refreshModoNota();
+    //
+    //  Y ES EL DE **ESTE** PAD, no el de los 64. Aqui se llamaba a
+    //  `refreshModoNota`, que recorre la rejilla entera, asi que refrescar un
+    //  pad costaba 64 y refrescar los 64 costaba 4096 (ver `modoNotaDe`). Lo
+    //  que un pad ensena se deriva de su propio indice -o del destino, cuando
+    //  NIVEL 16 esta puesto, y entonces es el mismo para todos-, asi que la
+    //  vuelta entera nunca hizo falta.
+    modoNotaDe (index);
 
     if (auto* p = pads[index])
     {
@@ -8680,17 +8707,35 @@ juce::Colour MainComponent::tinteDelModo() const
 //  the step controls - all edit "the pad you are on", and leaving that behind
 //  in a bank you can no longer see is how you end up editing something you
 //  cannot hear.
-void MainComponent::selectBank (int bank)
+//  Y EL PAD SE PIDE AQUI, que es la mitad que faltaba. Quien cambia de banco
+//  para ir a UN pad concreto -cargar un instrumento, mover la seleccion con el
+//  teclado- escribia `selectBank(b); selectPad(p);`, y eso son DOS cuerpos
+//  enteros de `selectPad` por un solo toque: el de dentro elige la misma
+//  casilla del banco nuevo y el de fuera la corrige. Medido con la app llena
+//  (`Tests/instr.py`, gesto «navegador»): 144 `refreshPad` por cargar un
+//  instrumento -64 + 16 sueltos + 64- donde bastan 64. Con `padDestino` puesto
+//  el de dentro ya va al pad bueno y el de fuera sobra.
+void MainComponent::selectBank (int bank, int padDestino)
 {
     const int b = juce::jlimit (0, kNumBanks - 1, bank);
-    if (b == currentBank) return;
+    //  Ya en el banco pedido no es «no hay nada que hacer»: si quien llama
+    //  nombro un pad, ese pad se elige igual - es lo que hacia su `selectPad`
+    //  de detras, y quitarlo sin esto dejaria sin refrescar el pad que acaba
+    //  de cambiar de contenido.
+    if (b == currentBank)
+    {
+        if (padDestino >= 0) selectPad (juce::jlimit (0, kNumPads - 1, padDestino));
+        return;
+    }
 
     currentBank = b;
     if (auto* t = bankButtons[b]) t->setToggleState (true, juce::dontSendNotification);
     //  Las dos filas dicen lo mismo siempre: la de la cara y la de la ficha.
     if (auto* t = seqBankButtons[b]) t->setToggleState (true, juce::dontSendNotification);
 
-    selectPad (currentBank * kPadsPerBank + (selectedPad % kPadsPerBank + kPadsPerBank) % kPadsPerBank);
+    selectPad (padDestino >= 0 ? juce::jlimit (0, kNumPads - 1, padDestino)
+                               : currentBank * kPadsPerBank
+                                     + (selectedPad % kPadsPerBank + kPadsPerBank) % kPadsPerBank);
 
     resized();
     refreshStepGrid();
@@ -14463,11 +14508,15 @@ void MainComponent::pianoStepPad (int dir)
     }
     if (destino < 0) destino = (selectedPad + dir + kNumPads) % kNumPads;
 
-    //  El banco va DELANTE: selectBank vuelve a elegir pad - la misma casilla
-    //  del banco nuevo - asi que llamarlo despues borraria el destino.
+    //  El banco va DELANTE y con el destino dentro: `selectBank` vuelve a
+    //  elegir pad -la misma casilla del banco nuevo- asi que llamarlo despues
+    //  borraria el destino, y llamarlo antes sin decirle el destino obliga a
+    //  un segundo `selectPad` que repite los 64 refrescos enteros.
     const int banco = destino / kPadsPerBank;
-    if (banco != currentBank) selectBank (banco);
-    selectPad (destino);            // y selectPad ya refresca el piano abierto
+    //  Y en una sola llamada: `selectBank` se queda en el pad que se le pide
+    //  -tambien cuando el banco ya era ese-, asi que el `selectPad` de detras
+    //  sobra y con el los 64 `refreshPad` que costaba. Ver selectBank.
+    selectBank (banco, destino);    // y selectPad ya refresca el piano abierto
     refreshStepGrid();
 }
 
@@ -17985,9 +18034,16 @@ void MainComponent::cargaInstrumento (int idx)
         //  instrumentos que probar contra el: cerrar en cada toque obligaria a
         //  volver a abrir y a volver a elegir el pad para oir el siguiente.
         ponInstrumentoEnPad (pad, fam, 0);
-        selectBank (pad / kPadsPerBank);
-        for (int i = 0; i < kPadsPerBank; ++i) refreshPad ((pad / kPadsPerBank) * kPadsPerBank + i);
-        selectPad (pad);
+        //  UN SOLO REPARTO DE REFRESCOS, y no tres. Aqui habia `selectBank`,
+        //  luego los dieciseis del banco a mano y luego `selectPad`: 144
+        //  `refreshPad` por tocar una celda de la lista, medidos con la app
+        //  llena. Los dieciseis de en medio son un subconjunto de los 64 que
+        //  `selectPad` hace acto seguido, y los otros 64 son el `selectPad`
+        //  que `selectBank` ya lleva dentro. Es la misma figura que la Tanda 22
+        //  midio en `restorePads` -64 selecciones, 8163 ms-, y es lo que la
+        //  persona sufrio como siete segundos y el cuadro de «no responde» al
+        //  cargar GRAND con un ritmo ya montado.
+        selectBank (pad / kPadsPerBank, pad);
         refreshInst();
         instSheet.repaint();
 
@@ -18103,10 +18159,16 @@ static Sintes::Gama gamaDeAqui()
     return { dev.instrumentoEstereo, dev.cuerpoSeg };
 }
 
-//  SINTETIZAR TARDA, asi que esto no puede vivir en el hilo de audio ni en una
-//  respuesta a un toque que tenga que pintar antes. Corre en el de mensajes -
-//  como leer un WAV - y por eso la ficha se cierra primero: lo que se ve es la
-//  rejilla de pads mientras se hace, y no una tarjeta congelada.
+//  SINTETIZAR TARDA, asi que esto no puede vivir en el hilo de audio ni en el
+//  de mensajes. Rinde en `sintesPool` -una hebra, una cola- con `beginBusy`
+//  puesto, y lo que sale se monta al volver por `drenaInstrumentos`, que corre
+//  en el temporizador de la interfaz: ver mas abajo «Y SE RINDE EN OTRO HILO».
+//
+//  Esta cabecera decia «Corre en el de mensajes - como leer un WAV» y llevaba
+//  asi desde que el render se mudo: tres lineas mas abajo el cuerpo ya decia lo
+//  contrario. Un comentario que contradice a su propia funcion manda a buscar
+//  el atasco donde no esta - y en la tanda que perseguia los siete segundos de
+//  cargar GRAND, esta linea fue el primer sospechoso y era inocente.
 void MainComponent::ponInstrumentoEnPad (int pad, int familia, int preset,
                                          const Sintes::Preset* receta, bool movida)
 {
