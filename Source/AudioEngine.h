@@ -586,8 +586,19 @@ public:
     //  --- MIDI -----------------------------------------------------------
     //  Entrada: la llama el hilo con el que JUCE entrega el MIDI, que NO es el
     //  de mensajes. Va por su propia cola. Ver MidiIo.h.
-    void postNoteOnFromMidi  (int slot, float vel) noexcept;
-    void postNoteOffFromMidi (int slot) noexcept;
+    //  CON EL SEMITONO Y POR NOTA. `postNoteOnFromMidi (slot, vel)` no llevaba
+    //  afinacion, asi que un teclado maestro no podia tocar un instrumento:
+    //  cada tecla disparaba un PAD distinto -`pad = nota - 36`- y una escala
+    //  de DO sonaban ocho sonidos distintos. Y el apagado soltaba TODAS las
+    //  voces del pad, asi que un acorde se caia entero al levantar un dedo.
+    //  `semis` en el apagado es la misma tecla, o `Command::kTodasLasNotas`.
+    void postNoteOnFromMidi  (int slot, int semis, float vel) noexcept;
+    void postNoteOffFromMidi (int slot, int semis) noexcept;
+
+    //  EL PEDAL DE SOSTENIDO (CC 64). Por la cola de MIDI y no por la de
+    //  comandos: lo manda el mismo hilo que las notas, y esa cola es de UN
+    //  productor por contrato. Una cola por productor.
+    void postPedalFromMidi (bool abajo) noexcept;
 
     //  Salida: el hilo de AUDIO deja aqui cada golpe y otro hilo lo envia.
     //  Encenderla no cuesta nada cuando no hay nadie escuchando - el hilo de
@@ -648,6 +659,21 @@ public:
     }
     void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, juce::jlimit (0.0f, 10000.0f, ms)); }
     void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, juce::jlimit (0.0f, 20000.0f, ms)); }
+
+    //  QUIEN MANDA EN LA SUELTA: el preset del instrumento o el mando CAIDA.
+    //
+    //  Hace falta un bit porque las dos respuestas son correctas en momentos
+    //  distintos. Un instrumento recien cargado tiene que sonar con la suelta
+    //  que su fila declara -la tabla escribe `rel` de 0.030 a 2.200 s, o sea
+    //  73.3:1, y los 384 sonaban a 0.180 s fijos: 129 de 384 a mas de un factor
+    //  dos de lo que pedian, 41 a mas de cuatro-. Pero en cuanto alguien mueve
+    //  CAIDA, manda CAIDA, o el mando seria de adorno en 15 de 24 familias.
+    //
+    //  Y CERO POR DEFECTO, que es "manda padRelease": es lo que vale un pad
+    //  normal, y es lo que vale un proyecto guardado antes de esto -la
+    //  propiedad `relp` no esta en el fichero, asi que su ausencia significa el
+    //  defecto ANTIGUO, que es la regla de compatibilidad de la casa-.
+    void setPadSueltaPreset (int slot, bool on) noexcept { store (padSueltaPreset, slot, on ? 1 : 0); }
 
     //  EL FILTRO DEL PAD. Un paso bajo por pad, con corte y resonancia.
     //
@@ -2384,6 +2410,12 @@ private:
     std::array<int, kNumPads>    padFirstVoice {};
     std::array<int, kNumVoices>  voiceNextInPad {};
     std::uint32_t                       voiceSerial = 0;   // audio-thread only, for oldest-steal
+
+    //  EL PEDAL DE SOSTENIDO, del hilo de AUDIO y de nadie mas: lo escribe
+    //  `handleCommand` y lo lee `handleCommand`. Sin atomico a proposito - un
+    //  atomico aqui diria que hay otro hilo que lo toca, y no lo hay.
+    bool pedalAbajo = false;
+
     CommandFifo commands;
     //  LA SEGUNDA COLA, y existe por una razon y no por comodidad.
     //
@@ -2557,6 +2589,7 @@ private:
     std::array<std::atomic<float>, kNumPads> padAncho {};    // 0 mono .. 1 como viene .. 2 doble
     std::array<std::atomic<float>, kNumPads> padAttack {};   // ms
     std::array<std::atomic<float>, kNumPads> padRelease {};  // ms
+    std::array<std::atomic<int>,   kNumPads> padSueltaPreset {};  // 1 = manda el preset
 
     //  El filtro del pad: corte, resonancia, y UN BIT por pad que dice si hay
     //  algo que filtrar. El bit existe por la misma razon que padSendMask -

@@ -21,7 +21,21 @@
 // ============================================================================
 struct Command
 {
-    enum class Type : uint8_t { NoteOn, NoteOff, Panic };
+    enum class Type : uint8_t { NoteOn, NoteOff, Panic, Pedal };
+
+    //  QUE NOTA SE SUELTA, en un NoteOff.
+    //
+    //  Un NoteOff soltaba TODAS las voces del pad -`for (auto& v : voices) if
+    //  (v.slot == c.slot) v.release()`-, que es exacto mientras un pad sea un
+    //  golpe y deja de serlo en cuanto un teclado toca un acorde en el mismo
+    //  pad: levantar UN dedo apagaba las tres notas. Con un pedal debajo la
+    //  diferencia es todavia mayor.
+    //
+    //  El campo que lo dice es `semitones`, que ya viajaba, y esta centinela
+    //  significa «todas»: asi `postNoteOff(slot)` -el dedo en un pad, la ficha,
+    //  el secuenciador- se sigue comportando exactamente igual. Un centinela
+    //  lejisimos de cualquier semitono real: la afinacion del motor llega a 48.
+    static constexpr int kTodasLasNotas = -1000;
 
     Type  type       = Type::NoteOn;
     int   slot       = 0;
@@ -46,6 +60,12 @@ struct Command
     //  frecuencia va el aparato, que ademas es un dato que el de audio cambia
     //  en cada cambio de ruta.
     int   gate       = -3;      // = AudioEngine::kGateAudicion
+
+    //  EL PEDAL DE SOSTENIDO, en un `Type::Pedal`. Un bool y no reusar
+    //  `velocity`: el hilo de audio lee esto en un `switch` y «velocity mayor
+    //  que medio significa pisado» es exactamente la clase de regla que la
+    //  siguiente tanda lee al reves. Cuesta cuatro bytes en una cola de 256.
+    bool  abajo      = false;
 };
 
 class CommandFifo

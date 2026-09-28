@@ -180,7 +180,7 @@ namespace
                 case 16: if (r.nextBool()) e.clearPad (pad);
                          else               e.publishSample (pad, sonido (r, ap.rate));
                          break;
-                default: e.postNoteOnFromMidi (pad, r.nextFloat()); break;
+                default: e.postNoteOnFromMidi (pad, 0, r.nextFloat()); break;
             }
 
             //  Y se renderiza: una accion sin bloques detras no ha pasado por

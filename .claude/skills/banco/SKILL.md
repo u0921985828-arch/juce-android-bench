@@ -33,6 +33,9 @@ codigo.
 | textos, rotulos, `T()` | `Tests/lang.py` **y** `expo.py` |
 | colores, tokens, pieles | `Tests/skins.py` |
 | motor, voces, efectos, envios | `build/StressTest_artefacts/Release/StressTest` |
+| el GENERADOR de instrumentos: zonas, capas, octavas, costura, memoria | `Tests/instr.py` (mide muestras rendidas; **no** hay motor dentro, a proposito) |
+| COMO SE TOCA un instrumento: suelta, sosten, caida, SENS, ESCALA, pedal CC 64, NoteOff por tecla, barrido de fuerza | `StressTest`, bloque «la suelta es la del preset» — pasa por `AudioEngine` y `Voice`, asi que no cabe en `instr.py` |
+| los fundidos de un recorte: lo que el mando enseña contra lo que se aplica | `StressTest`, reglas «fundido del recorte (5 ms)» y «el fundido aplica lo que enseña» |
 | guardar/abrir/sesion | `Tests/session.py` |
 | arreglo, cancion, patrones, el `offset` de un bloque y el largo de una nota entre rejillas | `Tests/arr.py` (reglas `medio patron suena` y `rejilla largo`) |
 | exportacion, carpetas, permisos | `Tests/export.py` |

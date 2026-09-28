@@ -460,8 +460,23 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     //
     //  Y aqui no se reserva, ni se bloquea, ni se toca un contador de
     //  referencias: es aritmetica sobre un array fijo que ya estaba en memoria.
+    //  CUANTO RESPONDE AL TOQUE, y se calcula AQUI ARRIBA porque decide dos
+    //  cosas y no una: el nivel de la nota y QUE CAPA suena. Ver
+    //  `SampleBuffer::leyDeFuerza` - hasta aqui los 384 presets llevaban la
+    //  misma ley clavada, `jlimit(0.10, 1.0, vel)`.
+    //
+    //  Y la capa tambien, no solo el nivel: un instrumento que no responde al
+    //  toque tampoco cambia de TIMBRE al tocarlo flojo. Dejar la capa colgando
+    //  de `vel` crudo daria un organo que suena igual de fuerte pero mas
+    //  oscuro, que es la mitad de un mando y peor que ninguno.
+    const float  velEf   = SampleBuffer::leyDeFuerza (vel, sb->toque.sens);
+
     const int    zonas   = sb->nZonas;
     const bool   instrum = (zonas > 0);
+
+    //  Y LO QUE LA ZONA ELEGIDA LLEVE HORNEADO DE NIVEL, para deshacerlo.
+    //  Ver `SampleBuffer::Zona::fuerza`. 1.0 mientras no haya zona.
+    float        fuerzaZ = 1.0f;
     float        semis   = padPitch[(size_t) slot].load (std::memory_order_relaxed) + (float) extraSemis;
     bool         bucle   = padLoop[(size_t) slot].load (std::memory_order_relaxed);
     int          vuelta  = -1;
@@ -472,8 +487,15 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
         //
         //  Con dos y el corte a la mitad, el salto medido era de **2.0 dB y
         //  x1.12 de agudos de golpe** en mitad del recorrido de fuerza: una
-        //  rampa sonaba a escalon. Con tres entre los mismos extremos cada
-        //  escalon vale ~1.0 dB, por debajo del JND de sonoridad.
+        //  rampa sonaba a escalon. Con tres entre los mismos extremos el
+        //  escalon se REPARTE, que es lo que la tercera capa compra.
+        //
+        //  Aqui decia «cada escalon vale ~1.0 dB», repitiendo la cifra vieja
+        //  de `Sintes.h`, y esta medida por tres de mas: el recorrido real va
+        //  de **5.4 dB en BAJOS a 11.0 en CUERDA PULS** -`Tests/instr.py:128-137`-
+        //  o sea 2.7 y 5.5 por escalon. Lo que lo quita no es una capa mas
+        //  -no caben- sino deshacerlo al disparar: ver `Zona::fuerza` y la
+        //  compensacion que va a `Voice::start` unas lineas mas abajo.
         //
         //  Y CUANTAS CAPAS HAY SE LE PREGUNTA A LA MUESTRA, no a `Sintes`.
         //
@@ -490,7 +512,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
         for (int z = 0; z < zonas && z < SampleBuffer::kMaxZonas; ++z)
             capasHay = juce::jmax (capasHay, sb->zonas[(size_t) z].capa + 1);
         const int capaQuiere = juce::jlimit (0, capasHay - 1,
-                                             (int) (vel * (float) capasHay));
+                                             (int) (velEf * (float) capasHay));
 
         int mejor = 0; int coste = 1 << 30;
         for (int z = 0; z < zonas && z < SampleBuffer::kMaxZonas; ++z)
@@ -506,6 +528,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
 
         const auto& Z = sb->zonas[(size_t) mejor];
         semis -= (float) Z.raiz;
+        fuerzaZ = Z.fuerza;
 
         //  EL RECORTE DE UN INSTRUMENTO ES RELATIVO A SU ZONA.
         //
@@ -547,10 +570,16 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     //
     //  Solo donde hace falta, que son las zonas que DAN VUELTAS: esas no
     //  terminan nunca, y un paso -lo que dura una casilla- es lo que un
-    //  secuenciador escribe cuando no dice otra cosa. Las siete familias que no
-    //  sostienen -piano, plucks, campanas, guitarra, mazos, claves, arpas- se
-    //  acaban solas como una muestra cualquiera, y ponerles un paso habria
-    //  cortado una campana de dos segundos a los 125 ms. En percusion, igual:
+    //  secuenciador escribe cuando no dice otra cosa. Las NUEVE familias que no
+    //  sostienen -piano electrico, plucks, campanas, cuerda pulsada, mazos,
+    //  claves, arpas, pianos y sitar- se acaban solas como una muestra
+    //  cualquiera, y ponerles un paso habria cortado una campana de dos
+    //  segundos a los 125 ms.
+    //
+    //  Aqui decia SIETE y las nombraba, y era verdad hasta que entraron las
+    //  ocho familias nuevas: faltaban PIANO ELEC y SITAR. Contado sobre
+    //  `SintesTabla.inc`, **quince sostienen y nueve no**. Una lista que no se
+    //  vuelve a contar cuando la tabla crece deja de ser una lista. En percusion, igual:
     //  aqui no cambia nada de lo que habia.
     if (gate == kGateAuto || gate == kGateAudicion)
         gate = (instrum && bucle)
@@ -637,6 +666,42 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     if (slot == duckPad.load (std::memory_order_relaxed))
         duckEnv = 1.0f;
 
+    //  LA SUELTA DE ESTA NOTA, y por que se decide aqui y no al cargar el pad.
+    //
+    //  Decidirla al montar el instrumento -escribir su `rel` en padRelease una
+    //  vez- deja fuera el caso que esta tanda arregla: mover el mando SUELTA de
+    //  la ficha re-sintetiza la muestra, y la muestra nueva trae otro `rel` que
+    //  nadie volveria a leer. Por eso se lee del buffer que esta sonando, que
+    //  es el unico sitio que siempre esta al dia.
+    //
+    //  ORDEN: el bloqueo del paso gana siempre -es una decision explicita de
+    //  ESE paso-, despues el preset si el pad dice que manda, y al final
+    //  padRelease, que es lo de antes y lo que vale para todo lo que no sea un
+    //  instrumento.
+    const float sueltaMs =
+        (pctCaida != kNoPLock)
+            ? plockCaidaMs (pctCaida)
+            : ((sb->toque.sueltaS > 0.0f
+                && padSueltaPreset[(size_t) slot].load (std::memory_order_relaxed) != 0)
+                   ? sb->toque.sueltaS * 1000.0f
+                   : padRelease[(size_t) slot].load (std::memory_order_relaxed));
+
+    //  Y LA ESCALA, que es la firma de una libreria de verdad: en un piano la
+    //  nota aguda se apaga antes que la grave, y eso no lo hace el tono - la
+    //  cuerda aguda es corta y tiene menos energia que soltar-. Una octava
+    //  arriba con escala 1.0 son la mitad de suelta.
+    //
+    //  Con `extraSemis` y no con `semis`: el segundo ya lleva restada la raiz
+    //  de la zona, o sea que dos teclas a dos octavas de distancia pueden
+    //  llegar aqui con el mismo numero. Lo que escala es la NOTA.
+    //
+    //  Una `pow` por nota y ninguna por muestra. A cero -que es lo que vale
+    //  toda muestra que no salga de `Sintes`- ni se entra.
+    const float escala = sb->toque.escala;
+    const float sueltaFinal = (escala > 0.0f)
+        ? sueltaMs * std::pow (2.0f, -(float) extraSemis * escala / 24.0f)
+        : sueltaMs;
+
     chosen->serial = ++voiceSerial;
     chosen->start (slot,
                    semis,
@@ -650,10 +715,9 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
                                          : padPan[(size_t) slot].load (std::memory_order_relaxed),
                    pctAtaque != kNoPLock ? plockAtaqueMs (pctAtaque)
                                          : padAttack[(size_t) slot].load (std::memory_order_relaxed),
-                   pctCaida  != kNoPLock ? plockCaidaMs (pctCaida)
-                                         : padRelease[(size_t) slot].load (std::memory_order_relaxed),
+                   sueltaFinal,
                    ! instrum && padKeepLength[(size_t) slot].load (std::memory_order_relaxed),
-                   vel,
+                   velEf,
                    //  LOS DOS SUAVE VALEN TAMBIEN EN UN INSTRUMENTO desde que
                    //  el recorte lo recorta: la zona trae su cruce horneado
                    //  para SU bucle, y en cuanto la persona mueve INICIO o FIN
@@ -661,7 +725,19 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
                    padFadeIn[(size_t) slot].load (std::memory_order_relaxed),
                    padFadeOut[(size_t) slot].load (std::memory_order_relaxed),
                    vuelta,
-                   padAncho[(size_t) slot].load (std::memory_order_relaxed));
+                   padAncho[(size_t) slot].load (std::memory_order_relaxed),
+                   //  Y la S y la D de la nota. Uno y cero -los defectos del
+                   //  `Toque`- son "mantener a tope", que es lo de antes.
+                   sb->toque.sosten,
+                   sb->toque.caeEn,
+                   //  Y EL ESCALON DE CAPA, DESHECHO. Una division por nota, y
+                   //  solo si la zona trae algo que deshacer: el nivel del
+                   //  toque ya lo pone `velEf`, que es continuo, y encima se le
+                   //  sumaba el salto de la capa - 2.7 dB en BAJOS y 5.5 en
+                   //  CUERDA PULS entre dos velocidades contiguas, medidos en
+                   //  `Tests/instr.py:128-137`. El TIMBRE de la capa se queda:
+                   //  lo que se quita es el escalon de volumen, no la capa.
+                   (fuerzaZ > 0.0f) ? 1.0f / fuerzaZ : 1.0f);
 
     //  DESPUES de start, por lo mismo que el gate: la pone a false y el
     //  bloqueo de pan es del PASO. Sin esto el pan bloqueado dura un bloque -
@@ -673,6 +749,12 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     //  dentro del mismo patron. Es lo que separa una caja de ritmos de un
     //  instrumento.
     chosen->gate = gate;
+
+    //  Y QUE TECLA FUE. `extraSemis` y no `semis`: el segundo ya lleva restada
+    //  la raiz de la zona -y sumada la afinacion del pad-, o sea que dos
+    //  teclas distintas pueden acabar con el mismo numero. Lo que identifica a
+    //  la tecla es lo que pidio quien disparo.
+    chosen->nota = extraSemis;
 }
 
 void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
@@ -4150,13 +4232,44 @@ void AudioEngine::handleCommand (const Command& c) noexcept
             triggerPad (c.slot, (int) c.semitones, c.velocity, c.from01, true, c.gate);
             break;
         }
+        //  SE SUELTA LA TECLA, NO EL PAD.
+        //
+        //  Esto soltaba TODAS las voces del pad. Con un dedo en un pad eso es
+        //  exacto -y por eso `postNoteOff` manda la centinela y sigue haciendo
+        //  lo mismo-, pero con un teclado tocando un acorde sobre un pad de
+        //  instrumento, levantar UN dedo apagaba las tres notas: medido, 0 de
+        //  4 voces vivas donde tienen que quedar 3.
+        //
+        //  Y EL PEDAL. Si esta pisado la voz no se suelta: se MARCA, y al
+        //  levantarlo se sueltan todas las marcadas. Marcar y no ignorar,
+        //  porque una nota cuya tecla ya se levanto no se puede volver a
+        //  soltar: sin la marca, pisar el pedal dejaria esa nota sonando para
+        //  siempre.
         case Command::Type::NoteOff:
             if (c.slot >= 0 && c.slot < kNumPads)
+            {
+                const int quien = (int) c.semitones;
+                const bool todas = (quien == Command::kTodasLasNotas);
                 for (auto& v : voices)
-                    if (v.active && v.slot == c.slot)
-                        v.release();
+                    if (v.active && v.slot == c.slot && (todas || v.nota == quien))
+                    {
+                        if (pedalAbajo) v.retenida = true;
+                        else            v.release();
+                    }
+            }
             break;
-        case Command::Type::Panic:   for (auto& v : voices) v.kill(); break;
+        case Command::Type::Pedal:
+            pedalAbajo = c.abajo;
+            if (! pedalAbajo)
+                for (auto& v : voices)
+                    if (v.active && v.retenida) { v.retenida = false; v.release(); }
+            break;
+        //  Y el panico levanta el pedal: dejarlo pisado con todas las voces
+        //  muertas haria que la siguiente nota no se pudiera soltar.
+        case Command::Type::Panic:
+            pedalAbajo = false;
+            for (auto& v : voices) { v.retenida = false; v.kill(); }
+            break;
     }
 }
 
@@ -4214,24 +4327,41 @@ void AudioEngine::noteOnByLifeboat (int slot) noexcept
 //  el comentario de midiCommands. El bote salvavidas es el mismo: una nota que
 //  no cabe suena igual, solo que al nivel del pad y sin dinamica, que es lo
 //  correcto que perder.
-void AudioEngine::postNoteOnFromMidi (int slot, float vel) noexcept
+void AudioEngine::postNoteOnFromMidi (int slot, int semis, float vel) noexcept
 {
     Command c; c.type = Command::Type::NoteOn; c.slot = slot; c.velocity = vel;
+    //  EL SEMITONO VIAJA, que es lo que hace que un teclado pueda tocar un
+    //  instrumento. Es la misma puerta que `postNoteOnAt` usa desde el piano
+    //  roll y desde el teclado de la ficha; lo unico que faltaba era que la
+    //  entrada MIDI llegara a ella.
+    c.semitones = (float) semis;
     //  El MIDI manda su propio NoteOff, asi que esta la sostiene el teclado.
     c.gate = kGateSuelta;
     if (! midiCommands.push (c))
         noteOnByLifeboat (slot);
 }
 
-void AudioEngine::postNoteOffFromMidi (int slot) noexcept
+void AudioEngine::postNoteOffFromMidi (int slot, int semis) noexcept
 {
     Command c; c.type = Command::Type::NoteOff; c.slot = slot;
+    c.semitones = (float) semis;
+    midiCommands.push (c);
+}
+
+void AudioEngine::postPedalFromMidi (bool abajo) noexcept
+{
+    Command c; c.type = Command::Type::Pedal; c.abajo = abajo;
     midiCommands.push (c);
 }
 
 void AudioEngine::postNoteOff (int slot) noexcept
 {
     Command c; c.type = Command::Type::NoteOff; c.slot = slot;
+    //  TODAS las del pad, que es lo de siempre: quien llama aqui es un dedo en
+    //  un pad, el teclado de la ficha o el secuenciador, y ninguno de los tres
+    //  sabe de notas sueltas. Escrito y no heredado del valor por defecto de
+    //  `semitones`, que es CERO y significaria «solo la nota 0».
+    c.semitones = (float) Command::kTodasLasNotas;
     commands.push (c);
 }
 
@@ -5122,6 +5252,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (padPan,     s.padPan);
     copyArr (padAttack,  s.padAttack);
     copyArr (padRelease, s.padRelease);
+    copyArr (padSueltaPreset, s.padSueltaPreset);
     //  Y el filtro CON SU MASCARA, por lo mismo que los envios: el motor del
     //  rebote no pasa por setPadCutoff, se le copia el estado entero, y sin la
     //  mascara exportaria la cancion con los 64 pads sin filtrar.

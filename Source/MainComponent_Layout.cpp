@@ -2922,6 +2922,24 @@ void MainComponent::resized()
             };
             block (midiOutBtn, midiOutBox);
             block (midiInBtn,  midiInBox);
+            //  Y COMO SE LEE LO QUE ENTRA, la tercera pregunta de esta pagina:
+            //  que mando, que recibo, y como lo leo. Con la misma sangria y el
+            //  mismo panel que los dos de arriba, porque es la misma clase de
+            //  ajuste y leerlo suelto lo convertiria en una fila huerfana -que
+            //  es lo que `Tests/paneles.py` canta como VACIO-.
+            if (midiModoButtons.size() >= 2)
+            {
+                inner.reduce (Metrics::panelSangria, 0);
+                const int g0 = inner.getY();
+                inner.removeFromTop (Metrics::bandaSubtitulo);   // pintado: el rotulo
+                auto row = inner.removeFromTop (Metrics::hit);
+                juce::TextButton* arr[2] = { midiModoButtons[0], midiModoButtons[1] };
+                layoutModuleBar (row, arr, 0, 2);
+                midiModoRowArea = row;
+                setGrupos.add ({ inner.getX(), g0, inner.getWidth(), inner.getY() - g0 });
+                inner.expand (Metrics::panelSangria, 0);
+                inner.removeFromTop (Metrics::sm);
+            }
             midiArea = inner.removeFromTop (40);                // pintado: la nota
             audioInfoArea = bufRowArea = rateRowArea = langRowArea = skinRowArea = movRowArea = {};
             cuentaRowArea = monRowArea = tomasRowArea = {};
@@ -2934,6 +2952,8 @@ void MainComponent::resized()
         else if (onAudio)
         {
             midiArea = {};
+            for (auto* b : midiModoButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+            midiModoRowArea = {};
 
             //  DOS COLUMNAS CUANDO LA TARJETA ES ANCHA Y BAJA.
             //
@@ -3111,6 +3131,12 @@ void MainComponent::resized()
             for (auto* b : cuentaButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             for (auto* b : monButtons)    if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
             for (auto* b : tomasButtons)  if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+            //  Y los dos de como se lee el MIDI: apagar Y vaciar los limites,
+            //  que es el fallo de las tapas de banco -un componente invisible
+            //  que conserva sus coordenadas sigue estando ahi para todo lo que
+            //  mida geometria-.
+            for (auto* b : midiModoButtons) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+            midiModoRowArea = {};
             pruebasLabelArea = {};
             projNameRowArea = projPathRowArea = {};
 
@@ -3860,7 +3886,7 @@ void MainComponent::resized()
         const int cabecera = Metrics::hit + Metrics::xl;
         const int teclas   = 72;      // una octava que se pueda tocar con el dedo
         const int filaP    = Metrics::hit;
-        //  LOS OCHO MANDOS CUESTAN ALTO en la unica ficha de la casa que ya se
+        //  LOS DOCE MANDOS CUESTAN ALTO en la unica ficha de la casa que ya se
         //  desplazaba: una lista de dieciseis presets no cabia en una tarjeta el
         //  dia que existia, asi que `hazDesplazable` esta puesto desde entonces.
         //  Por eso esto no puede costarle un pixel a ninguna rejilla - no hay
@@ -3891,7 +3917,6 @@ void MainComponent::resized()
                                      - vstSheet.vista.getScrollBarThickness();
         const int zonaM = juce::jmax (1, anchoCuerpoM - Metrics::lg * 2);
         const int colsM = (zonaM / 4 >= Metrics::hit + Metrics::halfGap * 2) ? 4 : 2;
-        const int filasM = Sintes::kMandos / colsM;
 
         //  ¿CABE EL CONMUTADOR DEL PRESET EN EL RENGLON DE LA CABECERA? Se
         //  pregunta AQUI y no ahi abajo porque la respuesta decide el alto que
@@ -3938,13 +3963,22 @@ void MainComponent::resized()
         const bool presetArriba = anchoCuerpoM - Metrics::lg * 2 - cabecera - Metrics::sm
                                       >= pideNombre + Metrics::sm + pidePreset;
 
-        //  LOS OCHO MANDOS SON DOS GRUPOS Y NO UNO: los cuatro de FORMA -cuyo
-        //  nombre lo dice la familia, y por eso hay dieciseis instrumentos y no
-        //  uno con los numeros movidos- y los cuatro COMUNES, que son los
-        //  mismos en las dieciseis. Dos paneles con su frontera de `Metrics::sm`
+        //  LOS DOCE MANDOS SON DOS GRUPOS Y NO UNO: los CUATRO de FORMA -cuyo
+        //  nombre lo dice la familia, y por eso hay veinticuatro familias y no
+        //  uno con los numeros movidos- y los OCHO COMUNES, que son los
+        //  mismos en las veinticuatro. Dos paneles con su frontera de `Metrics::sm`
         //  y VOLVER fuera de los dos: no es un mando, es la vuelta atras de los
-        //  ocho, igual que CANCELAR se queda fuera del panel de EXPORTAR.
-        const int filasG = juce::jmax (1, filasM / 2);
+        //  doce, igual que CANCELAR se queda fuera del panel de EXPORTAR.
+        //
+        //  Y LA FRONTERA NO ESTA A LA MITAD, que es lo que decia
+        //  `jmax (1, filasM / 2)`. Con ocho mandos la mitad acertaba por
+        //  casualidad -cuatro y cuatro-; con doce coloca 0-3 y 4-7 y deja
+        //  CUATRO MANDOS SIN `setBounds`, o sea en 0x0, y ademas pide una fila
+        //  de alto de menos. La frontera esta en «cuatro de forma y el resto
+        //  comunes», que es lo que la prosa de aqui arriba ya decia en
+        //  palabras: se deriva de ahi y no de una division.
+        const int filasF = (4 + colsM - 1) / colsM;
+        const int filasC = (Sintes::kMandos - 4 + colsM - 1) / colsM;
 
         //  CUANTO ALTO PIDE LA FICHA DEPENDE DE SI VOLVER CABE ARRIBA, y eso
         //  hay que saberlo ANTES de pedirlo — si se decide despues, la ficha se
@@ -4006,8 +4040,8 @@ void MainComponent::resized()
         auto inner = sheetFromBottom (vstSheet, Ficha::cromo + cabecera
                                                   + (presetArriba ? 0 : Metrics::xs + filaP)
                                                   + Metrics::sm + Metrics::hit + teclas
-                                                  + Metrics::sm + filaM * filasG
-                                                  + Metrics::sm + filaM * filasG
+                                                  + Metrics::sm + filaM * filasF
+                                                  + Metrics::sm + filaM * filasC
                                                   + Metrics::sm + Metrics::hit
                                                   //  Y de la fila de VOLVER se descuenta el ALTO, no el
                                                   //  aire: el `Metrics::sm` se quita de `inner` con fila y
@@ -4162,25 +4196,25 @@ void MainComponent::resized()
         }
         inner.removeFromTop (Metrics::sm);
 
-        //  Y LOS OCHO MANDOS, en su propio panel: los cuatro de arriba son de
+        //  Y LOS DOCE MANDOS, en su propio panel: los cuatro de arriba son de
         //  la FORMA -lo que hace que un organo no sea un bajo con otros
         //  numeros- y los cuatro de abajo son los mismos en las dieciseis. Dos
         //  grupos que se leen como uno porque los ocho son la misma pregunta:
         //  como suena este preset.
         {
             auto ponGrupo = [&] (juce::Rectangle<int>& donde,
-                                                          int desde) -> juce::Rectangle<int>
+                                 int desde, int cuantos, int filas) -> juce::Rectangle<int>
             {
-                auto caja = donde.removeFromTop (filaM * filasG);
+                auto caja = donde.removeFromTop (filaM * filas);
                 auto zona = caja.reduced (Metrics::lg, 0);
                 if (vstMandos.size() == Sintes::kMandos)
-                    for (int f = 0; f < filasG; ++f)
+                    for (int f = 0; f < filas; ++f)
                     {
                         juce::Slider* fila[4] = {};
                         for (int c = 0; c < colsM; ++c)
                         {
-                            const int i = desde + f * colsM + c;
-                            if (i < Sintes::kMandos) fila[c] = vstMandos[i];
+                            const int i = f * colsM + c;
+                            if (i < cuantos) fila[c] = vstMandos[desde + i];
                         }
                         placeKnobRow (zona.removeFromTop (filaM), fila, colsM);
                     }
@@ -4191,9 +4225,9 @@ void MainComponent::resized()
             //  COMUNES detras, asi que con dos columnas la mitad de arriba
             //  sigue siendo la forma y la de abajo lo que comparten las
             //  veinticuatro familias. Lo que cambia es que ahora eso se VE.
-            vstPanelForma  = ponGrupo (inner, 0);
+            vstPanelForma  = ponGrupo (inner, 0, 4, filasF);
             inner.removeFromTop (Metrics::sm);
-            vstPanelMandos = ponGrupo (inner, filasG * colsM);
+            vstPanelMandos = ponGrupo (inner, 4, Sintes::kMandos - 4, filasC);
             inner.removeFromTop (Metrics::sm);
 
             //  Y AQUI SOLO SI ARRIBA NO CABIA. Ver el renglon del titulo.
@@ -4215,7 +4249,7 @@ void MainComponent::resized()
         //  igual. Son PUERTAS y no copias: los nueve deslizadores de EL PAD
         //  siguen teniendo un dueño y su propia puerta en la cabecera.
         //
-        //  Y un panel, porque son otra pregunta: los ocho mandos de arriba son
+        //  Y un panel, porque son otra pregunta: los doce mandos de arriba son
         //  COMO SUENA este preset y estas tres son A DONDE VA este pad y con
         //  que se escribe. Un panel no dice «estos van juntos», dice «estos y
         //  aquellos no son lo mismo».
@@ -4232,7 +4266,7 @@ void MainComponent::resized()
         inner.removeFromTop (Metrics::sm);
         //  Y EL PIE LO COLOCA EL MAQUETADO, no el pintor. Lo calculaba el
         //  pintor «debajo del panel del teclado», que era cierto mientras el
-        //  teclado fuera lo ultimo de la ficha: con los ocho mandos debajo, esa
+        //  teclado fuera lo ultimo de la ficha: con los doce mandos debajo, esa
         //  cuenta lo dibujaba ENCIMA de ellos. Es la tercera vez que se paga en
         //  una ficha de este proyecto -ya paso con el titulo y el nombre del
         //  pack de INSTRUMENTOS- y la regla es la misma: la banda la publica

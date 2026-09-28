@@ -873,7 +873,7 @@ namespace
     { "VOLVER",         "",         "REVERT",     "还原",       "استرجاع" },
     //  EL PIE DICE LAS DOS COSAS QUE NO SE DEDUCEN MIRANDO LA FICHA: que el
     //  teclado suena mientras lo tengas TOCADO -un gesto escondido, que es la
-    //  mitad de por que existe un renglon de ayuda- y que los ocho mandos
+    //  mitad de por que existe un renglon de ayuda- y que los doce mandos
     //  afinan la receta con VOLVER al lado. Lo que se CAE es «las flechas
     //  cambian el preset», que es la escalera de siempre: esas dos tapas se
     //  ven, llevan el nombre del preset pintado entre ellas y no hay nada que
@@ -882,22 +882,25 @@ namespace
     //  reescribio, y una fila sin cliente se retira.
     //  Y DOS FILAS Y NO UNA, elegidas por `Sintes::Familia::sostiene`. La
     //  primera mitad de la frase -«suena mientras lo tengas tocado»- es FALSA
-    //  en SIETE de las dieciseis: piano, plucks, campanas, guitarra, mazos,
-    //  claves y arpas no sostienen, se acaban solas, y eso no es una excepcion
-    //  sino lo que `triggerPad` ya decide con ese mismo campo. Un renglon de
-    //  ayuda que promete un gesto que en siete instrumentos de dieciseis hace
-    //  otra cosa es peor que no decir nada - es literalmente lo que ya costo
+    //  en NUEVE de las veinticuatro: piano electrico, plucks, campanas, cuerda
+    //  pulsada, mazos, claves, arpas, pianos y sitar no sostienen, se acaban
+    //  solas, y eso no es una excepcion sino lo que `triggerPad` ya decide con
+    //  ese mismo campo. Aqui decia «siete de las dieciseis», que era verdad
+    //  hasta que entraron las ocho familias nuevas: contado sobre
+    //  `SintesTabla.inc`, **quince sostienen y nueve no**. Un renglon de
+    //  ayuda que promete un gesto que en nueve instrumentos de veinticuatro
+    //  hace otra cosa es peor que no decir nada - es literalmente lo que ya costo
     //  una tanda entera en la ficha de GESTOS. No cuesta un pixel: la frase
     //  corta mide menos.
-    { "El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve.", "",
-      "The keys sound while you hold them. The eight knobs tune this preset and REVERT puts it back.",
-      "按住琴键即持续发声。八个旋钮调节这个音色，还原可恢复原状。",
-      "تصدر المفاتيح الصوت ما دمت ضاغطا عليها. المقابض الثمانية تضبط هذا النمط، واسترجاع يعيده." },
-    { "El teclado suena y cada nota se acaba sola. Los ocho mandos afinan este preset y VOLVER lo devuelve.", "",
-      "The keys sound and each note ends on its own. The eight knobs tune this preset and REVERT puts it back.",
-      "按下琴键即发声，每个音会自行结束。八个旋钮调节这个音色，还原可恢复原状。",
-      "تصدر المفاتيح الصوت وينتهي كل نغم من تلقاء نفسه. المقابض الثمانية تضبط هذا النمط، واسترجاع يعيده." },
-    //  LOS OCHO MANDOS DE UN INSTRUMENTO, que son la QUINTA tabla que llega
+    { "El teclado suena mientras lo tengas tocado. Los doce mandos afinan este preset y VOLVER lo devuelve.", "",
+      "The keys sound while you hold them. The twelve knobs tune this preset and REVERT puts it back.",
+      "按住琴键即持续发声。十二个旋钮调节这个音色，还原可恢复原状。",
+      "تصدر المفاتيح الصوت ما دمت ضاغطا عليها. المقابض الاثنا عشر تضبط هذا النمط، واسترجاع يعيده." },
+    { "El teclado suena y cada nota se acaba sola. Los doce mandos afinan este preset y VOLVER lo devuelve.", "",
+      "The keys sound and each note ends on its own. The twelve knobs tune this preset and REVERT puts it back.",
+      "按下琴键即发声，每个音会自行结束。十二个旋钮调节这个音色，还原可恢复原状。",
+      "تصدر المفاتيح الصوت وينتهي كل نغم من تلقاء نفسه. المقابض الاثنا عشر تضبط هذا النمط، واسترجاع يعيده." },
+    //  LOS DOCE MANDOS DE UN INSTRUMENTO, que son la QUINTA tabla que llega
     //  por INDICE — `Sintes::mando (familia, i)`, o sea que aqui no hay
     //  literal que recoger, igual que los `param[]` de un efecto y las
     //  cuatro tablas que `Tests/lang.py` ya lee del fuente.
@@ -920,6 +923,7 @@ namespace
     { "BARRIDO|ins",           "",           "SWEEP",        "扫频",           "مسح" },
     { "BRILLO|ins",          "",           "TONE",         "亮度",          "سطوع" },
     { "CAIDA|ins",           "",           "DECAY",        "衰减",          "تلاشٍ" },
+    { "CAE EN|ins",          "",           "DECAY TO",     "衰减至",         "يتلاشى إلى" },
     { "CAIDA ENV|ins",       "",           "DECAY",        "包络衰减",        "تلاشي الغلاف" },
     { "CAIDA TONO|ins",      "",           "PITCH DEC",    "音高衰减",        "تلاشي النغمة" },
     { "CAJA|ins",              "",           "BOARD",        "音板",           "لوح" },
@@ -968,10 +972,13 @@ namespace
     { "RESO|ins",            "",           "RESO",         "共振",          "رنين" },
     { "RUIDO|ins",           "",           "NOISE",        "噪声",          "ضجيج" },
     { "SATURA|ins",          "",           "DRIVE",        "驱动",          "إشباع" },
+    { "SENS|ins",            "",           "SENS",         "力度灵敏",        "حساسية" },
     { "SIMPATICAS|ins",        "",           "SYMPATH",      "共鸣弦",          "متعاطفة" },
+    { "SOSTEN|ins",          "",           "SUSTAIN",      "延音",          "استمرار" },
     { "SOBREPASO|ins",       "",           "OVERSHOOT",    "超冲",          "تجاوز" },
     { "SOPLO|ins",           "",           "BLOW",         "气流",          "نفخ" },
     { "SUB|ins",             "",           "SUB",          "超低",          "تحت" },
+    { "ESCALA|ins",          "",           "KEY SCALE",    "按键缩放",        "تدرج المفتاح" },
     { "SUELTA|ins",          "",           "RELEASE",      "释音",          "إفلات" },
     { "TIEMPO|ins",          "",           "TIME",         "时间",          "زمن" },
     { "TUBO|ins",              "",           "TUBE",         "管身",           "أنبوب" },
@@ -1610,6 +1617,24 @@ namespace
           "Pad 1 is note %1, and up from there. Channel %2.",
           "音垫 1 是音符 %1，依次向上。通道 %2。",
           "الباد 1 هو النوتة %1، وصعودًا من هناك. القناة %2." },
+        //  COMO SE LEE LO QUE ENTRA. Ver MidiIo::Modo: un controlador de pads
+        //  y un teclado maestro son dos aparatos distintos encima de la misma
+        //  mesa, y con el mapa de caja de ritmos una escala de DO disparaba
+        //  ocho pads -o sea ocho sonidos- en vez de ocho notas.
+        { "LEER LO QUE ENTRA COMO", "", "READ INCOMING AS", "把输入读作", "قراءة الوارد كـ" },
+        { "PADS|chip",      "PADS",     "PADS",       "音垫",       "بادات" },
+        { "TECLADO|chip",   "TECLADO",  "KEYS",       "键盘",       "مفاتيح" },
+        { "MIDI: una nota, un pad", "", "MIDI: one note, one pad",
+                                        "MIDI：一音一垫",
+                                        "ميدي: نوتة واحدة، باد واحد" },
+        { "MIDI: teclado sobre el pad elegido", "",
+                                        "MIDI: keyboard on the chosen pad",
+                                        "MIDI：键盘弹奏所选音垫",
+                                        "ميدي: لوحة مفاتيح على الباد المختار" },
+        { "El teclado toca el pad elegido. La nota %1 suena a su afinacion.", "",
+          "The keyboard plays the chosen pad. Note %1 sounds at its own pitch.",
+          "键盘演奏所选音垫。音符 %1 按其自身音高发声。",
+          "تعزف لوحة المفاتيح الباد المختار. النوتة %1 تُسمع بدرجتها." },
 
         { "CARPETA",        "",         "FOLDER",     "文件夹",     "المجلد" },
         { "NOMBRE",         "",         "NAME",       "名称",       "الاسم" },

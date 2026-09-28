@@ -46,6 +46,21 @@
 #  primera, contra el pico de pendiente de los cinco milisegundos de al lado -
 #  la misma regla que kits.py acabo usando despues de mentir con la mediana.
 #
+#  Y LO QUE NO SE MIDE AQUI, QUE ES LA MITAD QUE LLEGO DESPUES.
+#
+#  Todo lo de arriba mira ZONAS RENDIDAS: muestras dentro de un buffer, sin
+#  motor. La envolvente de una nota no vive ahi. La suelta del preset, el
+#  sosten, la caida hacia el sosten, la sensibilidad al toque, el acortarse de
+#  la suelta al subir de nota, el pedal de sostenido, el NoteOff que suelta UNA
+#  tecla y el barrido de fuerza sin escalones pasan TODOS por `AudioEngine` y
+#  `Voice`, y medirlos aqui obligaria a meter el motor en una prueba de
+#  generador. Viven en `Tests/StressTest.cpp`, en el bloque que empieza por «la
+#  suelta es la del preset», y se corren con el resto del motor.
+#
+#  La division no es de comodidad: esta prueba tiene que seguir dando lo MISMO
+#  cuando la envolvente cambia -el generador no escribio una muestra distinta-
+#  y eso solo vale si aqui no hay motor.
+#
 #      python3 Tests/instr.py
 # ============================================================================
 import json, math, os, re, shutil, subprocess, sys, tempfile
@@ -1182,7 +1197,7 @@ def main():
         #  oscilador.
         rc = extra.get ("receta")
         if rc is None:
-            fallos.append ("no hay linea de receta: nadie mide si los ocho mandos hacen algo")
+            fallos.append ("no hay linea de receta: nadie mide si los doce mandos hacen algo")
         else:
             print ("\nreceta movida: %d muestras cambian al mover el mando, "
                    "%d al volver a la fila" % (rc["suena"], rc["vuelve"]))

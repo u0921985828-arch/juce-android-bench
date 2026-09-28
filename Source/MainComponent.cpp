@@ -1255,7 +1255,7 @@ MainComponent::MainComponent()
         vstSheet.cuerpo.addAndMakeVisible (vstTeclado);
 
         // --------------------------------------------------------------
-        //  LOS OCHO MANDOS DE LA RECETA.
+        //  LOS DOCE MANDOS DE LA RECETA.
         //
         //  El rango se pone en `refrescaMandosVst` y no aqui: depende de la
         //  FAMILIA, y en el constructor no hay pad elegido. Aqui solo se
@@ -1298,7 +1298,7 @@ MainComponent::MainComponent()
             //  lado -eso es lo que `SintesMandos.inc` documenta- asi que no hay
             //  unidad que escribir. Lo que si dice algo es donde cae dentro de
             //  lo que la fabrica usa, que es exactamente de donde sale el rango.
-            //  Y ocho mandos con dos formatos se leen peor que ocho con uno.
+            //  Y doce mandos con dos formatos se leen peor que doce con uno.
             s->textFromValueFunction = [s] (double v)
             {
                 const auto r = s->getRange();
@@ -1634,6 +1634,46 @@ MainComponent::MainComponent()
             setSheet.cuerpo.addAndMakeVisible (c);
         }
 
+        //  COMO SE LEE LO QUE ENTRA: PADS o TECLADO.
+        //
+        //  Dos aparatos distintos encima de la misma mesa. Con un controlador
+        //  de pads, `nota - 36` es el mapa correcto y es el de todas las cajas
+        //  de ritmos. Con un teclado maestro es un sinsentido medido: una
+        //  escala de DO sobre un pad de GRAND disparaba ocho PADS -o sea ocho
+        //  sonidos- y las notas fuera de 36..99 no sonaban. Enchufar un
+        //  teclado y tocar una escala era literalmente lo unico que esta app
+        //  no podia hacer.
+        //
+        //  Dos chips y no un ajuste dentro del otro, y el defecto es PADS: lo
+        //  que ya funcionaba sigue igual sin tocar nada.
+        for (int i = 0; i < 2; ++i)
+        {
+            auto* b = new juce::TextButton (T (i == 0 ? "PADS|chip" : "TECLADO|chip"));
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->setClickingTogglesState (true);
+            //  Grupo propio: `turnOffOtherButtonsInGroup` mira a los HERMANOS,
+            //  y estos dos cuelgan de `setSheet.cuerpo` igual que los del
+            //  monitor, la cuenta y las tomas. Compartir numero con cualquiera
+            //  de esas tres apagaria la fila de al lado al encender esta - que
+            //  es el fallo del 5151 contado en el bloque del monitor.
+            filaDeRadio (*b, "midi modo", 7314);
+            b->onClick = [this, i]
+            {
+                midi.setModo (i == 1 ? MidiIo::Modo::Teclado : MidiIo::Modo::Pads);
+                //  Y el pad al que va el teclado es el SELECCIONADO: no hay un
+                //  ajuste nuevo que mantener sincronizado con nada. Se vuelve
+                //  a mandar en `selectPad`.
+                midi.setPadTeclado (juce::jmax (0, selectedPad));
+                status.setText (i == 1 ? T ("MIDI: teclado sobre el pad elegido")
+                                       : T ("MIDI: una nota, un pad"),
+                                juce::dontSendNotification);
+            };
+            setSheet.cuerpo.addChildComponent (b);
+            midiModoButtons.add (b);
+        }
+        if (auto* b = midiModoButtons[0]) b->setToggleState (true, juce::dontSendNotification);
+
         midiOutBtn.onClick = [this] { applyMidiChoice(); };
         midiInBtn.onClick  = [this] { applyMidiChoice(); };
         midiOutBox.onChange = [this] { applyMidiChoice(); };
@@ -1643,8 +1683,21 @@ MainComponent::MainComponent()
         //  MIDI - NO a la de comandos, que es de un solo productor. Esto lo
         //  llama un hilo de JUCE, asi que aqui dentro no puede haber nada que
         //  toque la interfaz.
-        midi.onNoteOn  = [this] (int pad, float vel) { engine.postNoteOnFromMidi (pad, vel); };
-        midi.onNoteOff = [this] (int pad)            { engine.postNoteOffFromMidi (pad); };
+        midi.onNoteOn  = [this] (int pad, int semis, float vel)
+                         { engine.postNoteOnFromMidi (pad, semis, vel); };
+        midi.onNoteOff = [this] (int pad, int semis)
+                         { engine.postNoteOffFromMidi (pad, semis); };
+        //  PANICO DE VERDAD y no sesenta y cuatro apagados: `allNotesOff`
+        //  significa «suelta todo lo que tengas», y con el pedal pisado un
+        //  apagado por pad solo MARCA las voces. Sesenta y cuatro comandos en
+        //  una cola de 256 es ademas la unica forma que tiene esta entrada de
+        //  llenarla de golpe.
+        midi.onTodasOff = [this]
+        {
+            for (int p = 0; p < AudioEngine::kNumPads; ++p)
+                engine.postNoteOffFromMidi (p, Command::kTodasLasNotas);
+        };
+        midi.onPedal = [this] (bool abajo) { engine.postPedalFromMidi (abajo); };
         midi.setSource (engine.midiOutQueue());
     }
 
@@ -2101,6 +2154,12 @@ MainComponent::MainComponent()
     //  Punto medio en 10 ms: lineal, la mitad del recorrido iria de 250 a 500,
     //  donde ya no hay decisiones que tomar, y los primeros cinco milisegundos
     //  -que es donde esta todo- cabrian en un pelo del recorrido.
+    //  Y LOS 500 SON SOLO EL ARRANQUE, no el recorrido.
+    //
+    //  `pushFadesToWaveform` lo vuelve a derivar del RECORTE cada vez que el
+    //  pad o las asas cambian, porque un mando no puede pedir lo que no se va a
+    //  aplicar: con la ventana de la captura -65 ms- el mando llegaba a 500 y
+    //  se aplicaban 21.7. Aqui no se puede derivar todavia: no hay pad elegido.
     initSlider (fadeInSlider,  0.0, 500.0, 0.5, 0.0);
     initSlider (fadeOutSlider, 0.0, 500.0, 0.5, 0.0);
     for (auto* sl : { &fadeInSlider, &fadeOutSlider })
@@ -2197,8 +2256,22 @@ MainComponent::MainComponent()
                                               if (auto* ma = mixAnchos[selectedPad]) ma->setValue (anchoSlider.getValue(), juce::dontSendNotification); } });
     initKnob (attackSlider, 0.0, 200.0, 1.0, 2.0, 20.0,
              [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
-    initKnob (releaseSlider, 1.0, 800.0, 1.0, 5.0, 40.0,
-             [this] { if (selectedPad >= 0) { padRelease[(size_t) selectedPad] = (float) releaseSlider.getValue(); engine.setPadRelease (selectedPad, (float) releaseSlider.getValue()); } });
+    //  HASTA 2500 ms Y NO 800: el mando no puede quedarse corto para lo que la
+    //  maquina ya hace. La tabla de instrumentos escribe `rel` hasta 2.200 s
+    //  -CUERDA ARCO, PADS-, y con el tope en 800 el mando ensenaba 800 en un
+    //  pad que sonaba 2200: el mismo fallo de mando que miente que la ficha
+    //  TRIM tenia con el fundido. El punto medio sigue en 40 ms, que es donde
+    //  esta la percusion.
+    initKnob (releaseSlider, 1.0, 2500.0, 1.0, 5.0, 40.0,
+             [this] { if (selectedPad >= 0) {
+                          padRelease[(size_t) selectedPad] = (float) releaseSlider.getValue();
+                          engine.setPadRelease (selectedPad, (float) releaseSlider.getValue());
+                          //  Y EN CUANTO SE TOCA, MANDA EL MANDO. Sin esto el
+                          //  mando de un pad de instrumento no haria nada: el
+                          //  motor seguiria leyendo la suelta del preset y la
+                          //  persona veria moverse un numero sin oir nada.
+                          padSueltaPreset[(size_t) selectedPad] = false;
+                          engine.setPadSueltaPreset (selectedPad, false); } });
 
     //  CORTE, con el punto medio del mando en 1 kHz.
     //
@@ -7024,6 +7097,15 @@ void MainComponent::showSetPage (int page)
     muestra (midiInBtn,  onMidi);
     muestra (midiOutBox, onMidi);
     muestra (midiInBox,  onMidi);
+    //  Y los dos chips de como se lee lo que entra, con el que toca encendido
+    //  y con las dos mitades de la regla: apagar Y vaciar los limites fuera de
+    //  su pagina, que es el fallo de las tapas de banco.
+    for (int i = 0; i < midiModoButtons.size(); ++i)
+        if (auto* b = midiModoButtons[i])
+        {
+            b->setToggleState (i == (int) midi.getModo(), juce::dontSendNotification);
+            muestra (*b, onMidi);
+        }
 
     muestra (measureButton, onAudio);
     muestra (quantButton,   onAudio);
@@ -8746,6 +8828,11 @@ void MainComponent::selectBank (int bank, int padDestino)
 void MainComponent::selectPad (int index)
 {
     selectedPad = index;
+    //  Y EL TECLADO MIDI VA CON EL. En modo TECLADO lo que se toca es el pad
+    //  ELEGIDO, y no un ajuste aparte que haya que acordarse de mover: dos
+    //  numeros que significan lo mismo son dos numeros que un dia no coinciden.
+    //  En modo PADS este dato no lo lee nadie.
+    midi.setPadTeclado (juce::jmax (0, index));
     //  LAS DOS PUERTAS DICEN A QUE PAD LLEVAN, y con DOS cifras siempre: un
     //  rotulo que pasa de "9" a "10" cambia de ancho, y la fila se reparte por
     //  el texto que lleva - o sea que la cabecera daria un salto al cambiar de
@@ -9040,10 +9127,52 @@ void MainComponent::pushFadesToWaveform()
     if (selectedPad < 0) { waveform.setFades (0.0f, 0.0f, 0.0, 0); return; }
 
     auto sb = uiSample[(size_t) selectedPad];
+    const double fs  = (sb != nullptr) ? sb->sourceSampleRate : 0.0;
+    const int    len = (sb != nullptr) ? padVisibleLength (selectedPad) : 0;
+
+    //  EL RECORRIDO DEL MANDO SALE DEL RECORTE, y no de un 500.0 escrito.
+    //
+    //  Es `Sintes::rango` aplicado aqui: el recorrido de un mando es lo que ese
+    //  mando puede conseguir, no un numero redondo. Con la ficha TRIM de la
+    //  captura -PAD 6, ventana de 0.065 s- el mando llegaba a 500 ms y el motor
+    //  aplicaba 21.7: la persona movia medio recorrido y no pasaba nada. Ahora
+    //  el tope es la ventana entera, que es justo lo que `Fundido::reparte`
+    //  puede dar a un fundido si el otro esta seco.
+    //
+    //  Y SE RE-DERIVA AL MOVER UN ASA porque las asas son las que mueven la
+    //  ventana; esta funcion ya se llama desde las dos. El guardia evita la
+    //  vuelta: acotar el valor dispara `onValueChange`, que vuelve aqui.
+    if (! ajustandoFundidos && fs > 0.0 && len > 0)
+    {
+        const double ancho = (double) juce::jmax (0.0f, padEnd01[(size_t) selectedPad]
+                                                      - padStart01[(size_t) selectedPad]);
+        const double tope  = juce::jmax (1.0, ancho * (double) len * 1000.0 / fs);
+
+        const juce::ScopedValueSetter<bool> guardia (ajustandoFundidos, true);
+
+        if (std::abs (fadeInSlider.getMaximum() - tope) > 1.0e-6)
+        {
+            fadeInSlider.setRange  (0.0, tope, 0.5);
+            fadeOutSlider.setRange (0.0, tope, 0.5);
+        }
+
+        //  Y SE ACOTA EL PAD, NO EL MANDO. Leer el mando aqui traeria el valor
+        //  del pad ANTERIOR -esta funcion corre dentro de `selectPad`, antes de
+        //  que los mandos se hayan puesto al dia- y lo escribiria en este. La
+        //  fuente es `padFadeIn`; el mando es lo que la enseña.
+        const float fi = (float) juce::jlimit (0.0, tope, (double) padFadeIn [(size_t) selectedPad]);
+        const float fo = (float) juce::jlimit (0.0, tope, (double) padFadeOut[(size_t) selectedPad]);
+
+        if (fi != padFadeIn [(size_t) selectedPad]) { padFadeIn [(size_t) selectedPad] = fi; engine.setPadFadeIn  (selectedPad, fi); }
+        if (fo != padFadeOut[(size_t) selectedPad]) { padFadeOut[(size_t) selectedPad] = fo; engine.setPadFadeOut (selectedPad, fo); }
+
+        fadeInSlider.setValue  (fi, juce::dontSendNotification);
+        fadeOutSlider.setValue (fo, juce::dontSendNotification);
+    }
+
     waveform.setFades (padFadeIn[(size_t) selectedPad],
                        padFadeOut[(size_t) selectedPad],
-                       sb != nullptr ? sb->sourceSampleRate : 0.0,
-                       sb != nullptr ? padVisibleLength (selectedPad) : 0);
+                       fs, len);
 }
 
 void MainComponent::refreshWaveformSegments()
@@ -9125,6 +9254,12 @@ void MainComponent::updateControlsFromPad (int index)
     releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
     cutSlider.setValue  (padCut[(size_t) index],  juce::dontSendNotification);
     resoSlider.setValue (padReso[(size_t) index], juce::dontSendNotification);
+    //  EL RECORRIDO ANTES QUE EL VALOR, y no al reves: el tope de los fundidos
+    //  sale del recorte de ESTE pad, asi que escribir el valor con el tope del
+    //  anterior lo acotaria contra una ventana que ya no es. Un pad de 65 ms
+    //  visitado despues de uno de dos segundos se llevaba el fundido por
+    //  delante.
+    pushFadesToWaveform();
     fadeInSlider.setValue  (padFadeIn[(size_t) index],  juce::dontSendNotification);
     fadeOutSlider.setValue (padFadeOut[(size_t) index], juce::dontSendNotification);
 }
@@ -9723,6 +9858,7 @@ void MainComponent::ponPadPorDefecto (int i)
     padPan[k]      = 0.0f;
     padAttack[k]   = 2.0f;
     padRelease[k]  = 5.0f;
+    padSueltaPreset[k] = false;
     //  El espejo del filtro, abierto, igual que el motor. Cero aqui serian
     //  sesenta y cuatro mandos de corte en el tope de abajo: la ficha diria
     //  "20 Hz" en un pad que suena entero.
@@ -9815,6 +9951,7 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadAncho   (index, padAnchoUI[(size_t) index]);
     engine.setPadAttack  (index, padAttack[(size_t) index]);
     engine.setPadRelease (index, padRelease[(size_t) index]);
+    engine.setPadSueltaPreset (index, padSueltaPreset[(size_t) index]);
     //  Y EL FILTRO Y LOS FUNDIDOS, que faltaban y no se veia.
     //
     //  Estos cuatro no se empujaban nunca, asi que el motor conservaba lo que
@@ -10045,6 +10182,9 @@ void MainComponent::retranslateUi()
     //  VACIAR de las ranuras.
     for (int i = 0; i < monButtons.size(); ++i)
         if (auto* b = monButtons[i]) b->setButtonText (T (i == 1 ? "SI|chip" : "NO|chip"));
+    //  Y los dos de como se lee el MIDI que entra, por lo mismo.
+    for (int i = 0; i < midiModoButtons.size(); ++i)
+        if (auto* b = midiModoButtons[i]) b->setButtonText (T (i == 0 ? "PADS|chip" : "TECLADO|chip"));
     //  Y EL NOMBRE ACCESIBLE de los cuatro chips del banco de tomas: su ROTULO
     //  es una letra y no cambia de idioma, pero lo que TalkBack lee si. Puesto
     //  aqui y no en el constructor, que ahi se quedaria clavado en el idioma
@@ -10192,7 +10332,7 @@ void MainComponent::retranslateUi()
     //  de las tres pestanas de AJUSTES -la ficha que CONTIENE el selector de
     //  idioma- y el que el banco ya ha cazado tres veces desde entonces.
     vstVolver.setButtonText (T ("VOLVER"));
-    //  Y los ocho mandos, cuyo nombre accesible depende ademas de la familia.
+    //  Y los doce mandos, cuyo nombre accesible depende ademas de la familia.
     refrescaMandosVst();
     instPackDownBtn.setButtonText (T ("PACK") + " -");
     instPackUpBtn  .setButtonText (T ("PACK") + " +");
@@ -11014,6 +11154,7 @@ void MainComponent::applyAutoChop()
         engine.setPadPan     (i, padPan[(size_t) i]);
         engine.setPadAttack  (i, padAttack[(size_t) i]);
         engine.setPadRelease (i, padRelease[(size_t) i]);
+        engine.setPadSueltaPreset (i, padSueltaPreset[(size_t) i]);
 
         if (auto* p = pads[i]) p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i],
                                                  padStart01[(size_t) i], padEnd01[(size_t) i]);
@@ -11641,6 +11782,14 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("ancho",   padAnchoUI[(size_t) i], nullptr);
         p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
         p.setProperty ("release", padRelease[(size_t) i], nullptr);
+        //  QUIEN MANDA EN LA SUELTA, y SOLO cuando manda el preset.
+        //
+        //  Se escribe unicamente si vale true para que su AUSENCIA signifique
+        //  el defecto ANTIGUO, que es la regla de compatibilidad de la casa:
+        //  un proyecto guardado antes de esta tanda no lleva `relp`, asi que
+        //  vuelve con "manda padRelease" y suena con los 180 ms que ese
+        //  fichero escribio, exactamente como se guardo.
+        if (padSueltaPreset[(size_t) i]) p.setProperty ("relp", 1, nullptr);
         //  DE QUE PAD SALE EL AUDIO DE ESTE, que es lo que convierte
         //  dieciseis pads en un troceado y no en dieciseis sonidos sueltos.
         //
@@ -12254,6 +12403,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
             engine.setPadAncho (i, padAnchoUI[(size_t) i]);
             padAttack[(size_t) i]  = (float) p.getProperty ("attack", 2.0);
             padRelease[(size_t) i] = (float) p.getProperty ("release", 5.0);
+            //  Ausente = falso = manda el `release` de arriba. Ver captureState.
+            padSueltaPreset[(size_t) i] = ((int) p.getProperty ("relp", 0) != 0);
             //  Un proyecto guardado antes de que el filtro existiera no lleva
             //  estas dos, y tiene que volver SIN filtrar - abierto del todo -
             //  o sonaria distinto de como se guardo. El cero del array seria
@@ -12373,6 +12524,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             engine.setPadPan     (i, padPan[(size_t) i]);
             engine.setPadAttack  (i, padAttack[(size_t) i]);
             engine.setPadRelease (i, padRelease[(size_t) i]);
+        engine.setPadSueltaPreset (i, padSueltaPreset[(size_t) i]);
         }
     }
 
@@ -13093,6 +13245,7 @@ void MainComponent::padPorDefecto (int i)
     padAnchoUI[k] = 1.0f;
     padAttack[k]  = 2.0f;
     padRelease[k] = 5.0f;
+    padSueltaPreset[k] = false;
     padCut[k]     = (float) AudioEngine::kFiltOpenHz;
     padReso[k]    = 0.0f;
     padFadeIn[k]  = 0.0f;
@@ -18258,16 +18411,32 @@ void MainComponent::montaInstrumentoRendido (int pad, SampleBuffer::Ptr sb,
     //  las dos cosas dentro del motor -triggerPad las ignora- pero la interfaz
     //  las sigue ensenando, y un pad que dice "BUCLE" sin que el mando haga
     //  nada es peor que uno que no lo dice.
-    //  Y CON UNA CAIDA DE INSTRUMENTO, no la de fabrica.
+    //  Y CON LA CAIDA QUE SU PRESET DECLARA, no con una cifra de la casa.
     //
     //  Un pad nace con 5 ms de caida, que es lo correcto para percusion -una
     //  muestra ya se acaba sola, y esos 5 ms solo quitan el chasquido del
     //  final-. En un instrumento la caida ES el final de la nota: soltar la
     //  tecla con 5 ms es un corte, y se oye como un chasquido al levantar el
-    //  dedo. 180 ms es lo que tarda en apagarse una cuerda pulsada al
-    //  silenciarla con la mano. Sigue siendo un defecto: el mando CAIDA manda.
-    padRelease[(size_t) pad] = 180.0f;
-    engine.setPadRelease (pad, 180.0f);
+    //  dedo.
+    //
+    //  Aqui habia un 180.0f fijo, y el comentario contaba una decision correcta
+    //  -«lo que tarda en apagarse una cuerda pulsada silenciada con la mano»-
+    //  con un argumento que no aplicaba a los otros 383 presets. La tabla
+    //  escribe `rel` de 0.030 a 2.200 s, o sea 73.3:1, y los 384 sonaban a esos
+    //  0.180: 129 de 384 a mas de un factor dos de lo que su fila pedia y 41 a
+    //  mas de cuatro. Un organo se cortaba y un pad de cuerda tambien.
+    //
+    //  El bit es lo que hace que ademas SIGA al mando: mover SUELTA en la ficha
+    //  re-sintetiza, y el buffer nuevo trae otro `rel` que el motor vuelve a
+    //  leer. `padRelease` se pone igual para que el mando CAIDA ensene el
+    //  numero de verdad y no uno heredado, y en cuanto alguien lo mueve el bit
+    //  se cae y manda CAIDA.
+    const float sueltaMs = (sb != nullptr && sb->toque.sueltaS > 0.0f)
+                             ? sb->toque.sueltaS * 1000.0f : 180.0f;
+    padRelease[(size_t) pad] = sueltaMs;
+    engine.setPadRelease (pad, sueltaMs);
+    padSueltaPreset[(size_t) pad] = true;
+    engine.setPadSueltaPreset (pad, true);
 
     padStart01[(size_t) pad] = 0.0f;
     padEnd01[(size_t) pad]   = 1.0f;
@@ -18387,7 +18556,7 @@ void MainComponent::montaResintesis (int pad, SampleBuffer::Ptr sb)
 }
 
 // ----------------------------------------------------------------------------
-//  LOS OCHO MANDOS DICEN LO QUE ESTE INSTRUMENTO ADMITE.
+//  LOS DOCE MANDOS DICEN LO QUE ESTE INSTRUMENTO ADMITE.
 //
 //  El recorrido y el nombre salen de la FAMILIA -`Sintes::rango` y
 //  `Sintes::mando`- y no de una tabla escrita aqui: los cuatro de forma
@@ -19221,7 +19390,7 @@ void MainComponent::stepPadJob()
         const int receta = padJob->inst[(size_t) i];
         if (receta >= 0)
         {
-            //  Los ocho mandos son del PAD desde que se pueden mover: rendir
+            //  Los doce mandos son del PAD desde que se pueden mover: rendir
             //  la fila de la tabla devolveria un instrumento que suena
             //  distinto del que se guardo. Sin la propiedad, `recetaDeTexto`
             //  devuelve la fila, que es como sonaba antes de que existieran.

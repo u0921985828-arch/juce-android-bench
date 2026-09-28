@@ -196,6 +196,11 @@ def viejos():
             continue
         if "viejo" in d:
             filas[d["viejo"]] = d
+        #  Y LOS PADS DE INSTRUMENTO, en su propia lista. Van por fichero y no
+        #  por pad porque el dia que otro congelado traiga uno la regla no
+        #  tiene que cambiar.
+        if "instviejo" in d:
+            filas.setdefault ("@inst", []).append (d)
     return filas or None
 
 
@@ -418,10 +423,17 @@ def main():
 
     #  --- Y LOS PROYECTOS DE OTRA EPOCA ------------------------------------
     vj = viejos()
-    viejo_ok = vj is not None and len (vj) == 7
+    #  OCHO y no siete: el `08-instrumento-viejo.xml` es el unico congelado que
+    #  trae pads de INSTRUMENTO, y sin el todo lo que el fichero de proyecto
+    #  sabe de uno -a que preset apunta y con que numeros se movio- se media
+    #  escribiendo y leyendo con el mismo binario.
+    #  La clave `@inst` no es un fichero: es la lista de pads de instrumento de
+    #  todos ellos, y se cuenta aparte.
+    ficheros = {k: v for k, v in (vj or {}).items() if not k.startswith ("@")}
+    viejo_ok = vj is not None and len (ficheros) == 8
     print()
     if vj:
-        for nombre, d in sorted (vj.items()):
+        for nombre, d in sorted (ficheros.items()):
             #  Lo que el fichero NO trae vale su defecto ANTIGUO: un proyecto
             #  sin `sends` es anterior a que los envios existieran -cada pad iba
             #  entero a los seis- asi que vuelve con UNO y no con el cero de
@@ -554,6 +566,68 @@ def main():
                    % ("", d["flt3"], d["cmp3"], d["eq5"]))
     else:
         print ("  los proyectos congelados no volvieron")
+
+    #  --- S12 · UN INSTRUMENTO GUARDADO VUELVE SIENDO EL MISMO --------------
+    #
+    #  Tres respuestas y no una, porque hay tres maneras distintas de romperlo:
+    #
+    #   1. IDENTIDAD de los ocho de siempre, a seis decimales. El pad 1 del 08
+    #      lleva la receta MOVIDA -los ocho numeros de HALL P sobre PIANOS
+    #      GRAND- y tiene que volver con esos ocho y no con los de GRAND. Seis
+    #      decimales y no una tolerancia: `recetaATexto` escribe seis, asi que
+    #      cualquier diferencia real es mayor que eso.
+    #   2. LOS MANDOS QUE NO ESTABAN EN EL FICHERO VALEN LA FILA DE TABLA. Una
+    #      receta guardada trae OCHO tokens; el dia que la receta tenga doce,
+    #      `recetaDeTexto` arranca de la fila y sobreescribe `jmin(8, 12) = 8`,
+    #      asi que los indices 8.. se quedan con el valor de fabrica. Es la
+    #      unica linea que hace que subir `kMandos` sea compatible hacia
+    #      delante y hacia atras, y no la comprobaba nadie.
+    #   3. LA SUELTA LA MANDA EL FICHERO. Los dos pads traen `release="180"`
+    #      escrito, que es lo que un proyecto guardado trae. Sea cual sea el
+    #      defecto de hoy, un proyecto de ayer tiene que volver sonando a 180.
+    #
+    #  Y el pad 2 es la otra mitad: SIN receta, o sea que los DOCE tienen que
+    #  ser la fila de tabla. Sin el, un lector que arrancara de `Preset{}` en
+    #  vez de la fila -la rotura a proposito de esta regla- pasaria la primera
+    #  comprobacion entera, porque el pad movido trae los ocho escritos.
+    #
+    #  Los ocho numeros van LITERALES aqui: el fichero es texto congelado, asi
+    #  que repetirlos es repetir el mismo artefacto y no leer la constante que
+    #  se juzga. La fila de tabla NO va literal -la trae el volcado- porque esa
+    #  si cambia cuando la tanda mejora un preset, y clavarla aqui pondria la
+    #  prueba en rojo con la app perfecta.
+    MOVIDA = [0.000480, 2.600000, 0.120000, 1.000000,
+              0.003000, 3.600000, 0.560000, 1.080000]
+    ESPERADO = {1: (288, 1, MOVIDA), 2: (291, 0, None)}
+    inst = [d for d in (vj or {}).get ("@inst", []) if d["instviejo"].startswith ("08")]
+    inst_ok = len (inst) == len (ESPERADO)
+    print()
+    for d in sorted (inst, key=lambda x: x["pad"]):
+        quiere = ESPERADO.get (d["pad"])
+        rec, tab = d["receta"], d["tabla"]
+        if quiere is None:
+            inst_ok = False
+            print ("  pad %d no tendria que traer instrumento" % d["pad"])
+            continue
+        k, movida, ocho = quiere
+        #  Los que el fichero traia: los ocho escritos, o la fila de tabla si
+        #  el pad no movio nada.
+        delfichero = ocho if ocho is not None else tab[:8]
+        bien = (d["inst"] == k
+                and d["movida"] == movida
+                and abs (d["release"] - 180.0) < 0.01
+                and len (rec) == len (tab)
+                and all (abs (a - b) < 1e-6 for a, b in zip (rec[:8], delfichero))
+                and all (abs (a - b) < 1e-6 for a, b in zip (rec[8:], tab[8:])))
+        inst_ok = inst_ok and bien
+        print ("  instrumento pad %d: inst %d movida %d release %.1f  receta %s   %s"
+               % (d["pad"], d["inst"], d["movida"], d["release"],
+                  " ".join ("%.6f" % v for v in rec),
+                  "vuelve igual" if bien else "NO VUELVE IGUAL"))
+    if not inst:
+        inst_ok = False
+        print ("  el 08 no devolvio ningun pad de instrumento")
+    viejo_ok = viejo_ok and inst_ok
 
     print()
     print ("las %d corridas devuelven la sesion entera" % RUNS if bad == 0

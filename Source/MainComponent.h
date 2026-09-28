@@ -1279,6 +1279,11 @@ private:
     //  parte en dos en 280x653 con las tres palabras que tiene.
     juce::OwnedArray<juce::TextButton> monButtons;      // OFF / ON
     juce::Rectangle<int> monRowArea;
+
+    //  COMO SE LEE LO QUE ENTRA POR MIDI: PADS o TECLADO. Ver MidiIo::Modo.
+    //  Dos chips en la pagina MIDI, con el defecto en PADS -lo de siempre-.
+    juce::OwnedArray<juce::TextButton> midiModoButtons;  // PADS / TECLADO
+    juce::Rectangle<int> midiModoRowArea;
     bool monitorOn = false;
     static juce::File monitorPrefFile();
     void saveMonitorPref();
@@ -2151,6 +2156,12 @@ private:
     //  recorte, asi que mover un asa cambia la curva aunque el mando no se
     //  haya tocado.
     void pushFadesToWaveform();
+
+    //  EL GUARDIA DE LA VUELTA. `pushFadesToWaveform` re-deriva el recorrido de
+    //  los dos mandos de fundido a partir del recorte, y acotar un valor
+    //  dispara `onValueChange`, que vuelve a llamarla. Un `bool` y no un
+    //  contador: no hay mas de un nivel que evitar.
+    bool ajustandoFundidos = false;
     int  padSourceLength (int pad) const;
     //  Ver el .cpp: la zona que se enseña de un instrumento, y cuanto dura.
     bool zonaVisible (int pad, int& ini, int& fin) const;
@@ -2925,7 +2936,7 @@ private:
     //  no cuestan un pixel de alto. Ver paintVstSheetContent.
     juce::Rectangle<int> vstPanelCab, vstPanelPre, vstPanelTec;
 
-    //  LOS OCHO MANDOS DEL INSTRUMENTO, que es lo que le faltaba a esta ficha
+    //  LOS DOCE MANDOS DEL INSTRUMENTO, que es lo que le faltaba a esta ficha
     //  para ser la de un instrumento y no la de una LISTA de instrumentos.
     //
     //  Los dieciseis por dieciseis eran de SOLO LECTURA: se pasaba de un preset
@@ -2944,7 +2955,7 @@ private:
     //  fabrica de ese preset. Solo existe con la receta movida - un control que
     //  no puede hacer nada no es informacion, es ruido.
     juce::TextButton vstVolver { "VOLVER" };
-    //  DOS PANELES Y NO UNO para los ocho mandos: los cuatro de FORMA -cuyo
+    //  DOS PANELES Y NO UNO para los doce mandos: los cuatro de FORMA -cuyo
     //  nombre y recorrido los dice la FAMILIA- y los cuatro COMUNES, que son
     //  los mismos en las dieciseis. Esa particion es la que hace que haya
     //  dieciseis instrumentos y no uno con los numeros movidos, y hasta aqui
@@ -3267,7 +3278,7 @@ private:
         //  el mismo sitio. `applyState` corre en el `onDone`, o sea DESPUES de
         //  que este trabajo haya rendido los pads, asi que si la receta se
         //  leyera alli el instrumento habria sonado ya con la fila de la
-        //  tabla: vuelve del fichero con los ocho mandos donde la persona los
+        //  tabla: vuelve del fichero con los doce mandos donde la persona los
         //  dejo y suena con los de fabrica hasta que alguien mueva uno.
         //  Vacia = la receta es la de la tabla.
         std::array<juce::String, AudioEngine::kNumPads> receta;
@@ -4235,6 +4246,10 @@ private:
     std::array<float, kNumPads> padAnchoUI {};
     std::array<float, kNumPads> padAttack {};     // ms
     std::array<float, kNumPads> padRelease {};    // ms
+    //  QUIEN MANDA EN LA SUELTA. Ver AudioEngine::setPadSueltaPreset: false es
+    //  "manda padRelease", que es lo de antes y lo que vale para todo pad que
+    //  no sea un instrumento recien cargado.
+    std::array<bool,  kNumPads> padSueltaPreset {};
     std::array<float, kNumPads> padCut {};        // Hz, kFiltOpenHz = abierto
     std::array<float, kNumPads> padReso {};       // 0..1
     std::array<float, kNumPads> padFadeIn {};     // ms

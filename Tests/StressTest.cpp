@@ -962,7 +962,7 @@ int main()
         //  pasar por droppedCommands. Por eso son cuatro y no uno - con uno
         //  solo, el fallo pasa la prueba.
         for (int i = 0; i < 255; ++i) e.postNoteOn (0, 0.5f);
-        for (int p = 1; p <= 4; ++p) e.postNoteOnFromMidi (p, 1.0f);
+        for (int p = 1; p <= 4; ++p) e.postNoteOnFromMidi (p, 0, 1.0f);
         b.clear(); e.renderNextBlock (b, 0, 512);
 
         const std::uint64_t visto = e.fetchTriggered();
@@ -1628,8 +1628,18 @@ int main()
                         rec->buffer.copyFrom (ch, 1 + ataque + c * cuerpo,
                                               *&orig->buffer, ch, Z.bucleIni, cuerpo);
                 }
-                rec->zonas[0] = { Z.raiz, capaQuiere, 1, 1 + util, 0, 0 };
+                rec->zonas[0] = { Z.raiz, capaQuiere, 1, 1 + util, 0, 0, Z.fuerza };
                 rec->nZonas = 1;
+
+                //  Y LA REFERENCIA SE TOCA IGUAL QUE EL ORIGINAL. Esta regla
+                //  mide el BUCLE, no la envolvente: al entrar `Toque` el
+                //  original empezo a caer hacia su sosten y la referencia,
+                //  recien construida, se quedo con los defectos -sosten 1.0,
+                //  sin caida- y las dos curvas se separaron por algo que no
+                //  era la vuelta. Se midio -12.6 dB contra el liston de -60,
+                //  y era la prueba y no el motor. Copiar el POD entero lo
+                //  devuelve a comparar lo unico que cambia: donde empalma.
+                rec->toque = orig->toque;
 
                 auto toca = [&] (SampleBuffer::Ptr sb, int bloques)
                 {
@@ -2835,6 +2845,569 @@ int main()
         std::printf ("%-34s escalon %+.1f dB   dentro %+.2f dB   seco identico %s   %s\n",
                      "fundido del recorte (5 ms)", bajaDb, pierdeDb,
                      differ == 0 ? "si" : "NO", ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------------
+    //  F · EL FUNDIDO APLICA LO QUE EL MANDO ENSEÑA.
+    //
+    //  LA DE ARRIBA NUNCA HA VISTO ESTE FALLO y no es culpa suya: prueba una
+    //  ventana de 4800 muestras con un fundido de 5 ms, o sea que el tope del
+    //  tercio vale 33 ms y el fundido pedido cabe doce veces. El fallo estaba
+    //  justo al otro lado: con la ficha TRIM de la captura -PAD 6, ventana de
+    //  2867 muestras a 44.1k, o sea 65.0 ms- el mando llegaba a 500 ms y el
+    //  motor aplicaba el tercio, **955 muestras = 21.7 ms. Veintitres veces
+    //  menos**, y el visor dibujaba ese mismo tercio, asi que la pantalla
+    //  confirmaba la mentira en vez de desmentirla.
+    //
+    //  Se mide EN EL AUDIO y contra lo que el mando puede enseñar, que es la
+    //  ventana: `Fundido::reparte` da al fundido de salida la ventana entera si
+    //  el de entrada esta seco. El coseno alzado pasa por la mitad de amplitud
+    //  exactamente a la mitad del recorrido -`0.5 - 0.5*cos(pi/2)` = 0.5- asi
+    //  que el largo aplicado es dos veces lo que va del punto de media
+    //  amplitud al final. Fuente continua a 0.8: asi lo que se lee es la
+    //  envolvente y no la señal.
+    //
+    //  Y EN MILISEGUNDOS DE RELOJ, que es lo que dice el mando. El fundido se
+    //  guarda en muestras de la FUENTE y el cabezal camina a `fSrc/fSys`, asi
+    //  que los dos factores se cancelan y el largo en la salida son los
+    //  milisegundos pedidos. Por eso la fuente va a 44.1k y el aparato a 48:
+    //  si alguien vuelve a confundir las dos tasas, esto lo canta.
+    {
+        const double fSrc = 44100.0;
+        const int    ini  = 100;
+        const int    vent = 2867;                       // la ventana de la captura
+        const double topeMs = (double) vent * 1000.0 / fSrc;   // 65.01 ms
+
+        auto corre = [&] (float inMs, float outMs, juce::AudioBuffer<float>& cap)
+        {
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
+            e.prepareToPlay (48000.0, 256);
+            e.setSafetyLimiter (false);
+            enCanalCero (e);
+            e.setPadGain    (0, 1.0f);
+            e.setPadAttack  (0, 0.0f);
+            e.setPadFadeIn  (0, inMs);
+            e.setPadFadeOut (0, outMs);
+
+            auto* sb = new SampleBuffer();
+            sb->sourceSampleRate = fSrc;
+            sb->buffer.setSize (1, ini + vent + 100);
+            for (int i = 0; i < sb->buffer.getNumSamples(); ++i)
+                sb->buffer.setSample (0, i, 0.8f);
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+            e.setPadStart (0, ini);
+            e.setPadEnd   (0, ini + vent);
+
+            juce::AudioBuffer<float> b (2, 256);
+            b.clear(); e.renderNextBlock (b, 0, 256);
+            e.postNoteOnAt (0, 0, 1.0f, AudioEngine::kSostenida);
+
+            const int blks = 40;                        // 213 ms, de sobra
+            cap.setSize (1, 256 * blks, false, true, true);
+            for (int k = 0; k < blks; ++k)
+            { b.clear(); e.renderNextBlock (b, 0, 256); cap.copyFrom (0, k * 256, b, 0, 0, 256); }
+        };
+
+        auto salidaMs = [] (const juce::AudioBuffer<float>& c)
+        {
+            const float* d = c.getReadPointer (0);
+            const int n = c.getNumSamples();
+            double pico = 0.0;
+            for (int i = 0; i < n; ++i) pico = juce::jmax (pico, (double) std::abs (d[i]));
+            if (pico <= 1.0e-9) return -1.0;
+
+            int fin = 0;
+            for (int i = n - 1; i >= 0; --i) if (std::abs (d[i]) > 1.0e-6f) { fin = i; break; }
+            int mitad = fin;
+            for (int i = fin; i >= 0; --i) if ((double) std::abs (d[i]) >= 0.5 * pico) { mitad = i; break; }
+            return 2.0 * (double) (fin - mitad) * 1000.0 / 48000.0;
+        };
+
+        juce::AudioBuffer<float> cLargo, cCabe, cDos;
+        corre (0.0f, 500.0f, cLargo);     // se pide mas que la ventana
+        corre (0.0f,  20.0f, cCabe);      // cabe: no tiene que moverse nada
+        corre (500.0f, 500.0f, cDos);     // los dos se pasan: se juntan en un punto
+
+        const double mLargo = salidaMs (cLargo);
+        const double mCabe  = salidaMs (cCabe);
+        const double mDos   = salidaMs (cDos);
+
+        auto cerca = [] (double a, double b) { return b > 0.0 && std::abs (a - b) / b <= 0.05; };
+        const bool okF = cerca (mLargo, topeMs) && cerca (mCabe, 20.0) && cerca (mDos, topeMs / 2.0);
+
+        std::printf ("%-34s pide 500 aplica %.1f de %.1f   pide 20 aplica %.1f   los dos %.1f de %.1f   %s\n",
+                     "el fundido aplica lo que enseña",
+                     mLargo, topeMs, mCabe, mDos, topeMs / 2.0,
+                     okF ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------------
+    //  S9 · EL MAPA DE ENTRADA MIDI, LOS DOS MODOS.
+    //
+    //  Esta decision vivia dentro de `handleIncomingMidiMessage`, que es un
+    //  `override` privado al que solo llama JUCE con un aparato de verdad
+    //  enchufado: o sea que la unica parte con reglas de toda la entrada MIDI
+    //  era la pieza que ninguna medida podia tocar. Se saco a `MidiIo::traduce`
+    //  -pura- por lo mismo y con la misma forma que `busDe`.
+    //
+    //  Y lo que se pide es una IDENTIDAD y no un contador: que tecla acaba en
+    //  que pad con que semitono, las tres notas. «Suena algo» lo cumple
+    //  igual el mapa de caja de ritmos, que es justo el fallo -una escala de DO
+    //  sobre un pad de GRAND disparaba ocho PADS, o sea ocho sonidos-.
+    // ------------------------------------------------------------------------
+    {
+        struct Caso { int nota; int padQuiere; int semisQuiere; };
+
+        //  TECLADO: las tres van al MISMO pad -el elegido- y lo que cambia es
+        //  el semitono contra DO3.
+        const Caso teclado[3] = { { 60, 5, 0 }, { 64, 5, 4 }, { 67, 5, 7 } };
+        //  PADS: lo de siempre, `nota - 36`, y el semitono a cero.
+        const Caso pads[3]    = { { 36, 0, 0 }, { 39, 3, 0 }, { 99, 63, 0 } };
+
+        MidiIo::Mapa mT; mT.modo = MidiIo::Modo::Teclado; mT.padDest = 5;
+        MidiIo::Mapa mP; mP.modo = MidiIo::Modo::Pads;
+
+        int malT = 0, malP = 0;
+        for (const auto& c : teclado)
+        {
+            const auto e = MidiIo::traduce (juce::MidiMessage::noteOn (1, c.nota, (juce::uint8) 100), mT);
+            if (e.tipo != MidiIo::Evento::Tipo::NoteOn || e.pad != c.padQuiere
+                || e.semis != c.semisQuiere) ++malT;
+        }
+        for (const auto& c : pads)
+        {
+            const auto e = MidiIo::traduce (juce::MidiMessage::noteOn (1, c.nota, (juce::uint8) 100), mP);
+            if (e.tipo != MidiIo::Evento::Tipo::NoteOn || e.pad != c.padQuiere
+                || e.semis != c.semisQuiere) ++malP;
+        }
+
+        //  Y EL PEDAL SE RECONOCE, que es la cuarta rama de la misma funcion:
+        //  CC 64 por encima de 64 es pisado y por debajo suelto. Sin esto la
+        //  regla diria que si a una `traduce` que ignora el pedal entero.
+        const auto ped1 = MidiIo::traduce (juce::MidiMessage::controllerEvent (1, 64, 127), mP);
+        const auto ped0 = MidiIo::traduce (juce::MidiMessage::controllerEvent (1, 64, 0),   mP);
+        const bool pedalOk = ped1.tipo == MidiIo::Evento::Tipo::Pedal && ped1.abajo
+                          && ped0.tipo == MidiIo::Evento::Tipo::Pedal && ! ped0.abajo;
+
+        const bool ok = (malT == 0 && malP == 0 && pedalOk);
+        std::printf ("%-34s teclado %d/3 mal   pads %d/3 mal   pedal %s   %s\n",
+                     "mapa MIDI de entrada", malT, malP, pedalOk ? "si" : "NO",
+                     ok ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------------
+    //  S10 y S11 · EL PEDAL DE SOSTENIDO Y SOLTAR UNA SOLA TECLA.
+    //
+    //  Los dos se miden sobre el MOTOR y no sobre `traduce`, porque los dos son
+    //  fallos de ESTADO: el pedal es un booleano del hilo de audio y la nota es
+    //  un campo de la voz. Un mapa perfecto los dos los tiene igual de rotos.
+    //
+    //  S11 es el que dice la cifra que da vergüenza: un NoteOff soltaba TODAS
+    //  las voces del pad. Con cuatro notas de un acorde sobre un pad de
+    //  instrumento, levantar UN dedo dejaba 0 de 4.
+    // ------------------------------------------------------------------------
+    {
+        //  Una muestra LARGA: lo que se mide es lo que queda sonando medio
+        //  segundo despues, y con una de 50 ms se habria acabado sola y las
+        //  tres corridas saldrian iguales — la prueba diria que si sin motor.
+        auto monta = [] (AudioEngine& e)
+        {
+            e.prepareToPlay (48000.0, 256); e.setPolyphony (16, 8);
+            enCanalCero (e);
+            e.setPadGain (0, 1.0f);
+            e.setPadAttack  (0, 0.0f);
+            //  Suelta corta a proposito: asi «se solto» y «sigue sonando» se
+            //  separan en medio segundo sin tener que esperar a la cola.
+            e.setPadRelease (0, 20.0f);
+            //  Y SIN AUTOCORTE, que es lo que un pad de instrumento tiene: con
+            //  el puesto -que es el defecto, y el correcto para percusion- cada
+            //  nota nueva mata a la anterior, asi que cuatro teclas dejan UNA
+            //  voz viva. Medido: la regla de S11 decia «1 de 4» con el arreglo
+            //  entero puesto, y era la prueba la que estaba mal. Primero se
+            //  duda de la prueba.
+            e.setPadSelfCut (0, false);
+            e.publishSample (0, makeSample (48000.0, 2.0, 220.0f));
+            juce::AudioBuffer<float> b (2, 256);
+            runBlocks (e, b, 256, 4);
+        };
+
+        auto rmsTrasMedioSegundo = [] (AudioEngine& e)
+        {
+            juce::AudioBuffer<float> b (2, 256);
+            //  Medio segundo a 48 kHz son 93.75 bloques de 256: se corren 94 y
+            //  se mide el ULTIMO, que es lo que de verdad queda sonando.
+            for (int i = 0; i < 94; ++i) { b.clear(); e.renderNextBlock (b, 0, 256); }
+            double s = 0.0;
+            for (int i = 0; i < 256; ++i)
+            {
+                const double v = b.getSample (0, i);
+                s += v * v;
+            }
+            return std::sqrt (s / 256.0);
+        };
+
+        //  A. La nota aguantada: la referencia. No hay NoteOff ninguno.
+        double rmsA = 0.0, rmsB = 0.0, rmsC = 0.0;
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m; monta (e);
+            e.postNoteOnFromMidi (0, 0, 1.0f);
+            rmsA = rmsTrasMedioSegundo (e);
+        }
+        //  B. Pedal PISADO y la tecla levantada: tiene que sonar igual que A.
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m; monta (e);
+            e.postNoteOnFromMidi (0, 0, 1.0f);
+            e.postPedalFromMidi (true);
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 8; ++i) { b.clear(); e.renderNextBlock (b, 0, 256); }
+            e.postNoteOffFromMidi (0, 0);
+            rmsB = rmsTrasMedioSegundo (e);
+        }
+        //  C. Sin pedal y la tecla levantada: tiene que callarse.
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m; monta (e);
+            e.postNoteOnFromMidi (0, 0, 1.0f);
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 8; ++i) { b.clear(); e.renderNextBlock (b, 0, 256); }
+            e.postNoteOffFromMidi (0, 0);
+            rmsC = rmsTrasMedioSegundo (e);
+        }
+
+        const double pisadoDb = 20.0 * std::log10 (juce::jmax (1.0e-9, rmsB) / juce::jmax (1.0e-9, rmsA));
+        const double sueltoDb = 20.0 * std::log10 (juce::jmax (1.0e-9, rmsC) / juce::jmax (1.0e-9, rmsA));
+        const bool okPedal = std::abs (pisadoDb) < 1.0 && sueltoDb < -40.0;
+        std::printf ("%-34s pisado %+.2f dB   suelto %+.1f dB   %s\n",
+                     "pedal de sostenido (CC 64)", pisadoDb, sueltoDb,
+                     okPedal ? "OK" : zatiFalla());
+
+        //  S11. Cuatro teclas en el MISMO pad y se levanta una.
+        int vivas = 0;
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m; monta (e);
+            const int notas[4] = { 0, 4, 7, 12 };
+            for (int n : notas) e.postNoteOnFromMidi (0, n, 1.0f);
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 8; ++i) { b.clear(); e.renderNextBlock (b, 0, 256); }
+            e.postNoteOffFromMidi (0, 4);
+            //  Y se deja pasar la suelta entera -20 ms son cuatro bloques- o la
+            //  voz que se acaba de soltar seguiria contando como viva y la
+            //  regla diria 4 de 4 tanto si el arreglo esta como si no.
+            for (int i = 0; i < 12; ++i) { b.clear(); e.renderNextBlock (b, 0, 256); }
+            vivas = e.getActiveVoiceCount();
+        }
+        const bool okNota = (vivas == 3);
+        std::printf ("%-34s quedan %d de 4 tras levantar un dedo   %s\n",
+                     "un NoteOff suelta UNA nota", vivas, okNota ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------------
+    //  S1 y S2 · LA SUELTA ES LA DEL PRESET, Y CAE COMO CAE UN SONIDO
+    //
+    //  Dos fallos distintos en el mismo sitio, y los dos se miden con la misma
+    //  corrida.
+    //
+    //  EL PRIMERO es de QUE numero se usa. La tabla escribe `rel` de 0.030 a
+    //  2.200 s -73.3:1- y el motor soltaba los 384 presets a 0.180 s fijos:
+    //  129 de 384 a mas de un factor dos de lo que su fila pedia y 41 a mas de
+    //  cuatro. `P.rel` se leia en UN solo sitio, para dimensionar la cola de
+    //  las nueve familias que no sostienen, asi que el mando SUELTA de la ficha
+    //  no hacia nada en las 15 que si.
+    //
+    //  EL SEGUNDO es de FORMA. Una suelta lineal resta lo mismo cada muestra, y
+    //  en decibelios eso no es una caida: es un corte. Del principio al cuarto
+    //  del recorrido baja 2.5 dB y del tercer cuarto al final baja 12 - o sea
+    //  que el final de la nota, que es lo que se oye, se va de golpe.
+    //
+    //  Y SE MIDE COMPARANDO LA CORRIDA CONTRA SI MISMA, que es lo que hace que
+    //  la cifra sea la envolvente y no el contenido. El motor es determinista:
+    //  la misma muestra, el mismo disparo y el mismo numero de bloques dan las
+    //  mismas muestras, asi que dividir la corrida CON suelta entre la corrida
+    //  SIN suelta deja exactamente el multiplicador de la envolvente, sin el
+    //  vaiven del LFO ni el del bucle. Medir el RMS a pelo sobre un COLCHONES
+    //  -que evoluciona a proposito- daria varios dB de ruido sobre un liston
+    //  del 15 %.
+    // ------------------------------------------------------------------------
+    {
+        constexpr int kVent   = 256;        // ventana de RMS: 5.33 ms a 48 kHz
+        constexpr int kTrozo  = 64;         // y se rinde de 64 en 64
+        constexpr int kRegimen = 375;       // 0.5 s de nota aguantada antes de soltar
+
+        //  Corre UNA nota del instrumento y devuelve lo que sale desde el punto
+        //  de suelta. Lo unico que cambia entre las dos corridas de una regla
+        //  es UN campo de aqui: asi la razon entre las dos es la envolvente y
+        //  nada mas.
+        struct Opc
+        {
+            bool  suelta   = true;
+            int   semis    = 0;
+            float vel      = 1.0f;
+            int   reten    = kRegimen;    // trozos de nota aguantada antes de soltar
+            int   muestras = 48000;
+        };
+        auto corre = [] (SampleBuffer::Ptr sb, Opc o)
+        {
+            std::vector<float> out;
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            e.prepareToPlay (48000.0, 256); e.setPolyphony (16, 8);
+            enCanalCero (e);
+            e.setPadGain    (0, 1.0f);
+            e.setPadAttack  (0, 0.0f);
+            //  180.0f en padRelease A PROPOSITO: es la cifra vieja, asi que si
+            //  alguien deshace el arreglo la prueba mide exactamente el fallo
+            //  que habia y no uno inventado.
+            e.setPadRelease (0, 180.0f);
+            e.setPadSueltaPreset (0, true);
+            e.setPadSelfCut (0, false);
+            e.publishSample (0, sb);
+            juce::AudioBuffer<float> b (2, kTrozo);
+            for (int i = 0; i < 8; ++i)  { b.clear(); e.renderNextBlock (b, 0, kTrozo); }
+            e.postNoteOnFromMidi (0, o.semis, o.vel);
+            for (int i = 0; i < o.reten; ++i) { b.clear(); e.renderNextBlock (b, 0, kTrozo); }
+            if (o.suelta) e.postNoteOffFromMidi (0, o.semis);
+            out.reserve ((size_t) o.muestras + kTrozo);
+            for (int n = 0; n < o.muestras; n += kTrozo)
+            {
+                b.clear(); e.renderNextBlock (b, 0, kTrozo);
+                for (int i = 0; i < kTrozo; ++i) out.push_back (b.getSample (0, i));
+            }
+            return out;
+        };
+
+        //  La razon B/A por ventana, en dB. Es la envolvente de la suelta.
+        auto curva = [] (const std::vector<float>& A, const std::vector<float>& B)
+        {
+            std::vector<double> db;
+            const size_t n = juce::jmin (A.size(), B.size()) / (size_t) kVent;
+            db.reserve (n);
+            for (size_t w = 0; w < n; ++w)
+            {
+                double sa = 0.0, sb2 = 0.0;
+                for (int i = 0; i < kVent; ++i)
+                {
+                    const double a = A[w * (size_t) kVent + (size_t) i];
+                    const double c = B[w * (size_t) kVent + (size_t) i];
+                    sa += a * a; sb2 += c * c;
+                }
+                db.push_back (20.0 * std::log10 (juce::jmax (1.0e-12, std::sqrt (sb2))
+                                               / juce::jmax (1.0e-12, std::sqrt (sa))));
+            }
+            return db;
+        };
+
+        //  Segundos hasta -60 dB, interpolando dentro de la ventana que cruza.
+        auto t60De = [] (const std::vector<double>& db)
+        {
+            for (size_t w = 1; w < db.size(); ++w)
+                if (db[w] <= -60.0)
+                {
+                    const double a = db[w - 1], c = db[w];
+                    const double f = (a <= c) ? 0.0 : (a + 60.0) / (a - c);
+                    return ((double) (w - 1) + f) * (double) kVent / 48000.0;
+                }
+            return -1.0;
+        };
+
+        //  Y en que dB esta la suelta en un instante dado.
+        auto dbEn = [] (const std::vector<double>& db, double seg)
+        {
+            const double w = seg * 48000.0 / (double) kVent;
+            const size_t i = (size_t) juce::jlimit (0.0, (double) db.size() - 1.0, w);
+            return db[i];
+        };
+
+        //  ORGANOS DRAWBAR pide 0.060 s y COLCHONES PWM PAD pide 1.100: los dos
+        //  sostienen -asi el bucle mantiene el nivel y lo unico que baja es la
+        //  envolvente- y estan a los dos lados de los 0.180 fijos de antes, o
+        //  sea que una sola cifra no puede acertar con los dos.
+        struct Caso { int fam, pre; const char* nombre; };
+        const Caso casos[2] = { { 3, 0, "ORGANOS" }, { 5, 0, "COLCHONES" } };
+        double pedido[2] {}, medido[2] {};
+        std::vector<double> curvaLarga;
+
+        for (int k = 0; k < 2; ++k)
+        {
+            pedido[k] = Sintes::tabla()[casos[k].fam].p[casos[k].pre].rel;
+            const int muestras = (int) (48000.0 * (pedido[k] * 2.0 + 0.2));
+            auto sb = Sintes::sintetiza (casos[k].fam, casos[k].pre);
+            const auto A = corre (sb, { false, 0, 1.0f, kRegimen, muestras });
+            const auto B = corre (sb, { true,  0, 1.0f, kRegimen, muestras });
+            const auto db = curva (A, B);
+            medido[k] = t60De (db);
+            if (k == 1) curvaLarga = db;
+        }
+
+        const double raz0 = (medido[0] > 0.0) ? medido[0] / pedido[0] : 0.0;
+        const double raz1 = (medido[1] > 0.0) ? medido[1] / pedido[1] : 0.0;
+        const bool okT60 = std::abs (raz0 - 1.0) <= 0.15 && std::abs (raz1 - 1.0) <= 0.15;
+        std::printf ("%-34s %s %.3f/%.3f s (x%.2f)   %s %.3f/%.3f s (x%.2f)   %s\n",
+                     "la suelta es la del preset",
+                     casos[0].nombre, medido[0], pedido[0], raz0,
+                     casos[1].nombre, medido[1], pedido[1], raz1,
+                     okT60 ? "OK" : zatiFalla());
+
+        //  S2. Los cuatro cuartos del recorrido tienen que bajar lo mismo.
+        //  Exponencial: -15 dB cada uno. Lineal: -2.5, -3.5, -6.0 y el ultimo
+        //  al suelo, o sea 3.5 dB de dispersion entre los tres primeros.
+        double esc[3] {}; double disp = 99.0;
+        if (! curvaLarga.empty() && pedido[1] > 0.0)
+        {
+            const double q = pedido[1] / 4.0;
+            const double p0 = dbEn (curvaLarga, 0.0),       p1 = dbEn (curvaLarga, q);
+            const double p2 = dbEn (curvaLarga, 2.0 * q),   p3 = dbEn (curvaLarga, 3.0 * q);
+            esc[0] = p1 - p0; esc[1] = p2 - p1; esc[2] = p3 - p2;
+            disp = juce::jmax (esc[0], esc[1], esc[2]) - juce::jmin (esc[0], esc[1], esc[2]);
+        }
+        const bool okForma = (disp <= 1.5);
+        std::printf ("%-34s %+.1f %+.1f %+.1f dB   dispersion %.1f dB   %s\n",
+                     "y cae parejo, no de golpe",
+                     esc[0], esc[1], esc[2], disp, okForma ? "OK" : zatiFalla());
+
+        // --------------------------------------------------------------------
+        //  S3 · EL SOSTEN SE OYE, y se mide contra el MISMO producto.
+        //
+        //  El generador escribia `amp = F.sostiene ? jmin(1, t/atk) : ad(...)`:
+        //  ataque y despues mantener a 1.0 clavado, o sea que a las quince
+        //  familias que sostienen les faltaba la S y la D del ADSR entero.
+        //
+        //  Se corre FM PIANO dos veces y la unica diferencia es el sosten de su
+        //  fila contra 1.0 forzado. La razon entre las dos tiene que ser
+        //  exactamente lo que ese numero declara: es la misma figura que S1 y
+        //  S2 -comparar la corrida contra si misma- y por eso no hace falta
+        //  saber a que suena un FM PIANO para juzgarlo.
+        // --------------------------------------------------------------------
+        double sostDb = 0.0, sostPide = 0.0;
+        {
+            const auto& fila = Sintes::tabla()[16].p[0];      // FM, preset 0
+            sostPide = 20.0 * std::log10 (juce::jmax (1.0e-4f, fila.sosten));
+            //  Tres veces `caeEn` para medir con la caida YA TERMINADA: a un
+            //  solo `caeEn` el exceso vale todavia la milesima y la cifra
+            //  saldria corta sin que nada estuviera mal.
+            const int reten = (int) (48000.0 * fila.caeEn * 3.0 / (double) kTrozo) + 40;
+            auto conS = Sintes::sintetiza (16, 0);
+            auto sinS = Sintes::sintetiza (16, 0);
+            sinS->toque.sosten = 1.0f;                        // el testigo
+            sinS->toque.caeEn  = 0.0f;
+            const auto A = corre (sinS, { false, 0, 1.0f, reten, 8192 });
+            const auto B = corre (conS, { false, 0, 1.0f, reten, 8192 });
+            const auto db = curva (A, B);
+            //  La ultima ventana de las que hay, que es donde los dos llevan
+            //  mas tiempo en su regimen.
+            sostDb = db.empty() ? 0.0 : db[db.size() - 1];
+        }
+        const bool okSosten = std::abs (sostDb - sostPide) <= 1.0;
+        std::printf ("%-34s %+.1f dB medidos contra %+.1f que declara   %s\n",
+                     "el sosten se oye", sostDb, sostPide,
+                     okSosten ? "OK" : zatiFalla());
+
+        // --------------------------------------------------------------------
+        //  S4 · SENS DESCLAVA LA LEY DE FUERZA.
+        //
+        //  `jlimit(0.10, 1.0, vel)` estaba escrito igual para los 384: un
+        //  organo respondia al toque como un piano, y un organo no tiene con
+        //  que responder. La medida es cuanto baja una nota al tocarla al 20 %
+        //  en vez de a tope, con el `sens` de la fila y con `sens` a cero.
+        // --------------------------------------------------------------------
+        double conSensDb = 0.0, sinSensDb = 0.0;
+        {
+            auto uno = [&] (float sens)
+            {
+                auto sb = Sintes::sintetiza (18, 0);          // PIANOS, preset 0
+                sb->toque.sens = sens;
+                const auto fuerte = corre (sb, { false, 0, 1.0f, 8, 8192 });
+                auto sb2 = Sintes::sintetiza (18, 0);
+                sb2->toque.sens = sens;
+                const auto flojo  = corre (sb2, { false, 0, 0.2f, 8, 8192 });
+                const auto db = curva (fuerte, flojo);
+                return db.empty() ? 0.0 : db[0];
+            };
+            conSensDb = uno (1.0f);
+            sinSensDb = uno (0.0f);
+        }
+        const bool okSens = (conSensDb <= -10.0) && (std::abs (sinSensDb) <= 1.0);
+        std::printf ("%-34s a 1 mueve %+.1f dB   a 0 mueve %+.1f dB   %s\n",
+                     "sens: el toque se puede apagar", conSensDb, sinSensDb,
+                     okSens ? "OK" : zatiFalla());
+
+        // --------------------------------------------------------------------
+        //  S5 · ESCALA: la nota aguda se apaga antes que la grave.
+        //
+        //  Es la firma de una libreria de verdad, y no la hace el tono: la
+        //  cuerda aguda de un piano es corta y tiene menos energia que soltar.
+        //  Se mide el t60 a -24 y a +24 semitonos sobre el MISMO preset, y con
+        //  ESCALA a cero los dos tienen que salir iguales.
+        // --------------------------------------------------------------------
+        double razEsc = 0.0, razCero = 0.0;
+        {
+            auto t60Semis = [&] (float escala, int semis)
+            {
+                auto a = Sintes::sintetiza (18, 0); a->toque.escala = escala;
+                auto b = Sintes::sintetiza (18, 0); b->toque.escala = escala;
+                const int muestras = (int) (48000.0 * 1.1);
+                const auto A = corre (a, { false, semis, 1.0f, 190, muestras });
+                const auto B = corre (b, { true,  semis, 1.0f, 190, muestras });
+                return t60De (curva (A, B));
+            };
+            const float esc0 = Sintes::tabla()[18].p[0].escala;
+            const double gr = t60Semis (esc0, -24), ag = t60Semis (esc0, 24);
+            razEsc = (ag > 0.0) ? gr / ag : 0.0;
+            const double gr0 = t60Semis (0.0f, -24), ag0 = t60Semis (0.0f, 24);
+            razCero = (ag0 > 0.0) ? gr0 / ag0 : 0.0;
+        }
+        const bool okEsc = (razEsc >= 3.0) && (std::abs (razCero - 1.0) <= 0.05);
+        std::printf ("%-34s grave/aguda x%.2f   con escala 0 x%.2f   %s\n",
+                     "escala: la aguda se apaga antes", razEsc, razCero,
+                     okEsc ? "OK" : zatiFalla());
+
+        //  S8. LA RAMPA DE FUERZA NO DA ESCALONES.
+        //
+        //  Barrer la velocidad de 0.30 a 1.00 en cuarenta pasos y mirar el
+        //  salto entre dos contiguos. La rampa continua vale como mucho 0.50 dB
+        //  por paso -que es el propio 20*log10 de la razon en el extremo bajo-
+        //  y encima se le sumaba el escalon de capa, que es lo que esta fase
+        //  quita: **2.7 dB en BAJOS y 5.5 en CUERDA PULS**, medidos por
+        //  `Tests/instr.py:128-137` y no estimados aqui. Liston 1.5 dB, que
+        //  deja un decibelio de margen sobre la rampa y sigue estando por
+        //  debajo de los 2.7 del fallo.
+        //
+        //  Y `sens` FORZADA A 1.0, que no es hacer trampa sino lo contrario:
+        //  con la de tabla -0.723 en BAJOS- `velEf` nunca baja de 0.494 y la
+        //  capa suave no llega a sonar, o sea que la prueba mediria dos capas
+        //  de tres y nunca veria el escalon de la primera. Las dos familias
+        //  son las que `instr.py` nombra por sus extremos de recorrido: 5.4 dB
+        //  y 11.0 dB entre la capa suave y la fuerte.
+        {
+            struct CasoF { int fam, pre; const char* nombre; };
+            const CasoF cf[2] = { { 0, 0, "BAJOS" }, { 11, 0, "CUERDA PULS" } };
+            constexpr int kN = 40;
+            double peor[2] {};
+
+            for (int k = 0; k < 2; ++k)
+            {
+                auto sb = Sintes::sintetiza (cf[k].fam, cf[k].pre);
+                sb->toque.sens = 1.0f;
+
+                double db[kN] {};
+                for (int i = 0; i < kN; ++i)
+                {
+                    const float v = 0.30f + 0.70f * (float) i / (float) (kN - 1);
+                    const auto x = corre (sb, { false, 0, v, 0, 24000 });
+                    double s = 0.0;
+                    for (const float q : x) s += (double) q * (double) q;
+                    const double n = (double) juce::jmax ((size_t) 1, x.size());
+                    db[i] = 20.0 * std::log10 (juce::jmax (1.0e-12, std::sqrt (s / n)));
+                }
+
+                double m = 0.0;
+                for (int i = 1; i < kN; ++i) m = juce::jmax (m, std::abs (db[i] - db[i - 1]));
+                peor[k] = m;
+            }
+
+            const bool okRampa = (peor[0] <= 1.5) && (peor[1] <= 1.5);
+            std::printf ("%-34s BAJOS %.2f dB   CUERDA PULS %.2f dB   (liston 1.50)   %s\n",
+                         "la fuerza sube sin escalones", peor[0], peor[1],
+                         okRampa ? "OK" : zatiFalla());
+        }
     }
 
     //  EL CARRIL SILENCIADO Y EL TRAMO EN BUCLE.
@@ -4215,7 +4788,18 @@ int main()
         //  desafinados SE MUEVE -eso es lo que lo hace un colchon- y lo que esta
         //  prueba caza es otra cosa, que la nota vuelva a ATACAR en cada vuelta.
         //  Eso son 35 dB, porque el ataque son 0.35 s de un bucle de 0.42.
-        const bool ok = mn > 0.01 && baja > -12.0;
+        //
+        //  Y EL SUELO BAJA DE 0.01 A 0.005, que no es aflojar el liston sino
+        //  dejar de escribir en el el nivel de UNA capa. Al deshacer el escalon
+        //  de fuerza (`Zona::fuerza`) la escalera se re-centro en la capa de en
+        //  medio, asi que una nota a velocidad 1.0 -que es la capa fuerte- pasa
+        //  a sonar 3.2 dB mas baja a proposito: medido, 0.0127 antes contra
+        //  0.0088 ahora, con el MISMO bache de -10.7 dB. La prueba suspendio
+        //  por un numero que describia la capa fuerte de ayer y no "la nota
+        //  sigue sonando", que es lo que aqui importa. Media docena de
+        //  decibelios por debajo sigue cazando lo que tiene que cazar: una nota
+        //  muerta mide -99.
+        const bool ok = mn > 0.005 && baja > -12.0;
         std::printf ("%-34s minimo %.4f   maximo %.4f   bache %.1f dB   %s\n",
                      "la nota sostenida no re-ataca", mn, mx, baja,
                      ok ? "OK" : zatiFalla());

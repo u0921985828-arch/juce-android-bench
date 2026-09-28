@@ -49,7 +49,14 @@ static const char* const kMandosDeForma[kFamilias][4] =
     /* fTubo     */ { "MEZCLA|ins",   "CHIFF|ins",   "VIENTO|ins",    "QUINTA|ins"    },
 };
 
-//  Y LOS CUATRO DE ATRAS, que son los mismos en las veinticuatro: es lo que los
+//  Y LOS OCHO DE ATRAS, que son los mismos en las veinticuatro: es lo que los
 //  separa de los de forma y por lo que su rango sale de las 384 y no de las 16.
-static const char* const kMandosComunes[4] =
-    { "ATAQUE|ins", "CAIDA ENV|ins", "SUELTA|ins", "BRILLO|ins" };
+//
+//  Eran CUATRO. Los otros cuatro son la envolvente que faltaba y la respuesta
+//  al toque: sin SOSTEN y CAE EN la nota se quedaba clavada a tope mientras la
+//  aguantas -ataque y nada mas-, sin SENS los 384 respondian al toque con la
+//  misma ley clavada, y sin ESCALA la nota aguda tardaba en apagarse lo mismo
+//  que la grave, que es lo que delata a un sampler.
+static const char* const kMandosComunes[8] =
+    { "ATAQUE|ins", "CAIDA ENV|ins", "SUELTA|ins",  "BRILLO|ins",
+      "SOSTEN|ins", "CAE EN|ins",    "SENS|ins",    "ESCALA|ins" };

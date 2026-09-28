@@ -82,19 +82,22 @@ public:
     //  o la del aparato) y adivinarlo seria dibujar una curva que no es la que
     //  suena.
     //
-    //  Acotados a un tercio de la ventana cada uno, IGUAL QUE EN LA VOZ. Si el
-    //  dibujo no aplicara el mismo tope, el mando podria pintar una rampa que
-    //  cubre el trozo entero mientras el motor toca una que cubre un tercio, y
-    //  entonces la curva de la pantalla seria una mentira - que es peor que no
-    //  tener curva.
+    //  Y EL REPARTO ES EL DE LA VOZ, llamando a la misma funcion. Estaba
+    //  copiado -«acotados a un tercio cada uno, IGUAL QUE EN LA VOZ»- y una
+    //  copia no es igualdad: las dos llevaban el mismo tope equivocado y el
+    //  dibujo confirmaba la mentira del motor en vez de desmentirla. Ver
+    //  `Fundido::reparte`.
     void setFades (float inMs, float outMs, double srcRate, int srcLen)
     {
         const double n = (srcRate > 0.0 && srcLen > 0) ? (double) srcLen : 0.0;
         if (n <= 0.0) { fadeIn01 = fadeOut01 = 0.0f; repaint(); return; }
 
-        const float tercio = juce::jmax (0.0f, (end01 - start01) / 3.0f);
-        fadeIn01  = juce::jlimit (0.0f, tercio, (float) (inMs  * 0.001 * srcRate / n));
-        fadeOut01 = juce::jlimit (0.0f, tercio, (float) (outMs * 0.001 * srcRate / n));
+        double entra = 0.0, sale = 0.0;
+        Fundido::reparte (inMs  * 0.001 * srcRate / n,
+                          outMs * 0.001 * srcRate / n,
+                          juce::jmax (0.0, (double) (end01 - start01)), entra, sale);
+        fadeIn01  = (float) entra;
+        fadeOut01 = (float) sale;
         repaint();
     }
 

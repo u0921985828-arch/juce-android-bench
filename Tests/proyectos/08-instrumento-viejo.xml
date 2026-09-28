@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--  UN PROYECTO CON DOS PADS DE INSTRUMENTO, congelado.
+
+      Los siete de al lado no llevan NINGUNO, asi que todo lo que el fichero de
+      proyecto sabe de un instrumento -a que preset apunta un pad y con que
+      numeros se movio- se media contra si mismo: se escribia con el binario de
+      hoy y se leia con el binario de hoy. Ese camino le cuadra a cualquier
+      cambio de empaquetado, y es exactamente el que se lleva por delante subir
+      los mandos de OCHO a DOCE.
+
+      El pad 1 es PIANOS GRAND -familia 18, preset 0, o sea inst 18*16+0- con la
+      receta MOVIDA a los ocho numeros de HALL P, que es la fila 14 de esa misma
+      familia. Se eligio otra fila de la misma familia a proposito: los cuatro
+      de forma se acotan contra el recorrido de las dieciseis filas de SU
+      familia y los cuatro comunes contra las 384, asi que estos ocho numeros
+      estan dentro de los dos recorridos POR CONSTRUCCION y `acota` no puede
+      moverlos. Un numero inventado se saldria el dia que la tabla cambie y la
+      prueba diria que la compatibilidad se rompio cuando lo que paso es que el
+      recorte funciono.
+
+      El pad 2 es PIANOS MELLOW P -inst 18*16+3- SIN receta: la otra mitad de la
+      regla. Un pad sin receta vale la fila de la tabla, y esa fila es la que
+      crece: los cuatro mandos nuevos tienen que volver siendo los de la tabla y
+      no ceros.
+
+      Y los dos traen `release="180"` escrito, que es lo que un proyecto
+      guardado trae: la suelta del pad la manda el FICHERO y no el defecto de
+      hoy, sea cual sea el defecto de hoy.
+
+      No trae <song>, ni `sends`, ni `slots`, ni mesa, ni `fxp`: entra por las
+      mismas ramas viejas que el 01 al 03 y lo unico que aporta es el
+      instrumento.  -->
+
+<ZATI version="1" bpm="96.0" selectedPattern="0">
+  <PADS>
+    <!--  El pad 0 esta por la regla COMPARTIDA de los ocho ficheros, que
+          pregunta por el: sin `sends` ni `canal`, un pad que el fichero SI
+          trae vuelve al canal 0 con el envio entero -«cada pad iba entero a
+          todos», que es como sonaba ese dia-. Sin esta linea el pad 0 no
+          existe, nace sin tira, y la regla lee un envio de 0.00 y dice que el
+          proyecto hereda del anterior cuando lo que pasa es que no hay pad.  -->
+    <PAD i="0" name="K"/>
+    <PAD i="1" name="GRAND" inst="288" release="180.0"
+         receta="0.000480 2.600000 0.120000 1.000000 0.003000 3.600000 0.560000 1.080000"/>
+    <PAD i="2" name="MELLOW" inst="291" release="180.0"/>
+  </PADS>
+  <FX/>
+</ZATI>

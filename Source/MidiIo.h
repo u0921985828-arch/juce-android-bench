@@ -58,6 +58,105 @@ namespace MidiIo
         return juce::isPositiveAndBelow (pad, kMaxPads) ? pad : -1;
     }
 
+    // ------------------------------------------------------------------------
+    //  Y LA OTRA MITAD: UN TECLADO TOCANDO UN INSTRUMENTO.
+    //
+    //  `padForNote` es el mapa de una CAJA DE RITMOS -una nota, un pad- y es el
+    //  correcto para lo que esta app era. Con un pad de instrumento debajo es
+    //  un sinsentido medido: una escala de DO sobre un pad con GRAND dispara
+    //  ocho PADS distintos, o sea ocho sonidos distintos, y las notas que caen
+    //  fuera de 36..99 no suenan. Enchufar un teclado maestro y tocar una
+    //  escala era, literalmente, lo unico que esta app no podia hacer.
+    //
+    //  Dos modos y no un ajuste dentro del otro: quien tiene un controlador de
+    //  pads quiere lo de siempre y quien tiene un teclado quiere un
+    //  instrumento, y son dos aparatos distintos encima de la misma mesa.
+    enum class Modo : std::uint8_t { Pads = 0, Teclado = 1 };
+
+    //  DO3, la misma raiz que el teclado de la ficha del pad y que el piano
+    //  roll: el semitono que viaja es la distancia a ella, y el motor lo suma
+    //  a la afinacion del pad. Asi tocar la raiz suena EXACTAMENTE como tocar
+    //  el pad con el dedo, que es lo que hace que los dos caminos se puedan
+    //  comparar.
+    static constexpr int kNotaRaiz = 60;
+    //  El motor admite +-48 semitonos; pedir mas es pedir un `ratio` que no
+    //  significa nada. Se acota aqui y no en quien llama porque esto es la
+    //  puerta: lo que entra viene de un aparato de fuera.
+    static constexpr int kSemisTope = 48;
+
+    struct Mapa
+    {
+        Modo modo    = Modo::Pads;
+        int  padDest = 0;              // en TECLADO, el pad que se toca
+        int  raiz    = kNotaRaiz;
+    };
+
+    struct Evento
+    {
+        enum class Tipo : std::uint8_t { Nada, NoteOn, NoteOff, TodasOff, Pedal };
+        Tipo  tipo  = Tipo::Nada;
+        int   pad   = -1;
+        int   semis = 0;
+        float vel   = 1.0f;
+        bool  abajo = false;           // solo en Pedal
+    };
+
+    //  LA DECISION, SEPARADA DEL TRANCE.
+    //
+    //  Esto vivia dentro de `handleIncomingMidiMessage`, que es un `override`
+    //  privado al que solo puede llamar JUCE con un aparato de verdad
+    //  enchufado: o sea que el mapa de entrada -la unica parte con reglas- era
+    //  la pieza del motor que NINGUNA medida podia tocar. Es la misma figura
+    //  que `busDe`: una funcion pura a la que el banco le da un mensaje y le
+    //  pregunta que sale.
+    inline Evento traduce (const juce::MidiMessage& m, const Mapa& mapa) noexcept
+    {
+        Evento e;
+
+        const auto destino = [&mapa] (int nota, int& pad, int& semis) noexcept
+        {
+            if (mapa.modo == Modo::Teclado)
+            {
+                if (! juce::isPositiveAndBelow (mapa.padDest, kMaxPads)) return false;
+                pad   = mapa.padDest;
+                semis = juce::jlimit (-kSemisTope, kSemisTope, nota - mapa.raiz);
+                return true;
+            }
+            pad   = padForNote (nota);
+            semis = 0;
+            return pad >= 0;
+        };
+
+        //  Velocidad cero es un apagado disfrazado, y lleva siendolo desde
+        //  1983. Un teclado de cada tres los manda asi.
+        if (m.isNoteOn() && m.getVelocity() > 0)
+        {
+            if (! destino (m.getNoteNumber(), e.pad, e.semis)) return {};
+            e.tipo = Evento::Tipo::NoteOn;
+            e.vel  = (float) m.getVelocity() / 127.0f;
+        }
+        else if (m.isNoteOff() || m.isNoteOn())
+        {
+            if (! destino (m.getNoteNumber(), e.pad, e.semis)) return {};
+            e.tipo = Evento::Tipo::NoteOff;
+        }
+        else if (m.isAllNotesOff() || m.isAllSoundOff())
+        {
+            e.tipo = Evento::Tipo::TodasOff;
+        }
+        //  CC 64. Va DESPUES de los dos de arriba porque los tres son
+        //  mensajes de control y el orden decide: `isAllNotesOff` es el 123 y
+        //  el pedal el 64, asi que no se pisan, pero preguntar por el pedal
+        //  primero seria confiar en eso.
+        else if (m.isSustainPedalOn() || m.isSustainPedalOff())
+        {
+            e.tipo  = Evento::Tipo::Pedal;
+            e.abajo = m.isSustainPedalOn();
+        }
+
+        return e;
+    }
+
     //  Lo que el hilo de audio deja escrito. POD, sin punteros y sin nada que
     //  construir: escribirlo son cuatro bytes.
     struct NoteEvent
@@ -119,8 +218,13 @@ namespace MidiIo
         //  acaba en engine.postNoteOnFromMidi, que empuja a la cola de MIDI y
         //  no a la de comandos. Se llama desde el hilo de JUCE, no del de
         //  mensajes: lo que haya dentro tiene que aguantarlo.
-        std::function<void (int pad, float vel)> onNoteOn;
-        std::function<void (int pad)>            onNoteOff;
+        //  CON EL SEMITONO, que es la mitad que faltaba: sin el, el modo
+        //  TECLADO no puede existir -todas las teclas dirian la misma nota- y
+        //  el modo PADS manda un cero, que es exactamente lo de antes.
+        std::function<void (int pad, int semis, float vel)> onNoteOn;
+        std::function<void (int pad, int semis)>            onNoteOff;
+        std::function<void ()>                              onTodasOff;
+        std::function<void (bool abajo)>                    onPedal;
 
         Bridge() : juce::Thread ("zati-midi-out") {}
 
@@ -216,6 +320,23 @@ namespace MidiIo
 
         bool hasInput() const noexcept { return in != nullptr; }
 
+        //  EL MAPA DE ENTRADA, en atomicos: lo ESCRIBE el hilo de mensajes -la
+        //  tapa de la pagina MIDI, y la seleccion de pad- y lo LEE el hilo con
+        //  el que JUCE entrega el MIDI. Dos enteros sueltos y no una struct
+        //  con cerrojo: leer el modo un mensaje tarde manda una nota al pad de
+        //  antes, que es lo peor que puede pasar aqui.
+        void setModo (Modo m) noexcept { modo.store ((int) m, std::memory_order_relaxed); }
+        Modo getModo() const noexcept { return (Modo) modo.load (std::memory_order_relaxed); }
+        void setPadTeclado (int pad) noexcept { padTeclado.store (pad, std::memory_order_relaxed); }
+
+        Mapa mapaActual() const noexcept
+        {
+            Mapa m;
+            m.modo    = getModo();
+            m.padDest = padTeclado.load (std::memory_order_relaxed);
+            return m;
+        }
+
     private:
         //  EL HILO DE ENVIO. Espera en la cola y manda en cuanto hay algo.
         //
@@ -295,26 +416,31 @@ namespace MidiIo
 
         //  ENTRADA. Hilo de JUCE, ni el de mensajes ni el de audio: aqui solo
         //  se traduce y se empuja, y quien recibe lo mete en la cola de MIDI.
+        //  Y AQUI YA NO SE DECIDE NADA: se traduce con `traduce` -una funcion
+        //  pura que el banco si puede llamar- y se reparte. Todo lo que tenia
+        //  reglas vivia dentro de este `override` privado, o sea en el unico
+        //  sitio de la app al que ninguna medida llega.
         void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& m) override
         {
-            if (m.isNoteOn())
+            const auto e = traduce (m, mapaActual());
+
+            switch (e.tipo)
             {
-                const int pad = padForNote (m.getNoteNumber());
-                //  Velocidad cero es un apagado disfrazado, y lleva siendolo
-                //  desde 1983. Un teclado de cada tres los manda asi.
-                if (pad >= 0 && onNoteOn && m.getVelocity() > 0)
-                    onNoteOn (pad, (float) m.getVelocity() / 127.0f);
-                else if (pad >= 0 && onNoteOff && m.getVelocity() == 0)
-                    onNoteOff (pad);
-            }
-            else if (m.isNoteOff())
-            {
-                const int pad = padForNote (m.getNoteNumber());
-                if (pad >= 0 && onNoteOff) onNoteOff (pad);
-            }
-            else if (m.isAllNotesOff() || m.isAllSoundOff())
-            {
-                if (onNoteOff) for (int p = 0; p < kMaxPads; ++p) onNoteOff (p);
+                case Evento::Tipo::NoteOn:
+                    if (onNoteOn) onNoteOn (e.pad, e.semis, e.vel);
+                    break;
+                case Evento::Tipo::NoteOff:
+                    if (onNoteOff) onNoteOff (e.pad, e.semis);
+                    break;
+                case Evento::Tipo::TodasOff:
+                    if (onTodasOff) onTodasOff();
+                    break;
+                case Evento::Tipo::Pedal:
+                    if (onPedal) onPedal (e.abajo);
+                    break;
+                case Evento::Tipo::Nada:
+                default:
+                    break;
             }
         }
 
@@ -322,6 +448,8 @@ namespace MidiIo
         std::unique_ptr<juce::MidiInput>  in;
         NoteFifo*         src { nullptr };   // vive en el motor, ver setSource
         std::atomic<int>  channel { 10 };      // percusion, por convenio
+        std::atomic<int>  modo { (int) Modo::Pads };   // lo de siempre por defecto
+        std::atomic<int>  padTeclado { 0 };
         int               gate[kMaxPads] {};   // ms que le quedan a cada nota
     };
 }

@@ -188,7 +188,7 @@ def main():
     gestos = set (re.findall (r'"((?:[^"\\]|\\.)+)"', blkg))
     used |= gestos
 
-    #  Y LOS OCHO MANDOS DE UN INSTRUMENTO, que es la QUINTA por indice.
+    #  Y LOS DOCE MANDOS DE UN INSTRUMENTO, que es la QUINTA por indice.
     #
     #  `Sintes::mando (familia, i)` devuelve la clave de una tabla de 16x4 mas
     #  otra de cuatro comunes, y la cara la pasa por `T()`: mismo agujero que
@@ -198,7 +198,7 @@ def main():
     inc = joined_literals (sin_comentarios (
         open (os.path.join (SRC, "SintesMandos.inc"), encoding="utf8").read()))
     mandos = set()
-    for nombre in ("kMandosDeForma[kFamilias][4]", "kMandosComunes[4]"):
+    for nombre in ("kMandosDeForma[kFamilias][4]", "kMandosComunes[8]"):
         j = inc.index (nombre)
         blkm = inc[j:inc.index ("};", j)]
         mandos.update (re.findall (r'"((?:[^"\\]|\\.)+)"', blkm))

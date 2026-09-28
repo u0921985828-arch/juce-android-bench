@@ -40,6 +40,17 @@
 //  porque cuesta cero bytes de instalacion y porque es NUESTRO. Lo que se puede
 //  prometer es lo que la persona pidio: no un Kontakt, pero con calidad.
 //
+//  Y LO QUE FALTABA NO ERAN MUESTRAS, ERA LA ENVOLVENTE. La peticion fue «que
+//  suenen a un teclado MIDI con muchas librerias, pero de calidad», y la medida
+//  dijo donde estaba el agujero: la tabla escribia `rel` de 0.030 a 2.200 s
+//  -73.3:1- y los 384 presets sonaban a **0.180 s fijos y lineales**, 129 de
+//  384 a mas de un factor dos de lo que su fila pedia y 41 a mas de cuatro. Le
+//  faltaban ademas la S y la D del ADSR, una ley de fuerza que no fuese la
+//  misma en un organo que en un piano, y el acortarse de la suelta al subir de
+//  nota, que es la firma de una libreria de verdad. Son los cuatro mandos que
+//  cierran los DOCE: SOSTEN, CAE EN, SENS y ESCALA. Ninguno cuesta una muestra
+//  mas: los cuatro se aplican en la VOZ.
+//
 //  Y SE SINTETIZAN AL PONERLOS EN UN PAD, no al arrancar. Los 64 de fabrica se
 //  generan en el arranque porque son 64 golpes cortos; esto son 384 presets de
 //  diez zonas cada uno, o sea dos ordenes de magnitud mas. Se genera el que se
@@ -72,8 +83,19 @@ namespace Sintes
     //  Con dos, el motor cambia de capa a mitad de recorrido y el salto medido
     //  es de **2.0 dB y x1.12 de agudos de golpe**: una rampa de fuerza suena
     //  a escalon, que es exactamente lo que un instrumento no puede hacer. Con
-    //  tres entre los MISMOS extremos cada escalon vale ~1.0 dB y x1.06, por
-    //  debajo del JND de sonoridad.
+    //  tres entre los MISMOS extremos el escalon se REPARTE, que es lo que la
+    //  tercera capa compra.
+    //
+    //  Y AQUI DECIA «~1.0 dB y x1.06», que se quedo viejo y por tres. Medido
+    //  despues por `Tests/instr.py:128-137`, el recorrido entero va de **5.4 dB
+    //  en BAJOS a 11.0 en CUERDA PULS**, asi que con tres capas el escalon no
+    //  puede bajar de **2.7 ni de 5.5** por mucho que se pida: seis capas no
+    //  caben -`kMaxZonas` son dieciseis y tres por cinco raices ya son quince-.
+    //  Lo que si se pudo hacer, y se hizo, es que el motor DESHAGA el escalon
+    //  de nivel al disparar (`SampleBuffer::Zona::fuerza`): el volumen lo pone
+    //  la velocidad, que es continua, y de la capa se queda solo el TIMBRE, que
+    //  es lo que tenia que quedarse. Medido en el motor: **0.51 dB en BAJOS y
+    //  1.15 en CUERDA PULS** entre dos velocidades contiguas de cuarenta.
     //
     //  Se paga en memoria y en tiempo de sintesis -x1.5- y CERO en el hilo de
     //  audio, que es el unico presupuesto que no se puede gastar. Por eso no se
@@ -84,6 +106,28 @@ namespace Sintes
     //  no se gasta.
     static constexpr int kCapas    = 3;    // suave / media / fuerte
     static constexpr int kZonas    = kRaices * kCapas;
+
+    //  LO QUE UNA CAPA LLEVA HORNEADO DE NIVEL, EN UN SOLO SITIO.
+    //
+    //  `razon` es la sonoridad medida de la capa suave contra la fuerte dentro
+    //  de una misma octava; el generador coloca las de en medio en la escalera
+    //  geometrica que va de una a otra (ver `sintetiza`). Esta funcion es esa
+    //  escalera, y existe aparte porque la piden DOS: el que aplica la ganancia
+    //  y el que apunta en la zona cuanto aplico. Escribirla dos veces serian dos
+    //  reglas, y el dia que una cambie el motor deshace un escalon que ya no es.
+    //
+    //  Devuelve el peso RELATIVO A LA CAPA FUERTE, que es 1.0: es exactamente
+    //  lo que la ganancia por octava aplica. Quien lo quiera normalizado a otra
+    //  capa -el mapa de zonas lo quiere a la de EN MEDIO, porque el motor
+    //  divide por el y sin eso quitar el escalon subiria el instrumento entero-
+    //  divide por el peso de esa capa. La escalera es una; el cero de la regla,
+    //  de quien la lee.
+    static float pesoDeCapa (float razon, int capa) noexcept
+    {
+        if (kCapas < 2 || ! (razon > 0.0f)) return 1.0f;
+        const float t = (float) (kCapas - 1 - capa) / (float) (kCapas - 1);
+        return std::pow (razon, t);
+    }
 
     static_assert (kZonas <= SampleBuffer::kMaxZonas, "no caben las zonas");
 
@@ -119,6 +163,18 @@ namespace Sintes
         float p1, p2, p3, p4;   // lo que significan lo dice cada forma
         float atk, dec, rel;    // segundos
         float brillo;           // multiplica el corte del filtro
+
+        //  Y LOS CUATRO DE TOCAR, que no describen como se SINTETIZA sino como
+        //  se TOCA. Ver `SampleBuffer::Toque`, que es donde acaban: ninguno de
+        //  los cuatro entra en `rindeCrudo`, y por eso ninguno cuesta ni un
+        //  byte de muestra ni un milisegundo de sintesis. La regla de admision
+        //  de un mando comun nuevo es exactamente esa - si hay que aplicarlo
+        //  al rendir son veinticuatro ramas de switch y re-sintesis por
+        //  arrastre; si se aplica en la voz cuesta cero y ademas es por nota.
+        float sosten;           // 0..1, el nivel que aguanta la tecla
+        float caeEn;            // segundos hasta el sosten
+        float sens;             // 0..1, cuanto responde al toque
+        float escala;           // cuanto acorta la suelta al subir de nota
     };
 
     struct Familia
@@ -194,12 +250,24 @@ namespace Sintes
     //  pad podia pasar de un preset al siguiente y no habia una sola forma de
     //  tocar ninguno. Un instrumento que no se toca es un sample con nombre.
     //
-    //  Los ocho numeros son los que ya tenia un `Preset`: los CUATRO de la
-    //  forma -que significan cosas distintas en cada una de las dieciseis, y
-    //  eso es justo lo que las hace dieciseis instrumentos y no uno con los
-    //  numeros movidos- mas ataque, caida, suelta y brillo, que significan lo
-    //  mismo en todas.
-    static constexpr int kMandos = 8;
+    //  Los doce numeros son los de un `Preset`: los CUATRO de la forma -que
+    //  significan cosas distintas en cada una de las dieciseis, y eso es justo
+    //  lo que las hace dieciseis instrumentos y no uno con los numeros
+    //  movidos- mas OCHO comunes, que significan lo mismo en todas: ataque,
+    //  caida, suelta, brillo, y los cuatro de tocar -sosten, cae en, sens y
+    //  escala-.
+    //
+    //  ERAN OCHO. Los cuatro nuevos son lo que separa «elegir un sonido» de
+    //  «tocar un instrumento»: sin la S ni la D del ADSR la nota se quedaba
+    //  clavada a tope mientras la aguantas -`amp = F.sostiene ? jmin(1, t/atk)
+    //  : ad(...)`, o sea ataque y mantener a 1.0-, sin SENS los 384 respondian
+    //  al toque con la MISMA ley, y sin ESCALA la nota aguda de un piano se
+    //  apagaba tardando lo mismo que la grave.
+    //
+    //  DOCE Y NO DIEZ, y no es estetica: la maqueta reparte en cuatro columnas
+    //  y `filasM = kMandos / colsM` es division entera, asi que con diez dos
+    //  mandos se quedan sin colocar.
+    static constexpr int kMandos = 12;
 
     //  EL RECORRIDO SALE DE LA TABLA Y NO SE ESCRIBE.
     //
@@ -214,7 +282,8 @@ namespace Sintes
     //     Su significado es de la forma -«razon del modulador» no es «mas» de
     //     nada fuera de lo que esa forma admite- asi que la poblacion que lo
     //     define son sus propios presets.
-    //   · ataque, caida, suelta y brillo, del rango de las 384. Ahi el limite
+    //   · los OCHO comunes -ataque, caida, suelta, brillo, sosten, cae en,
+    //     sens y escala-, del rango de las 384. Ahi el limite
     //     es MUSICAL y no de la forma: un bajo con dos segundos de ataque es un
     //     bajo con dos segundos de ataque, y negarselo seria inventarse una
     //     regla que la tabla no dice.

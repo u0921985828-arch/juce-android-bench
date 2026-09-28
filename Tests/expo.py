@@ -1447,7 +1447,20 @@ def _corre_y_juzga(combo, casa):
     size, lang, sheet = combo
     rows = run(size, lang, sheet, casa)
     if rows is None:
-        return [], None, (0, 0), collections.Counter(), collections.Counter(), 0
+        #  SIETE Y NO SEIS, Y CADA UNO CON LA FORMA QUE EL QUE CUENTA ESPERA.
+        #
+        #  Este renglon devolvia SEIS valores y quien lo recoge desempaqueta
+        #  SIETE (`findings, rows, ico, aireRun, quienRun, chipsRun, secRun`),
+        #  asi que una corrida caida no se contaba como caida: reventaba el
+        #  banco entero con `ValueError: not enough values to unpack (expected
+        #  7, got 6)` y se llevaba por delante las 1455 corridas buenas. Un
+        #  camino de error que se cae esconde justo el fallo para el que
+        #  existe. Y el cuarto tiene que ser el par `(visto, crudo)` que
+        #  devuelve `mide_aire`: con un `Counter()` suelto, `aireRun[0]` vale
+        #  0 y `aire += 0` vuelve a reventar un renglon mas abajo.
+        return ([], None, (0, 0),
+                (collections.Counter(), collections.Counter()),
+                collections.Counter(), 0, collections.Counter())
     #  CUANTAS TAPAS LLEVAN DIBUJO Y CUANTAS LO ENSENAN.
     #
     #  El icono es el adorno y la palabra la funcion, asi que donde no caben
@@ -1582,10 +1595,19 @@ def main():
                     #  que nadie lee es lo mismo que no ponerlo. Roto a
                     #  proposito con la pantalla abajo: "no dump - SIN PANTALLA
                     #  VIRTUAL en :99".
-                    quien = ("no dump — crash or hang" if display_alive()
-                             else "no dump — SIN PANTALLA VIRTUAL en :99: JUCE se cae "
-                                  "en centreWithSize y esto NO es un fallo de la app")
-                    allf.append(("CRASH", f"{size}/{lang}/{sheet or 'face'}", quien, 0))
+                    #  Y LA VARIABLE NO SE LLAMA `quien`, QUE YA ESTA COGIDA.
+                    #
+                    #  Se llamaba asi, y `quien` es el Counter del histograma
+                    #  de aire que este mismo bucle acumula seis renglones mas
+                    #  arriba. La primera corrida caida lo sustituia por una
+                    #  cadena y la SIGUIENTE moria con `TypeError: can only
+                    #  concatenate str (not "Counter") to str`: una corrida
+                    #  mala tumbaba el banco entero en vez de contarse como
+                    #  una de 1456.
+                    porque = ("no dump — crash or hang" if display_alive()
+                              else "no dump — SIN PANTALLA VIRTUAL en :99: JUCE se cae "
+                                   "en centreWithSize y esto NO es un fallo de la app")
+                    allf.append(("CRASH", f"{size}/{lang}/{sheet or 'face'}", porque, 0))
                     continue
                 allf += findings
                 if lang in ("es", "en"): pairs[(size, sheet)][lang] = rows

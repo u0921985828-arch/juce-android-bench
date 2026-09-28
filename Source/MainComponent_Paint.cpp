@@ -1612,6 +1612,10 @@ void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
     };
     label (midiOutBtn.getBounds(), T ("MANDAR NOTAS A"));
     label (midiInBtn.getBounds(),  T ("RECIBIR NOTAS DE"));
+    //  Y el tercero, con su fila de chips. Sin rotulo, dos tapas sueltas que
+    //  ponen PADS y TECLADO no dicen de que son: es el mismo fallo que ya
+    //  costo que «MODO» nombrara a una sola de dos tapas.
+    label (midiModoRowArea, T ("LEER LO QUE ENTRA COMO"));
 
     if (area.isEmpty()) return;
 
@@ -1619,9 +1623,15 @@ void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
     //  modulo de al lado toca la nota equivocada.
     g.setColour (ZatiColours::textOn (ZatiColours::chassisTop).withAlpha (0.55f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
-    g.drawFittedText (T ("El pad 1 es la nota %1, y de ahi hacia arriba. Canal %2.",
-                         Lang::ltr (juce::String (MidiIo::kBaseNote)),
-                         Lang::ltr (juce::String (midi.getChannel()))),
+    //  Y DICE EL MAPA QUE ESTA PUESTO, no uno de los dos. Este renglon contaba
+    //  el de PADS siempre, y con TECLADO elegido diria justo lo contrario de
+    //  lo que la maquina hace.
+    g.drawFittedText (midi.getModo() == MidiIo::Modo::Teclado
+                          ? T ("El teclado toca el pad elegido. La nota %1 suena a su afinacion.",
+                               Lang::ltr (juce::String (MidiIo::kNotaRaiz)))
+                          : T ("El pad 1 es la nota %1, y de ahi hacia arriba. Canal %2.",
+                               Lang::ltr (juce::String (MidiIo::kBaseNote)),
+                               Lang::ltr (juce::String (midi.getChannel()))),
                       area, juce::Justification::centredLeft, 2, 1.0f);
 }
 
@@ -3022,7 +3032,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         }
     }
 
-    //  LOS NOMBRES DE LOS OCHO MANDOS, y salen de la FAMILIA.
+    //  LOS NOMBRES DE LOS DOCE MANDOS, y salen de la FAMILIA.
     //
     //  `claveDeMando` no vale aqui, que es la tabla slider->clave con la que se
     //  pintan los del pad y los del rack: la de estos ocho no es fija - los
@@ -3049,17 +3059,18 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         //  TRES lineas y no dos, y no cuesta un pixel: la banda mide 40 px y
         //  `fMeta` son diez unidades, o sea que tres renglones caben dentro de
         //  lo que ya se reservaba. Con dos, la frase merged -que dice el gesto
-        //  del teclado Y los ocho mandos- se cortaba por la mitad, y media
+        //  del teclado Y los doce mandos- se cortaba por la mitad, y media
         //  frase de ayuda se lee como un fallo.
         //  Y CUAL DE LAS DOS FRASES lo dice `sostiene`, que es el MISMO campo
         //  con el que `triggerPad` decide si la nota se sostiene o se acaba
-        //  sola: siete familias de las dieciseis no sostienen, asi que «suena
+        //  sola: NUEVE familias de las veinticuatro no sostienen -eran siete de
+        //  dieciseis antes de que entraran las ocho nuevas-, asi que «suena
         //  mientras lo tengas tocado» era falso en casi la mitad de la ficha.
         const bool sost = (fam >= 0) && Sintes::tabla()[fam].sostiene;
         pintaAyuda (g, vstPieArea,
                     sost
-                      ? T ("El teclado suena mientras lo tengas tocado. Los ocho mandos afinan este preset y VOLVER lo devuelve.")
-                      : T ("El teclado suena y cada nota se acaba sola. Los ocho mandos afinan este preset y VOLVER lo devuelve."),
+                      ? T ("El teclado suena mientras lo tengas tocado. Los doce mandos afinan este preset y VOLVER lo devuelve.")
+                      : T ("El teclado suena y cada nota se acaba sola. Los doce mandos afinan este preset y VOLVER lo devuelve."),
                     Lang::start (juce::Justification::top), 1.0f, 3);
     }
 }

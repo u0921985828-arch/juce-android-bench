@@ -871,7 +871,7 @@ inline void readInstMap (const juce::ValueTree& tree, std::array<int, AudioEngin
 
 //  Y LA RECETA MOVIDA DE CADA PAD, leida del mismo sitio y en el mismo
 //  momento que `readInstMap`: el trabajo troceado la necesita para sintetizar
-//  con los ocho mandos que la persona movio, y `applyState` no ha corrido
+//  con los doce mandos que la persona movio, y `applyState` no ha corrido
 //  todavia cuando eso pasa. Vacia = ese pad no la movio.
 inline void readRecetaMap (const juce::ValueTree& tree,
                            std::array<juce::String, AudioEngine::kNumPads>& out)

@@ -105,11 +105,31 @@ struct Voice
     int    slot      = -1;
     std::uint32_t serial = 0;   // when this voice was started; lowest = oldest
 
+    //  QUE TECLA LA DISPARO, en semitonos relativos al pad y ANTES de que el
+    //  mapa de zonas le reste su raiz. Lo escribe `triggerPad` despues de
+    //  `start`, por lo mismo que `gate`: es del DISPARO y no de la voz.
+    //
+    //  Existe porque un NoteOff soltaba todas las voces del pad: con un
+    //  teclado tocando un acorde sobre un pad de instrumento, levantar un dedo
+    //  apagaba las tres notas. Medido con cuatro notas y un dedo: quedaban 0
+    //  de 4 donde tienen que quedar 3.
+    int    nota      = 0;
+
+    //  Y SI EL PEDAL LA ESTA AGUANTANDO. El NoteOff llego, pero el pedal de
+    //  sostenido estaba pisado: la voz no se suelta y se marca, y al levantar
+    //  el pedal se sueltan todas las marcadas de golpe.
+    bool   retenida  = false;
+
     //  How hard this note was struck, kept for the life of the voice. It has
     //  to live here rather than being folded into the start gain, because the
     //  mixer retargets a sounding voice whenever a fader moves - and that
     //  would otherwise reset every note to full strength mid-flight.
     float  velocity  = 1.0f;
+
+    //  EL ESCALON DE CAPA, DESHECHO. Ver `SampleBuffer::Zona::fuerza`. 1.0 es
+    //  "no hay nada que deshacer", que es lo que vale toda voz que no toque un
+    //  instrumento de `Sintes` - y por eso multiplicar por el es bit-identico.
+    float  compensa  = 1.0f;
     int    winStart  = 1;      // playback window [winStart, winEnd) in samples
     int    winEnd    = 2;
 
@@ -147,6 +167,51 @@ struct Voice
     float  stepDown  = 0.0f;
     float  stepCtl   = 0.0f;   // volume-cut rate: fixed ~10 ms, not the attack
 
+    //  LA SUELTA MUSICAL, QUE ES EXPONENCIAL Y VIVE APARTE DE `gain`.
+    //
+    //  Son dos cosas distintas que estaban en el mismo numero. `gain` es el
+    //  NIVEL: la rampa anti-chasquido, el robo de voz y el corte de volumen, y
+    //  los tres son lineales a proposito porque lo que hacen es llegar a un
+    //  sitio en un tiempo fijo. La suelta de una NOTA no es eso: una cuerda, un
+    //  martillo o un altavoz se apagan multiplicando, no restando, y una suelta
+    //  lineal se oye como un corte al final -el ultimo tramo baja 20 dB en el
+    //  mismo tiempo en que el primero bajo 1-.
+    //
+    //  Separarlo es lo que deja `steal()` y el corte de volumen BIT A BIT
+    //  IGUALES: siguen restando sobre `gain` y este multiplicador se queda en
+    //  1.0f exacto, que es neutro por construccion y no por aproximacion.
+    //
+    //  `sueltaMul` == 0 significa "suelta lineal de siempre", y es lo que pone
+    //  `steal()` para recuperar su fundido fijo de 1.5 ms.
+    float  envS      = 1.0f;
+    float  sueltaMul = 0.0f;
+
+    //  -80 dB y no cero: multiplicando no se llega nunca a cero, asi que hace
+    //  falta un suelo por el que la voz se declare terminada y libere su hueco.
+    //  A -80 dB no queda nada audible ni siquiera con 16 voces sumando.
+    static constexpr float kSueltaSuelo = 1.0e-4f;
+
+    //  LA S Y LA D QUE FALTABAN, sobre el mismo `envS`.
+    //
+    //  El generador escribia `amp = F.sostiene ? jmin(1, t/atk) : ad(...)`, o
+    //  sea ataque y despues MANTENER A 1.0 clavado: las quince familias que
+    //  sostienen no tenian ni caida ni sosten, y eso es lo que separa un
+    //  organo -que se queda en 1.00- de un piano electrico -que cae a 0.32 en
+    //  poco mas de un segundo y se queda ahi mientras aguantes-.
+    //
+    //  Y VA EN LA VOZ Y NO HORNEADO, que es una decision con dos cifras
+    //  detras. Hornearla obligaria a rendir `pre >= atk + dec`, o sea hasta x5
+    //  de memoria por pad -R9 lo cantaria-, y ademas seria falsa: dentro de un
+    //  bucle se REINICIARIA en cada vuelta, que es exactamente el fallo que
+    //  `congelaEn` existe para no tener.
+    //
+    //  `envD` es el EXCESO sobre el sosten, de 1 a 0, y `envS` se recompone de
+    //  los dos. Con `caeMul` a cero -que es lo que vale toda muestra que no
+    //  sea de `Sintes`- no se toca nada y `envS` se queda en 1.0f exacto.
+    float  envD      = 1.0f;
+    float  caeMul    = 0.0f;
+    float  sostenN   = 1.0f;
+
     float  panL      = 0.7071f;   // equal-power pan gains, precomputed in start()
     float  panR      = 0.7071f;
     float  panTL     = 0.7071f;   // pan targets — retarget() moves these, render() slews
@@ -177,7 +242,9 @@ struct Voice
                 float pan = 0.0f, float attackMs = 2.0f, float releaseMs = 3.0f,
                 bool keepLength = false, float vel = 1.0f,
                 float fadeInMs = 0.0f, float fadeOutMs = 0.0f,
-                int loopFromSamp = -1, float anchoPad = 1.0f) noexcept
+                int loopFromSamp = -1, float anchoPad = 1.0f,
+                float sosten = 1.0f, float caeEnS = 0.0f,
+                float compCapa = 1.0f) noexcept
     {
         slot     = slotIndex;
         winStart = juce::jlimit (1, juce::jmax (1, srcLen - 3), startSamp);
@@ -226,13 +293,16 @@ struct Voice
         //  sonando en un aparato de 48, cinco milisegundos son 220 muestras de
         //  fuente y no 240 - y el borde que hay que suavizar esta en la fuente.
         //
-        //  Y acotados a un tercio de la ventana cada uno: un fundido mas largo
-        //  que el propio trozo no es un fundido, es un mando de volumen puesto
-        //  al reves. Un tercio deja siempre un tercio de trozo a nivel pleno.
+        //  Y los dos se reparten la ventana, que es la regla de `Fundido` y ya
+        //  no un tercio para cada uno escrito aqui. Ver alli el fallo con su
+        //  cifra: 500 ms pedidos contra 21.7 aplicados.
         const double fSrcAbs = std::abs (fSrc) > 1.0 ? std::abs (fSrc) : juce::jmax (1.0, fSys);
-        const int    tercio  = juce::jmax (0, (winEnd - winStart) / 3);
-        fadeInSamp  = juce::jlimit (0, tercio, (int) (fadeInMs  * 0.001 * fSrcAbs));
-        fadeOutSamp = juce::jlimit (0, tercio, (int) (fadeOutMs * 0.001 * fSrcAbs));
+        const double ventana = (double) juce::jmax (0, winEnd - winStart);
+        double entra = 0.0, sale = 0.0;
+        Fundido::reparte (fadeInMs  * 0.001 * fSrcAbs,
+                          fadeOutMs * 0.001 * fSrcAbs, ventana, entra, sale);
+        fadeInSamp  = (int) entra;
+        fadeOutSamp = (int) sale;
 
         //  UN BUCLE SIN FUNDIDO CHASQUEA EN CADA VUELTA.
         //
@@ -246,9 +316,9 @@ struct Voice
         //
         //  Tres milisegundos, que es lo que dura medio ciclo de 160 Hz: por
         //  debajo de eso el fundido ya no tapa el salto de un grave, y por
-        //  encima se empieza a oir que la vuelta "respira". Y sigue acotado al
-        //  tercio, asi que un bucle de dos milisegundos no se convierte en un
-        //  mando de volumen.
+        //  encima se empieza a oir que la vuelta "respira". Y sigue pasando por
+        //  el mismo reparto, asi que un bucle de dos milisegundos no se
+        //  convierte en un mando de volumen: los dos se quedan en la mitad.
         //  Y NO cuando la vuelta es a un punto interior: eso solo lo pide un
         //  instrumento de Sintes, y esos traen el fundido cruzado YA HORNEADO
         //  en la muestra - en la costura las dos mitades son la misma senal-.
@@ -256,8 +326,11 @@ struct Voice
         //  vuelta, que se oye como un temblor a la velocidad del bucle.
         if (loopOn && loopFrom < 0 && fadeInSamp == 0 && fadeOutSamp == 0)
         {
-            const int minimo = juce::jlimit (0, tercio, (int) (0.003 * fSrcAbs));
-            fadeInSamp = fadeOutSamp = minimo;
+            const double m = 0.003 * fSrcAbs;
+            double eMin = 0.0, sMin = 0.0;
+            Fundido::reparte (m, m, ventana, eMin, sMin);
+            fadeInSamp  = (int) eMin;
+            fadeOutSamp = (int) sMin;
         }
 
         //  45 ms grains: long enough that the crossfade does not buzz at the
@@ -277,7 +350,19 @@ struct Voice
         //  tap has to make a sound, or the pad reads as broken.
         velocity  = juce::jlimit (0.10f, 1.0f, vel);
 
-        target    = padGain * velocity;
+        //  Y LO QUE LA CAPA TRAIA HORNEADO SE DESHACE AQUI, en un factor
+        //  aparte y NO dentro de `velocity`.
+        //
+        //  Dentro no cabe: `velocity` esta acotada a 1.0 -el suelo de 0.10
+        //  existe para que el toque mas flojo suene- asi que subir la capa
+        //  suave por ahi lo comeria el tope. Y ademas `velocity` decide el
+        //  brillo (`updateAntiAlias`), que es la parte del toque que SI tiene
+        //  que seguir siendo la de la nota. Son dos cosas y van en dos sitios.
+        //
+        //  A 1.0 -toda muestra que no salga de `Sintes`- no multiplica nada.
+        compensa  = (compCapa > 0.0f) ? compCapa : 1.0f;
+
+        target    = padGain * velocity * compensa;
         gain      = 0.0f;
         releasing = false;
         const double fadeIn  = juce::jmax (1.0, 0.001 * (double) juce::jmax (0.1f, attackMs)  * fSys);
@@ -285,12 +370,36 @@ struct Voice
         stepUp    = (float) (target / fadeIn);
         stepDown  = (float) (target / fadeOut);
         stepCtl   = (float) (1.0 / juce::jmax (1.0, 0.010 * fSys));
+
+        //  Y LA MISMA SUELTA, EXPONENCIAL. `releaseMs` es el t60 -el tiempo
+        //  hasta -60 dB- y no el tiempo hasta cero, que multiplicando no
+        //  existe: ln(1000) repartido entre las muestras que dura. Se calcula
+        //  aqui, una vez por nota, y no por muestra.
+        envS      = 1.0f;
+        sueltaMul = (float) std::exp (-6.907755278982137 / fadeOut);
+
+        //  Y la caida hacia el sosten, con la misma cuenta: el EXCESO sobre el
+        //  sosten cae a la milesima en `caeEnS`. Un sosten a 1.0 no tiene
+        //  exceso que bajar, asi que `caeMul` se queda en cero y esto no toca
+        //  ni una muestra - que es lo que hace que todo lo que no sea un
+        //  instrumento salga bit a bit igual.
+        sostenN   = juce::jlimit (0.0f, 1.0f, sosten);
+        envD      = 1.0f;
+        caeMul    = (caeEnS > 0.0f && sostenN < 0.9995f)
+                      ? (float) std::exp (-6.907755278982137
+                                          / juce::jmax (1.0, (double) caeEnS * fSys))
+                      : 0.0f;
         //  El ancho lo trae el disparo Y ademas se pone el destino, las dos
         //  cosas: una voz reciclada guarda el anchoT de la nota anterior, y sin
         //  esto el primer bloque de la nueva sonaria con el ancho de la vieja.
         ancho = anchoT = juce::jlimit (0.0f, 2.0f, anchoPad);
         gate      = -1;          // el que dispara la pone si el paso lleva largo
         panPropio = false;       // idem: solo si el paso trae bloqueo de pan
+        nota      = 0;           // idem: lo escribe triggerPad tras start
+        //  Y SIN RETENER: una voz reciclada guarda la marca de la nota
+        //  anterior, y sin esta linea la nota nueva se quedaria pisada al
+        //  levantar un pedal que nunca la aguanto.
+        retenida  = false;
         active    = true;
     }
 
@@ -314,7 +423,10 @@ struct Voice
 
     void release() noexcept { releasing = true; }
     void kill()    noexcept { active = false; releasing = false; gain = 0.0f; gate = -1;
-                              panPropio = false; loopFrom = -1; }
+                              panPropio = false; loopFrom = -1;
+                              envS = 1.0f; sueltaMul = 0.0f;
+                              envD = 1.0f; caeMul = 0.0f; sostenN = 1.0f;
+                              compensa = 1.0f; }
 
     // Voice steal: fast fixed declick fade (~1.5 ms) regardless of the pad's
     // musical release — used when the same pad retriggers and this instance
@@ -324,6 +436,11 @@ struct Voice
         if (! active) return;
         releasing = true;
         stepDown  = (float) (juce::jmax (gain, 0.05f) / juce::jmax (1.0, 0.0015 * fSys));
+        //  Y VUELVE A LA RESTA. Un robo de voz tiene que terminar en 1.5 ms
+        //  exactos porque hay otra nota esperando su hueco; multiplicando no
+        //  termina nunca y ademas heredaria el t60 del preset -hasta 2.2 s-,
+        //  que es justo el hueco que el robo existe para liberar.
+        sueltaMul = 0.0f;
     }
 
     // Control-rate update (once per block, audio thread): a looping/long voice
@@ -332,7 +449,10 @@ struct Voice
     void retarget (float g, float pan, float anchoPad = 1.0f) noexcept
     {
         if (! active || releasing) return;
-        target = g * velocity;
+        //  CON LA COMPENSACION DE CAPA, como en `start`. Sin ella el primer
+        //  `retarget` -uno por bloque en toda voz que da vueltas- devolvia el
+        //  escalon a los 5.8 ms de haberlo quitado.
+        target = g * velocity * compensa;
         //  El ancho lo sigue SIEMPRE, como el volumen y a diferencia del pan
         //  bloqueado: un mando de la mesa tiene que mover lo que ya suena, y
         //  sin esto duraria 128 muestras - que es exactamente lo que le paso al
@@ -450,21 +570,46 @@ struct Voice
         {
             if (releasing)
             {
-                gain -= stepDown;
-                if (gain <= 0.0f) { active = false; gain = 0.0f; return false; }
+                //  DOS SUELTAS Y NO UNA. La musical multiplica -una cuerda o un
+                //  altavoz se apagan asi- y la de servicio resta, porque lo que
+                //  hace es llegar a cero en un tiempo fijo sin chasquear. Con
+                //  `sueltaMul` a cero esto es, linea por linea, lo de antes.
+                if (sueltaMul > 0.0f)
+                {
+                    envS *= sueltaMul;
+                    if (envS <= kSueltaSuelo) { active = false; gain = 0.0f; envS = 0.0f; return false; }
+                }
+                else
+                {
+                    gain -= stepDown;
+                    if (gain <= 0.0f) { active = false; gain = 0.0f; return false; }
+                }
             }
-            else if (gain < target)
+            else
             {
-                gain += stepUp;
-                if (gain > target) gain = target;
-            }
-            else if (gain > target)
-            {
-                // A volume CUT is not a musical release: it used to fall
-                // at the pad's attack rate, so a pad with a one-second
-                // attack took a second to get quieter.
-                gain -= stepCtl;
-                if (gain < target) gain = target;
+                //  LA CAIDA HACIA EL SOSTEN, que es de la NOTA y por eso no
+                //  cuelga de la rampa de `gain`: una nota puede estar cayendo
+                //  hacia su sosten mientras un fader de la mesa la sube.
+                if (caeMul > 0.0f && envD > 0.0f)
+                {
+                    envD *= caeMul;
+                    if (envD < 1.0e-4f) envD = 0.0f;
+                    envS = sostenN + (1.0f - sostenN) * envD;
+                }
+
+                if (gain < target)
+                {
+                    gain += stepUp;
+                    if (gain > target) gain = target;
+                }
+                else if (gain > target)
+                {
+                    // A volume CUT is not a musical release: it used to fall
+                    // at the pad's attack rate, so a pad with a one-second
+                    // attack took a second to get quieter.
+                    gain -= stepCtl;
+                    if (gain < target) gain = target;
+                }
             }
             return true;
         };
@@ -594,7 +739,7 @@ struct Voice
                               : l;
                 ancho += anchoInc;
                 Estereo::ancho (l, r, ancho);
-                const float ge = hayFundido ? gain * bordeGain (pos) : gain;
+                const float ge = (hayFundido ? gain * bordeGain (pos) : gain) * envS;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)
                     dstR[i] += ge * panR * r;
@@ -723,7 +868,7 @@ struct Voice
                 //  DESPUES del antialias y ANTES del pan. Ver `ancho`.
                 ancho += anchoInc;
                 Estereo::ancho (l, r, ancho);
-                const float ge = hayFundido ? gain * bordeGain (pos) : gain;
+                const float ge = (hayFundido ? gain * bordeGain (pos) : gain) * envS;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)
                     dstR[i] += ge * panR * r;

@@ -5300,6 +5300,50 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                   //  `sel.py`, que esperaba 16 y veia 64-.
                   << ",\"pc\":" << engine.pasosPorCompas()
                   << "}" << std::endl;
+
+        //  Y LOS PADS DE INSTRUMENTO, uno por linea. Ver Tests/session.py.
+        //
+        //  La linea de arriba mide la mesa, los envios y la cancion de un
+        //  proyecto de otra epoca, y de un instrumento no dice NADA. Hasta el
+        //  08 ningun fichero congelado llevaba uno, asi que a que preset
+        //  apunta un pad y con que numeros se movio eran las dos unicas cosas
+        //  del fichero de proyecto que solo se median contra el binario de hoy.
+        //
+        //  Se sacan las TRES cifras que la compatibilidad necesita y no una:
+        //  la receta que volvio, la fila de la TABLA de ese mismo preset, y si
+        //  el pad se considera movido. Solo con la primera, un lector que
+        //  arrancara de `Preset{}` en vez de la fila -que es la rotura a
+        //  proposito de esta regla- pasaria en el pad movido y suspenderia en
+        //  el que no lo esta sin que se pudiera decir cual de los dos fallos
+        //  es; con las tres se lee en el numero.
+        //
+        //  Y el bucle va hasta `Sintes::kMandos` y no hasta ocho: el dia que
+        //  la receta crezca, la linea crece sola y la regla puede pedir que
+        //  los mandos NUEVOS vuelvan valiendo la fila de tabla mientras los
+        //  viejos vuelven valiendo lo que el fichero traia.
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const auto* sb = uiSample[(size_t) p].get();
+            if (sb == nullptr || sb->familia < 0) continue;
+
+            const auto fila = Sintes::tabla()[sb->familia].p[sb->preset];
+            juce::String rec, tab;
+            for (int m = 0; m < Sintes::kMandos; ++m)
+            {
+                if (m) { rec << ","; tab << ","; }
+                rec << juce::String (Sintes::valor (padReceta[(size_t) p], m), 6);
+                tab << juce::String (Sintes::valor (fila, m), 6);
+            }
+
+            std::cout << "{\"instviejo\":\"" << UiAudit::esc (f.getFileNameWithoutExtension()) << "\""
+                      << ",\"pad\":" << p
+                      << ",\"inst\":" << (sb->familia * Sintes::kPresets + sb->preset)
+                      << ",\"movida\":" << (padRecetaMovida[(size_t) p] ? 1 : 0)
+                      << ",\"release\":" << padRelease[(size_t) p]
+                      << ",\"receta\":[" << rec << "]"
+                      << ",\"tabla\":[" << tab << "]"
+                      << "}" << std::endl;
+        }
     }
 }
 

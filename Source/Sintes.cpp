@@ -95,18 +95,20 @@ namespace Sintes
     const Familia* tabla() { return kTabla; }
 
     // ------------------------------------------------------------------------
-    //  LOS OCHO POR INDICE. Escrito UNA vez: la ficha, el fichero de proyecto y
-    //  la puerta acotada preguntan los tres por aqui, y con ocho ramas en cada
+    //  LOS DOCE POR INDICE. Escrito UNA vez: la ficha, el fichero de proyecto y
+    //  la puerta acotada preguntan los tres por aqui, y con doce ramas en cada
     //  sitio la tercera es la que un dia se escribe con el indice cambiado.
     // ------------------------------------------------------------------------
     float valor (const Preset& r, int i)
     {
         switch (i)
         {
-            case 0: return r.p1;   case 1: return r.p2;
-            case 2: return r.p3;   case 3: return r.p4;
-            case 4: return r.atk;  case 5: return r.dec;
-            case 6: return r.rel;  case 7: return r.brillo;
+            case 0: return r.p1;      case 1:  return r.p2;
+            case 2: return r.p3;      case 3:  return r.p4;
+            case 4: return r.atk;     case 5:  return r.dec;
+            case 6: return r.rel;     case 7:  return r.brillo;
+            case 8: return r.sosten;  case 9:  return r.caeEn;
+            case 10: return r.sens;   case 11: return r.escala;
             default: return 0.0f;
         }
     }
@@ -115,10 +117,12 @@ namespace Sintes
     {
         switch (i)
         {
-            case 0: r.p1 = v; break;   case 1: r.p2 = v; break;
-            case 2: r.p3 = v; break;   case 3: r.p4 = v; break;
-            case 4: r.atk = v; break;  case 5: r.dec = v; break;
-            case 6: r.rel = v; break;  case 7: r.brillo = v; break;
+            case 0: r.p1 = v; break;       case 1:  r.p2 = v; break;
+            case 2: r.p3 = v; break;       case 3:  r.p4 = v; break;
+            case 4: r.atk = v; break;      case 5:  r.dec = v; break;
+            case 6: r.rel = v; break;      case 7:  r.brillo = v; break;
+            case 8: r.sosten = v; break;   case 9:  r.caeEn = v; break;
+            case 10: r.sens = v; break;    case 11: r.escala = v; break;
             default: break;
         }
     }
@@ -150,13 +154,17 @@ namespace Sintes
         static const Tabla tablaRango = []
         {
             Tabla t {};
-            //  Los cuatro comunes, de las 384: significan lo mismo en las
+            //  Los OCHO comunes, de las 384: significan lo mismo en las
             //  veinticuatro formas, asi que su limite es musical y no de la forma.
-            Rango comun[4];
-            for (int k = 0; k < 4; ++k) comun[k] = { 1.0e30f, -1.0e30f };
+            //  Eran cuatro; los otros cuatro -sosten, cae en, sens y escala-
+            //  entran por la misma puerta y sin una rama que los distinga: lo
+            //  unico que hace falta es que `kMandos - 4` sea el numero.
+            constexpr int kComunes = kMandos - 4;
+            Rango comun[kComunes];
+            for (int k = 0; k < kComunes; ++k) comun[k] = { 1.0e30f, -1.0e30f };
             for (int f = 0; f < kFamilias; ++f)
                 for (int pz = 0; pz < kPresets; ++pz)
-                    for (int k = 0; k < 4; ++k)
+                    for (int k = 0; k < kComunes; ++k)
                     {
                         const float v = valor (kTabla[f].p[pz], 4 + k);
                         comun[k].lo = juce::jmin (comun[k].lo, v);
@@ -183,7 +191,7 @@ namespace Sintes
                     if (r.hi - r.lo < 1.0e-6f) r.hi = r.lo + juce::jmax (1.0e-3f, std::abs (r.lo));
                     t.r[f][k] = r;
                 }
-                for (int k = 0; k < 4; ++k) t.r[f][4 + k] = comun[k];
+                for (int k = 0; k < kComunes; ++k) t.r[f][4 + k] = comun[k];
             }
             return t;
         }();
@@ -1869,6 +1877,24 @@ namespace Sintes
         //  receta en vez del audio. Ver MainComponent::captureState.
         sb->familia = fi;
         sb->preset  = pi;
+
+        //  Y COMO SE TOCA, que hasta ahora no viajaba con la muestra.
+        //
+        //  `P.rel` se leia en UN solo sitio -para dimensionar la cola de las
+        //  nueve familias que no sostienen- y el motor soltaba los 384 presets
+        //  a 0.180 s fijos. La tabla escribe `rel` de 0.030 a 2.200 s, o sea
+        //  73.3:1: 129 de 384 sonaban a mas de un factor dos de lo que su fila
+        //  pedia y 41 a mas de cuatro, y el mando SUELTA de la ficha no hacia
+        //  nada en 15 de 24 familias.
+        //
+        //  Va en el buffer y no en una tabla por pad por lo mismo que las
+        //  zonas: re-sintetizar por mover un mando publica un buffer nuevo, y
+        //  lo que viaje aparte se quedaria con el valor anterior.
+        sb->toque.sueltaS = P.rel;
+        sb->toque.sosten  = P.sosten;
+        sb->toque.caeEn   = P.caeEn;
+        sb->toque.sens    = P.sens;
+        sb->toque.escala  = P.escala;
         //  DOS CANALES. Ver `ladoDe`: el ancho se genera, no se procesa. Uno
         //  solo en la gama baja, donde el presupuesto de muestra son 64 MB y la
         //  fabrica ya se lleva cuarenta: ver `DeviceTier::instrumentoEstereo`.
@@ -2062,15 +2088,30 @@ namespace Sintes
             const bool  medible = (gCapa[0] > 0.0f && gz > 0.0f);
             const float razon   = medible ? (gz / gCapa[0]) : 1.0f;   // sonoridad suave/fuerte
 
+            //  Y LA CAPA DE EN MEDIO ES EL CERO DE LA REGLA QUE SE APUNTA.
+            //  Ver `Sintes::pesoDeCapa` y `SampleBuffer::Zona::fuerza`.
+            const float pesoMedio = pesoDeCapa (razon, kCapas / 2);
+
             for (int c = 0; c < kCapas; ++c)
             {
-                const auto& Z = sb->zonas[(size_t) (r * kCapas + c)];
+                auto& Z = sb->zonas[(size_t) (r * kCapas + c)];
                 float gAplica = gz;
+                float peso    = 1.0f;
                 if (medible && gCapa[c] > 0.0f && kCapas > 1)
                 {
-                    const float t = (float) (kCapas - 1 - c) / (float) (kCapas - 1);
-                    gAplica = gCapa[c] * std::pow (razon, t);
+                    peso     = pesoDeCapa (razon, c);
+                    gAplica  = gCapa[c] * peso;
                 }
+
+                //  LO QUE ESTA CAPA LLEVA HORNEADO, APUNTADO PARA QUE EL MOTOR
+                //  LO DESHAGA. El nivel ya lo pone la velocidad de la nota, que
+                //  es continua; este escalon se le sumaba encima y la rampa
+                //  sonaba a escalera. Medido por `Tests/instr.py:128-137`: 2.7
+                //  dB en BAJOS y 5.5 en CUERDA PULS entre capas contiguas.
+                //  Cuando no se pudo medir la sonoridad -`medible` falso- no
+                //  hay escalon que deshacer y vale 1.0, que es "nada".
+                Z.fuerza = (medible && pesoMedio > 0.0f) ? (peso / pesoMedio) : 1.0f;
+
                 Kits::aplicaGanancia (dstL + Z.ini, Z.fin - Z.ini, gAplica, false);
                 if (est) Kits::aplicaGanancia (dstR + Z.ini, Z.fin - Z.ini, gAplica, false);
             }
