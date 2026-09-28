@@ -176,14 +176,15 @@ def main():
 
     #  Y LOS GESTOS, que es la CUARTA tabla por indice — y la que mas duele,
     #  porque esa pagina es la unica de la app cuyo trabajo entero es decir la
-    #  verdad. `paintGesturesPage` lleva un `Row rows[kNumGestures]` y las pasa
-    #  por `T (rows[i].how)`, asi que ninguna de sus dieciseis cadenas la ve el
-    #  barrido de arriba. Cambiar el texto de una fila sin cambiar la clave la
-    #  deja en espanol en las cuatro compilaciones, que es lo que ya paso dos
-    #  veces con el tour y una con el manual.
-    pin = joined_literals (sin_comentarios (
-        open (os.path.join (SRC, "MainComponent_Paint.cpp"), encoding="utf8").read()))
-    gi = pin.index ("const Row rows[kNumGestures]")
+    #  verdad. La tabla es `kGestos` -la pintan la pagina AYUDA y el capitulo
+    #  GESTOS de la guia, la misma y no una copia- y llega por `T (gf.how)`,
+    #  asi que ninguna de sus cadenas la ve el barrido de arriba. Cambiar el
+    #  texto de una fila sin cambiar la clave la deja en espanol en las cuatro
+    #  compilaciones, que es lo que ya paso dos veces con el tour y una con el
+    #  manual. Vivia en Paint.cpp como `Row rows[kNumGestures]`; se mudo con la
+    #  guia unica y esta lectura se mudo con ella.
+    pin = interno
+    gi = pin.index ("const GestoFila kGestos[]")
     blkg = pin[gi:pin.index ("\n    };", gi)]
     gestos = set (re.findall (r'"((?:[^"\\]|\\.)+)"', blkg))
     used |= gestos

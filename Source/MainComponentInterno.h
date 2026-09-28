@@ -696,9 +696,47 @@ inline void restyleTree (juce::Component& c, const std::function<void (juce::Tex
 // ============================================================================
 namespace
 {
-    struct ManualChapter { const char* title; const char* lines[5]; };
+    //  LA TABLA DE GESTOS, fuera del pintor porque la leen DOS: la pagina AYUDA
+    //  y el ultimo capitulo de la GUIA. Dos copias son dos verdades.
+    //
+    //  Sin «GOLPEA ARRIBA O ABAJO / toca mas fuerte o mas flojo»: desde el
+    //  tapeo plano la fuerza no sale de donde se toca el pad, y la fila
+    //  seguia prometiendolo. Tests/tour.py la tiene en su lista de frases
+    //  que ya no son verdad.
+    struct GestoFila { const char* how; const char* what; };
+    const GestoFila kGestos[] =
+    {
+        { "MANTEN UN PAD",      "suena y abre sus ajustes" },
+        { "MANTEN UN EFECTO",   "coge los mandos sin apagarlo" },
+        { "MANTEN CARGAR",      "abre la biblioteca en el pad elegido" },
+        { "MANTEN PLAY",        "para y corta todos los pads" },
+        { "MANTEN SOLO",        "quita todos los solos" },
+        { "MANTEN AUTO",        "vacia la automatizacion" },
+        { "ARRASTRA LA PANTALLA", "cambia de patron" },
+        { "MANTEN UNA RANURA DEL RACK", "abre los presets de ese efecto" },
+        //  El atajo de la playlist, que no deja marca en la cara -ni tapa, ni
+        //  herramienta armada- y por eso tiene que estar aqui: sin fila, la
+        //  unica forma de encontrarlo es tropezarse con el.
+        { "DOBLE TOQUE EN UN CLIP", "abre CORTAR con su sonido" },
+        //  Y LA LUPA, que es un modo armado y SI deja marca en la tapa: esta
+        //  aqui porque lo que hace al soltar -y sobre todo lo que hace un toque
+        //  sin arrastre- no se adivina mirando el icono.
+        { "ARRASTRA CON LA LUPA", "acerca ese tramo; un toque vuelve" },
+    };
 
-    constexpr int kManualChapterCount = 10;
+    //  UN CAPITULO SE LEE O SE ENSENA. `desde` y `hasta` son los pasos del
+    //  recorrido que lo ensenan: la guia es UNA tabla, y el tour de antes y
+    //  el manual de antes son sus dos formas de leerla. Antes eran dos textos
+    //  -quince pasos en un sitio, diez capitulos en otro- y cubrian la app a
+    //  medias entre los dos: el EQ, AUTO, REMUESTREAR y COMPARTIR no los
+    //  explicaba ninguno. Un capitulo sin pasos o un paso sin capitulo lo
+    //  canta Tests/tour.py.
+    //
+    //  `gestos` pinta la tabla de GESTOS en vez de las lineas: es la misma que
+    //  la pagina AYUDA, y no una copia.
+    struct ManualChapter { const char* title; const char* lines[7]; int desde, hasta; bool gestos = false; };
+
+    constexpr int kManualChapterCount = 18;
     const ManualChapter kManual[kManualChapterCount] =
     {
         { "EMPEZAR", {
@@ -708,29 +746,29 @@ namespace
             //  Y la excepcion, aqui y no en otro capitulo: el gesto se aprende
             //  en el primero, asi que su excepcion va al lado o no se lee.
             "En un pad con instrumento, mantener suena hasta que levantas el dedo",
-            nullptr } },
+            nullptr }, 0, 1 },
         { "PADS Y BANCOS", {
             "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando",
             "Toca A, B, C o D para cambiar de banco",
             "El color de un pad lo acompana en la onda y en la rejilla",
             "CARGAR KIT reparte una carpeta entera por los pads",
-            //  DONDE CAE LO QUE GRABAS, que hasta hoy no lo decia nadie: la
-            //  toma iba «al primero libre» y en una maquina de fabrica no hay
-            //  ninguno. Va en este capitulo y no en el de exportar porque lo
-            //  que se elige es un BANCO.
-            "Lo que grabes cae en el banco de tomas, que eliges en AJUSTES" } },
-        { "RECORTE", {
-            "Arrastra las asas para mover el inicio y el fin",
-            "Toca la onda en medio y suena desde ahi",
-            "Pellizca para ampliar hasta x64; arrastra para mover la vista",
-            "El zoom se centra en el recorte, no en donde estas mirando",
-            "RECORTAR tira lo que queda fuera de las asas, y no se deshace solo" } },
-        { "SONIDO DEL PAD", {
-            "CINTA afina cambiando la duracion; TONO la mantiene",
-            "La ganancia va en decibelios, de -60 a +12",
-            "NORMALIZAR deja el pico del recorte en -0.3 dBFS",
-            "QUITAR RUIDO saca el siseo y devuelve el nivel que se llevo",
-            "Doble toque en un mando: vuelve a su valor de siempre" } },
+            nullptr }, 2, 2 },
+        { "GRABAR Y REMUESTREAR", {
+            "REC graba lo que oye el microfono en el pad elegido",
+            //  DONDE CAE LO QUE GRABAS: la toma iba «al primero libre» y en
+            //  una maquina de fabrica no hay ninguno.
+            "Lo que grabes cae en el banco de tomas, que eliges en AJUSTES",
+            "REMUESTREAR, en la ficha del pad, graba a un pad lo que suena la maquina",
+            "GRABAR MIC hace lo mismo con el microfono desde la ficha",
+            nullptr }, 3, 3 },
+        { "EFECTOS", {
+            "Tocar un efecto lo enciende y le da los tres mandos",
+            "Mantenlo pulsado para cogerle los mandos sin encenderlo",
+            "%1 efectos por canal; el menu de la ranura los ordena por familias",
+            "PRESETS trae los de fabrica y guarda los tuyos",
+            "El EQ tiene cinco bandas: arrastra un nodo, o mantenlo para abrir su banda",
+            "Manten un mando del plato: salen todos, con SYNC y PRESETS, y el que toques se queda",
+            "Toca el nombre del efecto en el plato y los tres mandos pasan al pad elegido" }, 4, 6 },
         //  Este capitulo prometia una pestana que ya no existe -"la pestana
         //  PASO"- desde que sus mandos bajaron a la tira que hay debajo de la
         //  rejilla y la pagina paso a llamarse PATRON. Un manual que nombra un
@@ -740,41 +778,96 @@ namespace
             "Toca un paso y sus mandos salen debajo de la rejilla",
             "PIANO escribe por tono; arrastra por la fila para alargar la nota",
             "REJILLA es lo que dura un paso, tresillos incluidos",
-            "Ocho patrones, y la cadena decide en que orden suenan" } },
+            "Ocho patrones; la cadena decide en que orden suenan y QUITAR CADENA la vacia",
+            "ATRAS y ADELANTE corren el patron un paso; COPIAR FILA y PEGAR FILA llevan un pad a otro",
+            "SEL marca un tramo; en el PIANO, LAPIZ escribe, GOMA borra y PAD - y PAD + cambian de pad" }, 7, 10 },
+        { "TEMPO", {
+            "TAP: toca al ritmo y el tempo lo sigue",
+            "CLIC, en la vista de audio de la CANCION, es el metronomo",
+            "Los efectos con SYNC enganchan su ritmo al tempo",
+            nullptr }, 11, 11 },
+        { "RECORTE", {
+            "Arrastra las asas para mover el inicio y el fin",
+            "Toca la onda en medio y suena desde ahi",
+            "Pellizca para ampliar hasta x64; arrastra para mover la vista",
+            "El zoom se centra en el recorte, no en donde estas mirando",
+            "RECORTAR tira lo que queda fuera de las asas, y no se deshace solo",
+            "OIR toca el pad tal y como esta, desde cualquier pagina de su ficha",
+            "CORTAR lo parte en trozos IGUALES o por GOLPES; RESPETAR PADS CON SONIDO no pisa los llenos" }, 12, 12 },
+        { "SONIDO DEL PAD", {
+            "CINTA afina cambiando la duracion; TONO la mantiene",
+            "La ganancia va en decibelios, de -60 a +12",
+            "NORMALIZAR deja el pico del recorte en -0.3 dBFS",
+            "QUITAR RUIDO saca el siseo y devuelve el nivel que se llevo",
+            "REV lo toca al reves; AUTOCUT corta su golpe anterior",
+            "BOMBEO agacha a los demas pads cuando este suena; CHOKE hace que uno calle a otro",
+            "Doble toque en un mando: vuelve a su valor de siempre" }, 13, 13 },
         { "INSTRUMENTOS", {
             "INSTRUMENTOS pone un sintetizador en el pad que elijas",
             "Su ficha trae los dieciseis presets y un teclado para probarlos",
             "En esos pads el dedo es una tecla: la nota dura lo que la aguantes",
             "INICIO y FIN recortan lo que da vueltas dentro de la nota",
-            nullptr } },
-        { "MEZCLA Y EFECTOS", {
-            "Tocar un efecto lo enciende y le da los tres mandos",
-            "Mantenlo pulsado para cogerle los mandos sin encenderlo",
+            "Con el plato en PAD, sus tres mandos mueven los del instrumento",
+            "PACK - y PACK + pasan de un paquete de sonidos a otro; OCT - y OCT + mueven el teclado" }, 14, 14 },
+        { "MEZCLA Y CANALES", {
             "La mesa: PADS y CANALES. EL PAD elige el suyo y el RACK es de un canal",
+            "%2 canales, y cada uno lleva sus %1 efectos, la reverb incluida",
             "El XY deja los pads tocables debajo, para las dos manos",
-            "Verde hasta -12 dB, amarillo hasta -3, y el rojo se queda puesto" } },
+            "Verde hasta -12 dB, amarillo hasta -3, y el rojo se queda puesto",
+            "SIN CANAL saca el pad de la mesa: va derecho al maestro, sin fader ni efectos",
+            nullptr }, 15, 15 },
+        { "CANCION", {
+            "Los patrones se colocan en el tiempo, en cuatro carriles",
+            "La tijera parte un bloque y la lupa acerca un tramo",
+            "CICLO, en la cara, repite el patron; tocala y pasa a ARREGLO, que toca la cancion",
+            "GRABAR, en la vista de audio, graba lo que suena encima del arreglo",
+            nullptr }, 16, 16 },
+        { "AUTOMATIZACION", {
+            "Arma AUTO y pon la cancion en marcha: lo que muevas se escribe en su paso",
+            "Un evento por paso y por mando, y el ultimo gana",
+            "Parar desarma, para no borrar una buena pasada sin querer",
+            "Manten AUTO para vaciar la automatizacion",
+            nullptr }, 17, 17 },
         { "GUARDAR Y EXPORTAR", {
             "Un proyecto lleva sus muestras dentro y se puede mover entero",
             "La sesion se recupera sola al abrir la app",
             "MASTER es lo que oyes; PISTAS son los stems que suman a el",
             "EN VIVO graba lo que suena mientras suena, con su cuenta atras",
-            "Deshacer y rehacer, dieciseis pasos" } },
+            "Deshacer y rehacer, dieciseis pasos",
+            nullptr }, 18, 18 },
+        { "PROYECTOS", {
+            "GUARDAR mete el proyecto con sus muestras en la biblioteca",
+            "ABRIR y NUEVO avisan antes de tirar lo que no esta guardado",
+            "GUARDAR KIT guarda solo los sonidos, para llevarlos a otro proyecto",
+            "BORRAR quita un proyecto de la lista",
+            "COMPARTIR, en EXPORTAR, manda el ultimo rebote a otra app",
+            nullptr }, 19, 19 },
         { "MIDI", {
-            "AJUSTES > MIDI: manda las notas de lo que suena a otro aparato",
+            "MANDAR, en AJUSTES > MIDI, envia las notas de lo que suena a otro aparato",
             "El pad 1 es la nota 36, y de ahi hacia arriba",
             "RECIBIR deja que un teclado dispare los pads",
             "El secuenciador manda tambien, no solo tus dedos",
-            nullptr } },
+            nullptr }, 20, 20 },
         { "SI ALGO NO SUENA", {
             "Mira la ganancia del pad y si hay un SOLO puesto en otro",
             "Mira el envio de su CANAL al efecto que estas oyendo",
             "Si la onda no reacciona estas ampliado: toca la tapa del medio",
             "AJUSTES > AUDIO ensena la latencia y el tamano de bloque",
-            nullptr } },
+            "MEDIR la mide de verdad; CUADRAR pone tus golpes en la rejilla",
+            "TEST da un tono de prueba; la cuenta atras antes de grabar va de OFF a dos compases",
+            nullptr }, 21, 21 },
+        { "IDIOMA Y CARCASA", {
+            "Cuatro idiomas y cuatro carcasas, en AJUSTES > ASPECTO",
+            "ENSENAMELO, en cada capitulo de esta guia, lo vuelve a senalar",
+            "Esta GUIA y los GESTOS viven en AJUSTES > AYUDA",
+            nullptr }, 22, 22 },
+        { "GESTOS", { nullptr }, 23, 23, true },
     };
 
     constexpr int kManualLineH  = 30;   // una linea de texto y su aire
-    constexpr int kManualTitleH = 26;
+    //  EL TITULO DEL CAPITULO LLEVA SU TAPA ENSENAMELO, asi que mide lo que
+    //  un dedo: con los 26 de antes la tapa no cabia en su propio renglon.
+    constexpr int kManualTitleH = Metrics::btn;
     constexpr int kManualGap    = 14;
 }
 
@@ -1059,14 +1152,16 @@ inline int menuRanuraColumnas (int n, int topeAlto, int anchoDentro, bool conVac
 //  hueco de sobra en una lengua y con el texto cortado en otra.
 namespace ZatiTour
 {
-    //  QUINCE PASOS, cada uno sobre un control DE VERDAD y en el orden en que se
-    //  aprende el instrumento: primero lo que suena, luego como se escribe, luego
-    //  que se le hace al sonido, y al final como sale de aqui.
+    //  VEINTICUATRO PASOS, cada uno sobre un control DE VERDAD y en el orden en
+    //  que se aprende el instrumento: primero lo que suena, luego como se
+    //  escribe, luego que se le hace al sonido, y al final como sale de aqui.
+    //  Eran quince y la guia no explicaba REMUESTREAR, el EQ, AUTO, TAP, la
+    //  CANCION ni los proyectos: cada capitulo del manual (`kManual`) es ahora
+    //  un tramo de esta lista, y ENSENAMELO lo recorre.
     //
     //  Cortos a proposito. El proyecto anterior tiene veintisiete y aprendio lo
-//  mismo por el
-    //  camino - "pasos mas cortos" es una de sus versiones -: un parrafo largo
-    //  encima de una maquina oscurecida no se lee, se salta.
+    //  mismo por el camino - "pasos mas cortos" es una de sus versiones -: un
+    //  parrafo largo encima de una maquina oscurecida no se lee, se salta.
     static const char* titulos[MainComponent::kTourPasos] =
         { "ZATI",
           "LOS PADS",
@@ -1074,16 +1169,30 @@ namespace ZatiTour
           "CARGAR, GRABAR, TOCAR",
           "LOS EFECTOS",
           "LOS TRES MANDOS",
+          "LA FICHA DE MANDOS",
           "LA REJILLA DE PASOS",
           "LO QUE HACE UN PASO",
           "EL PIANO",
           "EL PATRON ENTERO",
+          "EL TEMPO",
           "DENTRO DE UN PAD",
+          "EL SONIDO DEL PAD",
+          "INSTRUMENTOS",
           "LA MESA Y EL RACK",
           "LA CANCION",
+          "AUTOMATIZACION",
           "SACARLO DE AQUI",
-          "Y LO DEMAS" };
+          "PROYECTOS",
+          "MIDI",
+          "SI ALGO NO SUENA",
+          "Y LO DEMAS",
+          "GESTOS" };
 
+    //  LAS CIFRAS NO SE ESCRIBEN: `%1` son los efectos de un canal y `%2` los
+    //  canales, y los pone `MainComponent::guiaTexto`. El paso de la mesa
+    //  decia «dieciseis CANALES» desde que la maquina tiene treinta y dos, y
+    //  una cifra dentro de una frase traducida es la unica constante que no
+    //  se puede contrastar leyendo el codigo de al lado. Ver Tests/tour.py.
     static const char* cuerpos[MainComponent::kTourPasos] =
         { "Un sampler entero en el telefono. Este recorrido senala cada pieza en su "
           "sitio; se salta cuando quieras y se vuelve a abrir desde AJUSTES.",
@@ -1102,8 +1211,12 @@ namespace ZatiTour
           "y lo abre. Son del CANAL en el que este el pad que tengas elegido: "
           "cambiar de pad cambia la fila.",
 
-          "Los tres de arriba mueven el efecto que tengas abierto. Debajo de cada "
-          "uno pone lo que hace en ese momento.",
+          "Los tres de arriba mueven el efecto que tengas abierto, y debajo pone "
+          "lo que hace cada uno. Toca el nombre del efecto y pasan a mover el pad "
+          "elegido.",
+
+          "Manten un mando del plato y salen todos los del efecto, con su SYNC y "
+          "sus PRESETS. Toca uno y se queda en ese mando del plato.",
 
           "Dieciseis pasos por dieciseis pads. Toca una casilla y ese pad suena "
           "ahi; arrastra el dedo para escribir varias seguidas.",
@@ -1117,21 +1230,46 @@ namespace ZatiTour
           "Aqui vive lo que le pasa al patron entero: cadena, desplazar, doblar, "
           "humanizar, copiar y pegar, swing y rejilla.",
 
+          "TAP marca el tempo tocando al ritmo. En la vista de audio de la "
+          "CANCION, CLIC pone el metronomo mientras grabas.",
+
           "Recorte, afinado, filtro, envolvente y bucle. AUTO CHOP parte un break "
           "por sus golpes y lo reparte por los pads.",
 
-          "La mesa tiene dieciseis PADS y dieciseis CANALES: cada pad entra en "
-          "uno, y el canal es el que pasa por los efectos. El RACK dice cuanto "
+          "CINTA o TONO, ganancia, filtro y envolvente. REV lo toca al reves, "
+          "AUTOCUT corta su golpe anterior y BOMBEO agacha a los demas cuando "
+          "suena.",
+
+          "Un sintetizador en un pad: eliges familia y preset, y el pad se toca "
+          "como una tecla. Su ficha trae doce mandos.",
+
+          "La mesa tiene los PADS y %2 CANALES: cada pad entra en uno, y cada "
+          "canal lleva sus %1 efectos, la reverb incluida. El RACK dice cuanto "
           "de cada canal pasa por cada uno, y cuales sustituyen y cuales suman.",
 
           "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
           "dura los PASOS que ocupa: se parte con las tijeras y se copia medio.",
 
+          "Arma AUTO, pon la cancion en marcha y mueve un mando: queda escrito "
+          "en su paso. Parar desarma, y mantener AUTO la vacia.",
+
           "La mezcla entera o una pista por pad, en WAV o en OGG, y a la carpeta "
           "que tu elijas.",
 
-          "El idioma, las cuatro carcasas y el MANUAL, que cuenta todo esto con "
-          "calma. Ya puedes empezar." };
+          "GUARDAR mete el proyecto con sus muestras. ABRIR y NUEVO avisan antes "
+          "de tirar lo que no esta guardado.",
+
+          "Un teclado por cable toca los pads, y lo que suena sale como notas "
+          "hacia otro aparato.",
+
+          "La latencia, el bloque y MEDIR, que la mide de verdad. CUADRAR pone "
+          "tus golpes en la rejilla.",
+
+          "El idioma y las cuatro carcasas. Y la GUIA, que cuenta todo esto con "
+          "calma y lo vuelve a ensenar capitulo a capitulo.",
+
+          "Lo que se hace manteniendo o arrastrando, que no tiene tapa. Ya puedes "
+          "empezar." };
 }
 
 //  LAS CUATRO HERRAMIENTAS DE LA LINEA DE TIEMPO, en una tabla.

@@ -43,7 +43,11 @@ APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 #  deja el defecto puesto. El primero es un envio y el segundo un inserto en el
 #  canal 4, que es la unica pareja que distingue las dos ramas de
 #  `canalDeParam`.
-ESPERADO = "17:3:2:0.42:0;48:0:0:-0.75:4;"
+#
+#  Y EL TERCERO va a un mando de la tanda 32 -p6, el corte de graves de FLT-:
+#  el lector de AUTO rechazaba `par >= 3` y un evento sobre los mandos nuevos
+#  se grababa, sonaba y se perdia al abrir el proyecto.
+ESPERADO = "17:3:2:0.42:0;48:0:0:-0.75:4;60:0:6:400.00:4;"
 
 
 def corre():
@@ -121,9 +125,16 @@ def main():
     print ("vuelve   %s   motor %d" % (r["vuelta"] or "(nada)", r["motor"]))
     if r["vuelta"] != ESPERADO:
         malas.append ("del fichero volvio «%s» y se guardo «%s»" % (r["vuelta"], ESPERADO))
-    if r["motor"] != 2:
+    if r["motor"] != ESPERADO.count (";"):
         malas.append ("el motor se quedo con %d eventos: la tabla se lee y no se publica"
                       % r["motor"])
+
+    #  5. Y LOS MANDOS NUEVOS DEL EFECTO vuelven del fichero: `fxp` escribia
+    #     filas de cuatro y un proyecto con el ataque del compresor movido
+    #     volvia con el de fabrica.
+    print ("fxp      CMP p4 y p7 en el canal 4: %s   (se guardo 37.0:3100.0)" % r.get ("fxp_nuevos"))
+    if r.get ("fxp_nuevos") != "37.0:3100.0":
+        malas.append ("los mandos nuevos volvieron del fichero como %s" % r.get ("fxp_nuevos"))
 
     print()
     if malas:

@@ -79,7 +79,7 @@ SIN_DISENO = {"640x360", "412x480"}
 SIN_DISENO_REGLAS = {"CELDA", "TRUNC", "SQUEEZE"}
 
 LANGS = ["es", "en", "zh", "ar"]
-SHEETS = ["", "plato", "songm", "pads", "pad2", "pad3", "sec", "secp", "secsel", "paso", "eq", "eqb", "song", "songa", "songsel", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "preset", "preseteq", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "tourpuerta",
+SHEETS = ["", "plato", "platopad", "mandos", "songm", "pads", "pad2", "pad3", "sec", "secp", "secsel", "paso", "eq", "eqb", "song", "songa", "songsel", "piano", "pianod", "pianosel", "pick", "mix", "xy", "set", "asp", "proj", "gest", "midi", "midf", "lang", "manual", "mixc", "canal", "rack", "rackf", "ranura", "ranural", "preset", "preseteq", "chop", "inst", "instd", "instg", "vst", "vstm", "expo", "tour", "tour1", "tour3", "tour6", "tour10", "tourf", "tourpuerta",
           "browse", "browsedir", "salvo",
 #  Y LA MISMA MAQUINA CON TRABAJO DENTRO. Todo lo de arriba se mide con
 #  un proyecto vacio o con el kit de fabrica, y casi todo lo que un
@@ -568,7 +568,15 @@ UNTRANSLATED_OK |= PRESETS_FABRICA
 
 #  A number with a unit welded to it - "0 st", "120 bpm", "2 ms", "0 c" - is
 #  the same string in every language and always will be.
+#  Y LAS FILAS DECLARADAS IGUALES QUE LLEVAN UN HUECO. «PAD %1» esta escrita
+#  igual en es y en en en Lang.cpp, pero lo que se pinta es «PAD 64», que no
+#  coincide literal con la clave: la tapa del plato en PAD salio como sin
+#  traducir con la fila bien puesta. Cada `%n` casa con una cifra.
+DECLARADOS_PATRONES = [re.compile ("^" + re.sub (r"%\d", r"[0-9]+", re.escape (k)) + "$")
+                       for k in DECLARADOS_IGUALES if re.search (r"%\d", k)]
+
 UNTRANSLATED_UNIT = re.compile(r'^[+\-]?[0-9][0-9.,]*\s*(st|c|ms|s|bpm|dB|Hz|kHz|%|x)?$', re.I)
+UNTRANSLATED_Q    = re.compile(r'^Q [0-9][0-9.,]*$')
 UNTRANSLATED_SAFE = re.compile(r'^[\s0-9%.,:;+\-/|×xX\u00b7\u00b0"\'()\[\]_@#]*$')
 
 #  UN ROTULO PINTADO NO PUEDE CAER DEBAJO DE UN CONTROL.
@@ -1368,6 +1376,11 @@ def judge_lang(rows_es, rows_en, size, sheet):
         if path in datos: continue
         if t in UNTRANSLATED_OK or UNTRANSLATED_SAFE.match(t): continue
         if UNTRANSLATED_UNIT.match(t): continue
+        #  Q Y SU CIFRA, que es como se escribe el factor de calidad de un
+        #  filtro en cualquier idioma. Salio en tour6 -el paso que abre la
+        #  ficha de mandos con el EQ enfocado- 9 veces, una por pantalla.
+        if UNTRANSLATED_Q.match(t): continue
+        if any (p.match (t) for p in DECLARADOS_PATRONES): continue
         if "/" in t or t.startswith("P") and t[1:].isdigit(): continue
         if en.get(path) == t:
             out.append(("UNTRANSLATED", f"{size}/{sheet or 'face'}", f'"{t}" identical in es and en', 0))

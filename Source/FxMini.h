@@ -53,9 +53,18 @@ public:
     //  Ver FxVisor: el numero de puntos es suyo, que es quien los calcula.
     static constexpr int kPuntos = FxVisor::kPuntos;
 
+    //  Un toque sin arrastre. Ver el constructor.
+    std::function<void()> onTap;
+    void ponTocable() { setInterceptsMouseClicks (onTap != nullptr, false); }
+    void mouseUp (const juce::MouseEvent& e) override
+    { if (onTap && e.getDistanceFromDragStart() <= Metrics::xs) onTap(); }
+
     FxMini()
     {
-        setInterceptsMouseClicks (false, false);   // se mira, no se toca
+        //  SE MIRA, Y DESDE LA TANDA 32 TAMBIEN SE TOCA: tocarlo pasa el plato
+        //  al PAD. Solo intercepta si alguien escucha -`onTap`-, asi que un
+        //  visor sin dueño sigue sin comerse un toque.
+        setInterceptsMouseClicks (false, false);
         setWantsKeyboardFocus (false);
         curva.fill (0.5f);
         pintado.fill (-1.0f);                      // la primera pasada pinta

@@ -81,10 +81,17 @@ namespace FxPresets
         //  «libre en Hz». No se inventa una cuarta columna en el motor para
         //  esto: el cero significa algo por si mismo.
         if (esDefecto (k))
-            return pi < 3 ? AudioEngine::kFxDef[f][pi] : 0.0f;
+            return AudioEngine::defectoFx (f, pi);
 
         if (! juce::isPositiveAndBelow (k - 1, kEscritos))
-            return pi < 3 ? AudioEngine::kFxDef[f][pi] : 0.0f;
+            return AudioEngine::defectoFx (f, pi);
+
+        //  LOS CUATRO DE LA TANDA 32 no estan en el `.inc`: sus filas se
+        //  escribieron con cuatro numeros y el resto del agregado nace en
+        //  cero, y un AGUDOS en cero es un corte en 20 Hz -el efecto mudo-.
+        //  Un preset de fabrica los deja en su defecto; los tuyos si los
+        //  guardan, porque los escribe `guardaFxPresetTuyo` con los ocho.
+        if (pi >= 4) return AudioEngine::defectoFx (f, pi);
 
         return kTabla[f][k - 1].p[pi];
     }

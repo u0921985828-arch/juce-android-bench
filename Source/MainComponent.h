@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include <JuceHeader.h>
 #include <vector>
 #include <array>
@@ -49,7 +51,7 @@ class MainComponent : public juce::AudioAppComponent,
 public:
     //  Cuantas tarjetas tiene el tour. Publico porque los textos viven fuera de
     //  la clase - los mide la maqueta ademas de pintarlos.
-    static constexpr int kTourPasos = 15;
+    static constexpr int kTourPasos = 24;
 
     //  LA BIENVENIDA SON CUATRO, Y LOS OTROS ONCE ESTAN DETRAS DE UNA PUERTA.
     //
@@ -634,7 +636,8 @@ private:
     //  una regla que el codigo no cumple -deja de proteger nada- asi que se
     //  cuenta la lista y no las tandas:
     //
-    //    6 de siempre · MANTEN SOLO · MANTEN AUTO (dos tandas sin fila)
+    //    5 de siempre -«GOLPEA ARRIBA O ABAJO» salio: era falsa desde el
+    //    tapeo plano- · MANTEN SOLO · MANTEN AUTO (dos tandas sin fila)
     //    · MANTEN UNA RANURA DEL RACK (la puerta a los presets)
     //    · DOBLE TOQUE EN UN CLIP (abre CORTAR)
     //    · ARRASTRA CON LA LUPA (acerca ese tramo; un toque vuelve)
@@ -643,7 +646,7 @@ private:
     //  sobre todo el toque sin arrastre- no se adivina mirando el icono; SEL
     //  es un modo armado que deja marca en su tapa y cuya banda se ve. Una
     //  fila por herramienta seria la tira de herramientas escrita dos veces.
-    static constexpr int kNumGestures = 11;
+    static constexpr int kNumGestures = 10;
     void showSetPage (int page);
 
     //  THE SEQUENCER CARD HAS TWO PAGES, and it has them because measuring it
@@ -1949,6 +1952,8 @@ public:
     void auditModos();
     void auditEq();
     void auditAuto();
+    void auditPlato();
+    void auditGuia();
     void auditDinamica();
     //  LA CUENTA ATRAS Y EL METRONOMO. Ver Tests/cuenta.py.
     void auditCuenta();
@@ -3412,7 +3417,7 @@ private:
     ManualBody     manualBody;
     juce::Viewport manualScroll;
     Sheet          manualSheet;
-    juce::TextButton manualButton { "MANUAL" },
+    juce::TextButton manualButton { "GUIA" },
                  manualCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
 
     //  EL TOUR DE BIENVENIDA, que no es el manual.
@@ -3460,6 +3465,23 @@ private:
     //  muelle se pone en la mitad CONTRARIA a la del objetivo: es lo unico que
     //  garantiza que no lo tape sin negociar posiciones.
     int  tourPaso = 0;
+    //  EL TRAMO QUE SE RECORRE. El tour entero va de 0 al ultimo; ENSENAMELO
+    //  en un capitulo de la GUIA recorre solo los pasos de ese capitulo y se
+    //  cierra en su ultimo. Ver ZatiTour y kManual: un capitulo lleva los
+    //  pasos que lo ensenan, asi que la guia es UNA tabla con dos lecturas.
+    int  tourDesde = 0, tourHasta = kTourPasos - 1;
+    void ensenaCapitulo (int capitulo);
+    //  El texto de la guia con sus cifras puestas: `%1` efectos por canal y
+    //  `%2` canales, en LTR. Ver ZatiTour::cuerpos.
+    static juce::String guiaTexto (const char* clave);
+    juce::OwnedArray<juce::TextButton> guiaVerBtns;      // ENSENAMELO, una por capitulo
+    //  EL ANCHO DE SU TEXTO, MEDIDO UNA VEZ POR TEXTO. resized() corre en cada
+    //  toque, y medir «أرني» en la fuente mono pasa por el respaldo de
+    //  fontconfig -la mono no tiene arabe- a unos 5 ms la medida: diecinueve
+    //  por resized eran ~100 ms en CADA tapa de la app en arabe, y atasco.py
+    //  subio de la banda de 250 ms a 289 apretadas contra un tope de 200.
+    std::map<juce::String, int> guiaAnchoTexto;
+    juce::TextButton guiaTodoBtn { "RECORRER TODO" };
     //  Lo que el paso senala, en coordenadas de MainComponent. Vacio = sin
     //  objetivo: ni anillo ni numero, y el muelle se centra.
     juce::Rectangle<int> tourFoco;
@@ -3475,8 +3497,19 @@ private:
     juce::String tourNextCaption() const;
     //  Y la tercera tapa, que en el paso de la puerta deja de decir SALTAR.
     juce::String tourSkipCaption() const;
-    bool tourEsLaPuerta() const { return tourPaso == kTourBienvenida - 1; }
+    //  LA PUERTA SOLO EXISTE EN EL RECORRIDO ENTERO: en un capitulo suelto el
+    //  cuarto paso es un paso mas, y «VER MAS» alli sacaria de su capitulo.
+    bool tourEsLaPuerta() const { return tourDesde == 0 && tourHasta == kTourPasos - 1
+                                         && tourPaso == kTourBienvenida - 1; }
     int  tourBodyHeight (int ancho) const;
+    //  EL ANCHO DE CADA CUERPO, MEDIDO UNA VEZ POR IDIOMA. tourBodyHeight
+    //  corre dentro de resized(), que corre en cada toque, y media los
+    //  veinticuatro cuerpos cada vez: en arabe, con la fuente pasando por el
+    //  respaldo de fontconfig, era lo que mas pesaba de resized, y atasco.py
+    //  contaba 295 apretadas sobre 250 ms contra un tope de 200 y DESHACER a
+    //  1117 ms contra el de 1000. El texto solo cambia con el idioma.
+    mutable std::array<double, 24> tourAnchoCuerpo {};
+    mutable int tourAnchoIdioma = -1;
     //  LA LETRA DEL PARRAFO DEL TOUR, en un solo sitio. La escribian dos -quien
     //  mide el alto del muelle y quien lo pinta- y tienen que decir lo MISMO o
     //  el muelle se queda corto y la ultima linea cae fuera de la tarjeta.
@@ -3544,6 +3577,11 @@ private:
         double onMix;                      // MIX applied when you switch it on
     };
     static const FxDef fxDefs[kNumFx];
+    //  Y LOS DE MAS (tanda 32), que solo ensena la ficha del efecto: ver
+    //  `kExtrasFx` en MainComponent.cpp.
+    static FxDef::Spec specExtra (int f, int pi);
+    static const char* nombreExtra (int f, int pi);
+    static const char* nombreParam (int f, int pi);
 
     //  LOS VEINTICUATRO, POR TIPO Y NO POR ETAPA.
     //
@@ -3869,6 +3907,95 @@ private:
     void refreshMacroValues();
     juce::Rectangle<int> bandaMandos() const;
     void macroMoved (int idx);
+
+    //  ==================================================================
+    //  EL PLATO ELEGIBLE Y LA FICHA DE MANDOS (tanda 32)
+    //  ==================================================================
+    //
+    //  Del telefono: «que cada efecto ya no se modifique solo con 3 knobs,
+    //  sino pensar una forma optimizada de tocar mas parametros, tanto en
+    //  efectos como en instrumentos y pads». La cara no tiene alto para un
+    //  cuarto mando -esta en su limite medido a 412x915-, asi que el plato NO
+    //  crece: lo que cambia es QUE mueven sus tres mandos, y el detalle vive en
+    //  una ficha que los tiene todos.
+    //
+    //  UN DESTINO es lo que mueve un mando, y hay dos clases: un parametro de
+    //  efecto (tipo + indice, que el motor guarda por canal) o un deslizador
+    //  que YA existe en otra ficha -el corte del pad, el brillo de un
+    //  instrumento-. PUERTAS Y NO COPIAS, que es la regla de la casa: mover
+    //  desde el plato es mover ESE deslizador con notificacion, asi que el
+    //  deshacer, el re-sintetizado al soltar y el camino al motor son los
+    //  suyos y no una segunda version escrita aqui.
+    struct Destino
+    {
+        int f = -1, pi = -1;              // parametro de efecto...
+        juce::Slider* s = nullptr;        // ...o un deslizador de otra ficha
+        bool valido() const noexcept { return s != nullptr || f >= 0; }
+        bool operator== (const Destino& o) const noexcept { return f == o.f && pi == o.pi && s == o.s; }
+    };
+    enum class ModoPlato { fx, pad };
+    ModoPlato platoModo = ModoPlato::fx;
+    //  LA ELECCION, por tipo de efecto y no por canal: «el compresor enseña
+    //  el ataque» es una preferencia sobre el COMPRESOR. Sin elegir nada son
+    //  p0, p1 y p2, que es el plato de siempre.
+    std::array<std::array<int, 3>, kNumFx> platoFx {};
+    std::array<int, 3> platoPad  { { 0, 1, 2 } };   // indices en candidatosPad()
+    std::array<int, 3> platoInst { { 7, 4, 6 } };   // BRILLO, ATAQUE, SUELTA
+    void platoDeFabrica();
+    juce::Array<juce::Slider*> candidatosPad();
+    juce::Array<Destino> candidatosPlato();
+    Destino destinoPlato (int k);
+    bool platoEsInstrumento() const;
+    static constexpr int kMandosFichaMax = 12;
+    void configuraMando (juce::Slider& k, const Destino& d);
+    double valorDestino (const Destino& d);
+    void mueveDestino (const Destino& d, double v);
+    juce::String nombreDestino (const Destino& d) const;
+    juce::String textoDestino (const Destino& d, double v) const;
+    void configuraPlato();
+    void ponModoPlato (ModoPlato m);
+    juce::String platoAString() const;
+    void platoDeString (const juce::String&);
+    //  Tras pasar `macroMoved` por el MIX: la tapa tiene que decir lo que el
+    //  mando dice. Era codigo de `macroMoved` y ahora lo llaman dos.
+    void sincronizaMix (int f);
+
+    //  MANTENER UN MANDO DEL PLATO abre la ficha. Un `MouseListener` y no una
+    //  subclase: los tres son `juce::Slider` de siempre y el gesto se les
+    //  anade encima. Se cancela en cuanto el dedo se mueve, que es girar.
+    struct MantenMando : public juce::MouseListener, private juce::Timer
+    {
+        std::function<void()> onHold;
+        void mouseDown (const juce::MouseEvent&) override { startTimer (Metrics::holdMs); }
+        void mouseDrag (const juce::MouseEvent& e) override
+        { if (e.getDistanceFromDragStart() > Metrics::xs) stopTimer(); }
+        void mouseUp (const juce::MouseEvent&) override { stopTimer(); }
+        void timerCallback() override { stopTimer(); if (onHold) onHold(); }
+    };
+    MantenMando mantenMando[3];
+    //  Y TOCAR -sin girar- un mando de la ficha lo lleva al plato.
+    struct TocaMando : public juce::MouseListener
+    {
+        std::function<void()> onTap;
+        void mouseUp (const juce::MouseEvent& e) override
+        { if (e.getDistanceFromDragStart() <= Metrics::xs && e.getNumberOfClicks() == 1 && onTap) onTap(); }
+    };
+
+    Sheet mandosSheet;
+    juce::OwnedArray<juce::Slider> mandosFicha;
+    std::array<TocaMando, kMandosFichaMax> tocaMandoFicha;
+    juce::Array<Destino> mandosFichaDestino;
+    juce::OwnedArray<juce::TextButton> mandosParaBtns;   // MANDO 1-3: a cual se lleva
+    juce::OwnedArray<juce::TextButton> mandosSyncBtns;   // LIBRE, 1/1 ... 1/16
+    juce::TextButton mandosPresetsBtn { "PRESETS" };
+    juce::TextButton mandosCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    juce::TextButton platoPadBtn;                        // el visor en modo PAD
+    juce::Rectangle<int> mandosTituloBanda, mandosAyudaBanda;
+    int mandosPara = 0;
+    void abreFichaMandos (int mando);                    // -1 la cierra
+    void refrescaFichaMandos();
+    void llevaAlPlato (int i);                           // el de la ficha, al plato
+    void paintMandosContent (juce::Graphics&);
 
     // Skin cycler: four chassis TONES (TINTA/GRAFITO/ACERO/PLOMO), no hues.
     //  El juego de iconos de las tapas, en una tabla. Ver ponIconos().

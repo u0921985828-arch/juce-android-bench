@@ -26,7 +26,7 @@ El paso 0 es la portada y NO tiene objetivo a proposito - se comprueba que
 siga siendo el unico, que es la otra mitad: un `default` que atiende un caso
 correcto y otro olvidado es como se esconde el segundo.
 """
-import json, os, shutil, subprocess, sys, tempfile
+import json, os, re, shutil, subprocess, sys, tempfile
 
 #  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
 #  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
@@ -40,7 +40,13 @@ from kits import display_alive
 
 ROOT  = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP   = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
-PASOS = 15
+#  LOS PASOS SALEN DEL FUENTE, no de un numero escrito aqui: eran quince
+#  escritos a mano y la guia paso a veinticuatro, que es exactamente como una
+#  regla deja de mirar los pasos nuevos sin decir nada.
+import re as _re
+PASOS = int (_re.search (r"kTourPasos\s*=\s*(\d+)",
+                         open (os.path.join (ROOT, "Source", "MainComponent.h"),
+                               encoding="utf8").read()).group (1))
 MIN   = 40          # Metrics::hit: el mismo liston que un blanco tocable
 PORTADA = 0         # el unico sin objetivo
 
@@ -65,12 +71,181 @@ def foco (paso, size):
     return ult
 
 
+# ============================================================================
+#  LA GUIA DICE LA VERDAD, y la dice entera.
+#
+#  Hasta la tanda 31 esta prueba solo miraba el anillo. Y la guia tenia TRES
+#  cosas falsas que ninguna regla podia ver:
+#
+#   - el paso de la mesa decia «dieciseis PADS y dieciseis CANALES» desde que
+#     el motor tiene treinta y dos (`kNumCanales`), escrito en letra;
+#   - GESTOS listaba «GOLPEA ARRIBA O ABAJO · toca mas fuerte o mas flojo»,
+#     que es falso desde el tapeo plano;
+#   - el paso del secuenciador llamaba a `stepCellToggled (0, 4)`: si el paso
+#     5 del pad 1 estaba encendido te lo APAGABA y apilaba un deshacer.
+#
+#  Y lo que no explicaba nadie -REMUESTREAR, el EQ, AUTO, TAP, la CANCION, los
+#  proyectos- no lo veia nadie porque no hay regla que pregunte por lo que
+#  falta. Ahora se pregunta, contra las tapas de la app y no contra una lista.
+# ============================================================================
+GUIA = {"capitulos": []}
+
+#  Los numeros que la guia escribe en letra, y el sustantivo que los ata a una
+#  constante del motor. Solo los que tienen dueño: «tres mandos» es el plato y
+#  no una constante, y un numero sin dueño no se juzga.
+LETRAS = {"uno": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5,
+          "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10, "doce": 12,
+          "dieciseis": 16, "veinte": 20, "treinta": 30, "treinta y dos": 32,
+          "sesenta y cuatro": 64}
+DUENO = {"canales": ("canales",), "efectos": ("efectos",), "bancos": ("bancos",),
+         "patrones": ("patrones",), "ranuras": ("ranuras",), "carriles": ("carriles",),
+         "bandas": ("bandas",), "pads": ("pads", "padsbanco")}
+
+#  Lo que la guia ya dijo y era falso. Si vuelve, es que alguien lo devolvio.
+FALSOS = ["GOLPEA ARRIBA O ABAJO", "toca mas fuerte o mas flojo",
+          "dieciseis CANALES"]
+
+#  Las fichas cuyas tapas tienen que estar explicadas. Son las que la guia
+#  abre y las que se alcanzan desde la cara.
+COBERTURA = ["", "pads", "pad2", "pad3", "sec", "paso", "piano", "song", "mix",
+             "mixc", "rack", "inst", "vst", "expo", "proj", "set", "asp", "midi",
+             "eq", "chop", "mandos"]
+#  Lo que se escribe con su razon, como `SIN_RED` en deshacer.py: tapas cuyo
+#  rotulo es CONTENIDO y no una funcion. El resto se deriva del volcado: una
+#  tapa de un grupo de radio de idioma o carcasa es una opcion, y una con
+#  icono de familia es un nombre de instrumento.
+SIN_EXPLICAR = {
+    "DLY": "el nombre del efecto enfocado: la ficha de mandos abre el que haya",
+}
+RADIOS_DE_CONTENIDO = ("idioma", "carcasa")
+
+
+def _norm (t):
+    import unicodedata
+    t = unicodedata.normalize ("NFKD", t).encode ("ascii", "ignore").decode()
+    return re.sub (r"\s+", " ", t.upper()).strip()
+
+
+def _corre (env_extra, size="412x915"):
+    casa = tempfile.mkdtemp (prefix="zati-guia-")
+    env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE=size,
+                ZATI_LANG="es", DISPLAY=PANTALLA, **env_extra)
+    try:
+        return subprocess.run ([APP], env=env, capture_output=True,
+                               timeout=300).stdout.decode ("utf8", "replace")
+    except subprocess.TimeoutExpired:
+        return ""
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+
+def _json (out):
+    for l in out.splitlines():
+        l = l.strip()
+        if l.startswith ("{"):
+            try: yield json.loads (l)
+            except Exception: pass
+
+
+def guia (malas):
+    ds = [d for d in _json (_corre ({"ZATI_GUIA": "1", "ZATI_OPEN": ""})) if "guia" in d]
+    cif = next ((d for d in ds if d["guia"] == "cifras"), None)
+    if cif is None:
+        malas.append ("la guia no contesto"); return
+    pasos = [d for d in ds if d["guia"] == "paso"]
+    caps  = [d for d in ds if d["guia"] == "capitulo"]
+    gest  = [d for d in ds if d["guia"] == "gesto"]
+    pat   = next ((d for d in ds if d["guia"] == "patron"), {})
+    GUIA["capitulos"] = caps
+
+    #  1. CADA PASO ES DE UN CAPITULO, Y SOLO DE UNO. Un paso huerfano es un
+    #     anillo que ENSENAMELO no alcanza nunca; uno en dos capitulos, un
+    #     tramo que se pisa; un capitulo sin pasos, un ENSENAMELO que no ensena.
+    duenos = {n: [] for n in range (cif["pasos"])}
+    for c in caps:
+        if c["desde"] > c["hasta"]:
+            malas.append ("el capitulo %s no tiene pasos (%d..%d)"
+                          % (c["titulo"], c["desde"], c["hasta"]))
+        for n in range (c["desde"], c["hasta"] + 1):
+            duenos.setdefault (n, []).append (c["titulo"])
+    sin  = [n for n, v in duenos.items() if not v]
+    dobl = [n for n, v in duenos.items() if len (v) > 1]
+    print ("%d capitulos, %d pasos: %d sin capitulo, %d en dos"
+           % (len (caps), cif["pasos"], len (sin), len (dobl)))
+    for n in sin:  malas.append ("el paso %d no es de ningun capitulo" % n)
+    for n in dobl: malas.append ("el paso %d es de %s" % (n, " y ".join (duenos[n])))
+
+    #  2. LAS CIFRAS SON LAS DEL MOTOR.
+    textos = [p["titulo"] + ". " + p["texto"] for p in pasos] \
+           + [c["titulo"] + ". " + c["texto"] for c in caps] \
+           + [g["como"] + " " + g["que"] for g in gest]
+    todo = "\n".join (textos)
+    num = r"(treinta y dos|sesenta y cuatro|" + "|".join (
+        k for k in LETRAS if " " not in k) + r"|\d+)"
+    juzgadas = 0
+    for m in re.finditer (num + r"\s+(\w+)", todo, re.I):
+        n, sust = m.group (1).lower(), m.group (2).lower()
+        if sust not in DUENO: continue
+        v = int (n) if n.isdigit() else LETRAS[n]
+        buenos = [cif[k] for k in DUENO[sust]]
+        juzgadas += 1
+        if v not in buenos:
+            malas.append ("la guia dice «%s %s» y el motor tiene %s"
+                          % (m.group (1), m.group (2), " o ".join (map (str, buenos))))
+    print ("cifras juzgadas contra el motor: %d" % juzgadas)
+
+    #  3. LO QUE YA FUE FALSO NO VUELVE, y GESTOS tiene las filas que dice.
+    for f in FALSOS:
+        if _norm (f) in _norm (todo):
+            malas.append ("la guia vuelve a decir «%s», que es falso" % f)
+    if len (gest) != cif["gestos"]:
+        malas.append ("GESTOS pinta %d filas y kNumGestures dice %d"
+                      % (len (gest), cif["gestos"]))
+
+    #  4. RECORRERLA NO TOCA TU PATRON, ni deja un deshacer que no pediste.
+    print ("el patron tras recorrer la guia: %d celdas antes, %d despues, "
+           "identico %s; deshacer %d -> %d"
+           % (pat.get ("celdasAntes", -1), pat.get ("celdasDespues", -1),
+              "si" if pat.get ("igual") else "NO",
+              pat.get ("undoAntes", -1), pat.get ("undoDespues", -1)))
+    if not pat.get ("igual"):
+        malas.append ("recorrer la guia cambia el patron: %d celdas antes y %d despues"
+                      % (pat.get ("celdasAntes", -1), pat.get ("celdasDespues", -1)))
+    if pat.get ("undoDespues") != pat.get ("undoAntes"):
+        malas.append ("recorrer la guia apila %d deshacer"
+                      % (pat.get ("undoDespues", 0) - pat.get ("undoAntes", 0)))
+
+    #  5. COBERTURA: toda tapa con nombre esta explicada en algun sitio.
+    import concurrent.futures as cf
+    with cf.ThreadPoolExecutor (8) as ex:
+        salidas = list (ex.map (lambda f: (f, _corre ({"ZATI_OPEN": f})), COBERTURA))
+    guiaN = _norm (todo)
+    faltan, contadas = {}, set()
+    for ficha, out in salidas:
+        for d in _json (out):
+            t = d.get ("text", "")
+            if d.get ("kind") != "button" or d.get ("on") != 1 or not t: continue
+            if re.fullmatch (r"[A-H\d]|P\d|[\d.:%x+\-]+.*|MANDO \d+", t): continue
+            if d.get ("radio") in RADIOS_DE_CONTENIDO: continue
+            if str (d.get ("icono", "")).startswith ("ins"): continue
+            if t in SIN_EXPLICAR: continue
+            contadas.add (t)
+            if _norm (t) not in guiaN:
+                faltan.setdefault (t, set()).add (ficha or "cara")
+    print ("tapas con nombre en %d fichas: %d, sin explicar en la guia: %d"
+           % (len (COBERTURA), len (contadas), len (faltan)))
+    for t, fs in sorted (faltan.items()):
+        malas.append ("la tapa %s (%s) no sale en la guia" % (t, ", ".join (sorted (fs))))
+    print()
+
+
 def main():
     if not os.path.exists (APP): sys.exit ("no hay binario: compila primero")
     if not display_alive(): sys.exit ("la pantalla virtual no responde")
 
     size = sys.argv[1] if len (sys.argv) > 1 else "412x915"
     malas = []
+    guia (malas)
     pags  = {}
     print ("%-6s %10s   %s" % ("paso", "objetivo", "que pasa"))
     for n in range (PASOS):
@@ -112,7 +287,10 @@ def main():
     #  el caso contrario, que otro paso deje la mesa en CANALES, sin escribir
     #  una segunda regla.
     print()
-    CANALES = 11
+    #  El paso que habla de los canales es el tramo del capitulo MEZCLA Y
+    #  CANALES de la guia, no un numero: con la guia unica paso del 11 al 15.
+    CANALES = next ((c["desde"] for c in GUIA["capitulos"]
+                     if "CANALES" in c["titulo"]), -1)
     print ("la mesa queda en: %s" % ", ".join ("%d:%s" % (n, "CANALES" if v == 1
                                                           else "PADS" if v == 0 else "?")
                                                for n, v in sorted (pags.items())
@@ -274,7 +452,8 @@ def main():
 
     print()
     for m in malas: print ("FALLA ", m)
-    print ("los %d pasos del tour señalan lo que explican" % PASOS if not malas
+    print ("los %d pasos de la guia señalan lo que explican, sus cifras son las del "
+           "motor, no tocan el patron y todas las tapas estan explicadas" % PASOS if not malas
            else "%d FALLA" % len (malas))
     return 1 if malas else 0
 

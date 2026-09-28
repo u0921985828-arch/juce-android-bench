@@ -2434,7 +2434,7 @@ int main()
         float primerValor = 0.0f, peorPico = 0.0f;
 
         for (int fx = 0; fx < AudioEngine::kNumFx; ++fx)
-            for (int par = 0; par < 3; ++par)
+            for (int par = 0; par < AudioEngine::kNumParFx; ++par)
                 for (float v : hostiles)
                 {
                     const auto monton_e = std::make_unique<AudioEngine>();
@@ -2444,8 +2444,8 @@ int main()
                     //  Los otros dos mandos en su valor de fabrica, que es lo
                     //  que hace que el extremo sea de UNO y no de los tres a
                     //  la vez: con los tres hostiles no se sabria cual fue.
-                    for (int q = 0; q < 3; ++q)
-                        e.setFxParam (0, fx, q, q == par ? v : AudioEngine::kFxDef[fx][q]);
+                    for (int q = 0; q < AudioEngine::kNumParFx; ++q)
+                        e.setFxParam (0, fx, q, q == par ? v : AudioEngine::defectoFx (fx, q));
                     if (par != 2) e.setFxParam (0, fx, 2, 1.0f);
                     e.setCanalSend (0, fx, 1.0f);
                     e.publishSample (0, makeSample (kSr, 0.5, 440.0f, false));
@@ -2477,7 +2477,7 @@ int main()
 
         std::printf ("%-34s %d combinaciones, %d malas, pico peor %.4f   %s\n",
                      "extremos de los mandos",
-                     AudioEngine::kNumFx * 3 * (int) (sizeof (hostiles) / sizeof (hostiles[0])),
+                     AudioEngine::kNumFx * AudioEngine::kNumParFx * (int) (sizeof (hostiles) / sizeof (hostiles[0])),
                      malos, peorPico, malos == 0 ? "OK" : zatiFalla());
         if (malos > 0)
             std::printf ("   el primero: fx %d, mando %d, valor %g\n",
@@ -9112,6 +9112,130 @@ int main()
                          "T30 la mesa vieja suena igual", db,
                          (pk > 1.0e-3 && db < -90.0) ? "OK" : zatiFalla());
         }
+    }
+
+    //  ===================================================================
+    //  T32 · LOS MANDOS QUE ERAN CONSTANTES
+    //  ===================================================================
+    //
+    //  `kNumParFx` paso de cuatro a ocho: p3 el enganche -que existia y no
+    //  tenia mando-, p4 y p5 los dos propios de cada tipo -el ataque del
+    //  compresor, el centro del chorus, el tono de la realimentacion del
+    //  delay- y p6/p7 un corte de graves y agudos a la salida de todos menos
+    //  el EQ. Cada uno era un numero escrito a mano en el motor.
+    //
+    //  El SILENCIO de un proyecto viejo no se mide aqui sino contra el binario
+    //  de antes -60 volcados de 96 bloques, identicos byte a byte, en la
+    //  BITACORA-: desde dentro no hay «antes». Lo que si se mide aqui es la
+    //  otra mitad, la que se rompe sola: que cada mando nuevo LLEGUE al audio.
+    //  Un mando que la cara ensena y el motor no lee es el peor de los fallos
+    //  de esta tanda, porque se mueve, dice un numero y no hace nada.
+    {
+        constexpr double kSr = 48000.0; constexpr int kBlk = 512;
+        const auto muestra = makeSample (kSr, 0.5, 220.0f, true);
+
+        auto render = [&] (int fx, int par, float v, std::vector<float>& out)
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            e.prepareToPlay (kSr, kBlk); e.setPolyphony (8, 2);
+            enCanalCero (e); e.setPadGain (0, 1.0f);
+            e.setFxParam (0, fx, 2, 1.0f);
+            if (par >= 0) e.setFxParam (0, fx, par, v);
+            e.setCanalSend (0, fx, 1.0f);
+            e.publishSample (0, muestra);
+            juce::AudioBuffer<float> b (2, kBlk);
+            for (int i = 0; i < 4; ++i) { b.clear(); e.renderNextBlock (b, 0, kBlk); }
+            out.clear();
+            for (int blk = 0; blk < 96; ++blk)
+            {
+                if (blk % 24 == 0) e.postNoteOn (0, blk % 48 ? 0.4f : 1.0f);
+                b.clear(); e.renderNextBlock (b, 0, kBlk);
+                for (int ch = 0; ch < 2; ++ch)
+                    out.insert (out.end(), b.getReadPointer (ch), b.getReadPointer (ch) + kBlk);
+            }
+        };
+
+        //  EL VALOR MOVIDO sale del defecto y no de la tabla de rangos de la
+        //  cara, por la misma razon que los extremos: no se le pregunta al que
+        //  los escribe. Por tres, y lo que el motor acote lo acota el motor;
+        //  los que nacen en su tope (el tono a 20 kHz) bajan a 1.5 kHz.
+        auto movido = [] (int fx, int par) -> float
+        {
+            //  EL ENGANCHE A SEMICORCHEAS Y NO A NEGRAS. Con negras la
+            //  primera corrida dio DUC y REP a -240 dB -identicos bit a bit- y
+            //  no era el motor: a 120 BPM una negra dura 0.5 s, asi que 1/4
+            //  enganchado ES 2 Hz libres, que es justo su defecto. La misma
+            //  fase por dos caminos.
+            if (par == 3) return 16.0f;
+            if (par == AudioEngine::kParGraves) return 400.0f;
+            if (par == AudioEngine::kParAgudos) return 1500.0f;
+            const float d = AudioEngine::defectoFx (fx, par);
+            return d >= 19999.0f ? 1500.0f : d * 3.0f;
+        };
+
+        std::vector<float> base, mov;
+        int mandos = 0, sordos = 0; double peor = 999.0; int peorFx = -1, peorPar = -1;
+        for (int fx = 0; fx < AudioEngine::kNumFx; ++fx)
+        {
+            render (fx, -1, 0.0f, base);
+            double rms = 0.0; for (float v : base) rms += (double) v * v;
+            rms = std::sqrt (rms / (double) base.size());
+            for (int par = 3; par < AudioEngine::kNumParFx; ++par)
+            {
+                if (! AudioEngine::tieneMando (fx, par)) continue;
+                render (fx, par, movido (fx, par), mov);
+                double d = 0.0;
+                for (size_t i = 0; i < base.size(); ++i) d += ((double) mov[i] - base[i]) * ((double) mov[i] - base[i]);
+                d = std::sqrt (d / (double) base.size());
+                const double db = 20.0 * std::log10 (juce::jmax (1.0e-12, d / juce::jmax (1.0e-12, rms)));
+                ++mandos;
+                //  LA PREGUNTA ES SI LLEGA, NO SI SE OYE MUCHO. La primera
+                //  version pedia -20 dB y dio siete «sordos» que no lo eran:
+                //  el ataque de la puerta a -74.7, el del de-esser a -66.3
+                //  -una senoide de 220 Hz no tiene sibilancia que morder-, el
+                //  tono del delay a -25.7. Todos se mueven; cuanto depende de
+                //  la senal. Un mando que el motor NO lee da exactamente -240
+                //  (el suelo del `jmax`), y el redondeo de un float anda por
+                //  -140, asi que -100 separa las dos cosas con margen.
+                if (db < -100.0) { ++sordos; std::printf ("   sordo: fx %d mando %d  %.1f dB\n", fx, par, db); }
+                if (db < peor) { peor = db; peorFx = fx; peorPar = par; }
+            }
+        }
+        std::printf ("%-34s %d mandos, %d sordos, el que menos mueve %.1f dB (fx %d, p%d)   %s\n",
+                     "T32 cada mando nuevo llega", mandos, sordos, peor, peorFx, peorPar,
+                     (mandos > 0 && sordos == 0) ? "OK" : zatiFalla());
+
+        //  Y MOVERLOS NO RESERVA. Los treinta en el canal 0 a la vez y los
+        //  ocho mandos de cada uno barridos bloque a bloque, que es lo que
+        //  hace la automatizacion: el filtro de salida recalcula coeficientes
+        //  y el tono del delay tambien, y eso es donde se cuela un `std::vector`.
+#if ZATI_CUENTA_RESERVAS
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            e.prepareToPlay (kSr, kBlk); e.setPolyphony (8, 2);
+            enCanalCero (e); e.setPadGain (0, 1.0f); e.publishSample (0, muestra);
+            for (int fx = 0; fx < AudioEngine::kNumFx; ++fx) e.setCanalSend (0, fx, 1.0f);
+            juce::AudioBuffer<float> b (2, kBlk);
+            for (int i = 0; i < 4; ++i) { b.clear(); e.renderNextBlock (b, 0, kBlk); }
+            e.postNoteOn (0, 1.0f);
+            long reservas = 0; bool finita = true;
+            for (int blk = 0; blk < 64; ++blk)
+            {
+                const float t = (float) (blk % 16) / 15.0f;
+                for (int fx = 0; fx < AudioEngine::kNumFx; ++fx)
+                    for (int par = 3; par < AudioEngine::kNumParFx; ++par)
+                        e.setFxParam (0, fx, par, AudioEngine::defectoFx (fx, par) * (0.2f + 2.0f * t));
+                const long r0 = zatiReservas.load();
+                zatiCuenta = true; b.clear(); e.renderNextBlock (b, 0, kBlk); zatiCuenta = false;
+                reservas += zatiReservas.load() - r0;
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < kBlk; ++i) if (! std::isfinite (b.getSample (ch, i))) finita = false;
+            }
+            std::printf ("%-34s %ld reservas en 64 bloques con los 30 y sus mandos barridos, %s   %s\n",
+                         "T32 mover los nuevos no reserva", reservas, finita ? "finita" : "NO FINITA",
+                         (reservas == 0 && finita) ? "OK" : zatiFalla());
+        }
+#endif
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

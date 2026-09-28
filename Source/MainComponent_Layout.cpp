@@ -941,6 +941,8 @@ void MainComponent::resized()
             //  su propia cara, que es la version grande de lo mismo.
             platoMini.setVisible (false);
             platoMini.setBounds ({});
+            platoPadBtn.setVisible (false);
+            platoPadBtn.setBounds ({});
             //  APAGADOS *Y* SIN LIMITES, que son las dos mitades de la misma
             //  regla y aqui solo estaba puesta una. Un control encendido y de
             //  0x0 pasa las ocho reglas de geometria -no solapa, no se sale,
@@ -977,16 +979,26 @@ void MainComponent::resized()
             const int cellMin = Metrics::hit + 2 * Metrics::margenPlato;
             const int visorW  = juce::jlimit (0, juce::jmin (120, mrow.getWidth() - 3 * cellMin),
                                               mrow.getWidth() / 3);
-            platoMini.setVisible (visorW >= 48);
+            //  EN MODO PAD el visor no tiene efecto que ensenar y su sitio es
+            //  de la tapa que dice de que pad son los mandos -y los devuelve
+            //  al efecto-. El mismo rectangulo, un inquilino a la vez.
+            const bool enPad = platoModo == ModoPlato::pad;
+            platoMini.setVisible (visorW >= 48 && ! enPad);
+            platoPadBtn.setVisible (visorW >= 48 && enPad);
             if (visorW >= 48)
             {
-                platoMini.setBounds (Lang::takeStart (mrow, visorW)
-                                         .reduced (Metrics::margenPlato, Metrics::margenPlato));
+                const auto visor = Lang::takeStart (mrow, visorW)
+                                       .reduced (Metrics::margenPlato, Metrics::margenPlato);
+                platoMini.setBounds (enPad ? juce::Rectangle<int>() : visor);
+                platoPadBtn.setBounds (enPad ? visor.withSizeKeepingCentre (visor.getWidth(),
+                                                     juce::jmin (visor.getHeight(), Metrics::btn))
+                                             : juce::Rectangle<int>());
             }
             else
             {
                 //  APAGADO *Y* SIN LIMITES, las dos mitades de la misma regla.
                 platoMini.setBounds ({});
+                platoPadBtn.setBounds ({});
             }
 
             const int w = mrow.getWidth() / 3;
@@ -1826,6 +1838,88 @@ void MainComponent::resized()
         }
     };
 
+    //  LA FICHA DE MANDOS (tanda 32). Pide: la cabecera, la fila MANDO 1-3,
+    //  su renglon de ayuda, hasta tres filas de cuatro mandos, y -si el tipo
+    //  engancha- la fila de divisiones y la tapa de PRESETS.
+    //
+    //  EN FILAS DE CUATRO, que es lo que cabe a 280 de ancho con el dedo: doce
+    //  mandos son tres filas y ninguna ficha de la app pide mas. Cada fila por
+    //  `placeKnobRow`, la misma que colocan el pad y el instrumento.
+    if (mandosSheet.isVisible())
+    {
+        constexpr int porFila = 4;
+        const int n     = juce::jmin (mandosFichaDestino.size(), mandosFicha.size());
+        const int filas = juce::jmax (1, (n + porFila - 1) / porFila);
+        const bool sync = ! mandosSyncBtns.isEmpty() && mandosSyncBtns[0]->isVisible();
+        const bool pres = mandosPresetsBtn.isVisible();
+        const int quiere = Ficha::cromo
+                           + Metrics::btn + Metrics::xs + Metrics::bandaSubtitulo + Metrics::sm
+                           + filas * ZatiLookAndFeel::kKnobRow + (filas - 1) * Metrics::xs
+                           + (sync ? Metrics::sm + Metrics::btn : 0)
+                           + (pres ? Metrics::sm + Metrics::btn : 0);
+        auto inner = sheetFromBottom (mandosSheet, quiere);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        mandosCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                    .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        mandosTituloBanda = centraEnRenglon (titleRow.withHeight (Metrics::bandaTitulo));
+        inner.removeFromTop (Metrics::sm);
+
+        juce::TextButton* para[3] = { mandosParaBtns[0], mandosParaBtns[1], mandosParaBtns[2] };
+        layoutModuleBar (inner.removeFromTop (Metrics::btn), para, 0, 3);
+        inner.removeFromTop (Metrics::xs);
+        //  Es una banda de AYUDA y mide lo que el contrato le da a una:
+        //  `bandaSubtitulo`. Con `bandaTitulo` median 16 px contra 14, y
+        //  expo.py lo canto en las nueve pantallas y los cuatro idiomas.
+        mandosAyudaBanda = inner.removeFromTop (Metrics::bandaSubtitulo);
+        inner.removeFromTop (Metrics::sm);
+
+        //  Las tapas SE APARTAN PRIMERO, por la regla de siempre: una fila de
+        //  tapas no encoge y los mandos se llevan lo que quede.
+        if (pres)
+        {
+            mandosPresetsBtn.setBounds (inner.removeFromBottom (Metrics::btn));
+            inner.removeFromBottom (Metrics::sm);
+        }
+        else mandosPresetsBtn.setBounds ({});
+        if (sync)
+        {
+            juce::TextButton* chips[6];
+            const int nc = juce::jmin (6, mandosSyncBtns.size());
+            for (int i = 0; i < nc; ++i) chips[i] = mandosSyncBtns[i];
+            layoutModuleBar (inner.removeFromBottom (Metrics::btn), chips, 0, nc);
+            inner.removeFromBottom (Metrics::sm);
+        }
+        else for (auto* b : mandosSyncBtns) b->setBounds ({});
+
+        //  CON `xs` ENTRE FILAS: pegadas median 20 px de mando a mando -el
+        //  aire que placeKnobRow deja dentro de la celda- y expo.py lo canto
+        //  fuera de la escala en las nueve pantallas, 36 huecos. Con `sm`
+        //  salian 28, fuera tambien. Las filas son UN grupo -los mandos del
+        //  mismo efecto- y dentro de un grupo el aire es `xs`: 24, en escala.
+        const int filaH = juce::jmin (ZatiLookAndFeel::kKnobRow,
+                                      (inner.getHeight() - (filas - 1) * Metrics::xs) / filas);
+        for (int f = 0; f < filas; ++f)
+        {
+            if (f > 0) inner.removeFromTop (Metrics::xs);
+            auto fila = inner.removeFromTop (filaH);
+            const int enFila = juce::jmin (porFila, n - f * porFila);
+            if (enFila <= 0) break;
+            //  LA ULTIMA FILA, CORTA, NO SE ESTIRA: sus mandos caen bajo los de
+            //  arriba, del ancho de un cuarto, que es lo que hace de las filas
+            //  una rejilla y no tres repartos distintos.
+            auto usada = Lang::takeStart (fila, fila.getWidth() * enFila / porFila);
+            juce::Slider* ks[porFila] = {};
+            for (int i = 0; i < enFila; ++i) ks[i] = mandosFicha[f * porFila + i];
+            placeKnobRow (usada, ks, enFila);
+        }
+        for (int i = n; i < mandosFicha.size(); ++i) mandosFicha[i]->setBounds ({});
+    }
+    else if (! mandosSheet.sheetBounds.isEmpty())
+    {
+        mandosSheet.sheetBounds = {};
+    }
+
     // PADS sheet, dos paginas. Ver PadPage en la cabecera: SONIDO es lo que
     // suena el pad y EL PAD es lo que el pad es. Cada pagina pide la altura que
     // va a usar, asi que la ficha encoge cuando lo de dentro ocupa menos - la
@@ -2548,13 +2642,51 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         manualCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
                                         .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        //  RECORRER TODO va en el renglon del titulo, medido por su TEXTO: a
+        //  ojo es como se cortaron los rotulos de la fila de IDIOMA.
+        const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
+        auto anchoDe = [&] (const juce::TextButton& b)
+        {
+            const auto texto = b.getButtonText();
+            auto hit = guiaAnchoTexto.find (texto);
+            if (hit == guiaAnchoTexto.end())
+                hit = guiaAnchoTexto.emplace (texto,
+                          (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, texto))).first;
+            return juce::jmax (Metrics::hit, hit->second + 2 * Metrics::sm + 2 * Metrics::aireTapa);
+        };
         inner.removeFromTop (Metrics::bandaSubtitulo + Metrics::sm);   // pintado: el subtitulo
+        //  RECORRER TODO, EN SU PROPIA FILA bajo el subtitulo. Iba en el
+        //  renglon del titulo, y la tapa mide Metrics::hit de alto contra
+        //  bandaTitulo del titulo: bajaba hasta el subtitulo y lo tapaba
+        //  (expo: TAPADO 10), y recortar el subtitulo antes de ella lo dejaba
+        //  en 87 px de los 175 que pide en 280x653 (CORTADO 6).
+        guiaTodoBtn.setBounds (inner.removeFromTop (Metrics::hit).reduced (0, Metrics::margenTapa));
+        inner.removeFromTop (Metrics::sm);
 
         manualScroll.setBounds (inner);
         const int barW = manualScroll.getScrollBarThickness();
         manualBody.setSize (juce::jmax (40, inner.getWidth() - barW),
                             juce::jmax (inner.getHeight(),
                                         manualContentHeight (inner.getWidth() - barW)));
+
+        //  ENSENAMELO, en el renglon del titulo de cada capitulo. La y se
+        //  camina IGUAL que en paintManualBody y manualContentHeight - la misma
+        //  tabla con las mismas alturas -, o la tapa se queda en el capitulo
+        //  de al lado en cuanto uno gane una linea.
+        auto r = manualBody.getLocalBounds().reduced (Metrics::sm, 0);
+        r.removeFromTop (Metrics::sm);
+        int c = 0;
+        for (const auto& ch : kManual)
+        {
+            auto band = r.removeFromTop (kManualTitleH);
+            if (auto* ver = guiaVerBtns[c])
+                ver->setBounds (Lang::takeEnd (band, juce::jmin (anchoDe (*ver), band.getWidth() / 2)));
+            if (ch.gestos) r.removeFromTop (kNumGestures * kManualLineH);
+            for (const char* l : ch.lines)
+                if (l != nullptr) r.removeFromTop (kManualLineH);
+            r.removeFromTop (kManualGap);
+            ++c;
+        }
     }
 
     // BROWSE sheet: the tallest of them all — the file list wants the room.
@@ -2870,17 +3002,15 @@ void MainComponent::resized()
                 //  El boton del manual, al pie de la pagina de gestos: los
                 //  gestos son la mitad de las preguntas y el manual es la otra
                 //  mitad, asi que estan en el mismo sitio.
-                //  MANUAL y TOUR comparten renglon y se reparten por el TEXTO
-                //  que llevan: a mitades, "MANUAL" y الدليل caben y 参数锁定 no,
-                //  y repartir a ojo es como se cortaron dieciseis rotulos en la
-                //  fila de IDIOMA.
+                //  MANUAL y TOUR compartian renglon, repartido por su texto.
+                //  Ahora es UNA SOLA tapa, GUIA: el tour y el manual son la misma
+                //  tabla de capitulos, leida o ensenada. TOUR se queda sin
+                //  sitio - vive dentro, como RECORRER TODO -, con sus limites
+                //  vaciados por la misma razon que abajo.
                 manualButton.setVisible (true);
-                tourButton.setVisible (true);
-                {
-                    auto row = inner.removeFromBottom (Metrics::hit);
-                    juce::TextButton* mb[2] = { &manualButton, &tourButton };
-                    layoutModuleBar (row, mb, 0, 2);
-                }
+                tourButton.setVisible (false);
+                tourButton.setBounds ({});
+                manualButton.setBounds (inner.removeFromBottom (Metrics::hit));
                 inner.removeFromBottom (Metrics::sm);
                 gesturesArea = inner;
             }

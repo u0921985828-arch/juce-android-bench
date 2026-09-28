@@ -73,7 +73,7 @@ LANGS = ["es", "en", "zh", "ar"]
 #  paneles que se le pintan encima no los medía nadie. Una ficha que no se
 #  abre no puede fallar.
 SHEETS = ["pads", "pad2", "pad3", "sec", "secp", "paso", "piano", "song", "set", "asp",
-          "proj", "midi", "expo", "chop", "vst", "gest"]
+          "proj", "midi", "expo", "chop", "vst", "gest", "mandos"]
 
 #  El aire que la app dice que deja. Se lee del fichero y no se copia: una
 #  prueba que lleva su propia copia del numero pasa cuando el numero cambia.

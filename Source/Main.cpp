@@ -680,6 +680,16 @@ public:
                     {
                         c2->auditAuto();
                     }
+                    //  LA GUIA: textos, capitulos y el patron. Ver Tests/tour.py.
+                    else if (UiAudit::env ("ZATI_GUIA").isNotEmpty())
+                    {
+                        c2->auditGuia();
+                    }
+                    //  EL PLATO QUE SE ELIGE. Ver Tests/plato.py.
+                    else if (UiAudit::env ("ZATI_PLATO").isNotEmpty())
+                    {
+                        c2->auditPlato();
+                    }
                     //  EL MIDI DEL PIANO ROLL. Ver Tests/midi.py.
                     else if (UiAudit::env ("ZATI_MIDI").isNotEmpty())
                     {

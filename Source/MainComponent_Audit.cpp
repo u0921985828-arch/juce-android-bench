@@ -1882,6 +1882,21 @@ void MainComponent::auditDlc()
 
     cargaInstrumento (2);      // TEXTURA, que vive en el banco C
     cargaInstrumento (2); esperaInstrumentos();
+    //  Y SE ESPERA A LA FABRICA, que desde 7953622 -la fabrica bloqueaba el
+    //  hilo de mensajes 1691 ms- se rinde en una hebra y se reparte a trozos
+    //  en el temporizador. esperaInstrumentos mira la cola de SINTES y no esta,
+    //  asi que la medida contaba el banco antes de que llegara nada: «0 pads»,
+    //  y detras las dos reglas de herencia leyendo el banco sucio. Estuvo en
+    //  rojo cuatro dias sin que ninguna tanda corriera dlc.py.
+    {
+        const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+        while ((fabricaJob != nullptr || ! fabricaCola.empty())
+               && juce::Time::getMillisecondCounter() < tope)
+        {
+            stepFabricaJob();
+            if (fabricaJob != nullptr) juce::Thread::sleep (2);
+        }
+    }
     int deFabrica = 0;
     for (int i = 0; i < kPadsPerBank; ++i) if (padHasSample[(size_t) i]) ++deFabrica;
     std::cout << "{\"dlc\":\"fabrica\",\"pads\":" << deFabrica << "}" << std::endl;
@@ -3344,6 +3359,25 @@ void MainComponent::auditOpen (const juce::String& pedido)
         ponEnRanura (0, AudioEngine::kFxDly);
         setFxEnabled (AudioEngine::kFxDly, true);
         focusFx (AudioEngine::kFxDly);
+    }
+    //  LA FICHA DE MANDOS Y EL PLATO EN PAD, de la tanda 32. La ficha con el
+    //  DLY, que es de los que tienen mas -siete, y su fila de SYNC-; el plato
+    //  en PAD con un pad con muestra, que es cuando su tapa dice el numero.
+    else if (which == "mandos")
+    {
+        closeAllSheets();
+        ponEnRanura (0, AudioEngine::kFxDly);
+        setFxEnabled (AudioEngine::kFxDly, true);
+        focusFx (AudioEngine::kFxDly);
+        abreFichaMandos (0);
+    }
+    else if (which == "platopad")
+    {
+        closeAllSheets();
+        ponEnRanura (0, AudioEngine::kFxDly);
+        setFxEnabled (AudioEngine::kFxDly, true);
+        focusFx (AudioEngine::kFxDly);
+        ponModoPlato (ModoPlato::pad);
     }
     else if (which == "song") openSheet (songSheet, songButton);
     //  LA BANDA DE AUDIO ES OTRA PANTALLA y por eso es otra entrada. Sin ella
@@ -7230,10 +7264,23 @@ void MainComponent::auditAuto()
     autoEventos.clear();
     autoEventos.push_back ({ 17, 3, 2, 0, 0.42f });
     autoEventos.push_back ({ 48, 0, 0, 4, -0.75f });
+    //  Y UNO SOBRE LOS MANDOS NUEVOS DE LA TANDA 32 -el corte de graves de FLT,
+    //  p6-, porque el lector rechazaba `par >= 3`: la automatizacion de un
+    //  mando que la ficha si deja tocar se habria grabado, sonado y perdido
+    //  al abrir el proyecto. Roto a proposito devolviendo el limite a 3.
+    autoEventos.push_back ({ 60, 0, AudioEngine::kParGraves, 4, 400.0f });
     publicaAutomacion();
+    //  Y LOS OCHO DE UN EFECTO, que es la otra mitad del fichero: `fxp`
+    //  escribia filas de cuatro. Dos mandos nuevos MOVIDOS en el canal 4 y
+    //  devueltos a fabrica antes de abrir, o «volvieron» lo cumple no haber
+    //  guardado nada.
+    engine.setFxParam (4, AudioEngine::kFxCmp, 4, 37.0f);
+    engine.setFxParam (4, AudioEngine::kFxCmp, AudioEngine::kParAgudos, 3100.0f);
     const auto arbol = captureState();
     autoEventos.clear();
     publicaAutomacion();
+    engine.setFxParam (4, AudioEngine::kFxCmp, 4, AudioEngine::defectoFx (AudioEngine::kFxCmp, 4));
+    engine.setFxParam (4, AudioEngine::kFxCmp, AudioEngine::kParAgudos, AudioEngine::kAgudosOff);
     applyState (arbol);
     bombeaAudioDePrueba();          // que el motor adopte la tabla publicada
 
@@ -7253,6 +7300,200 @@ void MainComponent::auditAuto()
               << ",\"armado_tras_parar\":" << armadoTrasParar
               << ",\"vuelta\":\""          << vuelta << "\""
               << ",\"motor\":"             << engine.numAuto()
+              << ",\"fxp_nuevos\":\""       << juce::String (engine.getFxParam (4, AudioEngine::kFxCmp, 4), 1) << ":"
+                                           << juce::String (engine.getFxParam (4, AudioEngine::kFxCmp, AudioEngine::kParAgudos), 1) << "\""
+              << "}" << std::endl;
+}
+
+// ==========================================================================
+//  EL PLATO QUE SE ELIGE Y LA FICHA DE MANDOS. Ver Tests/plato.py.
+//
+//  SE MIDE POR LOS MANDOS Y NO POR DENTRO: `macroCtrl2.setValue` con su aviso
+//  es lo que hace el dedo, y es donde vive cada fallo posible -un mando que
+//  escribe el indice del vecino, un plato en PAD que sigue atado al efecto-.
+//  Llamar a `mueveDestino` por dentro pasaria con los dos.
+// ==========================================================================
+//  LA GUIA, VOLCADA: capitulos con su tramo de pasos, cada texto ya resuelto
+//  -con sus cifras puestas- y lo que recorrerla entera le hace al patron.
+//
+//  Tests/tour.py juzgaba el anillo y nada mas, asi que la guia podia decir
+//  «dieciseis CANALES» con treinta y dos en el motor, listar un gesto que la
+//  maquina ya no hace, o apagarte el paso 5 del pad 1 al pasar por el
+//  secuenciador, y salir en verde las tres. Aqui se imprime lo que la regla
+//  necesita para verlas: el texto como se lee y el patron antes y despues.
+void MainComponent::auditGuia()
+{
+    auto huella = [this]
+    {
+        juce::int64 h = 1469598103934665603LL; int n = 0;
+        for (int p = 0; p < kNumPatterns; ++p)
+            for (int s = 0; s < kNumSteps; ++s)
+                for (int q = 0; q < kNumPads; ++q)
+                {
+                    const bool on = pattern[(size_t) p][(size_t) s][(size_t) q];
+                    n += on ? 1 : 0;
+                    h = (h ^ (on ? (p * 7919 + s * 131 + q + 1) : 0)) * 1099511628211LL;
+                }
+        return std::make_pair (h, n);
+    };
+
+    std::cout << "{\"guia\":\"cifras\",\"canales\":" << kNumCanales
+              << ",\"efectos\":" << kNumFx << ",\"bancos\":" << kNumBanks
+              << ",\"pads\":" << kNumPads << ",\"padsbanco\":" << kPadsPerBank
+              << ",\"patrones\":" << kNumPatterns << ",\"ranuras\":" << kNumRanuras
+              << ",\"carriles\":" << AudioEngine::kSongLanes << ",\"bandas\":" << Eq5::kBands
+              << ",\"mandosinst\":" << Sintes::kMandos
+              << ",\"pasos\":" << kTourPasos << ",\"gestos\":" << kNumGestures << "}" << std::endl;
+
+    for (int i = 0; i < kTourPasos; ++i)
+        std::cout << "{\"guia\":\"paso\",\"n\":" << i
+                  << ",\"titulo\":\"" << UiAudit::esc (T (ZatiTour::titulos[i])) << "\""
+                  << ",\"texto\":\"" << UiAudit::esc (guiaTexto (ZatiTour::cuerpos[i])) << "\"}" << std::endl;
+
+    int c = 0;
+    for (const auto& ch : kManual)
+    {
+        juce::String lineas;
+        for (const char* l : ch.lines)
+            if (l != nullptr) lineas << guiaTexto (l) << "\n";
+        std::cout << "{\"guia\":\"capitulo\",\"n\":" << c++
+                  << ",\"titulo\":\"" << UiAudit::esc (T (ch.title)) << "\""
+                  << ",\"desde\":" << ch.desde << ",\"hasta\":" << ch.hasta
+                  << ",\"gestos\":" << (ch.gestos ? 1 : 0)
+                  << ",\"texto\":\"" << UiAudit::esc (lineas) << "\"}" << std::endl;
+    }
+    for (const auto& gf : kGestos)
+        std::cout << "{\"guia\":\"gesto\",\"como\":\"" << UiAudit::esc (T (gf.how))
+                  << "\",\"que\":\"" << UiAudit::esc (T (gf.what)) << "\"}" << std::endl;
+
+    //  RECORRERLA ENTERA NO TOCA EL PATRON. Se enciende antes el paso 5 del
+    //  pad 1, que es la casilla que el paso del secuenciador conmutaba: con el
+    //  patron vacio, encenderla y apagarla dan la misma cifra de celdas.
+    if (! pattern[(size_t) selectedPattern][4][0])
+    {
+        pattern[(size_t) selectedPattern][4][0] = true;
+        engine.setStep (selectedPattern, 4, 0, true);
+    }
+    const auto antes = huella();
+    const int undoAntes = (int) undoStack.size();
+    closeAllSheets();
+    tourDesde = 0; tourHasta = kTourPasos - 1;
+    showTour (0);
+    openSheet (tourSheet, setButton);
+    for (int i = 0; i < kTourPasos; ++i) showTour (i);
+    //  Y cada capitulo ENSENADO, que es el otro camino al mismo tourPrepara.
+    for (int k = 0; k < kManualChapterCount; ++k) ensenaCapitulo (k);
+    const auto despues = huella();
+    std::cout << "{\"guia\":\"patron\",\"celdasAntes\":" << antes.second
+              << ",\"celdasDespues\":" << despues.second
+              << ",\"igual\":" << (antes.first == despues.first ? 1 : 0)
+              << ",\"undoAntes\":" << undoAntes
+              << ",\"undoDespues\":" << (int) undoStack.size() << "}" << std::endl;
+}
+
+void MainComponent::auditPlato()
+{
+    const int f = AudioEngine::kFxCmp;
+    focusFx (f);
+
+    //  1. DE FABRICA LOS TRES SON LOS DE SIEMPRE: un proyecto que no dice nada
+    //     del plato tiene que tocar lo que tocaba.
+    juce::String fabrica;
+    for (int k = 0; k < 3; ++k) fabrica << destinoPlato (k).pi;
+
+    //  2. LA FICHA LLEVA UN MANDO AL PLATO. Mantener el segundo mando la abre
+    //     con ese mando preparado; tocar el ATAQUE -p4, que no tenia mando
+    //     antes de la tanda 32- lo deja alli.
+    abreFichaMandos (1);
+    const int fichaAbierta = mandosSheet.isVisible() ? 1 : 0;
+    const int enFicha = mandosFichaDestino.size();
+    int iAtaque = -1;
+    for (int i = 0; i < mandosFichaDestino.size(); ++i)
+        if (mandosFichaDestino[i].pi == 4) iAtaque = i;
+    llevaAlPlato (iAtaque);
+    const int elegido = destinoPlato (1).pi;
+
+    //  3. Y MOVERLO ESCRIBE ESE Y NINGUNO MAS, en los 32 canales y los 30
+    //     tipos: un cruce de indices escribe al vecino y deja el suyo quieto.
+    auto foto = [this]
+    {
+        std::vector<float> v;
+        for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+            for (int x = 0; x < kNumFx; ++x)
+                for (int pi = 0; pi < kParamsPorFx; ++pi)
+                    v.push_back (engine.getFxParam (c, x, pi));
+        return v;
+    };
+    auto cuenta = [] (const std::vector<float>& a, const std::vector<float>& b)
+    {
+        int n = 0;
+        for (size_t i = 0; i < a.size(); ++i) if (a[i] != b[i]) ++n;
+        return n;
+    };
+    const int canal = AudioEngine::canalDeParam (canalActual, f);
+    const float antes = engine.getFxParam (canal, f, 4);
+    auto v0 = foto();
+    macroCtrl2.setValue (macroCtrl2.proportionOfLengthToValue (0.8), juce::sendNotificationSync);
+    auto v1 = foto();
+    const float despues = engine.getFxParam (canal, f, 4);
+    const int movidos = cuenta (v0, v1);
+    const int suyo = (despues != antes) ? 1 : 0;
+    const int ajenos = movidos - suyo;
+    const int mandoIgual = std::abs ((double) despues - macroCtrl2.getValue()) < 1.0e-3 ? 1 : 0;
+    abreFichaMandos (1);             // la cierra: la segunda vez es cerrar
+
+    //  4. LA ELECCION VUELVE DEL PROYECTO, borrada a mano entre medias: si al
+    //     volver sigue puesta no es que se haya guardado, es que nadie la quito.
+    const auto arbol = captureState();
+    platoDeFabrica();
+    const int borrada = platoFx[(size_t) f][1];
+    applyState (arbol);
+    const int vuelve = platoFx[(size_t) f][1];
+
+    //  5. EN PAD LOS MANDOS SON DEL PAD: el primero es el CORTE, llega al motor
+    //     y no toca ningun efecto.
+    selectPad (0);
+    ponModoPlato (ModoPlato::pad);
+    const int modoPad = platoModo == ModoPlato::pad ? 1 : 0;
+    auto p0 = foto();
+    macroCtrl1.setValue (macroCtrl1.proportionOfLengthToValue (0.3), juce::sendNotificationSync);
+    auto p1 = foto();
+    const double corteMando = macroCtrl1.getValue();
+    const double corteFicha = cutSlider.getValue();
+    const double corteMotor = engine.getPadCutoff (0);
+    const int ajenosPad = cuenta (p0, p1);
+
+    //  6. Y SI EL PAD ES UN INSTRUMENTO, a sus doce: el primero es el BRILLO.
+    ponInstrumentoYEspera (1, 3, 5);
+    selectPad (1);
+    const int esInst = platoEsInstrumento() ? 1 : 0;
+    macroCtrl1.setValue (macroCtrl1.proportionOfLengthToValue (0.25), juce::sendNotificationSync);
+    const auto dInst = destinoPlato (0);
+    const int instIdx = dInst.s != nullptr ? vstMandos.indexOf (dInst.s) : -1;
+    const double instMando = macroCtrl1.getValue();
+    const double instValor = dInst.s != nullptr ? dInst.s->getValue() : -1.0;
+    ponModoPlato (ModoPlato::fx);
+
+    std::cout << "{\"plato\":1"
+              << ",\"fabrica\":\""       << fabrica << "\""
+              << ",\"ficha\":"           << fichaAbierta
+              << ",\"en_ficha\":"        << enFicha
+              << ",\"elegido\":"         << elegido
+              << ",\"movidos\":"         << movidos
+              << ",\"suyo\":"            << suyo
+              << ",\"ajenos\":"          << ajenos
+              << ",\"mando_igual\":"     << mandoIgual
+              << ",\"borrada\":"         << borrada
+              << ",\"vuelve\":"          << vuelve
+              << ",\"modo_pad\":"        << modoPad
+              << ",\"corte_mando\":"     << juce::String (corteMando, 2)
+              << ",\"corte_ficha\":"     << juce::String (corteFicha, 2)
+              << ",\"corte_motor\":"     << juce::String (corteMotor, 2)
+              << ",\"ajenos_pad\":"      << ajenosPad
+              << ",\"es_inst\":"         << esInst
+              << ",\"inst_idx\":"        << instIdx
+              << ",\"inst_mando\":"      << juce::String (instMando, 3)
+              << ",\"inst_valor\":"      << juce::String (instValor, 3)
               << "}" << std::endl;
 }
 
@@ -9036,7 +9277,7 @@ void MainComponent::auditTapas()
     //  bancos y las dieciseis tapas de pad.
     static const char* kFichas[] = {
         "", "pads", "pad2", "pad3", "sec", "paso", "secp", "song", "songm",
-        "piano", "pianod", "mix", "mixc", "canal", "xy", "eq", "eqb", "plato",
+        "piano", "pianod", "mix", "mixc", "canal", "xy", "eq", "eqb", "plato", "mandos", "platopad",
         "set", "asp", "lang", "proj", "gest", "midi", "midf", "rack", "rackf",
         "ranura", "ranural", "preset", "preseteq", "inst", "instg", "instd",
         "chop", "expo", "manual", "tour", "pick"

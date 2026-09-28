@@ -48,6 +48,9 @@ AudioEngine::AudioEngine()
         {
             for (int par = 0; par < 3; ++par)
                 fila[(size_t) f][(size_t) par].store (kFxDef[f][par], std::memory_order_relaxed);
+            //  Y los cuatro de la tanda 32 nacen en la constante que sustituyen.
+            for (int par = 4; par < kNumParFx; ++par)
+                fila[(size_t) f][(size_t) par].store (defectoFx (f, par), std::memory_order_relaxed);
             //  Y EL CUARTO NACE EN CERO, o sea LIBRE. `kFxDef` sigue teniendo
             //  tres columnas a proposito: el enganche no es un valor de fabrica
             //  del efecto -no lo ensena ningun mando de los tres- y darle una
@@ -2009,6 +2012,51 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         {
             auto& bus = fxBus[busIdx (f)];
 
+            //  LOS DOS CORTES DE SALIDA (p6 GRAVES, p7 AGUDOS), antes del visor
+            //  y de la mezcla: lo que se ve y lo que se oye es ya lo cortado.
+            //  En su tope no corren -un proyecto viejo sale bit a bit igual- y
+            //  el estado se vacia, para que al volver no salga lo que se quedo
+            //  guardado: la misma figura que `drvLp`. Dos polos (Butterworth,
+            //  `cruceEn`) y no uno: a 6 dB por octava quitarle los graves a una
+            //  reverb no se los quita.
+            if (f != kFxEq)
+            {
+                Inserto& Ic = ins[(size_t) juce::jlimit (0, kNumCanales - 1, canalEtapa)];
+                const float nyqC = 0.45f * (float) systemSampleRate;
+                const float gr = P (f, kParGraves), ag = P (f, kParAgudos);
+                const bool conGrave = std::isfinite (gr) && gr > kGravesOff;
+                const bool conAgudo = std::isfinite (ag) && ag < juce::jmin (kAgudosOff, nyqC);
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    if (! conGrave) Ic.retGrave[f][ch] = {};
+                    if (! conAgudo) Ic.retAgudo[f][ch] = {};
+                }
+                if (conGrave || conAgudo)
+                {
+                    const auto cg = Dinamica::cruceEn (juce::jlimit (kGravesOff, nyqC, gr), systemSampleRate);
+                    const auto ca = Dinamica::cruceEn (juce::jlimit (kGravesOff, nyqC, ag), systemSampleRate);
+                    for (int ch = 0; ch < chans; ++ch)
+                    {
+                        float* w = bus.getWritePointer (ch, startSample);
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            float x = w[i], lp = 0.0f, hp = 0.0f, bp = 0.0f;
+                            if (conGrave)
+                            {
+                                Dinamica::svf (x, Ic.retGrave[f][ch], cg.a1, cg.a2, cg.a3, cg.k, lp, hp, bp);
+                                x = hp;
+                            }
+                            if (conAgudo)
+                            {
+                                Dinamica::svf (x, Ic.retAgudo[f][ch], ca.a1, ca.a2, ca.a3, ca.k, lp, hp, bp);
+                                x = lp;
+                            }
+                            w[i] = std::isfinite (x) ? x : 0.0f;
+                        }
+                    }
+                }
+            }
+
             //  LO QUE SALE DEL BUS MIRADO, y AQUI porque es el unico sitio por
             //  el que pasan los once. Escrito en cada etapa serian once copias
             //  de la misma regla, y la que se quedara vieja seria un visor que
@@ -2471,7 +2519,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                          startSample, numSamples,
                                          (Dinamica::Modo) d,
                                          P (f, 0),
-                                         P (f, 1));
+                                         P (f, 1),
+                                         P (f, 4),
+                                         P (f, 5));
                 //  Y lo que baja, para la casilla de lectura. Un compresor que no
                 //  dice cuanto comprime es un compresor invisible.
                 I.dynRed[(size_t) d].store (I.dyn[(size_t) d].reduccionDb(),
@@ -2561,8 +2611,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  Centro y recorrido en MILISEGUNDOS y convertidos aqui:
                     //  doce milisegundos es un coro en cualquier aparato, y en
                     //  muestras seria un numero que cambia con la ruta.
-                    const float centro = 0.012f * fsF;
-                    const float amp    = 0.005f * fsF * I.smChoProf;
+                    //  p4 CENTRO y p5 RECORRIDO (tanda 32): eran 0.012f y 0.005f
+                    //  escritos aqui. `ms / 1000.0f` da el mismo flotante que el
+                    //  literal, porque la division de coma flotante redondea bien.
+                    const float centro = juce::jlimit (1.0f, 30.0f, P (kFxCho, 4)) / 1000.0f * fsF;
+                    const float amp    = juce::jlimit (0.0f, 10.0f, P (kFxCho, 5)) / 1000.0f * fsF * I.smChoProf;
                     float* w0 = fxBus[busIdx (kFxCho)].getWritePointer (0, startSample);
                     float* w1 = (chans > 1) ? fxBus[busIdx (kFxCho)].getWritePointer (1, startSample) : w0;
 
@@ -2612,8 +2665,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     //  De 0.5 a 6 ms: por debajo de un milisegundo la primera
                     //  muesca se va por encima de la banda y el peine deja de
                     //  oirse; por encima de seis ya es un coro.
-                    const float centro = 0.00325f * fsF;
-                    const float amp    = 0.00275f * fsF;
+                    const float centro = juce::jlimit (0.5f, 10.0f, P (kFxFla, 4)) / 1000.0f * fsF;
+                    const float amp    = juce::jlimit (0.0f,  5.0f, P (kFxFla, 5)) / 1000.0f * fsF;
                     float* w0 = fxBus[busIdx (kFxFla)].getWritePointer (0, startSample);
                     float* w1 = (chans > 1) ? fxBus[busIdx (kFxFla)].getWritePointer (1, startSample) : w0;
 
@@ -2662,6 +2715,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 if (ahora)
                 {
                     auto fm = pasoMod (canal, kFxPha);
+                    //  p4 BASE y p5 RANGO (tanda 32): eran 300 Hz y x8.
+                    const float phaBase  = juce::jlimit (50.0f, 2000.0f, P (kFxPha, 4));
+                    const float phaRango = juce::jlimit (1.0f, 16.0f, P (kFxPha, 5));
                     for (int i = 0; i < numSamples; ++i)
                     {
                         const float v = Lfo::valorEn (fm.fase); fm.fase += fm.paso;
@@ -2669,7 +2725,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  arriba de 300 son una octava y 300 arriba de 3000
                         //  no se oyen, que es la misma razon por la que
                         //  `barridoDe` reparte el filtro exponencialmente.
-                        const float hz = 300.0f * std::pow (8.0f, 0.5f * I.smPhaProf * (v + 1.0f));
+                        const float hz = phaBase * std::pow (phaRango, 0.5f * I.smPhaProf * (v + 1.0f));
                         const float t  = std::tan (juce::MathConstants<float>::pi
                                                      * juce::jlimit (20.0f, fsF * 0.45f, hz) / fsF);
                         const float a  = (t - 1.0f) / (t + 1.0f);
@@ -3011,9 +3067,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  es la misma cuenta que usan los cuatro de dinamica: una
                         //  constante de tiempo escrita dos veces son dos reglas.
                         const float aRap = Dinamica::coefDe (1.0f,   systemSampleRate);
-                        const float rRap = Dinamica::coefDe (25.0f,  systemSampleRate);
+                        const float rRap = Dinamica::coefDe (juce::jlimit (5.0f, 200.0f, P (kFxTrn, 4)), systemSampleRate);
                         const float aLen = Dinamica::coefDe (35.0f,  systemSampleRate);
-                        const float rLen = Dinamica::coefDe (300.0f, systemSampleRate);
+                        const float rLen = Dinamica::coefDe (juce::jlimit (50.0f, 2000.0f, P (kFxTrn, 5)), systemSampleRate);
 
                         float* w0 = fxBus[busIdx (kFxTrn)].getWritePointer (0, startSample);
                         float* w1 = (chans > 1) ? fxBus[busIdx (kFxTrn)].getWritePointer (1, startSample) : w0;
@@ -3202,7 +3258,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         //  de ataque -el wah tiene que llegar con el golpe- y
                         //  ochenta de caida, que es lo que dura la vocal.
                         const float aEnv = Dinamica::coefDe (5.0f,  systemSampleRate);
-                        const float rEnv = Dinamica::coefDe (80.0f, systemSampleRate);
+                        const float rEnv = Dinamica::coefDe (juce::jlimit (10.0f, 1000.0f, P (kFxWah, 5)), systemSampleRate);
+                        const float wahQ = juce::jlimit (0.7f, 12.0f, P (kFxWah, 4));
 
                         float* w0 = fxBus[busIdx (kFxWah)].getWritePointer (0, startSample);
                         float* w1 = (chans > 1) ? fxBus[busIdx (kFxWah)].getWritePointer (1, startSample) : w0;
@@ -3219,7 +3276,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                                          : rEnv * I.wahEnv + (1.0f - rEnv) * pico;
 
                             hz = wahCentro (I.smWahBase, I.smWahSens, I.wahEnv);
-                            const auto c = Dinamica::polosEn (hz, 1.0f / kWahQ, systemSampleRate);
+                            const auto c = Dinamica::polosEn (hz, 1.0f / wahQ, systemSampleRate);
 
                             for (int ch = 0; ch < chans; ++ch)
                             {
@@ -3650,6 +3707,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     {
                         float* w0 = fxBus[busIdx (kFxDly)].getWritePointer (0, startSample);
                         float* w1 = (chans > 1) ? fxBus[busIdx (kFxDly)].getWritePointer (1, startSample) : w0;
+                        //  p4 TONO (tanda 32): un polo de paso bajo DENTRO del lazo,
+                        //  asi cada vuelta sale mas oscura, que es lo que separa una
+                        //  cinta de un eco digital. En 20 kHz no corre.
+                        const float dlyTono = P (kFxDly, 4);
+                        const bool  dlyOsc  = std::isfinite (dlyTono) && dlyTono < kAgudosOff;
+                        const float dlyA    = dlyOsc ? 1.0f - std::exp (-juce::MathConstants<float>::twoPi
+                                                   * juce::jlimit (200.0f, 20000.0f, dlyTono) / (float) systemSampleRate)
+                                                     : 1.0f;
+                        if (! dlyOsc) I.dlyTonoZ[0] = I.dlyTonoZ[1] = 0.0f;
                         for (int i = 0; i < numSamples; ++i)
                         {
                             I.smDlySamp += kSamp * (dsT - I.smDlySamp);
@@ -3666,7 +3732,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                 //  memoria se protege por dentro. Se pregunta por
                                 //  lo finito porque comparar con NaN siempre es
                                 //  falso.
-                                const float realim = in + d * I.smDlyFb;
+                                float vuelta = d;
+                                if (dlyOsc)
+                                {
+                                    I.dlyTonoZ[ch] += dlyA * (d - I.dlyTonoZ[ch]);
+                                    vuelta = I.dlyTonoZ[ch];
+                                }
+                                const float realim = in + vuelta * I.smDlyFb;
                                 I.dlyLine.pushSample (ch, std::isfinite (realim) ? realim : 0.0f);
                                 w[i] = std::isfinite (d) ? d : 0.0f;
                             }
@@ -3766,6 +3838,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     {
                         float* w0 = fxBus[busIdx (kFxPng)].getWritePointer (0, startSample);
                         float* w1 = (chans > 1) ? fxBus[busIdx (kFxPng)].getWritePointer (1, startSample) : w0;
+                        const float pngTono = P (kFxPng, 4);
+                        const bool  pngOsc  = std::isfinite (pngTono) && pngTono < kAgudosOff;
+                        const float pngA    = pngOsc ? 1.0f - std::exp (-juce::MathConstants<float>::twoPi
+                                                   * juce::jlimit (200.0f, 20000.0f, pngTono) / (float) systemSampleRate)
+                                                     : 1.0f;
+                        if (! pngOsc) I.pngTonoZ[0] = I.pngTonoZ[1] = 0.0f;
 
                         for (int i = 0; i < numSamples; ++i)
                         {
@@ -3777,11 +3855,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
                             //  EL CRUCE, y la misma barrera que DLY: esta linea
                             //  se realimenta.
-                            const float aL = w0[i] + (chans > 1 ? dR : dL) * I.smPngFb;
+                            float vL = dL, vR = dR;
+                            if (pngOsc)
+                            {
+                                I.pngTonoZ[0] += pngA * (dL - I.pngTonoZ[0]); vL = I.pngTonoZ[0];
+                                I.pngTonoZ[1] += pngA * (dR - I.pngTonoZ[1]); vR = I.pngTonoZ[1];
+                            }
+                            const float aL = w0[i] + (chans > 1 ? vR : vL) * I.smPngFb;
                             I.pngLine.pushSample (0, std::isfinite (aL) ? aL : 0.0f);
                             if (chans > 1)
                             {
-                                const float aR = w1[i] + dL * I.smPngFb;
+                                const float aR = w1[i] + vL * I.smPngFb;
                                 I.pngLine.pushSample (1, std::isfinite (aR) ? aR : 0.0f);
                             }
 

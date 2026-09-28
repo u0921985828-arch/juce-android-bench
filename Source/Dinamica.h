@@ -127,23 +127,32 @@ struct Dinamica
 
     //  p0 y p1 son los dos mandos del modo -ver la tabla de `fxDefs`-. La
     //  MEZCLA no entra aqui: la hace el bus, como con todos los demas.
+    //  Y p4/p5 (tanda 32): el ATAQUE y la CAIDA que eran constantes -ver
+    //  `kAtaqueCmp` y las demas- pasan a mando donde el modo los tiene. El
+    //  defecto del mando ES la constante, asi que con los mandos quietos la
+    //  cuenta es la misma. Un NaN o un valor fuera de rango cae en la
+    //  constante: un fichero no puede dejar un compresor sin ataque.
     void procesa (float* const* ch, int chans, int inicio, int n,
-                  Modo modo, float p0, float p1) noexcept
+                  Modo modo, float p0, float p1,
+                  float p4 = -1.0f, float p5 = -1.0f) noexcept
     {
         if (n <= 0 || chans <= 0) return;
 
         float* l = ch[0] + inicio;
         float* r = (chans > 1 ? ch[1] : ch[0]) + inicio;
 
-        const float ataqueMs = (modo == compresor ? kAtaqueCmp
-                              : modo == puerta    ? kAtaquePta
-                              : modo == deesser   ? kAtaqueDss
+        auto oEl = [] (float v, float lo, float hi, float def) noexcept
+        { return (std::isfinite (v) && v >= lo) ? juce::jmin (hi, v) : def; };
+
+        const float ataqueMs = (modo == compresor ? oEl (p4, 0.1f, 200.0f, kAtaqueCmp)
+                              : modo == puerta    ? oEl (p4, 0.05f, 50.0f, kAtaquePta)
+                              : modo == deesser   ? oEl (p4, 0.1f, 50.0f, kAtaqueDss)
                                                   : kAtaqueLim);
         //  La CAIDA la pone el mando en dos de los cuatro -CIERRE en la puerta
-        //  y SOLTAR en el limitador- y es constante en los otros dos.
-        const float caidaMs  = (modo == compresor ? kCaidaCmp
+        //  y SOLTAR en el limitador- y p5 en los otros dos.
+        const float caidaMs  = (modo == compresor ? oEl (p5, 5.0f, 2000.0f, kCaidaCmp)
                               : modo == puerta    ? juce::jmax (5.0f, p1)
-                              : modo == deesser   ? kCaidaDss
+                              : modo == deesser   ? oEl (p5, 5.0f, 1000.0f, kCaidaDss)
                                                   : juce::jmax (5.0f, p1));
 
         const float aA = (ataqueMs <= 0.0f ? 0.0f : coef (ataqueMs));

@@ -25,6 +25,9 @@ static_assert (PianoRoll::kMaxNotas == AudioEngine::kExtraNotes + 1,
 static_assert (Iconos::kFamiliasConDibujo == Sintes::kFamilias,
                "cada familia de instrumento tiene que tener su dibujo");
 
+//  Los divisores del ENGANCHE, en el orden de sus chips: cero es libre.
+static constexpr int kDivSync[] = { 0, 1, 2, 4, 8, 16 };
+
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
@@ -3070,6 +3073,119 @@ MainComponent::MainComponent()
         }
     }
 
+    //  EL PLATO ELEGIBLE Y SU FICHA (tanda 32). Ver `Destino` en la cabecera.
+    platoDeFabrica();
+    {
+        //  MANTENER un mando del plato abre la ficha con ESE mando preparado
+        //  para recibir. Por un `MouseListener` encima del deslizador: el
+        //  arrastre de siempre no cambia, y girar cancela el mantener.
+        juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+        for (int k = 0; k < 3; ++k)
+        {
+            mantenMando[k].onHold = [this, k] { abreFichaMandos (k); };
+            ks[k]->addMouseListener (&mantenMando[k], false);
+        }
+
+        //  EN MODO PAD el visor del plato no tiene efecto que ensenar, y su
+        //  sitio lo ocupa esta tapa: dice de que pad son los mandos y, tocada,
+        //  los devuelve al efecto. Al modo PAD se llega tocando el visor.
+        styleButton (platoPadBtn, kKey);
+        platoPadBtn.onClick = [this] { ponModoPlato (ModoPlato::fx); };
+        addChildComponent (platoPadBtn);
+        platoMini.onTap = [this] { ponModoPlato (ModoPlato::pad); };
+        platoMini.ponTocable();
+
+        mandosSheet.nombre = "mandos";
+        addAndMakeVisible (mandosSheet);
+        mandosSheet.setVisible (false);
+        mandosSheet.onDismiss    = [this] { abreFichaMandos (-1); };
+        mandosSheet.paintContent = [this] (juce::Graphics& g) { paintMandosContent (g); };
+        //  SE DESPLAZA, como la del pad: dos filas de mandos, la de SYNC y
+        //  PRESETS piden 392 px y la tarjeta da 324 en 640x360, 368 en 412x480
+        //  y 370 en 915x412 -TARJETA 12 en expo.py-. Es una ficha de
+        //  CONTROLES, que es el caso para el que `hazDesplazable` existe, y
+        //  encoger los diales por debajo del dedo no es una opcion. Todo lo
+        //  de dentro cuelga de `donde()`, que empieza en (0,0).
+        mandosSheet.hazDesplazable();
+        styleButton (mandosCloseBtn, kKey);
+        mandosCloseBtn.onClick = [this] { abreFichaMandos (-1); };
+        mandosSheet.donde().addAndMakeVisible (mandosCloseBtn);
+
+        for (int k = 0; k < 3; ++k)
+        {
+            auto* b = new juce::TextButton (T ("MANDO %1", Lang::ltr (juce::String (k + 1))));
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->onClick = [this, k] { mandosPara = k; refrescaFichaMandos(); };
+            mandosSheet.donde().addAndMakeVisible (b);
+            mandosParaBtns.add (b);
+        }
+
+        //  EL ENGANCHE, que existia desde la tanda del reloj y solo se
+        //  alcanzaba desde un preset. Cinco divisiones y LIBRE, en chips: no
+        //  es un giro, son seis posiciones.
+        for (int i = 0; i < (int) std::size (kDivSync); ++i)
+        {
+            auto* b = new juce::TextButton (kDivSync[i] == 0 ? T ("LIBRE")
+                                                             : Lang::ltr ("1/" + juce::String (kDivSync[i])));
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->onClick = [this, d = kDivSync[i]]
+            {
+                escribeFxParam (focusedFx, 3, (float) d);
+                refrescaFichaMandos();
+            };
+            mandosSheet.donde().addChildComponent (b);
+            mandosSyncBtns.add (b);
+        }
+
+        styleButton (mandosPresetsBtn, kKey);
+        mandosPresetsBtn.onClick = [this]
+        {
+            const int f = focusedFx;
+            abreFichaMandos (-1);
+            abreMenuPresets (f);
+        };
+        mandosSheet.donde().addChildComponent (mandosPresetsBtn);
+
+        for (int i = 0; i < kMandosFichaMax; ++i)
+        {
+            auto* k = new juce::Slider();
+            k->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            k->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+            k->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+            k->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+            k->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 62, Metrics::readout);
+            k->setMouseDragSensitivity (320);
+            k->textFromValueFunction = [this, i] (double v)
+            {
+                return juce::isPositiveAndBelow (i, mandosFichaDestino.size())
+                         ? textoDestino (mandosFichaDestino[i], v) : juce::String();
+            };
+            k->onValueChange = [this, i]
+            {
+                if (! juce::isPositiveAndBelow (i, mandosFichaDestino.size())) return;
+                mueveDestino (mandosFichaDestino[i], mandosFicha[i]->getValue());
+                refreshMacroValues();
+            };
+            k->onDragStart = [this, i]
+            {
+                if (juce::isPositiveAndBelow (i, mandosFichaDestino.size()))
+                    if (auto* s = mandosFichaDestino[i].s; s != nullptr && s->onDragStart) s->onDragStart();
+            };
+            k->onDragEnd = [this, i]
+            {
+                if (juce::isPositiveAndBelow (i, mandosFichaDestino.size()))
+                    if (auto* s = mandosFichaDestino[i].s; s != nullptr && s->onDragEnd) s->onDragEnd();
+                if (autoArmado) publicaAutomacion();
+            };
+            tocaMandoFicha[(size_t) i].onTap = [this, i] { llevaAlPlato (i); };
+            k->addMouseListener (&tocaMandoFicha[(size_t) i], false);
+            mandosSheet.donde().addChildComponent (k);
+            mandosFicha.add (k);
+        }
+    }
+
     //  LA CURVA DEL EQ, que ocupa el plato cuando el efecto que tiene los
     //  mandos es el suyo. Nace INVISIBLE: quien la enciende es `focusFx`, que
     //  es el unico sitio que sabe que efecto esta delante.
@@ -3446,12 +3562,13 @@ MainComponent::MainComponent()
     tourBackBtn.onClick = [this] { showTour (tourPaso - 1); };
     tourNextBtn.onClick = [this]
     {
-        if (! tourEsLaPuerta() && tourPaso + 1 < kTourPasos) { showTour (tourPaso + 1); return; }
+        if (! tourEsLaPuerta() && tourPaso < tourHasta) { showTour (tourPaso + 1); return; }
         //  Al final se marca visto y se cierra. Ya lo esta desde que se enseño
         //  -ver el arranque- asi que esto es idempotente; se deja porque el
         //  tour tambien se abre a mano desde AJUSTES y acabarlo por ahi tiene
         //  que dejar la misma marca.
         ProjectStore::escribeTexto (tourFile(), "1");
+        tourDesde = 0; tourHasta = kTourPasos - 1;
         closeAllSheets();
     };
     tourSkipBtn.onClick = [this]
@@ -3461,14 +3578,35 @@ MainComponent::MainComponent()
         //  esto cerrar a mitad del recorrido largo la traeria manana entera.
         ProjectStore::escribeTexto (tourFile(), "1");
         if (tourEsLaPuerta()) { showTour (kTourBienvenida); return; }
+        tourDesde = 0; tourHasta = kTourPasos - 1;
         closeAllSheets();
     };
     addAndMakeVisible (tourSheet);
     tourSheet.setVisible (false);
 
+    //  LA TAPA TOUR YA NO SE PONE: el tour es la GUIA recorrida entera, y su
+    //  puerta es RECORRER TODO dentro de la guia. Dos tapas en AJUSTES para
+    //  dos lecturas del mismo texto eran la mitad de por que el texto se
+    //  habia partido en dos. Se queda el miembro porque el banco la pulsa.
     styleButton (tourButton, kKey);
-    tourButton.onClick = [this] { closeAllSheets(); showTour (0); openSheet (tourSheet, setButton); };
-    setSheet.cuerpo.addAndMakeVisible (tourButton);
+    tourButton.onClick = [this] { closeAllSheets(); tourDesde = 0; tourHasta = kTourPasos - 1;
+                                  showTour (0); openSheet (tourSheet, setButton); };
+
+    //  RECORRER TODO y un ENSENAMELO por capitulo. Las de capitulo viven en
+    //  el cuerpo que se desplaza, al lado de su titulo: una lista de
+    //  dieciocho tapas aparte seria el indice escrito dos veces.
+    styleButton (guiaTodoBtn, kKey);
+    litAccent (guiaTodoBtn);
+    guiaTodoBtn.onClick = [this] { tourButton.onClick(); };
+    manualSheet.addAndMakeVisible (guiaTodoBtn);
+    for (int c = 0; c < kManualChapterCount; ++c)
+    {
+        auto* b = new juce::TextButton ("ENSENAMELO");
+        styleButton (*b, kKey);
+        b->onClick = [this, c] { ensenaCapitulo (c); };
+        manualBody.addAndMakeVisible (b);
+        guiaVerBtns.add (b);
+    }
 
     mixScroll.setViewedComponent (&mixRows, false);
     mixScroll.setScrollBarsShown (true, false);
@@ -5051,7 +5189,9 @@ juce::String MainComponent::macroParamLabel (int idx) const
     //  veia porque compara el texto de los COMPONENTES y estos se pintan a
     //  mano. Un punto ciego de la prueba, no del codigo - y por eso la prueba
     //  lo dice ahora en su cabecera.
-    return T (fxDefs[juce::jlimit (0, kNumFx - 1, focusedFx)].param[juce::jlimit (0, 2, idx)]);
+    //  Y POR SU DESTINO desde la tanda 32: el nombre es el de lo que el mando
+    //  mueve, sea el parametro de fabrica, uno elegido o el corte del pad.
+    return nombreDestino (const_cast<MainComponent*> (this)->destinoPlato (idx));
 }
 
 // The readout measures; it always carries a unit so the number means something
@@ -5071,20 +5211,31 @@ juce::String MainComponent::macroReadout (int idx) const
     //  DEDO FUERA: mientras se toca el mando, la casilla dice el valor del
     //  mando. Un control y su lectura contando cosas distintas es el fallo que
     //  ya costo una medida con el corte del pad.
+    const auto dst = const_cast<MainComponent*> (this)->destinoPlato (p);
     const int d = dinamicaDeFx (f);
-    if (p == 2 && d >= 0 && ! macroTouched[2])
+    if (dst.f >= 0 && dst.pi == 2 && d >= 0 && ! macroTouched[(size_t) p])
     {
         const float red = engine.getDynReduccion (canalActual, d);
         if (red > 0.05f)
             return Lang::ltr ("-" + juce::String (red, 1) + " dB");
     }
 
-    return fxFormat (fxDefs[f].spec[p], ks[p]->getValue());
+    return textoDestino (dst, ks[p]->getValue());
 }
 
 void MainComponent::setMacroTouched (int idx, bool touched)
 {
     if (! juce::isPositiveAndBelow (idx, 3)) return;
+
+    //  UN DESLIZADOR DE OTRA FICHA SE ARRASTRA ENTERO: su `onDragStart` apunta
+    //  el deshacer y el `onDragEnd` de un instrumento re-sintetiza -77 ms, por
+    //  eso al soltar y no al mover-. Sin pasarlos, el brillo movido desde el
+    //  plato cambiaba el numero y el sonido se quedaba como estaba.
+    if (const auto d = destinoPlato (idx); d.s != nullptr)
+    {
+        if (touched  && d.s->onDragStart) d.s->onDragStart();
+        if (! touched && d.s->onDragEnd)  d.s->onDragEnd();
+    }
 
     if (touched)
     {
@@ -5426,6 +5577,65 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
+//  LOS MANDOS DE MAS (tanda 32): p4 y p5 de cada tipo, y p6 GRAVES / p7
+//  AGUDOS en todos menos el EQ. Tabla aparte y no dentro de `fxDefs` porque
+//  `fxDefs` es lo que el PLATO ensena -tres mandos- y lo leen el banco y los
+//  presets con esa forma; los de aqui solo los ensena la FICHA del efecto. El
+//  defecto de cada uno sale del motor (`AudioEngine::defectoFx`), que es quien
+//  lo aplica: escribirlo tambien aqui seria la tercera tabla de defectos.
+namespace
+{
+    struct ExtraFx { int f, pi; const char* nombre; double lo, hi, step, skewMid; int fmt; };
+    const ExtraFx kExtrasFx[] =
+    {
+        {  3, 4, "TONO|fb",      200.0, 20000.0, 1.0,  2000.0, 15 },   // DLY
+        {  7, 4, "ATAQUE|x",       0.1,   200.0, 0.1,    10.0, 13 },   // CMP
+        {  7, 5, "CAIDA|x",        5.0,  2000.0, 1.0,   150.0,  3 },
+        {  8, 4, "ATAQUE|x",      0.05,    50.0, 0.05,    2.0, 13 },   // GTE
+        {  9, 4, "ATAQUE|x",       0.1,    50.0, 0.1,     5.0, 13 },   // DSS
+        {  9, 5, "CAIDA|x",        5.0,  1000.0, 1.0,   100.0,  3 },
+        { 11, 4, "CENTRO|x",       1.0,    30.0, 0.05,    0.0, 13 },   // CHO
+        { 11, 5, "RECORRIDO|x",    0.0,    10.0, 0.05,    0.0, 13 },
+        { 12, 4, "CENTRO|x",       0.5,    10.0, 0.05,    0.0, 13 },   // FLA
+        { 12, 5, "RECORRIDO|x",    0.0,     5.0, 0.05,    0.0, 13 },
+        { 13, 4, "BASE",          50.0,  2000.0, 1.0,   400.0,  0 },   // PHA
+        { 13, 5, "RANGO|x",        1.0,    16.0, 0.1,     0.0,  7 },
+        { 19, 4, "RAPIDO|x",       5.0,   200.0, 1.0,    40.0,  3 },   // TRN
+        { 19, 5, "LENTO|x",       50.0,  2000.0, 1.0,   400.0,  3 },
+        { 21, 4, "Q|wah",          0.7,    12.0, 0.1,     3.0,  1 },   // WAH
+        { 21, 5, "CAIDA|x",       10.0,  1000.0, 1.0,   120.0,  3 },
+        { 27, 4, "TONO|fb",      200.0, 20000.0, 1.0,  2000.0, 15 },   // PNG
+    };
+}
+
+MainComponent::FxDef::Spec MainComponent::specExtra (int f, int pi)
+{
+    const double def = (double) AudioEngine::defectoFx (f, pi);
+    if (pi == AudioEngine::kParGraves) return { 20.0, 2000.0,  1.0,  200.0, def, 14 };
+    if (pi == AudioEngine::kParAgudos) return { 500.0, 20000.0, 1.0, 4000.0, def, 15 };
+    for (const auto& e : kExtrasFx)
+        if (e.f == f && e.pi == pi) return { e.lo, e.hi, e.step, e.skewMid, def, e.fmt };
+    return { 0.0, 1.0, 0.01, 0.0, def, 2 };
+}
+
+const char* MainComponent::nombreExtra (int f, int pi)
+{
+    if (pi == 3)                       return "ENGANCHE|x";
+    if (pi == AudioEngine::kParGraves) return "GRAVES|x";
+    if (pi == AudioEngine::kParAgudos) return "AGUDOS|x";
+    for (const auto& e : kExtrasFx)
+        if (e.f == f && e.pi == pi) return e.nombre;
+    return "";
+}
+
+//  EL NOMBRE DE CUALQUIERA DE LOS OCHO, que es lo que ensena la lista del
+//  plato cuando se elige que mueve un mando.
+const char* MainComponent::nombreParam (int f, int pi)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return "";
+    return pi < 3 ? fxDefs[f].param[pi] : nombreExtra (f, pi);
+}
+
 // The readout always carries a unit, so a number means something on its own.
 juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
 {
@@ -5435,6 +5645,16 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
                                     : juce::String ((int) v) + " Hz";
         case 1:  return "Q " + juce::String (v, 2);
         case 3:  return juce::String ((int) v) + " ms";
+        //  Los milisegundos CON decimal, que un ataque de compresor vive entre
+        //  0.1 y 10 y el entero diria «0 ms» en la mitad del recorrido.
+        case 13: return juce::String (v, v < 10.0 ? 2 : 1) + " ms";
+        //  Los dos cortes de salida dicen «fuera» en su tope, que es un estado
+        //  y no una frecuencia: en su tope no corren.
+        case 14: return v <= (double) AudioEngine::kGravesOff + 0.5 ? T ("fuera")
+                     : juce::String ((int) v) + " Hz";
+        case 15: return v >= (double) AudioEngine::kAgudosOff - 0.5 ? T ("fuera")
+                     : (v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz"
+                                    : juce::String ((int) v) + " Hz");
         case 4:  return juce::String ((int) v) + " bit";
         case 5:  return juce::String ((int) v) + "x";
         //  Un LFO se dice con DECIMAL. Con el formato de frecuencia de los
@@ -5544,9 +5764,17 @@ double MainComponent::acotaFxPreset (int f, int pi, double v) const
     if (! juce::isPositiveAndBelow (f, kNumFx)
         || ! juce::isPositiveAndBelow (pi, kParamsPorFx)) return 0.0;
 
-    if (pi >= 3)
+    if (pi == 3)
         return std::isfinite (v) ? juce::jlimit (0.0, (double) AudioEngine::kEngancheMax,
                                                  std::floor (v + 0.5)) : 0.0;
+    //  Los cuatro de la tanda 32 se acotan contra SU mando -`specExtra`-, y
+    //  uno que el tipo no tiene se queda en su defecto.
+    if (pi >= 4)
+    {
+        if (! AudioEngine::tieneMando (f, pi)) return AudioEngine::defectoFx (f, pi);
+        const auto sp = specExtra (f, pi);
+        return std::isfinite (v) ? juce::jlimit (sp.lo, sp.hi, v) : sp.def;
+    }
 
     const auto& sp = fxDefs[f].spec[pi];
     return std::isfinite (v) ? juce::jlimit (sp.lo, sp.hi, v) : sp.def;
@@ -6090,17 +6318,14 @@ void MainComponent::focusFx (int f)
 {
     focusedFx = juce::jlimit (0, kNumFx - 1, f);
 
-    juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
-    for (int pi = 0; pi < 3; ++pi)
-    {
-        const auto& sp = fxDefs[focusedFx].spec[pi];
-        ks[pi]->setRange (sp.lo, sp.hi, sp.step);
-        if (sp.skewMid > 0.0) ks[pi]->setSkewFactorFromMidPoint (sp.skewMid);
-        else                  ks[pi]->setSkewFactor (1.0);
-        ks[pi]->setDoubleClickReturnValue (true, sp.def);   // double-tap = this effect's default
-    }
-    refreshMacroValues();
-    refrescaPlato();
+    //  TOCAR UN EFECTO ES QUERER SUS MANDOS: si el plato estaba en el pad,
+    //  vuelve al efecto. Los rangos los pone `configuraPlato`, que sabe de los
+    //  dos modos y de la eleccion de cada mando -y el doble toque sigue
+    //  devolviendo el defecto de ESTE efecto, que va en su `spec`-.
+    const bool cambia = platoModo != ModoPlato::fx;
+    platoModo = ModoPlato::fx;
+    configuraPlato();
+    if (cambia) resized();
     repaint();
 }
 
@@ -6532,12 +6757,15 @@ void MainComponent::refrescaPlato()
     //  Aqui y no alli porque esta funcion existe EXACTAMENTE por esto, y su
     //  propio comentario de encima ya lo decia: lo mueven dos cosas, cambiar de
     //  efecto con el dedo y vaciar la ranura donde vivia, y las dos la llaman.
-    const bool hayAlguno = fxEstaPuesto (focusedFx);
+    //  En modo PAD siempre hay algo que tocar: el pad elegido existe aunque
+    //  este vacio, y sus mandos guardan lo que sonara cuando se cargue.
+    const bool enPad     = platoModo == ModoPlato::pad;
+    const bool hayAlguno = enPad || fxEstaPuesto (focusedFx);
     macroCtrl1.setEnabled (hayAlguno);
     macroCtrl2.setEnabled (hayAlguno);
     macroCtrl3.setEnabled (hayAlguno);
 
-    const bool conCara = fxEstaPuesto (focusedFx) && fxTraeCara (focusedFx);
+    const bool conCara = ! enPad && fxEstaPuesto (focusedFx) && fxTraeCara (focusedFx);
     const bool cambia  = (conCara != eqCurva.isVisible());
     eqCurva.setVisible (conCara);
     if (cambia) resized();
@@ -6924,10 +7152,10 @@ void MainComponent::fxFocusOnly (int f)
 void MainComponent::refreshMacroValues()
 {
     juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
-    for (int pi = 0; pi < 3; ++pi)
+    for (int k = 0; k < 3; ++k)
     {
-        ks[pi]->setValue (fxParam (focusedFx, pi).getValue(), juce::dontSendNotification);
-        ks[pi]->updateText();
+        ks[k]->setValue (valorDestino (destinoPlato (k)), juce::dontSendNotification);
+        ks[k]->updateText();
     }
 
     refrescaVisorPlato();
@@ -6962,7 +7190,8 @@ void MainComponent::refreshMacroValues()
 //  llamarse una vez por fotograma de arrastre sin costar un repintado.
 void MainComponent::refrescaVisorPlato()
 {
-    platoMini.ponTipo (fxEstaPuesto (focusedFx) && ! fxTraeCara (focusedFx) ? focusedFx : -1);
+    platoMini.ponTipo (platoModo == ModoPlato::fx && fxEstaPuesto (focusedFx)
+                       && ! fxTraeCara (focusedFx) ? focusedFx : -1);
     if (platoMini.tipo() >= 0)
         platoMini.refresca ((float) fxParam (focusedFx, 0).getValue(),
                             (float) fxParam (focusedFx, 1).getValue(),
@@ -6999,23 +7228,10 @@ void MainComponent::macroMoved (int idx)
 {
     if (! juce::isPositiveAndBelow (idx, 3)) return;
     juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
-    fxParam (focusedFx, idx).setValue (ks[idx]->getValue(), juce::dontSendNotification);
-    pushFxParam (focusedFx, idx);
-
-    // Moving MIX off zero (or onto it) IS switching the effect on or off —
-    // the button has to agree with the knob, or you get a lit button over a
-    // silent effect.
-    if (idx == 2)
-    {
-        const bool on = ks[2]->getValue() > 0.001;
-        if (on != fxEncendido (focusedFx))
-        {
-            ponFxEncendido (focusedFx, on);
-            //  A la RANURA del tipo enfocado, no a su indice. Ver setFxEnabled.
-            if (const int s = slotDeFx (focusedFx); s >= 0)
-                fxButtons[s]->setToggleState (on, juce::dontSendNotification);
-        }
-    }
+    //  POR SU DESTINO y no por su indice: el mando 2 del compresor puede ser
+    //  su ataque, y en modo PAD es el corte del pad. `mueveDestino` es el
+    //  unico camino, y el MIX -que es encender o apagar- va dentro.
+    mueveDestino (destinoPlato (idx), ks[idx]->getValue());
     //  Y LA CURVA DEL PLATO, que es lo que este mando acaba de cambiar. Ver
     //  refrescaVisorPlato: faltaba justo aqui.
     refrescaVisorPlato();
@@ -7024,6 +7240,318 @@ void MainComponent::macroMoved (int idx)
     //  redrew sixteen pad tiles and their waveform art on every mouse move.
     repaint (bandaMandos());
 }
+
+//  MOVER MIX FUERA DE CERO (O A CERO) ES ENCENDER O APAGAR EL EFECTO, y la
+//  tapa tiene que decir lo mismo que el mando o se ve una tapa encendida sobre
+//  un efecto mudo. Vivia dentro de `macroMoved`; desde que el MIX puede
+//  moverse tambien desde la ficha de mandos, la regla es una funcion y no dos
+//  copias.
+void MainComponent::sincronizaMix (int f)
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+    const bool on = fxParam (f, 2).getValue() > 0.001;
+    if (on != fxEncendido (f))
+    {
+        ponFxEncendido (f, on);
+        //  A la RANURA del tipo, no a su indice. Ver setFxEnabled.
+        if (const int s = slotDeFx (f); s >= 0)
+            fxButtons[s]->setToggleState (on, juce::dontSendNotification);
+    }
+}
+
+// ==========================================================================
+//  EL PLATO ELEGIBLE. Ver `Destino` en la cabecera.
+// ==========================================================================
+
+void MainComponent::platoDeFabrica()
+{
+    for (auto& t : platoFx) t = { { 0, 1, 2 } };
+    platoPad  = { { 0, 1, 2 } };
+    platoInst = { { 7, 4, 6 } };
+    platoModo = ModoPlato::fx;
+}
+
+//  LOS NUEVE DE UN PAD QUE SE OYEN AL TOCARLO. Los tres primeros son los de
+//  fabrica -corte, resonancia y caida-, que es lo que una mano que toca pads
+//  quiere mover sin abrir nada. Recorte, fundidos y choke no estan: se tocan
+//  con la muestra delante, que es la ficha del pad.
+juce::Array<juce::Slider*> MainComponent::candidatosPad()
+{
+    return { &cutSlider, &resoSlider, &releaseSlider, &attackSlider, &volSlider,
+             &pitchSlider, &fineSlider, &panSlider, &anchoSlider };
+}
+
+bool MainComponent::platoEsInstrumento() const
+{
+    return juce::isPositiveAndBelow (selectedPad, kNumPads) && padEsInstrumento (selectedPad);
+}
+
+//  TODO LO QUE EL PLATO PUEDE MOVER AHORA, que es tambien lo que ensena la
+//  ficha. En un efecto son sus mandos menos el ENGANCHE -que no es un giro sino
+//  cinco posiciones, y tiene sus chips-; en un pad, los nueve; en un
+//  instrumento, sus doce.
+juce::Array<MainComponent::Destino> MainComponent::candidatosPlato()
+{
+    juce::Array<Destino> r;
+    if (platoModo == ModoPlato::fx)
+    {
+        const int f = juce::jlimit (0, kNumFx - 1, focusedFx);
+        for (int pi = 0; pi < kParamsPorFx; ++pi)
+            if (pi != 3 && AudioEngine::tieneMando (f, pi))
+                r.add ({ f, pi, nullptr });
+    }
+    else if (platoEsInstrumento())
+    {
+        for (auto* v : vstMandos) r.add ({ -1, -1, v });
+    }
+    else
+    {
+        for (auto* v : candidatosPad()) r.add ({ -1, -1, v });
+    }
+    return r;
+}
+
+//  LO QUE MUEVE EL MANDO `k` DEL PLATO. Una eleccion que el tipo no tiene -un
+//  fichero de otra version, un indice fuera- cae al mando de siempre, que es
+//  el unico sitio donde se decide: quien pregunta nunca recibe un destino roto.
+MainComponent::Destino MainComponent::destinoPlato (int k)
+{
+    k = juce::jlimit (0, 2, k);
+    if (platoModo == ModoPlato::fx)
+    {
+        const int f = juce::jlimit (0, kNumFx - 1, focusedFx);
+        int pi = platoFx[(size_t) f][(size_t) k];
+        if (! juce::isPositiveAndBelow (pi, kParamsPorFx) || pi == 3
+            || ! AudioEngine::tieneMando (f, pi))
+            pi = k;
+        return { f, pi, nullptr };
+    }
+    if (platoEsInstrumento() && vstMandos.size() > 0)
+        return { -1, -1, vstMandos[juce::jlimit (0, vstMandos.size() - 1, platoInst[(size_t) k])] };
+
+    const auto c = candidatosPad();
+    return { -1, -1, c[juce::jlimit (0, c.size() - 1, platoPad[(size_t) k])] };
+}
+
+//  UN MANDO SE PARECE A SU DESTINO: recorrido, curva, doble toque y valor. De
+//  un deslizador se copia SU rango normalizable entero -con su sesgo-, que es
+//  lo que hace que el corte del pad gire igual en el plato que en su ficha.
+void MainComponent::configuraMando (juce::Slider& k, const Destino& d)
+{
+    if (d.s != nullptr)
+    {
+        k.setNormalisableRange (d.s->getNormalisableRange());
+        k.setDoubleClickReturnValue (d.s->isDoubleClickReturnEnabled(),
+                                     d.s->getDoubleClickReturnValue());
+    }
+    else if (d.f >= 0)
+    {
+        const auto sp = d.pi < 3 ? fxDefs[d.f].spec[d.pi] : specExtra (d.f, d.pi);
+        k.setRange (sp.lo, sp.hi, sp.step);
+        if (sp.skewMid > sp.lo && sp.skewMid < sp.hi) k.setSkewFactorFromMidPoint (sp.skewMid);
+        else                                          k.setSkewFactor (1.0);
+        k.setDoubleClickReturnValue (true, sp.def);
+    }
+    k.setValue (valorDestino (d), juce::dontSendNotification);
+    k.updateText();
+}
+
+double MainComponent::valorDestino (const Destino& d)
+{
+    if (d.s != nullptr) return d.s->getValue();
+    if (d.f < 0)        return 0.0;
+    if (d.pi < 3)       return fxParam (d.f, d.pi).getValue();
+    return (double) engine.getFxParam (canalActual, d.f, d.pi);
+}
+
+//  EL UNICO CAMINO. Un deslizador se mueve CON notificacion -su deshacer, su
+//  motor y su re-sintetizado son los suyos-; un parametro de efecto pasa por
+//  `escribeFxParam`, que es donde viven la automatizacion y la marca de preset
+//  movido, y los tres primeros ademas por su deslizador oculto, que es de donde
+//  los lee todo lo demas.
+void MainComponent::mueveDestino (const Destino& d, double v)
+{
+    if (d.s != nullptr) { d.s->setValue (v, juce::sendNotificationSync); return; }
+    if (d.f < 0) return;
+    if (d.pi < 3)
+    {
+        fxParam (d.f, d.pi).setValue (v, juce::dontSendNotification);
+        pushFxParam (d.f, d.pi);
+        if (d.pi == 2) sincronizaMix (d.f);
+    }
+    else
+    {
+        escribeFxParam (d.f, d.pi, (float) v);
+    }
+}
+
+juce::String MainComponent::nombreDestino (const Destino& d) const
+{
+    if (d.s != nullptr)
+    {
+        //  El del pad, por la tabla de la casa -la misma palabra que su ficha
+        //  pinta encima-; los doce del instrumento no estan en ella porque su
+        //  nombre lo dice la FAMILIA, y `refrescaMandosVst` se lo pone de
+        //  titulo ya traducido.
+        if (const char* c = const_cast<MainComponent*> (this)->claveDeMando (*d.s)) return T (c);
+        return d.s->getTitle();
+    }
+    if (d.f < 0) return {};
+    return T (nombreParam (d.f, d.pi));
+}
+
+juce::String MainComponent::textoDestino (const Destino& d, double v) const
+{
+    if (d.s != nullptr) return d.s->getTextFromValue (v);
+    if (d.f < 0) return {};
+    return fxFormat (d.pi < 3 ? fxDefs[d.f].spec[d.pi] : specExtra (d.f, d.pi), v);
+}
+
+//  LOS TRES MANDOS A SUS DESTINOS. Lo llaman el foco de un efecto, el cambio de
+//  pad en modo PAD, el de modo y cualquier eleccion nueva.
+void MainComponent::configuraPlato()
+{
+    //  UN INSTRUMENTO EXPONE SUS DOCE POR `vstMandos`, que son de UN pad
+    //  -`vstPad`-. Se apuntan al elegido, salvo con su ficha abierta: esa esta
+    //  ensenando otro pad y moverle el suelo seria editar lo que no se ve.
+    if (platoModo == ModoPlato::pad && platoEsInstrumento() && ! vstSheet.isVisible())
+    {
+        vstPad = selectedPad;
+        refrescaMandosVst();
+    }
+
+    juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
+    for (int k = 0; k < 3; ++k) configuraMando (*ks[k], destinoPlato (k));
+
+    platoPadBtn.setButtonText (T ("PAD %1", Lang::ltr (juce::String (selectedPad + 1))));
+    refrescaPlato();
+    refrescaVisorPlato();
+    if (mandosSheet.isVisible()) refrescaFichaMandos();
+    repaint (bandaMandos());
+}
+
+void MainComponent::ponModoPlato (ModoPlato m)
+{
+    platoModo = m;
+    configuraPlato();
+    resized();
+    repaint();
+}
+
+//  EN EL FICHERO, UNA LINEA: «modo|30 ternas de efecto|pad|instrumento». Los
+//  indices y no los nombres, porque los nombres se traducen.
+juce::String MainComponent::platoAString() const
+{
+    auto tres = [] (const std::array<int, 3>& t)
+    { return juce::String (t[0]) + "." + juce::String (t[1]) + "." + juce::String (t[2]); };
+    juce::StringArray fx;
+    for (const auto& t : platoFx) fx.add (tres (t));
+    return juce::String (platoModo == ModoPlato::pad ? 1 : 0) + "|" + fx.joinIntoString (",")
+           + "|" + tres (platoPad) + "|" + tres (platoInst);
+}
+
+//  Y DE VUELTA, acotando cada numero en la puerta. Sin la propiedad -un
+//  proyecto de antes de la tanda 32- vuelve el plato de fabrica, que es como
+//  sonaba el dia que se guardo.
+void MainComponent::platoDeString (const juce::String& txt)
+{
+    platoDeFabrica();
+    const auto partes = juce::StringArray::fromTokens (txt, "|", "");
+    if (partes.size() < 4) return;
+
+    auto lee = [] (const juce::String& t, std::array<int, 3>& dst, int tope)
+    {
+        const auto n = juce::StringArray::fromTokens (t, ".", "");
+        if (n.size() != 3) return;
+        for (int k = 0; k < 3; ++k)
+            if (const int v = n[k].getIntValue(); juce::isPositiveAndBelow (v, tope))
+                dst[(size_t) k] = v;
+    };
+    const auto fx = juce::StringArray::fromTokens (partes[1], ",", "");
+    for (int f = 0; f < kNumFx && f < fx.size(); ++f) lee (fx[f], platoFx[(size_t) f], kParamsPorFx);
+    lee (partes[2], platoPad, candidatosPad().size());
+    lee (partes[3], platoInst, Sintes::kMandos);
+    platoModo = partes[0].getIntValue() == 1 ? ModoPlato::pad : ModoPlato::fx;
+}
+
+// ==========================================================================
+//  LA FICHA DE MANDOS. Se abre MANTENIENDO un mando del plato: ensena todo lo
+//  que el plato puede mover y, tocado sin girar, un mando se va al plato en el
+//  sitio del que se mantuvo.
+// ==========================================================================
+void MainComponent::abreFichaMandos (int mando)
+{
+    const bool abrir = juce::isPositiveAndBelow (mando, 3);
+    if (abrir) mandosPara = mando;
+    mandosSheet.setVisible (abrir);
+
+    if (abrir)
+    {
+        Bitacora::paso ("ficha mandos");
+        refrescaFichaMandos();
+        mandosSheet.toFront (false);
+    }
+    else
+    {
+        //  APAGAR *Y* VACIAR LOS LIMITES, las dos mitades de la misma regla.
+        for (auto* k : mandosFicha)    k->setBounds ({});
+        for (auto* b : mandosParaBtns) b->setBounds ({});
+        for (auto* b : mandosSyncBtns) b->setBounds ({});
+        mandosPresetsBtn.setBounds ({});
+        mandosCloseBtn.setBounds ({});
+        mandosSheet.sheetBounds = {};
+        mandosTituloBanda = {};
+        mandosAyudaBanda  = {};
+    }
+    resized();
+    repaint();
+}
+
+void MainComponent::refrescaFichaMandos()
+{
+    mandosFichaDestino = candidatosPlato();
+    for (int i = 0; i < mandosFicha.size(); ++i)
+    {
+        auto* k = mandosFicha[i];
+        const bool hay = i < mandosFichaDestino.size();
+        k->setVisible (hay);
+        if (! hay) { k->setBounds ({}); continue; }
+        configuraMando (*k, mandosFichaDestino[i]);
+        k->setTitle (nombreDestino (mandosFichaDestino[i]));
+    }
+
+    for (int k = 0; k < mandosParaBtns.size(); ++k)
+        mandosParaBtns[k]->setToggleState (k == mandosPara, juce::dontSendNotification);
+
+    const bool sync = platoModo == ModoPlato::fx && AudioEngine::tieneMando (focusedFx, 3);
+    const int div = sync ? juce::roundToInt (engine.getFxParam (canalActual, focusedFx, 3)) : 0;
+    for (int i = 0; i < mandosSyncBtns.size(); ++i)
+    {
+        mandosSyncBtns[i]->setVisible (sync);
+        mandosSyncBtns[i]->setToggleState (sync && kDivSync[i] == div, juce::dontSendNotification);
+    }
+    mandosPresetsBtn.setVisible (platoModo == ModoPlato::fx);
+    resized();
+    mandosSheet.repaint();
+}
+
+void MainComponent::llevaAlPlato (int i)
+{
+    if (! juce::isPositiveAndBelow (i, mandosFichaDestino.size())) return;
+    const auto d = mandosFichaDestino[i];
+    const auto k = (size_t) juce::jlimit (0, 2, mandosPara);
+
+    if (platoModo == ModoPlato::fx)       platoFx[(size_t) juce::jlimit (0, kNumFx - 1, focusedFx)][k] = d.pi;
+    else if (platoEsInstrumento())        platoInst[k] = vstMandos.indexOf (d.s);
+    else                                  platoPad[k]  = candidatosPad().indexOf (d.s);
+
+    configuraPlato();
+    //  Y EL SIGUIENTE MANDO QUEDA PREPARADO: elegir los tres son tres toques, y
+    //  no tres veces «mantener, tocar, cerrar».
+    mandosPara = ((int) k + 1) % 3;
+    refrescaFichaMandos();
+}
+
 
 // --- Sheets ------------------------------------------------------------------
 void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
@@ -7709,6 +8237,8 @@ void MainComponent::closeAllSheets()
     //  Y la de presets, que vive igual: encima de todo y abierta desde el menu
     //  de ranura.
     if (presetEditado >= 0) abreMenuPresets (-1);
+    //  Y la de mandos, que vive igual: encima de la cara.
+    if (mandosSheet.isVisible()) abreFichaMandos (-1);
 
     //  CERRAR LA FICHA XY EN MOMENTANEO TIENE QUE APAGAR EL EFECTO.
     //
@@ -8922,6 +9452,9 @@ void MainComponent::selectPad (int index)
             k->repaint();
         }
     }
+    //  EN MODO PAD EL PLATO SIGUE AL PAD ELEGIDO: si no, los tres mandos
+    //  moverian el corte del pad de antes con el numero del nuevo en la tapa.
+    if (platoModo == ModoPlato::pad) configuraPlato();
 
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     repaint (headerArea);          // the fragment strip tracks which zatis are loaded
@@ -10235,7 +10768,15 @@ void MainComponent::retranslateUi()
     //  llamaba por la mas pequena de las tres cosas que hay dentro.
     pageGestBtn .setButtonText (T ("AYUDA"));
     pageMidiBtn .setButtonText (T ("MIDI"));
-    manualButton.setButtonText (T ("MANUAL"));
+    //  GUIA Y NO MANUAL: desde que el tour y el manual son una sola lista de
+    //  capitulos, la tapa se llama como el titulo que abre.
+    manualButton.setButtonText (T ("GUIA"));
+    //  Y LAS DE DENTRO SE VUELVEN A ESCRIBIR AQUI. Se nombraban en el
+    //  constructor, con la cadena en espanol y sin T(): expo las conto como
+    //  UNTRANSLATED 152 veces (144 ENSENAMELO y 8 RECORRER TODO), en los
+    //  cuatro idiomas y en las nueve pantallas.
+    guiaTodoBtn.setButtonText (T ("RECORRER TODO"));
+    for (auto* b : guiaVerBtns) b->setButtonText (T ("ENSENAMELO"));
     tourButton  .setButtonText (T ("TOUR"));
     tourBackBtn .setButtonText (T ("TOUR ATRAS"));
     tourSkipBtn .setButtonText (tourSkipCaption());
@@ -11639,6 +12180,8 @@ juce::ValueTree MainComponent::captureState() const
     //  The skin is deliberately NOT captured: it belongs to the person, not
     //  to the song. Old projects that carry one are simply ignored.
     s.setProperty ("focusedFx", focusedFx, nullptr);
+    //  LO QUE MUEVE CADA MANDO DEL PLATO. Ver `platoAString`.
+    s.setProperty ("plato", platoAString(), nullptr);
     s.setProperty ("selectedPattern", selectedPattern, nullptr);
 
     juce::ValueTree fx ("FX");
@@ -11661,7 +12204,9 @@ juce::ValueTree MainComponent::captureState() const
             //  CUATRO Y NO TRES desde que existe el ENGANCHE del modulador
             //  -cero libre en Hz, mayor que cero la division del compas-. La
             //  fila pasa de 69 numeros a 92, y el lector de abajo admite las
-            //  dos anchuras.
+            //  dos anchuras. Y OCHO desde la tanda 32 -los dos propios de cada
+            //  tipo y el corte de graves y agudos-: 240 por canal, y el lector
+            //  admite las tres.
             for (int f = 0; f < kNumFx; ++f)
                 for (int pi = 0; pi < kParamsPorFx; ++pi)
                     r.add (juce::String (engine.getFxParam (c, f, pi), 4));
@@ -12105,14 +12650,23 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 //  `csends`. Con el ancho equivocado no falta un valor: se leen
                 //  todos corridos y cada efecto se queda con el parametro del
                 //  vecino, que es un fallo mucho peor que un defecto.
-                const int porFx = (r.size() >= kNumFx * kParamsPorFx) ? kParamsPorFx : 3;
+                //  TRES ANCHURAS desde la tanda 32: 3 (hasta el enganche), 4
+                //  (hasta la tanda 31) y 8. Se prueba de la mas ancha a la mas
+                //  estrecha, y una fila que no llega a ninguna es de 3.
+                const int porFx = (r.size() >= kNumFx * kParamsPorFx) ? kParamsPorFx
+                                : (r.size() >= kNumFx * 4)             ? 4 : 3;
 
                 for (int f = 0; f < kNumFx; ++f)
                     for (int pi = 0; pi < kParamsPorFx; ++pi)
                     {
-                        //  El cuarto de un fichero viejo no existe: vale CERO,
-                        //  o sea libre, que es como se comportaba.
-                        if (pi >= porFx) { engine.setFxParam (c, f, pi, 0.0f); continue; }
+                        //  Lo que un fichero viejo no trae vale su DEFECTO: el
+                        //  cuarto es cero -libre- y los de la tanda 32 son la
+                        //  constante que sustituyen, asi que suena igual.
+                        if (pi >= porFx)
+                        {
+                            engine.setFxParam (c, f, pi, AudioEngine::defectoFx (f, pi));
+                            continue;
+                        }
                         const int k = f * porFx + pi;
                         //  Un canal que no esta en el fichero -o un valor que
                         //  falta dentro de su fila- vale lo que el MANDO acaba
@@ -12887,7 +13441,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             const int fx   = n[1].getIntValue();
             const int par  = n[2].getIntValue();
             if (paso < 0 || paso >= AudioEngine::kSongBars * engine.pasosPorCompas()) continue;
-            if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, 3)) continue;
+            if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, kParamsPorFx)) continue;
             if ((int) autoEventos.size() >= AudioEngine::kMaxAuto) break;
             //  EL CANAL VA AL FINAL y no en su sitio, que es lo que hace que un
             //  proyecto de la tanda anterior vuelva entero: alli la fila tenia
@@ -12912,6 +13466,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
     ponAutoArmado (false);
 
     focusFx ((int) s.getProperty ("focusedFx", 0));
+    //  DESPUES del foco, que devuelve el plato al efecto: el modo que manda es
+    //  el del fichero.
+    platoDeString (s.getProperty ("plato").toString());
+    configuraPlato();
+    resized();
     refreshRack();
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -15787,6 +16346,8 @@ int MainComponent::manualContentHeight (int width) const
     for (const auto& ch : kManual)
     {
         h += kManualTitleH;
+        //  GESTOS pinta su tabla, no sus lineas: una fila por gesto.
+        if (ch.gestos) h += kNumGestures * kManualLineH;
         for (const char* l : ch.lines)
             if (l != nullptr) h += kManualLineH;
         h += kManualGap;
@@ -16207,7 +16768,7 @@ juce::String MainComponent::tourNextCaption() const
 {
     //  Y en el paso de la PUERTA tambien dice EMPEZAR, que es lo que hace:
     //  cerrar y ponerse a tocar. Seguir leyendo es la otra tapa.
-    if (tourEsLaPuerta() || tourPaso + 1 >= kTourPasos) return T ("TOUR EMPEZAR");
+    if (tourEsLaPuerta() || tourPaso >= tourHasta) return T ("TOUR EMPEZAR");
     return T ("SIGUIENTE");
 }
 
@@ -16226,18 +16787,42 @@ juce::String MainComponent::tourSkipCaption() const
 
 void MainComponent::showTour (int paso)
 {
-    tourPaso = juce::jlimit (0, kTourPasos - 1, paso);
+    tourPaso = juce::jlimit (tourDesde, tourHasta, paso);
     //  Primero se abre lo que el paso explica y DESPUES se maqueta: el muelle
     //  se coloca segun donde quede el objetivo, y el objetivo de casi todos los
     //  pasos vive dentro de una ficha que este paso acaba de abrir.
     tourPrepara (tourPaso);
-    tourBackBtn.setEnabled (tourPaso > 0);
+    tourBackBtn.setEnabled (tourPaso > tourDesde);
     tourNextBtn.setButtonText (tourNextCaption());
     tourSkipBtn.setButtonText (tourSkipCaption());
     resized();
     tourSheet.repaint();
 }
 
+
+//  UN CAPITULO DE LA GUIA, ENSENADO: los pasos del recorrido que lo cuentan,
+//  y se cierra en el ultimo. Ver kManual.
+void MainComponent::ensenaCapitulo (int capitulo)
+{
+    if (! juce::isPositiveAndBelow (capitulo, kManualChapterCount)) return;
+    const auto& ch = kManual[capitulo];
+    closeAllSheets();
+    tourDesde = juce::jlimit (0, kTourPasos - 1, ch.desde);
+    tourHasta = juce::jlimit (tourDesde, kTourPasos - 1, ch.hasta);
+    //  LA FICHA PRIMERO Y EL PASO DESPUES, una vez. Era paso, ficha y paso
+    //  otra vez -openSheet cierra lo que el paso abrio-, o sea dos tourPrepara
+    //  y tres resized por toque: en arabe, donde cada resized paga el respaldo
+    //  de fuentes, ENSENAMELO bloqueaba 1071 ms contra el tope de 1000 de
+    //  atasco.py. tourPrepara ya deja el tour visible y delante al terminar.
+    openSheet (tourSheet, setButton);
+    showTour (tourDesde);
+}
+
+juce::String MainComponent::guiaTexto (const char* clave)
+{
+    return T (clave, Lang::ltr (juce::String (kNumFx)),
+                     Lang::ltr (juce::String (AudioEngine::kNumCanales)));
+}
 
 //  QUE SENALA CADA PASO. Vacio = sin objetivo: el primero y el ultimo hablan de
 //  la app entera y no de una pieza, y ahi un anillo alrededor de algo seria
@@ -16253,6 +16838,15 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
         return getLocalArea (c, c->getLocalBounds());
     };
 
+    auto unionDe = [&] (std::initializer_list<const juce::Component*> cs)
+    {
+        juce::Rectangle<int> r;
+        for (auto* c : cs) r = r.getUnion (deComponente (c));
+        return r;
+    };
+
+    //  LA NUMERACION SIGUE A ZatiTour::titulos, y los capitulos de la guia
+    //  dicen que pasos son suyos (kManual). Tests/tour.py mide cada uno.
     switch (paso)
     {
         case 1:  return padPlateArea;
@@ -16262,44 +16856,45 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
         case 4:  return fxButtons.isEmpty() ? juce::Rectangle<int>()
                         : deComponente (fxButtons[0]).getUnion (deComponente (fxButtons[fxButtons.size() - 1]));
         case 5:  return ctrlPlateArea;
-        case 6:  return deComponente (&stepGrid);
-        //  LA TIRA DEL PASO, POR SUS MANDOS Y NO POR UN RECTANGULO MUERTO.
-        //
-        //  Esto apuntaba a `stepStripArea`, y esa variable solo se ASIGNA en un
-        //  sitio: `vuArea = stepStripArea = {}` con el comentario "gone from the
-        //  face; the screen draws them". O sea que quedo de cuando la tira vivia
-        //  en la cara y desde entonces vale vacio SIEMPRE. El paso abria la
-        //  ficha, tocaba un paso para que la tira existiera, y luego señalaba un
-        //  rectangulo de cero: velo uniforme, ni agujero ni anillo.
-        //
-        //  Se pregunta a los mandos, que es lo que la persona tiene que mirar, y
-        //  se toma la union de los que HAY: la tercera fila -los cuatro
-        //  bloqueos- se cae en las pantallas estrechas, y deComponente ya
-        //  devuelve vacio para lo que no esta en pantalla, asi que la union sale
-        //  bien sea cual sea el numero de filas.
-        case 7:
+        //  LA FICHA DE MANDOS, por los mandos que HAY: cuantos salen depende
+        //  del efecto, y deComponente devuelve vacio para los que no se ven.
+        case 6:
         {
-            auto r = deComponente (&noteSlider).getUnion (deComponente (&velSlider));
-            r = r.getUnion (deComponente (&rollSlider)).getUnion (deComponente (&lockSlider));
-            r = r.getUnion (deComponente (&atkPasoSlider)).getUnion (deComponente (&panPasoSlider));
+            juce::Rectangle<int> r;
+            for (auto* k : mandosFicha) r = r.getUnion (deComponente (k));
             return r;
         }
-        case 8:  return deComponente (&pianoGrid);
-        case 9:  return deComponente (&patDoubleBtn).getUnion (deComponente (&seqHumanBtn));
-        case 10: return deComponente (&waveform);
-        case 11: return deComponente (&rackButton);
-        case 12: return deComponente (&songGrid);
-        case 13: return deComponente (&exportMasterButton).getUnion (deComponente (&exportStemsButton));
-        //  Y EL ULTIMO PASO NO SEÑALABA NADA, que es la otra mitad del mismo
-        //  descuido: la tabla llegaba al 13 y el tour tiene quince pasos. El 14
-        //  abre AJUSTES para hablar del idioma, las carcasas y el manual, y
-        //  caia en `default` - o sea que la unica pantalla donde se explica como
-        //  cambiar de idioma se enseñaba sin señalar el selector de idioma.
+        case 7:  return deComponente (&stepGrid);
+        //  LA TIRA DEL PASO, POR SUS MANDOS Y NO POR UN RECTANGULO MUERTO.
         //
-        //  El cero SI es un vacio a proposito: es la portada y no tiene a que
-        //  apuntar. Un `default` que atiende dos casos -uno correcto y uno
-        //  olvidado- es como se esconde el segundo.
+        //  Esto apuntaba a `stepStripArea`, que solo se asigna a vacio desde
+        //  que la tira dejo la cara: velo uniforme, ni agujero ni anillo. Se
+        //  pregunta a los mandos, y la union de los que HAY.
+        case 8:  return unionDe ({ &noteSlider, &velSlider, &rollSlider, &lockSlider,
+                                   &atkPasoSlider, &panPasoSlider });
+        case 9:  return deComponente (&pianoGrid);
+        case 10: return deComponente (&patDoubleBtn).getUnion (deComponente (&seqHumanBtn));
+        case 11: return deComponente (&tapButton);
+        case 12: return deComponente (&waveform);
+        case 13: return unionDe ({ &pitchSlider, &fineSlider, &volSlider, &panSlider, &attackSlider,
+                                   &releaseSlider, &cutSlider, &resoSlider, &anchoSlider });
         case 14:
+        {
+            juce::Rectangle<int> r;
+            for (auto* b : instBtns) r = r.getUnion (deComponente (b));
+            return r;
+        }
+        case 15: return deComponente (&rackButton);
+        case 16: return deComponente (&songGrid);
+        case 17: return deComponente (&autoBtn);
+        case 18: return deComponente (&exportMasterButton).getUnion (deComponente (&exportStemsButton));
+        case 19: return unionDe ({ &projSaveButton, &projLoadButton, &projNewButton });
+        case 20: return unionDe ({ &midiOutBtn, &midiInBtn });
+        case 21: return unionDe ({ &measureButton, &quantButton });
+        //  El IDIOMA y la CARCASA. El cero SI es un vacio a proposito: es la
+        //  portada. Un `default` que atiende dos casos -uno correcto y uno
+        //  olvidado- es como se escondio este paso la primera vez.
+        case 22:
         {
             auto r = langButtons.isEmpty() ? juce::Rectangle<int>()
                    : deComponente (langButtons[0]).getUnion (deComponente (langButtons[langButtons.size() - 1]));
@@ -16308,6 +16903,7 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
                      .getUnion (deComponente (skinButtons[skinButtons.size() - 1]));
             return r;
         }
+        case 23: return gesturesArea;
         default: return {};
     }
 }
@@ -16320,29 +16916,49 @@ void MainComponent::tourPrepara (int paso)
 {
     switch (paso)
     {
-        case 6:  showSeqPage (seqPageGrid);  openSheet (seqSheet, secButton); break;
-        case 7:  showSeqPage (seqPageGrid);  openSheet (seqSheet, secButton);
-                 //  Con un paso tocado, que la tira solo existe entonces.
-                 if (selectedStep < 0) stepCellToggled (0, 4);
-                 break;
-        case 8:  openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); break;
-        case 9:  showSeqPage (seqPageStep);  openSheet (seqSheet, secButton); break;
-        case 10: showPadPage (padPageTrim);  openSheet (padSheet, padsButton); break;
-        //  Y EL PASO 11 ABRE LA PAGINA QUE NOMBRA. Su texto dice «la mesa tiene
-        //  dieciseis PADS y dieciseis CANALES», y sin fijar la pagina la mesa
-        //  abre en la que hubiera - por defecto PADS, o sea que la palabra
-        //  CANALES no se ve por ningun sitio. Es el residuo de siempre: los
-        //  pasos 6 a 9 llaman a showSeqPage y el 10 a showPadPage justo por
-        //  esto, y este se habia quedado sin su linea.
-        case 11: showMixPage (mixPageCanales); refreshMixStrip();
+        //  LA FICHA DE MANDOS necesita un efecto enfocado, y abre la del que
+        //  este. Se abre y no se conmuta: abreFichaMandos cierra si ya esta.
+        case 6:  closeAllSheets(); abreFichaMandos (0); break;
+        case 7:  showSeqPage (seqPageGrid);  openSheet (seqSheet, secButton); break;
+        //  EL PASO 8 NO ESCRIBE EN TU PATRON. Llamaba a `stepCellToggled
+        //  (0, 4)` para que la tira existiera: si el paso 5 del pad ya estaba
+        //  encendido, lo APAGABA y apilaba un deshacer. Ahora se ELIGE el
+        //  primer paso encendido del pad, sin tocarlo; si no hay ninguno se
+        //  elige el primero, y la tira sale desactivada -que es lo que la tira
+        //  hace con un paso apagado, y el texto dice «con un paso tocado»-.
+        //  Tests/tour.py compara el patron bit a bit antes y despues.
+        case 8:
+        {
+            showSeqPage (seqPageGrid);  openSheet (seqSheet, secButton);
+            const int pad = juce::jmax (0, selectedPad);
+            int elegido = 0;
+            if (juce::isPositiveAndBelow (selectedPattern, (int) pattern.size()))
+                for (int st = 0; st < (int) pattern[0].size(); ++st)
+                    if (pattern[(size_t) selectedPattern][(size_t) st][(size_t) pad]) { elegido = st; break; }
+            selectedStep = elegido;
+            refrescaTiraPaso();
+            refreshStepGrid();
+            resized();
+            break;
+        }
+        case 9:  openSheet (seqSheet, secButton); showSeqPage (seqPagePiano); refreshPiano(); break;
+        case 10: showSeqPage (seqPageStep);  openSheet (seqSheet, secButton); break;
+        case 11: showSeqPage (seqPageGrid);  openSheet (seqSheet, secButton); break;
+        case 12: showPadPage (padPageTrim);  openSheet (padSheet, padsButton); break;
+        case 13: showPadPage (padPageSound); openSheet (padSheet, padsButton); break;
+        case 14: closeAllSheets(); openInstSheet(); break;
+        //  Y EL DE LA MESA ABRE LA PAGINA QUE NOMBRA: su texto dice CANALES, y
+        //  sin fijar la pagina la mesa abre en la que hubiera.
+        case 15: showMixPage (mixPageCanales); refreshMixStrip();
                  openSheet (mixSheet, mixButton);  break;
-        case 12: openSheet (songSheet, songButton); break;
-        case 13: openExportSheet(); break;
-        //  El ultimo paso explica el IDIOMA y la CARCASA, que desde que tienen
-        //  pagina propia ya no estan en AUDIO: abrir AUDIO dejaba el anillo
-        //  alrededor de nada, que es exactamente lo que tourObjetivo evita
-        //  devolviendo vacio - y un paso que no senala nada no explica nada.
-        case 14: showSetPage (pageAspecto); openSheet (setSheet, setButton); break;
+        case 16: openSheet (songSheet, songButton); break;
+        case 17: openSheet (songSheet, songButton); break;
+        case 18: openExportSheet(); break;
+        case 19: showSetPage (pageProjects); openSheet (setSheet, setButton); break;
+        case 20: showSetPage (pageMidi);     openSheet (setSheet, setButton); break;
+        case 21: showSetPage (pageAudio);    openSheet (setSheet, setButton); break;
+        case 22: showSetPage (pageAspecto);  openSheet (setSheet, setButton); break;
+        case 23: showSetPage (pageGestures); openSheet (setSheet, setButton); break;
         default: closeAllSheets(); break;
     }
 
@@ -16366,13 +16982,21 @@ int MainComponent::tourBodyHeight (int ancho) const
     if (ancho <= 0) return 0;
     const auto f = tourBodyFont();
     const int lineaH = (int) std::ceil (f.getHeight() * 1.15f);
+    static_assert (kTourPasos == std::tuple_size<decltype (tourAnchoCuerpo)>::value,
+                   "un ancho guardado por paso");
+    if (tourAnchoIdioma != (int) Lang::current())
+    {
+        for (int i = 0; i < kTourPasos; ++i)
+            tourAnchoCuerpo[(size_t) i] = juce::GlyphArrangement::getStringWidth (f, guiaTexto (ZatiTour::cuerpos[i]));
+        tourAnchoIdioma = (int) Lang::current();
+    }
     int peor = 1;
     for (int i = 0; i < kTourPasos; ++i)
     {
         //  Ancho del texto seguido dividido por el ancho de la caja, mas uno:
         //  drawFittedText parte por palabras, asi que una linea nunca se llena
         //  del todo y redondear por abajo deja la ultima fuera.
-        const double w = juce::GlyphArrangement::getStringWidth (f, T (ZatiTour::cuerpos[i]));
+        const double w = tourAnchoCuerpo[(size_t) i];
         peor = juce::jmax (peor, (int) std::ceil (w / (double) ancho) + 1);
     }
     return peor * lineaH;

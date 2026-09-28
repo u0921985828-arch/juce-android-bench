@@ -1285,27 +1285,9 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
     //  prueba tiene que leer aparte -como `fxDefs`, `ZatiTour` y `kManual`- y
     //  hasta esta tanda no estaba. Cambiar el texto sin cambiar la fila de
     //  `Lang.cpp` deja la linea en español en las cuatro compilaciones.
-    struct Row { const char* how; const char* what; };
-    const Row rows[kNumGestures] =
-    {
-        { "MANTEN UN PAD",      "suena y abre sus ajustes" },
-        { "MANTEN UN EFECTO",   "coge los mandos sin apagarlo" },
-        { "MANTEN CARGAR",      "abre la biblioteca en el pad elegido" },
-        { "MANTEN PLAY",        "para y corta todos los pads" },
-        { "MANTEN SOLO",        "quita todos los solos" },
-        { "MANTEN AUTO",        "vacia la automatizacion" },
-        { "ARRASTRA LA PANTALLA", "cambia de patron" },
-        { "GOLPEA ARRIBA O ABAJO", "toca mas fuerte o mas flojo" },
-        { "MANTEN UNA RANURA DEL RACK", "abre los presets de ese efecto" },
-        //  El atajo de la playlist, que no deja marca en la cara -ni tapa, ni
-        //  herramienta armada- y por eso tiene que estar aqui: sin fila, la
-        //  unica forma de encontrarlo es tropezarse con el.
-        { "DOBLE TOQUE EN UN CLIP", "abre CORTAR con su sonido" },
-        //  Y LA LUPA, que es un modo armado y SI deja marca en la tapa: esta
-        //  aqui porque lo que hace al soltar -y sobre todo lo que hace un toque
-        //  sin arrastre- no se adivina mirando el icono.
-        { "ARRASTRA CON LA LUPA", "acerca ese tramo; un toque vuelve" },
-    };
+    const auto& rows = kGestos;
+    static_assert (std::size (kGestos) == kNumGestures,
+                   "una fila de gestos de mas o de menos: la pagina reparte el alto entre kNumGestures");
 
     //  SE REPARTE LO QUE HAY, no se pide un suelo.
     //
@@ -1516,13 +1498,22 @@ void MainComponent::paintManualBody (juce::Graphics& g)
         //  El titulo del capitulo con su filete, igual que las secciones de
         //  las fichas: asi el manual se lee como parte de la misma maquina.
         auto band = r.removeFromTop (kManualTitleH);
+        //  El titulo se para antes de su ENSENAMELO, por el lado en el que
+        //  este: en arabe la tapa va a la izquierda.
+        if (auto* ver = guiaVerBtns[c])
+            if (ver->isVisible())
+                band = antesDe (band.translated (0, 0), *ver);
         const auto secText = T (ch.title);
         g.setColour (ZatiColours::ink.withAlpha (0.55f));
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.22f));
         //  Apuntado para el banco: es lo unico que hace que «cuantos capitulos
         //  se dibujan» sea una cifra y no una lectura. Ver Tests/plano.py.
-        apunta (g, band, secText, "capitulo");
-        g.drawText (secText, band, Lang::start());
+        //
+        //  Y APRETADO HASTA Metrics::apretonAyuda, porque desde que cada
+        //  capitulo lleva su ENSENAMELO el titulo tiene media banda: en 280x653
+        //  «GRABAR Y REMUESTREAR» pedia 138 px con 120, y otros cinco igual.
+        apunta (g, band, secText, "capitulo", Metrics::apretonAyuda);
+        g.drawFittedText (secText, band, Lang::start(), 1, Metrics::apretonAyuda);
 
         const float tw = juce::GlyphArrangement::getStringWidth (
                              ZatiColours::labelFont (Metrics::fMeta, 0.22f), secText);
@@ -1534,6 +1525,21 @@ void MainComponent::paintManualBody (juce::Graphics& g)
         auto ruleRow = band;
         const auto rule = Lang::takeEnd (ruleRow, juce::jmax (0, band.getWidth() - (int) tw - 8));
         g.fillRect ((float) rule.getX(), ly, (float) rule.getWidth(), 1.0f);
+
+        //  EL CAPITULO DE GESTOS pinta la tabla de la pagina AYUDA -la misma,
+        //  no una copia-: el gesto y lo que hace, en un renglon.
+        if (ch.gestos)
+            for (const auto& gf : kGestos)
+            {
+                auto row = r.removeFromTop (kManualLineH);
+                auto dot = Lang::takeStart (row, 14);
+                g.setColour (Zati::colour (c).withAlpha (0.9f));
+                g.fillEllipse ((float) dot.getX() + 2.0f, (float) dot.getCentreY() - 2.5f, 5.0f, 5.0f);
+                g.setColour (ZatiColours::ink.withAlpha (0.92f));
+                g.setFont (ZatiColours::monoFont (Metrics::fMeta));
+                g.drawFittedText (T (gf.how) + "  " + juce::String (juce::CharPointer_UTF8 ("\xc2\xb7")) + "  " + T (gf.what),
+                                  row.reduced (Metrics::aireTapa, 0), Lang::start(), 2, 0.9f);
+            }
 
         for (const char* line : ch.lines)
         {
@@ -1549,7 +1555,7 @@ void MainComponent::paintManualBody (juce::Graphics& g)
 
             g.setColour (ZatiColours::ink.withAlpha (0.92f));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta));
-            g.drawFittedText (T (line), row.reduced (Metrics::aireTapa, 0), Lang::start(), 2, 0.9f);
+            g.drawFittedText (guiaTexto (line), row.reduced (Metrics::aireTapa, 0), Lang::start(), 2, 0.9f);
         }
 
         r.removeFromTop (kManualGap);
@@ -1568,7 +1574,7 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
-    pintaTitulo (g, antesDe (titleRow, manualCloseButton), T ("MANUAL"), "titulo", true);
+    pintaTitulo (g, antesDe (titleRow, manualCloseButton), T ("GUIA"), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
@@ -1936,6 +1942,49 @@ void MainComponent::paintPresetContent (juce::Graphics& g)
 //  las cinco se parecen y el numero solo no dice cual estas tocando. Se aparta
 //  de la cruz con `antesDe`, que decide el lado comparando los CENTROS: en
 //  arabe la x esta a la izquierda y un `setRight` a mano no recorta nada.
+//  LA FICHA DE MANDOS. El titulo dice DE QUE son -el efecto, el pad o el
+//  instrumento-, el renglon de ayuda dice el gesto, y cada mando lleva su
+//  nombre encima: en tinta de acento y con su numero los que estan en el
+//  plato, que es la unica forma de ver la eleccion sin salir de la ficha.
+void MainComponent::paintMandosContent (juce::Graphics& g)
+{
+    if (mandosSheet.sheetBounds.isEmpty() || mandosTituloBanda.isEmpty()) return;
+
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    juce::String titulo;
+    if (platoModo == ModoPlato::fx)
+        titulo = juce::String (fxDefs[juce::jlimit (0, kNumFx - 1, focusedFx)].name);
+    else
+        titulo = T ("PAD %1", Lang::ltr (juce::String (selectedPad + 1)));
+    titulo << " " << dot << " " << T ("MANDOS");
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, antesDe (mandosTituloBanda, mandosCloseBtn.getBounds()), titulo, "titulo", true);
+
+    if (! mandosAyudaBanda.isEmpty())
+    {
+        pintaAyuda (g, mandosAyudaBanda, T ("TOCA UN MANDO PARA LLEVARLO AL PLATO"),
+                    juce::Justification::centred);
+    }
+
+    Destino enPlato[3] = { destinoPlato (0), destinoPlato (1), destinoPlato (2) };
+    for (int i = 0; i < mandosFicha.size() && i < mandosFichaDestino.size(); ++i)
+    {
+        const auto* k = mandosFicha[i];
+        if (k->getBounds().isEmpty()) continue;
+        int suyo = -1;
+        for (int p = 0; p < 3; ++p) if (enPlato[p] == mandosFichaDestino[i]) suyo = p;
+        juce::String nombre = nombreDestino (mandosFichaDestino[i]);
+        if (suyo >= 0) nombre = Lang::ltr (juce::String (suyo + 1)) + " " + dot + " " + nombre;
+        g.setColour (suyo >= 0 ? ZatiColours::accent : ZatiColours::ink.withAlpha (0.55f));
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+        g.drawText (nombre, bandAbove (*k, ZatiLookAndFeel::kKnobName, ZatiLookAndFeel::kKnobNameGap,
+                                       ZatiLookAndFeel::kKnobNameBleed),
+                    juce::Justification::centred);
+    }
+}
+
 void MainComponent::paintEqBandaContent (juce::Graphics& g)
 {
     if (eqBandaSheet.sheetBounds.isEmpty() || eqBandaTituloBanda.isEmpty()) return;
@@ -2811,13 +2860,30 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     //  pedido. Son un indicador y no un control - para moverse estan ATRAS y
     //  SIGUIENTE, que miden lo que mide un dedo; un punto de siete pixeles no
     //  se puede acertar y fingir que si es peor que no tenerlos.
+    //
+    //  Y SON LOS DEL TRAMO: un capitulo ensenado tiene uno, dos o cuatro
+    //  pasos, y veinticuatro puntos -9 px cada uno, 216 px- no caben al lado
+    //  de un titulo en 280 de ancho. Hasta ocho van en puntos; mas, en cifra.
     {
-        auto marca = Lang::takeEnd (titleRow, kTourPasos * 9);
-        for (int i = 0; i < kTourPasos; ++i)
+        const int n = tourHasta - tourDesde + 1;
+        if (n <= 8)
         {
-            auto pt = Lang::takeStart (marca, 9).withSizeKeepingCentre (5, 5);
-            g.setColour (i == tourPaso ? ZatiColours::accent : ZatiColours::inkDim.withAlpha (0.35f));
-            g.fillEllipse (pt.toFloat());
+            auto marca = Lang::takeEnd (titleRow, n * 9);
+            for (int i = 0; i < n; ++i)
+            {
+                auto pt = Lang::takeStart (marca, 9).withSizeKeepingCentre (5, 5);
+                g.setColour (tourDesde + i == tourPaso ? ZatiColours::accent : ZatiColours::inkDim.withAlpha (0.35f));
+                g.fillEllipse (pt.toFloat());
+            }
+        }
+        else
+        {
+            const auto cifra = Lang::ltr (juce::String (tourPaso - tourDesde + 1) + "/" + juce::String (n));
+            g.setColour (ZatiColours::inkDim);
+            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+            auto marca = Lang::takeEnd (titleRow, (int) std::ceil (juce::GlyphArrangement::getStringWidth (
+                                                         ZatiColours::monoFont (Metrics::fMeta, true), cifra)) + Metrics::sm);
+            g.drawText (cifra, marca, Lang::end());
         }
     }
 
@@ -2830,7 +2896,7 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     //  parrafo que se estrecha para caber es justo lo contrario de lo que este
     //  cambio busca - el muelle mide lo que el texto necesita, asi que caber es
     //  su problema y no el de la letra.
-    g.drawFittedText (T (ZatiTour::cuerpos[tourPaso]), tourBodyArea,
+    g.drawFittedText (guiaTexto (ZatiTour::cuerpos[tourPaso]), tourBodyArea,
                       Lang::start (juce::Justification::top), 8, 1.0f);
 }
 

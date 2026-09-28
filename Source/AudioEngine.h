@@ -111,7 +111,27 @@ public:
     //  y otra vez en el de `cebaSuavizados`, y la cara llevaba su propia
     //  `kParamsPorFx` al lado — tres sitios donde acordarse el dia que sean
     //  cinco. La cara lee esta, igual que ya lee `kNumFx`.
-    static constexpr int kNumParFx      = 4;
+    //
+    //  OCHO Y NO CUATRO (tanda 32). La persona pidio «tocar mas parametros»
+    //  que los tres del plato, y lo que cambia el sonido de verdad estaba
+    //  escrito como constante en la etapa: el centro y la amplitud del chorus
+    //  (12 y 5 ms), el ataque y la caida del compresor (5 y 80 ms), la Q del
+    //  wah (3.2), la base del phaser (300 Hz)... Los cuatro nuevos son:
+    //    · p4 y p5, los DOS PROPIOS de cada tipo -`kFxDefExtra`, abajo-. Un
+    //      tipo sin nada que sacar los deja en `kSinMando` y la cara no los
+    //      ensena.
+    //    · p6 GRAVES y p7 AGUDOS, un corte a la salida del efecto, los treinta
+    //      menos el EQ. Es el «EQ del retorno» de una mesa: quitarle los
+    //      graves a una reverb es lo primero que se hace con una reverb.
+    //  El DEFECTO de cada uno es la constante que habia, y la etapa se salta
+    //  el corte cuando esta en su tope, asi que un proyecto viejo suena BIT A
+    //  BIT igual: 12.0f / 1000.0f es 0.012f exacto porque la division de coma
+    //  flotante redondea bien, y eso es lo que se mide.
+    static constexpr int kNumParFx      = 8;
+    //  Los dos cortes de salida, y el tope en el que se apagan.
+    static constexpr int   kParGraves   = 6, kParAgudos = 7;
+    static constexpr float kGravesOff   = 20.0f, kAgudosOff = 20000.0f;
+    static constexpr float kSinMando    = -1.0e9f;
     //  Y HASTA DONDE LLEGA EL CUARTO. Cero es libre en Hz; por encima es el
     //  denominador de la division —ver `pasoMod`, donde `vueltasPorNegra` sale
     //  de `4 / div`—: 1 semicorchea, 2 corchea, 4 negra, 8 blanca y 16 el
@@ -397,6 +417,62 @@ public:
         {    2.00f,    0.70f, 0.0f },   // DUC  rate, profundidad, mix
         {    2.00f,    0.60f, 0.0f },   // REP  rate, cantidad, mix
     };
+    //  LOS DOS PROPIOS DE CADA TIPO, p4 y p5, con el valor que tenian escrito
+    //  en la etapa. `kSinMando` es «este tipo no tiene»: la cara no dibuja el
+    //  mando y el motor no lo lee.
+    static constexpr float kFxDefExtra[kNumFx][2] =
+    {
+        { kSinMando, kSinMando },   // FLT
+        { kSinMando, kSinMando },   // HPF
+        { kSinMando, kSinMando },   // DRV
+        {  20000.0f, kSinMando },   // DLY  tono de la realimentacion (Hz, 20000 apagado)
+        { kSinMando, kSinMando },   // BIT
+        { kSinMando, kSinMando },   // REV
+        { kSinMando, kSinMando },   // EQ
+        {     5.0f,     80.0f  },   // CMP  ataque ms, caida ms   (Dinamica::kAtaqueCmp, kCaidaCmp)
+        {     0.5f, kSinMando },    // GTE  ataque ms             (Dinamica::kAtaquePta)
+        {     1.0f,     60.0f  },   // DSS  ataque ms, caida ms   (Dinamica::kAtaqueDss, kCaidaDss)
+        { kSinMando, kSinMando },   // LIM
+        {    12.0f,      5.0f  },   // CHO  centro ms, recorrido ms
+        {    3.25f,     2.75f  },   // FLA  centro ms, recorrido ms
+        {   300.0f,      8.0f  },   // PHA  base Hz, rango (veces)
+        { kSinMando, kSinMando },   // TRM
+        { kSinMando, kSinMando },   // RNG
+        { kSinMando, kSinMando },   // PIT
+        { kSinMando, kSinMando },   // WID
+        { kSinMando, kSinMando },   // EXC
+        {    25.0f,    300.0f  },   // TRN  detector rapido ms, lento ms
+        { kSinMando, kSinMando },   // FRZ
+        {     3.2f,     80.0f  },   // WAH  Q, caida de la envolvente ms
+        { kSinMando, kSinMando },   // OCT
+        { kSinMando, kSinMando },   // AMB
+        { kSinMando, kSinMando },   // FRM
+        { kSinMando, kSinMando },   // FLD
+        { kSinMando, kSinMando },   // ROT
+        {  20000.0f, kSinMando },   // PNG  tono de la realimentacion (Hz, 20000 apagado)
+        { kSinMando, kSinMando },   // DUC
+        { kSinMando, kSinMando },   // REP
+    };
+    //  EL DEFECTO DE CUALQUIERA DE LOS OCHO, en un sitio: el motor al nacer,
+    //  los presets y el fichero viejo que no trae la columna preguntan aqui.
+    static constexpr float defectoFx (int f, int par) noexcept
+    {
+        return par < 3 ? kFxDef[f][par]
+             : par == 3 ? 0.0f
+             : par < 6  ? (kFxDefExtra[f][par - 4] == kSinMando ? 0.0f : kFxDefExtra[f][par - 4])
+             : par == kParGraves ? kGravesOff : kAgudosOff;
+    }
+    //  Si el tipo tiene ese mando. p0..p2 siempre; p3 (enganche) solo los que
+    //  modulan; p6/p7 todos menos el EQ.
+    static constexpr bool tieneMando (int f, int par) noexcept
+    {
+        return par < 3 ? true
+             : par == 3 ? (f == kFxCho || f == kFxFla || f == kFxPha || f == kFxTrm
+                         || f == kFxRot || f == kFxDuc || f == kFxRep)
+             : par < 6  ? kFxDefExtra[f][par - 4] != kSinMando
+             : f != kFxEq;
+    }
+
     //  CIENTO NOVENTA Y DOS PASOS, QUE ES UN COMPAS CON EL PASO MAS FINO.
     //
     //  Eran 64 y ese numero decidia, sin decirlo, que rejillas se pueden
@@ -913,7 +989,7 @@ public:
     {
         int          paso  = 0;    // paso absoluto de la cancion
         juce::uint8  fx    = 0;    // tipo de efecto, no ranura: lo que suena
-        juce::uint8  par   = 0;    // 0..2
+        juce::uint8  par   = 0;    // 0..kNumParFx-1: los ocho, desde la tanda 32
         //  Y EL CANAL, que cabe en el hueco de alineacion que ya habia: doce
         //  bytes antes y doce despues. Un inserto es de un canal, asi que un
         //  barrido de filtro sin decir cual se aplicaria siempre al cero.
@@ -3669,6 +3745,11 @@ private:
         //  mismo que la deteccion de `Dinamica`: con uno por canal, el lado que
         //  pega abre su filtro y el otro no, y el barrido se oye desplazandose.
         Dinamica::Svf wahSt[2];
+        //  LOS DOS CORTES DE SALIDA de la tanda 32 (p6 GRAVES y p7 AGUDOS),
+        //  uno por tipo y por lado: 30 x 2 x 2 x 2 x 8 bytes = 1.9 KB por
+        //  canal. Y el paso bajo de la realimentacion de DLY y PNG, un polo.
+        Dinamica::Svf retGrave[kNumFx][2], retAgudo[kNumFx][2];
+        float dlyTonoZ[2] = { 0.0f, 0.0f }, pngTonoZ[2] = { 0.0f, 0.0f };
         float wahEnv = 0.0f;
         float smWahSens = 0.0f, smWahBase = 400.0f;
         bool  wahWasActive = false;
