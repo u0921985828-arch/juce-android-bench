@@ -46,6 +46,7 @@ codigo.
 | clips de audio en la cancion, el gesto | `Tests/clips.py` |
 | las seis ranuras de la fila de efectos | `Tests/ranuras.py` |
 | los dieciseis canales de la mesa, el canal de un pad | `Tests/canales.py` |
+| los parametros de un paso, la tira del paso, la fuerza del tapeo | `Tests/pasos.py` (0 celdas ajenas en 8 x 192 x 64) |
 | el visor del plato y la familia de un efecto | `Tests/rack.py` |
 | la cuenta atras y el metronomo | `Tests/cuenta.py` |
 | el EQ de cinco bandas y su curva | `Tests/eq.py` |

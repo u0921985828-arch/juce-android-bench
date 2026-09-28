@@ -2532,7 +2532,7 @@ MainComponent::MainComponent()
     noteSlider.updateText();   // refresh textbox with the new formatter
     noteSlider.onValueChange = [this]
     {
-        if (selectedPad >= 0 && selectedStep >= 0)
+        if (pasoEditable())
             engine.setStepNote (selectedPattern, selectedStep, selectedPad, (int) noteSlider.getValue());
 
         refreshStepGrid();
@@ -2552,7 +2552,7 @@ MainComponent::MainComponent()
     velSlider.updateText();
     velSlider.onValueChange = [this]
     {
-        if (selectedPad >= 0 && selectedStep >= 0)
+        if (pasoEditable())
             engine.setStepVel (selectedPattern, selectedStep, selectedPad, (int) velSlider.getValue());
         refreshStepGrid();
     };
@@ -2573,7 +2573,7 @@ MainComponent::MainComponent()
     rollSlider.updateText();
     rollSlider.onValueChange = [this]
     {
-        if (selectedPad >= 0 && selectedStep >= 0)
+        if (pasoEditable())
             engine.setStepRoll (selectedPattern, selectedStep, selectedPad, (int) rollSlider.getValue());
         refreshStepGrid();
     };
@@ -2956,7 +2956,7 @@ MainComponent::MainComponent()
         lockSlider.updateText();
         lockSlider.onValueChange = [this]
         {
-            if (selectedStep < 0 || selectedPad < 0) return;
+            if (! pasoEditable()) return;
             const int v = (int) lockSlider.getValue();
             engine.setStepLock (selectedPattern, selectedStep, selectedPad,
                                 v < 1 ? AudioEngine::kNoLock : v - 1);
@@ -2994,7 +2994,7 @@ MainComponent::MainComponent()
                 sl.updateText();
                 sl.onValueChange = [this, &sl, cual]
                 {
-                    if (selectedStep < 0 || selectedPad < 0) return;
+                    if (! pasoEditable()) return;
                     const int v = (int) sl.getValue();
                     engine.setStepPLock (selectedPattern, selectedStep, selectedPad, cual,
                                          v < 0 ? AudioEngine::kNoPLock : v);
@@ -4552,9 +4552,9 @@ MainComponent::MainComponent()
     //  `Tests/ranuras.py` con su cifra — `30 de 336`, que son quince canales
     //  por las dos resonancias, FLT y HPF.
     //
-    //  Los cinco ENVIOS se colapsan al canal cero dentro de `fxParamDe`, asi
-    //  que escribirlos dieciseis veces es escribir dieciseis veces lo mismo y
-    //  no hace falta una lista aparte que diga cuales.
+    //  Los treinta tipos y los treinta y dos canales, sin excepcion: desde la
+    //  Tanda 30 DLY, REV, AMB y PNG tambien son de su canal -ver
+    //  `AudioEngine::fxPorCanal`- y cada fila arranca con su mando.
     for (int f = 0; f < kNumFx; ++f)
         for (int pi = 0; pi < 3; ++pi)
         {
@@ -6162,19 +6162,20 @@ void MainComponent::ponEnRanura (int ranura, int fx)
             mismoCanal >= 0 && mismoCanal != ranura)
             slotFx[c][(size_t) mismoCanal] = kSlotVacia;
 
-    //  Y lo que SALE de la ranura se apaga. Un INSERTO se apaga siempre: el
-    //  que se va es el de ESTE canal y su instancia se queda encendida sin una
-    //  tapa donde tocarla. Un ENVIO solo si no le queda ningun otro sitio en
-    //  ningun canal, porque su fila es UNA — apagarlo desde el canal cuatro
-    //  callaria el delay que el canal cero sigue enseñando.
+    //  Y lo que SALE de la ranura se apaga, SIEMPRE: el que se va es el de
+    //  ESTE canal y su instancia se quedaria encendida sin una tapa donde
+    //  tocarla.
     //
-    //  Lo dice `sustituye` y no una lista escrita aqui: la misma tabla con la
-    //  que el hilo de audio decide si resta seco, que es lo unico que separa
-    //  las dos familias.
+    //  Aqui habia una excepcion para los ENVIOS -«solo si no le queda ningun
+    //  otro sitio en ningun canal, porque su fila es UNA»- y era exactamente
+    //  el fallo que la persona conto: la reverb del canal 10 y la del 4 eran
+    //  el mismo aparato, asi que apagar una desde un canal apagaba la otra, y
+    //  la guarda existia para esconderlo a medias. Desde la Tanda 30 los
+    //  treinta tipos son de su canal -ver `AudioEngine::fxPorCanal`- y apagar
+    //  el de este canal no toca el de ningun otro.
     const int salia = slotFx[c][(size_t) ranura];
     slotFx[c][(size_t) ranura] = fx;
-    if (salia >= 0 && salia != fx && fxEncendido (salia)
-          && (AudioEngine::sustituye (salia) || canalDeFx (salia) < 0))
+    if (salia >= 0 && salia != fx && fxEncendido (salia))
         setFxEnabled (salia, false);
 
     //  Y EL QUE ENTRA, ENTRA SONANDO: encendido y con el envio de ESTE canal
@@ -6200,10 +6201,9 @@ void MainComponent::ponEnRanura (int ranura, int fx)
     //  es como se enchufa un compresor o un ecualizador. Quien quiera menos lo
     //  baja, y ese mando esta a la vista en la misma ficha.
     //
-    //  Y SOLO EN EL CANAL QUE SE EDITA. Un envio tiene UNA fila para toda la
-    //  mesa pero `canalSend` es por canal: subirlo en los treinta y dos meteria
-    //  en la reverb treinta y un canales que nadie mando, que es la misma razon
-    //  por la que el parrafo de arriba no apaga un envio que otro canal usa.
+    //  Y SOLO EN EL CANAL QUE SE EDITA: `canalSend` es por canal, y subirlo en
+    //  los treinta y dos meteria el efecto en treinta y un canales que nadie
+    //  pidio.
     //
     //  Y NO se toca lo que ya estaba: si la ranura ya tenia este mismo tipo -o
     //  si vuelve a ponerse el que salia- respetar su envio es respetar una
@@ -8426,10 +8426,39 @@ void MainComponent::padClicked (int index)
 //  describia para el paso, entrando por otra puerta.
 //
 //  Sin paso tocado no hay nada que ensenar y la tira no se maqueta siquiera.
+//  EL PASO QUE LA TIRA EDITA TIENE QUE ESTAR ENCENDIDO.
+//
+//  `selectedStep` sobrevive al cambio de pad y al borrado, y es a proposito:
+//  la tira aparece con el primer paso tocado y quitarla en cada borrado haria
+//  saltar la rejilla bajo el dedo. Lo que no puede es ESCRIBIR ahi. Tocar otro
+//  pad dejaba la tira -nota, fuerza, redoble, bloqueo y los cuatro p-locks-
+//  sobre ESE paso del pad NUEVO, que casi nunca esta encendido; borrar un
+//  golpe la dejaba sobre el paso recien apagado. Lo que se movia se escribia
+//  en una casilla apagada, sin nada en la rejilla que lo ensenara, y salia el
+//  dia que alguien la encendia. Ver `Tests/pasos.py`.
+bool MainComponent::pasoEditable() const
+{
+    return selectedPad >= 0 && selectedStep >= 0
+        && juce::isPositiveAndBelow (selectedPattern, (int) pattern.size())
+        && juce::isPositiveAndBelow (selectedStep, (int) pattern[0].size())
+        && juce::isPositiveAndBelow (selectedPad, (int) pattern[0][0].size())
+        && pattern[(size_t) selectedPattern][(size_t) selectedStep][(size_t) selectedPad];
+}
+
 void MainComponent::refrescaTiraPaso()
 {
     const int step = selectedStep, pad = selectedPad;
     if (step < 0 || pad < 0) return;
+
+    //  Y SE VE: sobre un paso apagado los ocho mandos se apagan, que es lo que
+    //  dice que moverlos no hace nada -en vez de un mando que se mueve y no
+    //  escribe, que se lee como que la app no responde-.
+    {
+        const bool vivo = pasoEditable();
+        for (juce::Slider* k : { &noteSlider, &velSlider, &rollSlider, &lockSlider,
+                                 &atkPasoSlider, &relPasoSlider, &iniPasoSlider, &panPasoSlider })
+            k->setEnabled (vivo);
+    }
 
     //  Los mandos siguen a lo que se acaba de tocar, asi que lo que ensenan es
     //  siempre el paso que hay debajo del dedo y nunca el ultimo.
@@ -8495,6 +8524,14 @@ void MainComponent::stepCellToggled (int pad, int celda, bool arrastrando)
     const bool nv = (primero < 0);
     if (nv)
     {
+        //  UN PASO QUE SE ENCIENDE NACE LIMPIO. Apagar una casilla deja sus
+        //  nueve campos escritos -`setStep` solo mueve el bit- y encenderla
+        //  otra vez los resucitaba: la fuerza, la nota, el redoble y los
+        //  bloqueos de un golpe que la persona habia BORRADO, sin nada en la
+        //  rejilla que lo dijera. Es la misma regla que VACIAR del piano y
+        //  EUCLIDES ya cumplian por `vaciaPaso`; el dedo sobre la rejilla era
+        //  el unico camino que se la saltaba. Ver `Tests/pasos.py`.
+        engine.vaciaPaso (selectedPattern, step, pad);
         pattern[(size_t) selectedPattern][(size_t) step][(size_t) pad] = true;
         engine.setStep (selectedPattern, step, pad, true);
         selectedStep = step;

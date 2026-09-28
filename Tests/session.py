@@ -429,11 +429,16 @@ def main():
     #  escribiendo y leyendo con el mismo binario.
     #  La clave `@inst` no es un fichero: es la lista de pads de instrumento de
     #  todos ellos, y se cuenta aparte.
+    #  Y NUEVE y no ocho: el `09-mesa-vieja.xml` es el unico guardado cuando la
+    #  reverb y el delay eran UNO para toda la mesa, y se juzga aparte -abajo-
+    #  porque no trae nada de lo que los ocho comparten.
     ficheros = {k: v for k, v in (vj or {}).items() if not k.startswith ("@")}
-    viejo_ok = vj is not None and len (ficheros) == 8
+    viejo_ok = vj is not None and len (ficheros) == 9
     print()
     if vj:
         for nombre, d in sorted (ficheros.items()):
+            if nombre.startswith ("09"):
+                continue
             #  Lo que el fichero NO trae vale su defecto ANTIGUO: un proyecto
             #  sin `sends` es anterior a que los envios existieran -cada pad iba
             #  entero a los seis- asi que vuelve con UNO y no con el cero de
@@ -564,6 +569,44 @@ def main():
                       "correcto" if bien else "HEREDA DEL ANTERIOR"))
             print ("  %-20s canal 3: FLT %.2f  CMP %.0f dB   canal 5: EQ %+.2f dB"
                    % ("", d["flt3"], d["cmp3"], d["eq5"]))
+
+        #  --- LA MESA DE ANTES: una reverb que ahora son dos ---------------
+        #
+        #  Hasta la Tanda 29 DLY, REV, AMB y PNG eran UN aparato y el fichero
+        #  trae sus mandos repetidos en las treinta y dos filas. Desde la 30
+        #  cada canal tiene el suyo, y el proyecto tiene que abrir con la
+        #  reverb del 4 -la caja- y la del 10 -el Skank- IGUALES entre si, con
+        #  los numeros que eran de la unica, ENCENDIDAS las dos y con su envio;
+        #  y el delay del 9 igual. La reverb es lineal: dos instancias iguales,
+        #  cada una con su canal, suman lo que la de la mesa con la suma, y por
+        #  eso esto basta para que suene igual.
+        #
+        #  Los numeros van LITERALES porque el fichero es texto congelado. Y
+        #  estan elegidos lejos del defecto -0.82/0.31/0.47 contra
+        #  0.55/0.45/0- para que «volvio» no lo pueda cumplir un lector que no
+        #  leyera la fila.
+        m = ficheros.get ("09-mesa-vieja")
+        REV = [0.82, 0.31, 0.47]
+        DLY = [375.0, 0.62, 0.38]
+        cerca = lambda a, b, t=0.01: (isinstance (a, list) and len (a) == len (b)
+                                      and all (abs (x - y) < t for x, y in zip (a, b)))
+        mesa_ok = (m is not None
+                   and cerca (m.get ("rev4"), REV) and cerca (m.get ("rev10"), REV)
+                   and cerca (m.get ("dly9"), DLY, 0.5)
+                   and m.get ("on_rev4") == 1 and m.get ("on_rev10") == 1
+                   and m.get ("on_dly9") == 1
+                   and abs (m.get ("cs_rev4", -1) - 0.60) < 0.01
+                   and abs (m.get ("cs_rev10", -1) - 1.00) < 0.01
+                   and abs (m.get ("cs_dly9", -1) - 0.30) < 0.01)
+        viejo_ok = viejo_ok and mesa_ok
+        if m is not None:
+            print ("  %-20s REV 4 %s on%d env%.2f   REV 10 %s on%d env%.2f   DLY 9 %s on%d env%.2f  %s"
+                   % ("09-mesa-vieja", m.get ("rev4"), m.get ("on_rev4", -1), m.get ("cs_rev4", -1),
+                      m.get ("rev10"), m.get ("on_rev10", -1), m.get ("cs_rev10", -1),
+                      m.get ("dly9"), m.get ("on_dly9", -1), m.get ("cs_dly9", -1),
+                      "correcto" if mesa_ok else "LA MESA NO VUELVE"))
+        else:
+            print ("  09-mesa-vieja        no volvio")
     else:
         print ("  los proyectos congelados no volvieron")
 

@@ -20,6 +20,7 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#include <atomic>
 #include <functional>
 #include "../Source/AudioEngine.h"
 #include "../Source/Denoise.h"
@@ -41,6 +42,41 @@
 #include <algorithm>
 
 using Clock = std::chrono::steady_clock;
+
+//  LAS RESERVAS DEL HILO DE AUDIO, CONTADAS Y NO SUPUESTAS.
+//
+//  «Cero reservas en el hilo de audio» era una regla que se cumplia leyendo el
+//  codigo: nada en el banco la medía. Y la Tanda 30 la pone a prueba de verdad,
+//  porque cada canal paga su mesa -unos 900 KiB- cuando abre su primer envio, y
+//  la forma ingenua de escribir eso es reservar la linea donde se descubre que
+//  hace falta: en el bloque. Aqui se cuenta cada `malloc`, `calloc` y
+//  `realloc` del proceso -`operator new` pasa por `malloc`, y el `HeapBlock` de
+//  JUCE tambien- mientras el hilo que lo pide tenga la cuenta abierta. Por
+//  hilo y no global: el motor tiene hebras propias que si pueden reservar.
+#if defined (__GLIBC__)
+static thread_local bool zatiCuenta = false;
+static std::atomic<long> zatiReservas { 0 };
+static std::atomic<long> zatiBytes    { 0 };
+extern "C" void* __libc_malloc  (size_t);
+extern "C" void* __libc_calloc  (size_t, size_t);
+extern "C" void* __libc_realloc (void*, size_t);
+extern "C" void* malloc (size_t n) noexcept
+{
+    if (zatiCuenta) { zatiReservas.fetch_add (1, std::memory_order_relaxed); zatiBytes.fetch_add ((long) n, std::memory_order_relaxed); }
+    return __libc_malloc (n);
+}
+extern "C" void* calloc (size_t n, size_t t) noexcept
+{
+    if (zatiCuenta) { zatiReservas.fetch_add (1, std::memory_order_relaxed); zatiBytes.fetch_add ((long) (long) (n * t), std::memory_order_relaxed); }
+    return __libc_calloc (n, t);
+}
+extern "C" void* realloc (void* p, size_t n) noexcept
+{
+    if (zatiCuenta) { zatiReservas.fetch_add (1, std::memory_order_relaxed); zatiBytes.fetch_add ((long) n, std::memory_order_relaxed); }
+    return __libc_realloc (p, n);
+}
+#define ZATI_CUENTA_RESERVAS 1
+#endif
 
 //  Sixteen coherent sine waves sum to sixteen times one sine wave, which no
 //  sampler ever plays and which puts the master saturator into permanent
@@ -6429,8 +6465,9 @@ int main()
 
         //  DLY MIX -el parametro 11- en tres puntos de la cancion.
         //  Con el CANAL delante del valor: `EventoAuto` lo gana en el hueco de
-        //  alineacion que ya tenia, y DLY es un envio -su canal se ignora- asi
-        //  que esta fila mide lo mismo que media.
+        //  alineacion que ya tenia. Desde la Tanda 30 el canal de un DLY
+        //  CUENTA -cada canal lleva el suyo-, y estos van al 0, que es la fila
+        //  que `getDlyMix` lee.
         AudioEngine::EventoAuto ev[3] =
         {
             {  0, 3, 2, 0, 0.10f },
@@ -7175,9 +7212,19 @@ int main()
  enCanalCero (e);
             e.setPadGain (0, 1.0f);
             e.setPadCanal (0, canalDelPad);
-            e.setFxParam (0, AudioEngine::kFxDly, 0, 250.0f);
-            e.setFxParam (0, AudioEngine::kFxDly, 1, 0.6f);
-            e.setFxParam (0, AudioEngine::kFxDly, 2, 1.0f);
+            //  LOS MANDOS EN LOS DOS CANALES, y el envio solo en el 1. Hasta la
+            //  Tanda 30 el delay era uno para la mesa y bastaba con escribir la
+            //  fila del 0; desde que cada canal lleva el suyo, escribirla solo
+            //  en el 0 dejaba el delay del 1 a mezcla 0 y esto salia FALLA
+            //  -«canal 1 0.00000»- sin que el reparto hubiera cambiado. Y en los
+            //  DOS y no solo en el 1: con el del 2 a mezcla 0, el 2 no sonaria
+            //  aunque el envio se hubiera colado, y el cero no diria nada.
+            for (int c : { 1, 2 })
+            {
+                e.setFxParam (c, AudioEngine::kFxDly, 0, 250.0f);
+                e.setFxParam (c, AudioEngine::kFxDly, 1, 0.6f);
+                e.setFxParam (c, AudioEngine::kFxDly, 2, 1.0f);
+            }
             e.setCanalSend (1, AudioEngine::kFxDly, 1.0f);   // solo el canal 1
 
             //  Y EL PAD ENTRA EN LA MASCARA EN LAS DOS CORRIDAS, que es lo que
@@ -7591,8 +7638,11 @@ int main()
             e.setCanalPan (5, pan);
             //  Y una reverb con envio abierto, que es la que tiene que heredar
             //  el sitio. Tamaño grande para que la cola dure despues del golpe.
-            e.setFxParam (0, AudioEngine::kFxRev, 0, 0.90f);
-            e.setFxParam (0, AudioEngine::kFxRev, 2, 1.00f);
+            //  Los mandos van en el canal 5 y no en el 0: desde la tanda 30 la
+            //  reverb es DEL canal, y escribirlos en el 0 dejaba la del 5 con
+            //  su mezcla de fabrica -la cola salia sin la sala que se pedia-.
+            e.setFxParam (5, AudioEngine::kFxRev, 0, 0.90f);
+            e.setFxParam (5, AudioEngine::kFxRev, 2, 1.00f);
             //  Y EL CANAL LLEVA UN INSERTO, aunque sea neutro: sin cadena la
             //  copia de la reverb sale del PAD -que ya venia paneado- y la
             //  medida pasaria sin tocar el camino nuevo. Con un eslabon dentro,
@@ -7750,14 +7800,14 @@ int main()
     }
 
     // ------------------------------------------------------------------
-    //  Y LA OTRA MITAD: UN ENVIO SIGUE SIENDO DE TODOS.
+    //  Y LA OTRA MITAD: UN ENVIO ES DEL CANAL QUE LO LLEVA.
     //
-    //  Es la regla que ya estaba medida y publicada -«restringir el DLY a un
-    //  canal es exactamente lo contrario de lo que un envio significa»- y lo
-    //  que hay que comprobar es que la puerta de `fxParamDe` la escribe UNA
-    //  vez: los cinco tipos que SUMAN colapsan al canal 0 escriba quien
-    //  escriba, asi que pedir 180 ms desde el canal 0 y 60 desde el 4 deja los
-    //  dos en 60.
+    //  Aqui habia la regla contraria -«un envio sigue siendo de todos»: pedir
+    //  180 ms desde el canal 0 y 60 desde el 4 dejaba los dos en 60- y era
+    //  justo el fallo que se denuncio en la tanda 30: la reverb del canal 10
+    //  y la del 4 eran el mismo aparato, apagar una apagaba la otra. Ahora
+    //  cada canal lleva su delay, asi que la medida se invierte: el 0 se queda
+    //  en SUS 180 ms aunque el 4 pida 60, y el eco del 0 cae en 180.
     //
     //  Con DOS cifras y no una: la de ESTADO -por la misma puerta que lee el
     //  hilo de audio- y la de AUDIO, que es donde se ve que el numero llega al
@@ -7813,10 +7863,10 @@ int main()
             if (std::abs ((double) v[i]) > mejor) { mejor = std::abs ((double) v[i]); pico = (int) i; }
         const double ecoMs = 1000.0 * (double) pico / kFs;
 
-        const bool ok = std::abs (ms0 - 60.0f) < 0.5f && std::abs (ms4 - 60.0f) < 0.5f
-                     && std::abs (ecoMs - 60.0) < 3.0;
+        const bool ok = std::abs (ms0 - 180.0f) < 0.5f && std::abs (ms4 - 60.0f) < 0.5f
+                     && std::abs (ecoMs - 180.0) < 3.6;
         std::printf ("%-34s canal 0 %.1f ms   canal 4 %.1f ms   el eco cae en %.1f ms   %s\n",
-                     "un envio sigue siendo de todos", ms0, ms4, ecoMs, ok ? "OK" : zatiFalla());
+                     "cada canal tiene su delay", ms0, ms4, ecoMs, ok ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------
@@ -8129,22 +8179,25 @@ int main()
     //  un re-indice de una tabla y nada mas, asi que la salida tiene que ser
     //  BIT A BIT la misma.
     //
-    //  Y SOLO UN ENVIO ABIERTO, que es la parte que hay que decir en voz alta:
-    //  un envio es global, asi que su estado es uno solo en las dos corridas.
-    //  Con un INSERTO abierto la comparacion no valdria y no seria un fallo -
-    //  sesenta y cuatro pads por UN filtro es `filtro(suma)` y cuatro por cada
-    //  uno de dieciseis es `suma(filtro)`, y esas dos no son la misma cuenta en
-    //  coma flotante ni tienen por que serlo.
+    //  CON DOS CIFRAS DESDE LA TANDA 30. Hasta entonces bastaba una, con el DLY
+    //  abierto, porque un envio era global: su estado era uno solo en las dos
+    //  corridas y la salida salia bit a bit -0 de 47 616-. Ahora cada canal
+    //  lleva SU delay, y sesenta y cuatro pads por UN delay es `delay(suma)`
+    //  mientras que repartidos es `suma(delay)`: el mismo calculo en otro orden
+    //  de coma flotante, y con la realimentacion al 0.5 la diferencia de
+    //  redondeo recircula -salian 25 810 de 47 616 muestras distintas-. No es
+    //  un fallo y no se puede pedir bit a bit, asi que se parte en dos:
+    //    · SIN efectos, repartir es un re-indice de una tabla y la salida
+    //      tiene que ser BIT A BIT la misma. Es la fila de control de siempre.
+    //    · CON el DLY abierto y los MISMOS mandos en los treinta y dos canales,
+    //      la diferencia tiene que quedar por debajo de -90 dB del pico, que es
+    //      el suelo del redondeo y no el de un efecto que suena distinto.
     {
-        auto corre = [&tonoPlano] (bool reparte, std::vector<float>& out)
+        auto corre = [&tonoPlano] (bool reparte, bool conDly, std::vector<float>& out)
         {
             const auto monton_e = std::make_unique<AudioEngine>();
             AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (64, 2);
  enCanalCero (e);
-            for (int c = 0; c < AudioEngine::kNumCanales; ++c)
-            {
-                e.setCanalSend (c, AudioEngine::kFxDly, 0.5f);
-            }
             //  Y EL FADER DEL CANAL NO SE TOCA A PROPOSITO. La primera version
             //  lo ponia a uno en los dieciseis y con eso la prueba se hacia el
             //  trabajo del motor: con `canalGain` lleno solo para el canal 0
@@ -8152,9 +8205,18 @@ int main()
             //  seguian saliendo identicas, porque el andamio tapaba el defecto
             //  que la fila existe para mirar. Lo que se compara son los
             //  DEFECTOS de los dieciseis, y esos los pone el constructor.
-            e.setFxParam (0, AudioEngine::kFxDly, 0, 250.0f);
-            e.setFxParam (0, AudioEngine::kFxDly, 1, 0.5f);
-            e.setFxParam (0, AudioEngine::kFxDly, 2, 0.5f);
+            //
+            //  Los mandos del DLY van en TODOS los canales: cada uno es su
+            //  aparato, y dejarlos solo en el 0 comparaba un delay de 250 ms
+            //  contra treinta y un delays de fabrica.
+            if (conDly)
+                for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+                {
+                    e.setFxParam (c, AudioEngine::kFxDly, 0, 250.0f);
+                    e.setFxParam (c, AudioEngine::kFxDly, 1, 0.5f);
+                    e.setFxParam (c, AudioEngine::kFxDly, 2, 0.5f);
+                    e.setCanalSend (c, AudioEngine::kFxDly, 0.5f);
+                }
 
             for (int p = 0; p < AudioEngine::kNumPads; ++p)
             {
@@ -8175,15 +8237,24 @@ int main()
             }
         };
 
-        std::vector<float> uno, dieciseis;
-        corre (false, uno);
-        corre (true,  dieciseis);
+        std::vector<float> uno, dieciseis, unoD, dieciseisD;
+        corre (false, false, uno);
+        corre (true,  false, dieciseis);
+        corre (false, true,  unoD);
+        corre (true,  true,  dieciseisD);
         int distintas = 0;
         for (size_t i = 0; i < uno.size() && i < dieciseis.size(); ++i)
             if (uno[i] != dieciseis[i]) ++distintas;
-        const bool ok = distintas == 0 && ! uno.empty();
-        std::printf ("%-34s %d de %d muestras cambian   %s\n",
-                     "repartir por canales no cuesta", distintas, (int) uno.size(),
+        double pico = 0.0, dif = 0.0;
+        for (size_t i = 0; i < unoD.size() && i < dieciseisD.size(); ++i)
+        {
+            pico = juce::jmax (pico, std::abs ((double) unoD[i]));
+            dif  = juce::jmax (dif,  std::abs ((double) unoD[i] - (double) dieciseisD[i]));
+        }
+        const double difDb = 20.0 * std::log10 (juce::jmax (1.0e-12, dif) / juce::jmax (1.0e-12, pico));
+        const bool ok = distintas == 0 && ! uno.empty() && pico > 0.01 && difDb < -90.0;
+        std::printf ("%-34s seco %d de %d muestras cambian   con DLY por canal %.1f dB   %s\n",
+                     "repartir por canales no cuesta", distintas, (int) uno.size(), difDb,
                      ok ? "OK" : zatiFalla());
     }
 
@@ -8803,6 +8874,243 @@ int main()
             const bool ok = sinRep < 100 && conRep > 1000;
             std::printf ("%-34s el ruido se repite en %d muestras sin el y %d con el   %s\n",
                          "REP repite el trozo", sinRep, conRep, ok ? "OK" : zatiFalla());
+        }
+    }
+
+    //  TANDA 30 · CADA CANAL CON SU DLY, SU REV, SU AMB Y SU PNG.
+    //
+    //  «Si yo hago un envio al Canal 10 que tiene reverb, que ahi recojo el
+    //  Skank y suena con reverb, a su vez tengo en el Canal 4 otro reverb que
+    //  suena con la caja, cuando yo desactivo el del canal 10, se desactiva el
+    //  otro, se cambia el otro.» Era verdad: los cuatro envios eran UNA
+    //  instancia de la mesa y su fila de mandos colapsaba al canal 0. Aqui se
+    //  mide con el caso de la persona -pad 0 en el canal 4, pad 1 en el 10- y
+    //  por el audio, que es lo unico que no puede mentir sobre cuantos aparatos
+    //  hay.
+    {
+        constexpr double fs = 48000.0;
+        struct Lado { int canal; float p0, p1, mix; };
+        //  Una corrida: el efecto `fx` en los canales de `a` y de `b`, cada uno
+        //  con SUS mandos, y se golpean los pads que diga `quien` (bit 0 el
+        //  pad 0, bit 1 el pad 1). Motor nuevo cada vez: ninguna medida hereda
+        //  la cola de la anterior.
+        auto corre30 = [&] (int fx, Lado a, Lado b, int quien, int bloques,
+                            SampleBuffer::Ptr s, std::vector<float>& L, std::vector<float>& R)
+        {
+            const auto m = std::make_unique<AudioEngine>();
+            AudioEngine& e = *m; e.prepareToPlay (fs, 512); e.setPolyphony (8, 2);
+            e.setPadCanal (0, a.canal); e.setPadCanal (1, b.canal);
+            for (const Lado* l : { &a, &b })
+            {
+                e.setFxParam (l->canal, fx, 0, l->p0);
+                e.setFxParam (l->canal, fx, 1, l->p1);
+                e.setFxParam (l->canal, fx, 2, l->mix);
+                e.setCanalSend (l->canal, fx, 1.0f);
+            }
+            for (int p = 0; p < 2; ++p) { e.setPadGain (p, 1.0f); e.publishSample (p, s); }
+            juce::AudioBuffer<float> blk (2, 512);
+            blk.clear(); e.renderNextBlock (blk, 0, 512);
+            if (quien & 1) e.postNoteOn (0, 1.0f);
+            if (quien & 2) e.postNoteOn (1, 1.0f);
+            L.clear(); R.clear();
+            for (int k = 0; k < bloques; ++k)
+            {
+                blk.clear(); e.renderNextBlock (blk, 0, 512);
+                for (int i = 0; i < 512; ++i)
+                {
+                    L.push_back (blk.getSample (0, i));
+                    R.push_back (blk.getSample (1, i));
+                }
+            }
+        };
+        auto rmsDb = [] (const std::vector<float>& v, double t0, double t1)
+        {
+            const size_t i0 = (size_t) (t0 * 48000.0), i1 = juce::jmin (v.size(), (size_t) (t1 * 48000.0));
+            double acc = 0.0;
+            for (size_t i = i0; i < i1; ++i) acc += (double) v[i] * v[i];
+            return 10.0 * std::log10 (juce::jmax (1.0e-30, acc / (double) juce::jmax ((size_t) 1, i1 - i0)));
+        };
+        //  Donde cae el eco: el pico de |L|+|R| despues de `desde`, menos el pico
+        //  del golpe seco. Restar el seco quita el ataque del pad de la cuenta.
+        auto eco = [] (const std::vector<float>& L, const std::vector<float>& R, double desde)
+        {
+            const size_t d = (size_t) (desde * 48000.0);
+            size_t seco = 0, ec = d; float ps = 0.0f, pe = 0.0f;
+            for (size_t i = 0; i < L.size(); ++i)
+            {
+                const float v = std::abs (L[i]) + std::abs (R[i]);
+                if (i < d) { if (v > ps) { ps = v; seco = i; } }
+                else if (v > pe) { pe = v; ec = i; }
+            }
+            return 1000.0 * (double) (ec - seco) / 48000.0;
+        };
+
+        const auto golpe = makeSample (fs, 0.004, 1000.0f);
+        const auto rafaga = makeSample (fs, 0.05, 400.0f);
+        std::vector<float> L, R, L2, R2;
+
+        //  S1 · REV. (a) Apagar la del canal 10 -mix a cero, que es lo que hace
+        //  la luz de la ranura- con la caja sonando en el 4: la cola del 4 no
+        //  se entera. Con la reverb de la mesa, la cola del 4 se moria entera.
+        {
+            corre30 (AudioEngine::kFxRev, { 4, 0.6f, 0.4f, 1.0f }, { 10, 0.6f, 0.4f, 1.0f }, 1, 190, rafaga, L, R);
+            const double conLas2 = rmsDb (L, 0.3, 2.0);
+            corre30 (AudioEngine::kFxRev, { 4, 0.6f, 0.4f, 1.0f }, { 10, 0.6f, 0.4f, 0.0f }, 1, 190, rafaga, L, R);
+            const double sin10 = rmsDb (L, 0.3, 2.0);
+            const double dif = sin10 - conLas2;
+            std::printf ("%-34s cola del 4 %.1f dB con la del 10 y %.1f sin ella (%+.2f)   %s\n",
+                         "T30 REV: apagar el 10 y el 4 igual", conLas2, sin10, dif,
+                         (conLas2 > -80.0 && std::abs (dif) <= 0.1) ? "OK" : zatiFalla());
+        }
+        //  (b) SIZE 0.20 en el 4 y 0.95 en el 10: cada cola cae a su ritmo.
+        //  La caida es lo que baja de 0.2-0.4 s a 1.0-1.4 s.
+        {
+            corre30 (AudioEngine::kFxRev, { 4, 0.20f, 0.4f, 1.0f }, { 10, 0.95f, 0.4f, 1.0f }, 1, 140, rafaga, L, R);
+            const double cae4 = rmsDb (L, 1.0, 1.4) - rmsDb (L, 0.2, 0.4);
+            corre30 (AudioEngine::kFxRev, { 4, 0.20f, 0.4f, 1.0f }, { 10, 0.95f, 0.4f, 1.0f }, 2, 140, rafaga, L, R);
+            const double cae10 = rmsDb (L, 1.0, 1.4) - rmsDb (L, 0.2, 0.4);
+            std::printf ("%-34s el 4 cae %.1f dB y el 10 %.1f (difieren %.1f)   %s\n",
+                         "T30 REV: SIZE de cada canal", cae4, cae10, cae10 - cae4,
+                         (cae10 - cae4 >= 6.0) ? "OK" : zatiFalla());
+        }
+
+        //  S2 · DLY. 125 ms en el 4 y 500 en el 10, sin realimentacion: un eco
+        //  cada uno, donde su mando dice, a +-2 %.
+        //  S3 · PNG, igual, y AMB por su previo: 5 ms en el 4 y 100 en el 10.
+        //  El ambiente no tiene UN eco sino ocho tomas, asi que lo que se mide
+        //  es la DIFERENCIA entre los dos canales, que es la de los previos.
+        {
+            for (int fx : { (int) AudioEngine::kFxDly, (int) AudioEngine::kFxPng })
+            {
+                const char* nom = fx == AudioEngine::kFxDly ? "T30 DLY: 125 y 500 ms por canal"
+                                                            : "T30 PNG: 125 y 500 ms por canal";
+                corre30 (fx, { 4, 125.0f, 0.0f, 1.0f }, { 10, 500.0f, 0.0f, 1.0f }, 1, 70, golpe, L, R);
+                const double e4 = eco (L, R, 0.03);
+                corre30 (fx, { 4, 125.0f, 0.0f, 1.0f }, { 10, 500.0f, 0.0f, 1.0f }, 2, 70, golpe, L, R);
+                const double e10 = eco (L, R, 0.03);
+                const bool ok = std::abs (e4 - 125.0) <= 2.5 && std::abs (e10 - 500.0) <= 10.0;
+                std::printf ("%-34s eco del 4 a %.1f ms y del 10 a %.1f ms   %s\n",
+                             nom, e4, e10, ok ? "OK" : zatiFalla());
+            }
+            //  El AMB: la primera toma que asoma por encima de -40 dB del pico.
+            auto asoma = [] (const std::vector<float>& V)
+            {
+                float pk = 0.0f;
+                for (float v : V) pk = juce::jmax (pk, std::abs (v));
+                for (size_t i = 0; i < V.size(); ++i)
+                    if (std::abs (V[i]) > pk * 0.01f) return 1000.0 * (double) i / 48000.0;
+                return -1.0;
+            };
+            //  Solo el mojado: el ambiente a mix 1 y el seco lo lleva el pad
+            //  igual en las dos corridas, asi que se resta una corrida sin
+            //  efecto y queda lo que el ambiente anade.
+            corre30 (AudioEngine::kFxAmb, { 4, 0.55f, 5.0f, 0.0f }, { 10, 0.55f, 100.0f, 0.0f }, 1, 40, golpe, L2, R2);
+            corre30 (AudioEngine::kFxAmb, { 4, 0.55f, 5.0f, 1.0f }, { 10, 0.55f, 100.0f, 1.0f }, 1, 40, golpe, L, R);
+            for (size_t i = 0; i < L.size(); ++i) L[i] -= L2[i];
+            const double a4 = asoma (L);
+            corre30 (AudioEngine::kFxAmb, { 4, 0.55f, 5.0f, 0.0f }, { 10, 0.55f, 100.0f, 0.0f }, 2, 40, golpe, L2, R2);
+            corre30 (AudioEngine::kFxAmb, { 4, 0.55f, 5.0f, 1.0f }, { 10, 0.55f, 100.0f, 1.0f }, 2, 40, golpe, L, R);
+            for (size_t i = 0; i < L.size(); ++i) L[i] -= L2[i];
+            const double a10 = asoma (L);
+            const double d = a10 - a4;
+            std::printf ("%-34s el 4 asoma a %.1f ms y el 10 a %.1f (%.1f de 95)   %s\n",
+                         "T30 AMB: previo de cada canal", a4, a10, d,
+                         (a4 >= 0.0 && std::abs (d - 95.0) <= 1.9) ? "OK" : zatiFalla());
+        }
+
+        //  S4 · LA MESA ES PEREZOSA. Treinta y dos mesas son unos 28 MiB y la
+        //  gama baja tiene 64 MB para todo: la paga el canal que abre el envio.
+        //  Un EQ -que no es envio- no reserva nada.
+        //
+        //  Se cuentan BYTES PEDIDOS y no la memoria residente: la primera
+        //  version leia VmRSS y daba +0 KiB con las dos reverbs, porque este
+        //  proceso ya ha creado y soltado decenas de motores y el monton
+        //  reutiliza lo liberado sin pedir paginas nuevas. Contaba al sistema
+        //  y no al motor.
+#if ZATI_CUENTA_RESERVAS
+        {
+            auto pide = [] (auto&& f)
+            {
+                const long b0 = zatiBytes.load();
+                zatiCuenta = true; f(); zatiCuenta = false;
+                return (zatiBytes.load() - b0) / 1024;
+            };
+            const auto m = std::make_unique<AudioEngine>();
+            AudioEngine& e = *m;
+            const long kbPrep = pide ([&] { e.prepareToPlay (fs, 512); });
+            const int alNacer = e.mesasListas();
+            const long kbEq = pide ([&] { e.setCanalSend (6, AudioEngine::kFxEq, 1.0f); });
+            const int conEq = e.mesasListas();
+            const long kb = pide ([&] { e.setCanalSend (4, AudioEngine::kFxRev, 1.0f);
+                                        e.setCanalSend (10, AudioEngine::kFxRev, 1.0f); });
+            const int conDos = e.mesasListas();
+            std::printf ("%-34s %d al nacer (%ld KiB), %d con un EQ (+%ld KiB), %d de %d con dos REV (+%ld KiB)   %s\n",
+                         "T30 la mesa se reserva por canal", alNacer, kbPrep, conEq, kbEq, conDos,
+                         AudioEngine::kNumCanales, kb,
+                         (alNacer == 0 && conEq == 0 && kbEq < 64 && conDos == 2
+                          && kb > 256 && kb < 4096) ? "OK" : zatiFalla());
+        }
+#endif
+
+        //  S5 · ABRIR UNA REVERB NO RESERVA EN EL HILO DE AUDIO. La caja
+        //  suena en el canal 4 sin envios; se abre la reverb del 4 -la mesa se
+        //  reserva en ESTE hilo, que hace de hilo de mensajes- y se cuentan las
+        //  reservas de los bloques de antes y de despues. Tienen que ser cero
+        //  las dos: la de antes es el control, sin el cual un cero despues no
+        //  dice nada de un contador que no contara.
+#if ZATI_CUENTA_RESERVAS
+        {
+            const auto m = std::make_unique<AudioEngine>();
+            AudioEngine& e = *m; e.prepareToPlay (fs, 512); e.setPolyphony (8, 2);
+            e.setPadCanal (0, 4); e.setPadGain (0, 1.0f); e.publishSample (0, rafaga);
+            juce::AudioBuffer<float> blk (2, 512);
+            auto bloques = [&] (int n)
+            {
+                const long antes = zatiReservas.load();
+                zatiCuenta = true;
+                for (int k = 0; k < n; ++k) { blk.clear(); e.renderNextBlock (blk, 0, 512); }
+                zatiCuenta = false;
+                return zatiReservas.load() - antes;
+            };
+            //  Y el contador se prueba a si mismo: una reserva hecha con la
+            //  cuenta abierta tiene que salir. Si esto da cero, el cero de
+            //  abajo no vale nada.
+            const long testigo0 = zatiReservas.load();
+            zatiCuenta = true;
+            { std::vector<float> testigo (1000); testigo[0] = 1.0f; }
+            zatiCuenta = false;
+            const long testigo = zatiReservas.load() - testigo0;
+            for (int k = 0; k < 4; ++k) { blk.clear(); e.renderNextBlock (blk, 0, 512); }
+            e.postNoteOn (0, 1.0f);
+            const long antes = bloques (20);
+            e.setFxParam (4, AudioEngine::kFxRev, 2, 1.0f);
+            e.setCanalSend (4, AudioEngine::kFxRev, 1.0f);
+            e.postNoteOn (0, 1.0f);
+            const long despues = bloques (100);
+            std::printf ("%-34s %ld reservas antes y %ld tras abrir la del 4 (testigo %ld)   %s\n",
+                         "T30 abrir una REV no reserva", antes, despues, testigo,
+                         (testigo > 0 && antes == 0 && despues == 0) ? "OK" : zatiFalla());
+        }
+#endif
+
+        //  S6 · EL PROYECTO VIEJO SUENA IGUAL. Antes habia UNA reverb y los dos
+        //  canales le mandaban; ahora cada uno lleva la suya con los mismos
+        //  mandos -la fila replicada que el fichero ya traia-. La reverb es
+        //  lineal, asi que dos instancias iguales sumadas son la de la suma:
+        //  los dos pads en el 4 y en el 10 contra los dos en el 4.
+        {
+            corre30 (AudioEngine::kFxRev, { 4, 0.82f, 0.31f, 0.47f }, { 10, 0.82f, 0.31f, 0.47f }, 3, 120, rafaga, L, R);
+            corre30 (AudioEngine::kFxRev, { 4, 0.82f, 0.31f, 0.47f }, { 4, 0.82f, 0.31f, 0.47f }, 3, 120, rafaga, L2, R2);
+            double pk = 0.0, err = 0.0;
+            for (size_t i = 0; i < L.size(); ++i)
+            {
+                pk  = juce::jmax (pk,  (double) std::abs (L2[i]));
+                err = juce::jmax (err, (double) std::abs (L[i] - L2[i]), (double) std::abs (R[i] - R2[i]));
+            }
+            const double db = 20.0 * std::log10 (juce::jmax (1.0e-12, err / juce::jmax (1.0e-12, pk)));
+            std::printf ("%-34s dos reverbs iguales contra una: %.1f dB de error   %s\n",
+                         "T30 la mesa vieja suena igual", db,
+                         (pk > 1.0e-3 && db < -90.0) ? "OK" : zatiFalla());
         }
     }
 

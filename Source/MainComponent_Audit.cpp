@@ -5282,6 +5282,28 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                   << ",\"flt3\":" << engine.getFxParam (3, AudioEngine::kFxFlt, 0)
                   << ",\"cmp3\":" << engine.getFxParam (3, AudioEngine::kFxCmp, 0)
                   << ",\"eq5\":"  << engine.getEqGain (5, 2)
+                  //  Y LA MESA DE ANTES, que es `09-mesa-vieja`. Hasta la Tanda
+                  //  29 la reverb era UNA y el fichero trae sus mandos repetidos
+                  //  en las treinta y dos filas; desde la 30 cada canal tiene la
+                  //  suya, asi que se leen el 4 y el 10 POR SEPARADO -con su luz
+                  //  y su envio- y el delay del 9. Si la lectura se quedara con
+                  //  la fila del cero y la callara en los demas, el Skank
+                  //  volveria sin reverb y lo diria `on_rev10`.
+                  << ",\"rev4\":["  << engine.getFxParam (4,  AudioEngine::kFxRev, 0) << ","
+                                   << engine.getFxParam (4,  AudioEngine::kFxRev, 1) << ","
+                                   << engine.getFxParam (4,  AudioEngine::kFxRev, 2) << "]"
+                  << ",\"rev10\":[" << engine.getFxParam (10, AudioEngine::kFxRev, 0) << ","
+                                   << engine.getFxParam (10, AudioEngine::kFxRev, 1) << ","
+                                   << engine.getFxParam (10, AudioEngine::kFxRev, 2) << "]"
+                  << ",\"dly9\":["  << engine.getFxParam (9,  AudioEngine::kFxDly, 0) << ","
+                                   << engine.getFxParam (9,  AudioEngine::kFxDly, 1) << ","
+                                   << engine.getFxParam (9,  AudioEngine::kFxDly, 2) << "]"
+                  << ",\"on_rev4\":"  << (fxOn[4] [(size_t) AudioEngine::kFxRev] ? 1 : 0)
+                  << ",\"on_rev10\":" << (fxOn[10][(size_t) AudioEngine::kFxRev] ? 1 : 0)
+                  << ",\"on_dly9\":"  << (fxOn[9] [(size_t) AudioEngine::kFxDly] ? 1 : 0)
+                  << ",\"cs_rev4\":"  << engine.getCanalSend (4,  AudioEngine::kFxRev)
+                  << ",\"cs_rev10\":" << engine.getCanalSend (10, AudioEngine::kFxRev)
+                  << ",\"cs_dly9\":"  << engine.getCanalSend (9,  AudioEngine::kFxDly)
                   << ",\"ranuras\":[" << slotFx[0][0] << "," << slotFx[0][1] << "," << slotFx[0][2] << ","
                                        << slotFx[0][3] << "," << slotFx[0][4] << "," << slotFx[0][5] << "]"
                   //  Y LA CANCION CONVERTIDA, bloque a bloque, que es la cifra
@@ -5414,13 +5436,13 @@ void MainComponent::auditCanales()
     const juce::String filaPad5 = fila (canalActual);
     const int canalPad5 = canalActual;
 
-    //  3. UN INSERTO ES DE UN CANAL Y UN ENVIO ES DE TODOS.
+    //  3. UN INSERTO ES DE UN CANAL, Y DESDE LA TANDA 30 UN DELAY TAMBIEN.
     //
-    //  Las dos mitades, y las dos hacen falta: solo la primera la cumple una
-    //  regla que mueve TODO -y entonces dos canales no pueden compartir un
-    //  delay, que es lo contrario de lo que un envio significa- y solo la
-    //  segunda la cumple una que no mueve nada, y entonces dos canales tendrian
-    //  dos interruptores del mismo compresor.
+    //  Esta seccion decia «y un envio es de todos», y era la mitad que la
+    //  persona conto como fallo: la reverb del canal 10 y la del 4 eran el
+    //  mismo aparato. Ahora los dos pares -CMP y DLY- tienen que dar la misma
+    //  forma, cada canal con su fila; lo que separa «es suyo» de «se ve igual»
+    //  lo miden 3d y 4, que tocan uno y miran el otro.
     for (auto& f : slotFx) f.fill (kSlotVacia);
     ponCanalActual (0); ponEnRanura (0, AudioEngine::kFxCmp);
     ponCanalActual (4); ponEnRanura (0, AudioEngine::kFxCmp);
@@ -5454,9 +5476,35 @@ void MainComponent::auditCanales()
     ponCanalActual (0);
     const double ajusteVuelve = fxParam (AudioEngine::kFxCmp, 1).getValue();
 
-    //  4. VACIAR UNA RANURA APAGA SU EFECTO **SOLO SI NO LE QUEDA OTRA**. Un
-    //     envio puede vivir en tres canales, y quitarlo de uno no lo deja sin
-    //     tapa: apagarlo ahi seria callar un delay que se sigue viendo.
+    //  3d. EL CASO DE LA PERSONA, con sus dos canales: REV en el 10 -el que
+    //      recoge el Skank- y en el 4 -la caja-. «Cuando yo desactivo el del
+    //      canal 10, se desactiva el otro, se cambia el otro.» Las dos cosas y
+    //      por el MANDO: el TAMANO de cada uno a un extremo, y el del 10
+    //      apagado. Con la reverb de la mesa, el 4 lee el 0.95 que se puso el
+    //      ultimo y se apaga con el 10.
+    for (auto& f : slotFx) f.fill (kSlotVacia);
+    ponCanalActual (4);  ponEnRanura (0, AudioEngine::kFxRev);
+    ponCanalActual (10); ponEnRanura (0, AudioEngine::kFxRev);
+    ponCanalActual (4);  focusFx (AudioEngine::kFxRev);
+    macroCtrl1.setValue (0.20, juce::sendNotificationSync);
+    ponCanalActual (10); focusFx (AudioEngine::kFxRev);
+    macroCtrl1.setValue (0.95, juce::sendNotificationSync);
+    const float revTam4  = engine.getFxParam (4,  AudioEngine::kFxRev, 0);
+    const float revTam10 = engine.getFxParam (10, AudioEngine::kFxRev, 0);
+    setFxEnabled (AudioEngine::kFxRev, false);          // el del 10
+    const float revMix10 = engine.getFxParam (10, AudioEngine::kFxRev, 2);
+    const float revMix4  = engine.getFxParam (4,  AudioEngine::kFxRev, 2);
+    ponCanalActual (4);
+    const int revOn4 = fxEncendido (AudioEngine::kFxRev) ? 1 : 0;
+    ponCanalActual (10); setFxEnabled (AudioEngine::kFxRev, true);
+
+    //  4. VACIAR UNA RANURA APAGA SU EFECTO, SIEMPRE, Y SOLO EL DE ESE CANAL.
+    //
+    //  Decia «solo si no le queda otra»: un envio vivia en tres canales y
+    //  apagarlo en uno callaba el delay de los otros dos, asi que se dejaba
+    //  encendido sin tapa. Desde la Tanda 30 cada canal tiene el suyo: el del
+    //  0 se apaga -`tras_quitar_una` a cero- y el del 4 sigue sonando
+    //  -`sigue_en_4` a uno-, que es la cifra que dice que son dos.
     for (auto& f : slotFx) f.fill (kSlotVacia);
     ponCanalActual (0); ponEnRanura (0, AudioEngine::kFxDly);
     ponCanalActual (4); ponEnRanura (0, AudioEngine::kFxDly);
@@ -5465,6 +5513,7 @@ void MainComponent::auditCanales()
     ponEnRanura (0, kSlotVacia);                       // sigue en el canal 4
     const int trasQuitarUna = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
     ponCanalActual (4);
+    const int sigueEn4 = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
     ponEnRanura (0, kSlotVacia);                       // ya no queda ninguna
     const int trasQuitarLaUltima = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
 
@@ -5678,6 +5727,10 @@ void MainComponent::auditCanales()
               << ",\"ajuste4\":" << juce::String (ajusteEn4, 2)
               << ",\"ajuste_vuelve\":" << juce::String (ajusteVuelve, 2)
               << ",\"tras_quitar_una\":" << trasQuitarUna
+              << ",\"sigue_en_4\":" << sigueEn4
+              << ",\"rev_tam4\":" << revTam4 << ",\"rev_tam10\":" << revTam10
+              << ",\"rev_mix4\":" << revMix4 << ",\"rev_mix10\":" << revMix10
+              << ",\"rev_on4\":" << revOn4
               << ",\"tras_quitar_ultima\":" << trasQuitarLaUltima
               << ",\"inserto_tras_quitar\":" << insertoTrasQuitar
               << ",\"gan_canal6\":" << ganCanal6
@@ -5723,9 +5776,9 @@ void MainComponent::auditRanuras()
     //  aterriza todo lo que ya estaba medido— y no contra `kFxDef` copiada
     //  aqui: eso seria la tabla comparandose consigo misma, que es como
     //  `Tests/icono.py` dio verde dos veces con la mascara del lanzador rota.
-    //  Los cinco ENVIOS resuelven al canal cero por `canalDeParam`, asi que
-    //  cuentan y salen iguales por construccion — que es exactamente lo que
-    //  dicen ser.
+    //  Desde la Tanda 30 ningun tipo resuelve al canal cero -los cuatro que
+    //  eran de la mesa tambien son de su canal-, asi que aqui cuentan los
+    //  treinta de verdad y no unos cuantos por construccion.
     int canalesRaros = 0;
     for (int c = 0; c < kNumCanales; ++c)
         for (int f = 0; f < kNumFx; ++f)
@@ -9642,5 +9695,176 @@ void MainComponent::auditGuardado()
               << ",\"falla_devuelve\":" << fallaDevuelve
               << ",\"falla_apunta\":" << fallaApunta
               << ",\"proyecto_intacto\":" << intacto
+              << "}" << std::endl;
+}
+
+// ============================================================================
+//  LOS PASOS NO SE PISAN, Y EL DEDO NO PESA POR DONDE CAE. Ver Tests/pasos.py.
+//
+//  La persona lo pidio en dos frases: «que cada parametro que tiene cada paso
+//  es independiente al otro» y que el golpe de un pad no dependa de la altura
+//  del dedo. El almacen `[patron][paso][pad]` ya era independiente; lo que no
+//  lo era es la CARA: la tira de debajo de la rejilla escribe en
+//  `selectedStep` x `selectedPad`, y esos dos se mueven por caminos distintos.
+//  Cambiar de pad dejaba la tira apuntando a un paso APAGADO del pad nuevo, y
+//  el primer mando que se tocaba escribia ahi: un paso que nadie veia llevaba
+//  una fuerza que nadie habia puesto, y la sacaba al encenderse.
+//
+//  Por eso la medida no mira UN campo: fotografia los 8 x 192 x 64 pasos
+//  enteros, los nueve campos de cada uno, antes y despues de cada gesto, y
+//  cuenta las celdas que cambiaron fuera de la que el gesto nombra.
+void MainComponent::auditPasos()
+{
+    //  S8 · EL TAPEO ES PLANO. Presion 0.0 porque asi llega el toque de
+    //  Android sin sensor: `isPressureValid` exige 0 < p < 1, y el 1.0 que usan
+    //  las otras sondas es justo el valor que JUCE da por invalido tambien.
+    std::vector<float> velY;
+    if (pads[0] != nullptr)
+    {
+        auto* p = pads[0];
+        const float w = (float) juce::jmax (1, p->getWidth());
+        const float h = (float) juce::jmax (1, p->getHeight());
+        for (float fy : { 0.05f, 0.5f, 0.95f })
+        {
+            const juce::Point<float> en (w * 0.5f, h * fy);
+            juce::MouseEvent me (juce::Desktop::getInstance().getMainMouseSource(),
+                                 en, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                 p, p, juce::Time::getCurrentTime(),
+                                 en, juce::Time::getCurrentTime(), 1, false);
+            p->mouseDown (me);
+            velY.push_back (p->getLastVelocity());
+            p->mouseUp (me);
+        }
+    }
+
+    //  S7 · UN COMPAS LIMPIO Y TRES GOLPES CON TODO MOVIDO.
+    const int pat = 0, A = 3, B = 7;
+    selectedPattern = pat;
+    engine.setPasoUnidades (rejillaU (2));
+    vistaRejilla = 2;
+    for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+        for (int pd = 0; pd < kNumPads; ++pd)
+            pattern[(size_t) pat][(size_t) st][(size_t) pd] = false;
+    engine.clearPattern (pat);
+
+    AudioEngine::Paso movido;
+    movido.on = true;  movido.nota = 5;  movido.empujon = 3;  movido.corte = 40;
+    movido.vel = 90;   movido.roll = 3;  movido.largo = 8;
+    movido.acorde = 0x0000000000070403ull;  movido.bloqueos = 0x10203040u;
+    for (auto sp : { std::pair<int,int> { 2, A }, { 5, A }, { 5, B } })
+    {
+        pattern[(size_t) pat][(size_t) sp.first][(size_t) sp.second] = true;
+        engine.escribePaso (pat, sp.first, sp.second, movido);
+    }
+
+    using Foto = std::vector<AudioEngine::Paso>;
+    auto foto = [this]
+    {
+        Foto f;
+        f.reserve ((size_t) (kNumPatterns * AudioEngine::kNumSteps * kNumPads));
+        for (int b = 0; b < kNumPatterns; ++b)
+            for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+                for (int pd = 0; pd < kNumPads; ++pd)
+                    f.push_back (engine.leePaso (b, st, pd));
+        return f;
+    };
+    auto igual = [] (const AudioEngine::Paso& a, const AudioEngine::Paso& b, bool conOn)
+    {
+        return (! conOn || a.on == b.on) && a.nota == b.nota && a.empujon == b.empujon
+            && a.corte == b.corte && a.vel == b.vel && a.roll == b.roll
+            && a.largo == b.largo && a.acorde == b.acorde && a.bloqueos == b.bloqueos;
+    };
+    auto idx = [] (int b, int st, int pd)
+    { return (size_t) ((b * AudioEngine::kNumSteps + st) * kNumPads + pd); };
+    //  Las celdas que cambiaron fuera de (st, pd) del patron `pat`. Y la propia,
+    //  si `soloOn`: borrar tiene derecho a mover el bit y a nada mas.
+    auto ajenas = [&] (const Foto& a, const Foto& d, int st, int pd, bool soloOn)
+    {
+        int n = 0;
+        for (int b = 0; b < kNumPatterns; ++b)
+            for (int s = 0; s < AudioEngine::kNumSteps; ++s)
+                for (int q = 0; q < kNumPads; ++q)
+                {
+                    const bool suya = (b == pat && s == st && q == pd);
+                    if (suya && ! soloOn) continue;
+                    if (! igual (a[idx (b, s, q)], d[idx (b, s, q)], ! suya)) ++n;
+                }
+        return n;
+    };
+
+    //  1. TOCAR UNA CASILLA VACIA Y MOVER LOS OCHO MANDOS DE LA TIRA.
+    Foto f0 = foto();
+    stepCellToggled (A, 9);
+    noteSlider.setValue    (7.0,  juce::sendNotificationSync);
+    velSlider.setValue     (60.0, juce::sendNotificationSync);
+    rollSlider.setValue    (4.0,  juce::sendNotificationSync);
+    lockSlider.setValue    (30.0, juce::sendNotificationSync);
+    atkPasoSlider.setValue (20.0, juce::sendNotificationSync);
+    relPasoSlider.setValue (40.0, juce::sendNotificationSync);
+    iniPasoSlider.setValue (60.0, juce::sendNotificationSync);
+    panPasoSlider.setValue (80.0, juce::sendNotificationSync);
+    Foto f1 = foto();
+    const int ajenasTocar = ajenas (f0, f1, 9, A, false);
+    const auto d = engine.leePaso (pat, 9, A);
+    const bool destino = d.on && d.nota == 7 && d.vel == 60 && d.roll == 4 && d.corte == 29
+        && engine.getStepPLock (pat, 9, A, AudioEngine::plockAtaque) == 20
+        && engine.getStepPLock (pat, 9, A, AudioEngine::plockCaida)  == 40
+        && engine.getStepPLock (pat, 9, A, AudioEngine::plockInicio) == 60
+        && engine.getStepPLock (pat, 9, A, AudioEngine::plockPan)    == 80;
+    const bool tiraViva = velSlider.isEnabled();
+
+    //  2. CAMBIAR DE PAD. La tira sigue en el paso 9, que en B esta apagado.
+    selectPad (B);
+    const bool tiraMuerta = ! velSlider.isEnabled();
+    velSlider.setValue  (33.0, juce::sendNotificationSync);
+    noteSlider.setValue (-3.0, juce::sendNotificationSync);
+    Foto f2 = foto();
+    const int ajenasPad = ajenas (f1, f2, -1, -1, false);
+
+    //  3. BORRAR (5, A) Y MOVER EL MANDO: el paso borrado no se reescribe.
+    stepCellToggled (A, 5);
+    velSlider.setValue (20.0, juce::sendNotificationSync);
+    Foto f3 = foto();
+    const int ajenasBorrado = ajenas (f2, f3, 5, A, true);
+
+    //  4. ENCENDERLO OTRA VEZ: nace limpio, sin los ocho campos del borrado.
+    stepCellToggled (A, 5);
+    const auto r = engine.leePaso (pat, 5, A);
+    const AudioEngine::Paso limpio;
+    const int hereda = (r.nota != limpio.nota) + (r.empujon != limpio.empujon)
+                     + (r.corte != limpio.corte) + (r.vel != limpio.vel)
+                     + (r.roll != limpio.roll) + (r.largo != limpio.largo)
+                     + (r.acorde != limpio.acorde) + (r.bloqueos != limpio.bloqueos);
+
+    //  5. LA REJILLA A 1/8 SOBRE UN PATRON DE 1/16: la casilla 6 es el paso 12.
+    vistaRejilla = 0;
+    const int ppc = pasosPorCelda();
+    Foto f4 = foto();
+    stepCellToggled (B, 6);
+    const int paso18 = selectedStep;
+    Foto f5 = foto();
+    const int ajenas18 = ajenas (f4, f5, 12, B, false);
+    const bool en18 = engine.leePaso (pat, 12, B).on;
+    vistaRejilla = 2;
+
+    engine.clearPattern (pat);
+    for (int st = 0; st < AudioEngine::kNumSteps; ++st)
+        for (int pd = 0; pd < kNumPads; ++pd)
+            pattern[(size_t) pat][(size_t) st][(size_t) pd] = false;
+
+    std::cout << "{\"pasos\":1,\"vel_y\":[";
+    for (size_t i = 0; i < velY.size(); ++i)
+        std::cout << (i ? "," : "") << juce::String (velY[i], 3);
+    std::cout << "],\"ajenas_tocar\":" << ajenasTocar
+              << ",\"destino\":" << (destino ? 1 : 0)
+              << ",\"tira_viva\":" << (tiraViva ? 1 : 0)
+              << ",\"tira_muerta\":" << (tiraMuerta ? 1 : 0)
+              << ",\"ajenas_cambiar_pad\":" << ajenasPad
+              << ",\"ajenas_borrado\":" << ajenasBorrado
+              << ",\"hereda\":" << hereda
+              << ",\"ppc\":" << ppc
+              << ",\"paso_1_8\":" << paso18
+              << ",\"en_1_8\":" << (en18 ? 1 : 0)
+              << ",\"ajenas_1_8\":" << ajenas18
               << "}" << std::endl;
 }

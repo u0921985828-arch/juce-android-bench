@@ -146,14 +146,32 @@ def main():
                       "inserto es de CADA canal, asi que ponerlo en uno no puede "
                       "quitarselo al otro" % (r["inserto0"], r["inserto4"]))
 
-    #  3b. Y UN ENVIO SIGUE SIENDO DE TODOS. La cifra NO cambia: una linea de
-    #      retardo existe para que varias fuentes entren en la misma cola, y
-    #      restringirla a un canal es exactamente lo contrario de lo que un
-    #      envio significa. Los cinco que SUMAN se quedan globales.
-    if r["envio0"] == [-1, -1, -1, -1, -1, -1] or r["envio0"] != r["envio4"]:
-        malas.append ("poner DLY en el canal 4 dejo el 0 en %s y el 4 en %s: una "
-                      "linea de retardo existe para que varias fuentes entren en "
-                      "la misma cola" % (r["envio0"], r["envio4"]))
+    #  3b. Y EL DELAY TAMBIEN ESTA EN LOS DOS. Esta regla decia «un envio
+    #      sigue siendo de todos» y pedia la misma fila por la razon contraria:
+    #      una sola linea para todas las fuentes. La forma no cambia -DLY en
+    #      los dos-, pero desde la Tanda 30 son DOS delays, y eso lo dicen 3d y
+    #      4, que tocan uno y miran el otro.
+    if r["envio0"] != [3, -1, -1, -1, -1, -1] or r["envio4"] != [3, -1, -1, -1, -1, -1]:
+        malas.append ("poner DLY en el canal 4 dejo el 0 en %s y el 4 en %s: cada "
+                      "canal tiene su delay" % (r["envio0"], r["envio4"]))
+
+    #  3d. EL CASO DE LA PERSONA: REV en el canal 10 -el Skank por envio- y en
+    #      el 4 -la caja-. «Cuando yo desactivo el del canal 10, se desactiva
+    #      el otro, se cambia el otro.» Las dos cosas, por el MANDO y por el
+    #      interruptor: el TAMANO del 4 a 0.20 y el del 10 a 0.95 tienen que
+    #      quedarse cada uno en el suyo, y apagar el del 10 tiene que dejar el
+    #      del 4 encendido y con su mezcla. Con la reverb de la mesa los dos
+    #      leen el 0.95 que se puso el ultimo y el 4 se apaga con el 10.
+    print ("REV      tamano 4 %.2f / 10 %.2f   apagado el 10: mezcla 4 %.2f / 10 %.2f  luz 4 %d"
+           % (r["rev_tam4"], r["rev_tam10"], r["rev_mix4"], r["rev_mix10"], r["rev_on4"]))
+    if abs (r["rev_tam4"] - 0.20) > 0.01 or abs (r["rev_tam10"] - 0.95) > 0.01:
+        malas.append ("el TAMANO de la reverb del canal 4 dice %.2f y el del 10 %.2f; "
+                      "se pusieron 0.20 y 0.95: mover una mueve la otra"
+                      % (r["rev_tam4"], r["rev_tam10"]))
+    if r["rev_on4"] != 1 or r["rev_mix4"] <= 0.0 or r["rev_mix10"] != 0.0:
+        malas.append ("apagar la reverb del canal 10 dejo la del 4 con luz %d y "
+                      "mezcla %.2f (y la del 10 en %.2f): apagar una apaga la otra"
+                      % (r["rev_on4"], r["rev_mix4"], r["rev_mix10"]))
 
     #  3c. Y EL AJUSTE ES DEL CANAL, que es la que hace falta de verdad.
     #
@@ -187,15 +205,21 @@ def main():
                       "cambiar de canal no lee la ventana, la BORRA"
                       % r["ajuste_vuelve"])
 
-    #  4. VACIAR UNA RANURA APAGA SU EFECTO **SOLO SI NO LE QUEDA OTRA**. Un
-    #     envio puede vivir en tres canales, y quitarlo de uno no lo deja sin
-    #     tapa: apagarlo ahi seria callar un delay que se sigue viendo. Con las
-    #     dos cifras, o «se apago» lo cumple tambien quitarlo siempre.
-    print ("vaciar   quitando una %s  ->  quitando la ultima %s"
-           % (r["tras_quitar_una"], r["tras_quitar_ultima"]))
-    if r["tras_quitar_una"] != 1:
-        malas.append ("quitar el DLY de un canal lo apago estando puesto en otro: "
-                      "un delay que se sigue viendo no puede quedarse mudo")
+    #  4. VACIAR UNA RANURA APAGA SU EFECTO, SIEMPRE, Y SOLO EL DE ESE CANAL.
+    #
+    #     Esta cifra se INVIERTE en la Tanda 30. Pedia `tras_quitar_una` a UNO
+    #     -«un delay que se sigue viendo no puede quedarse mudo»- porque el DLY
+    #     del 0 y el del 4 eran el mismo y apagarlo en uno callaba el otro. Ahora
+    #     son dos: el del 0 se apaga -o se queda sonando sin tapa- y el del 4
+    #     sigue, que es `sigue_en_4` y la cifra que dice que son dos.
+    print ("vaciar   quitando una %s (el del 4 sigue %s)  ->  quitando la ultima %s"
+           % (r["tras_quitar_una"], r["sigue_en_4"], r["tras_quitar_ultima"]))
+    if r["tras_quitar_una"] != 0:
+        malas.append ("quitar el DLY del canal 0 lo dejo encendido sin tapa donde "
+                      "tocarlo: el del 0 es suyo")
+    if r["sigue_en_4"] != 1:
+        malas.append ("quitar el DLY del canal 0 apago el del canal 4: siguen "
+                      "siendo el mismo aparato")
     if r["tras_quitar_ultima"] != 0:
         malas.append ("quitar la ULTIMA ranura del DLY lo dejo sonando y sin tapa "
                       "donde tocarlo")
@@ -406,9 +430,9 @@ def main():
         for m in malas: print ("FALLA  " + m)
         return 1
     print ("los %d canales: la rejilla mueve el pad, cambiar de pad cambia la "
-           "fila, un inserto es de CADA canal con su propio ajuste y un envio de "
-           "todos, vaciar apaga al inserto siempre y al envio solo si no le queda "
-           "otra, la tira llega al motor y los %d bancos alcanzan los %d y se "
+           "fila, un inserto y un envio son de CADA canal con su propio ajuste, "
+           "apagar la reverb del 10 deja sonando la del 4, vaciar apaga el efecto "
+           "del canal, la tira llega al motor y los %d bancos alcanzan los %d y se "
            "abren donde esta el pad"
            % (r["canales"], r["bancos"], r["canales"]))
     return 0

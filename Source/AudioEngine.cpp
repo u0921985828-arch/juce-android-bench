@@ -244,11 +244,6 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
 
     juce::dsp::ProcessSpec spec { systemSampleRate, (juce::uint32) juce::jmax (1, maxBlock), 2 };
 
-    //  La FDN reserva sus cuatro lineas y sus dos difusores aqui, que es el
-    //  unico sitio donde puede reservar: en el render no se toca memoria.
-    reverb.prepare (sampleRate, 2);
-    reverb.reset();
-
 
     //  One buffer per effect bus plus the scratch a single pad is rendered
     //  into before it is split between the dry path and its sends. Allocated
@@ -260,25 +255,9 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     for (auto& b : secoDeCanal) { b.setSize (2, juce::jmax (1, maxBlock)); b.clear(); }
     busRinging.fill (false);
 
-    delayLine.prepare (spec);
-    delayLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
-    delayLine.reset();
-
-    //  Y LA DEL AMBIENTE, que es la misma figura con otro tope: lo mas largo
-    //  que se le pide son 120 ms de previo mas los 98.7 de la ultima toma.
-    //  Se pide medio segundo y se limita a lo que la linea tiene: a 96 kHz
-    //  medio segundo son 48000 muestras y la linea son 32768.
-    ambLine.prepare (spec);
-    ambLine.setMaximumDelayInSamples (juce::jmin (32767, juce::jmax (1, (int) (systemSampleRate * 0.5))));
-    ambLine.reset();
-
-    //  Y la del ping-pong, con el mismo tope que la de DLY: su mando llega a
-    //  un segundo.
-    pngLine.prepare (spec);
-    pngLine.setMaximumDelayInSamples (juce::jmax (1, (int) (systemSampleRate * 1.0)));
-    pngLine.reset();
-    smPngFb   = pngFb.load (std::memory_order_relaxed);
-    smPngSamp = (float) (pngTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
+    //  LA LINEA DEL DELAY, LA DEL AMBIENTE, LA DEL PING-PONG Y LA SALA ya no
+    //  se preparan aqui para todos: son de cada canal y se reservan cuando un
+    //  canal las pide. Ver `reservaMesa` y el final de esta funcion.
 
     //  Y EL RELOJ DE LA MODULACION ARRANCA EN CERO. Es lo unico que hay que
     //  poner: las fases NO se guardan, se calculan a partir de aqui, asi que un
@@ -366,6 +345,85 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         //  lo que sobreviviria seria la cola de un detector que ya no vale.
         for (auto& d : I.dyn) d.prepare (systemSampleRate);
     }
+
+    //  Y LA MESA DE LOS CANALES QUE LA PIDIERON, con la tasa de ahora. Aqui el
+    //  flujo esta parado -JUCE prepara antes de arrancar-, asi que rehacer una
+    //  mesa que ya estaba lista no pisa a nadie: es lo que hace falta en cada
+    //  cambio de ruta, porque una linea de un segundo a 44.1 kHz es mas corta
+    //  que un segundo a 48. Y es tambien donde se cumple lo que se pidio antes
+    //  de que hubiera dispositivo, que es el caso normal al abrir un proyecto.
+    {
+        const std::lock_guard<std::mutex> cierre (mesaCerrojo);
+        mesaFs     = systemSampleRate;
+        mesaBloque = juce::jmax (1, maxBlock);
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            auto& I = ins[(size_t) c];
+            if (! mesaPedida[(size_t) c] && ! I.mesaLista.load (std::memory_order_relaxed)) continue;
+            mesaPedida[(size_t) c] = true;
+            I.mesaLista.store (preparaMesa (c), std::memory_order_release);
+        }
+    }
+}
+
+//  RESERVAR LA MESA DE UN CANAL. Ver `Inserto::mesaLista`.
+//
+//  Con el cerrojo cogido y el flujo en marcha: lo que se toca aqui es de un
+//  canal cuya `mesaLista` es falsa, y el hilo de audio no lo mira hasta que la
+//  linea de `store` lo publica. Por eso el orden es preparar TODO y publicar
+//  al final, y no al reves.
+void AudioEngine::reservaMesa (int canal) noexcept
+{
+    if (! juce::isPositiveAndBelow (canal, kNumCanales)) return;
+    auto& I = ins[(size_t) canal];
+    if (I.mesaLista.load (std::memory_order_acquire)) return;
+
+    const std::lock_guard<std::mutex> cierre (mesaCerrojo);
+    mesaPedida[(size_t) canal] = true;
+    if (mesaFs <= 0.0 || I.mesaLista.load (std::memory_order_relaxed)) return;
+    I.mesaLista.store (preparaMesa (canal), std::memory_order_release);
+}
+
+//  Las cuatro piezas de un canal, dimensionadas por el TOPE de su mando y no
+//  por lo que el mando dice hoy: redimensionar al mover TIME seria reservar
+//  con el efecto sonando. Si la memoria no llega, la mesa se queda sin
+//  reservar y la etapa deja pasar el seco: un efecto que no suena es un fallo
+//  que se ve, y una excepcion que sale de aqui mata la app.
+bool AudioEngine::preparaMesa (int canal) noexcept
+{
+    auto& I = ins[(size_t) canal];
+    const double fs = mesaFs;
+    juce::dsp::ProcessSpec spec { fs, (juce::uint32) mesaBloque, 2 };
+    try
+    {
+        //  El delay y el ping-pong llegan a un segundo, que es el tope de
+        //  su mando.
+        I.dlyLine.prepare (spec);
+        I.dlyLine.setMaximumDelayInSamples (juce::jmax (1, (int) (fs * 1.0)));
+        I.dlyLine.reset();
+        I.pngLine.prepare (spec);
+        I.pngLine.setMaximumDelayInSamples (juce::jmax (1, (int) (fs * 1.0)));
+        I.pngLine.reset();
+
+        //  Y EL AMBIENTE, con otro tope: lo mas largo que se le pide son 120
+        //  ms de previo mas los 98.7 de la ultima toma. Se pide medio segundo
+        //  y se limita a lo que la linea tiene: a 96 kHz medio segundo son
+        //  48000 muestras y la linea son 32768.
+        I.ambLine.prepare (spec);
+        I.ambLine.setMaximumDelayInSamples (juce::jmin (32767, juce::jmax (1, (int) (fs * 0.5))));
+        I.ambLine.reset();
+
+        //  La FDN reserva sus cuatro lineas y sus dos difusores aqui: en el
+        //  render no se toca memoria.
+        I.reverb.prepare (fs, 2);
+        I.reverb.reset();
+    }
+    catch (const std::bad_alloc&)
+    {
+        return false;
+    }
+    I.cebaMesa (fxP[(size_t) canal], fs);
+    return true;
 }
 
 void AudioEngine::releaseResources() noexcept
@@ -940,47 +998,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //     here is: a raw jump in a gain that is being summed is a click.
     const int  busChans = juce::jmin (2, out.getNumChannels());
     const float kSend   = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
-    //  La mezcla de cada tipo, que es siempre `param[2]`. Era una lista
-    //  literal de once cargas atomicas, o sea un sitio mas que escribir a mano
-    //  por cada tipo nuevo — y el peor de los tres, porque lo que falta se
-    //  inicializa a 0.0f y un efecto MUDO no da ningun aviso. Ver `fxP`.
-    //  Y POR CANAL, QUE ES LA FASE 3 QUE ESTE RENGLON LLEVABA ANOTADA Y NADIE
-    //  HIZO. Decia: «del canal cero mientras el envio de un pad no sabe de
-    //  canal: la fase 3 lo hace `[canal][tipo]`». Los canales llegaron, y esto
-    //  se quedo leyendo el CERO clavado.
-    //
-    //  Lo que costaba, llegado del telefono: «meto una caja en el pad 2, lo
-    //  linkeo al canal 3, pongo el EQ en el 3, y ese EQ ni analiza nada ni
-    //  modifica nada». El enrutado estaba entero —pad en el 3, cara en el 3, EQ
-    //  en el 3, envio 1.00, mezcla 1.00, el bit de `padSendMask` puesto— y el
-    //  reparto leia la mezcla del canal CERO, que sigue en su cero de fabrica.
-    //  `target` sale cero, `sendGain` cero, `busFed` no se pone, `live()` da
-    //  falso y **la etapa del efecto ni se ejecuta**: por eso tampoco analiza,
-    //  que el visor lee ese mismo bus muerto.
-    //
-    //  Y NO ERA SOLO EL EQ: le pasaba a los DIECIOCHO insertos. Los cinco
-    //  envios se salvaban de casualidad, porque su parametro es uno para toda
-    //  la mesa y el canal cero es tan bueno como cualquier otro — que es
-    //  exactamente por lo que se rellenan una vez y no treinta y dos.
-    float fxMixNow[kNumCanales][kNumFx];
-    for (int f = 0; f < kNumFx; ++f)
-    {
-        if (! sustituye (f))
-        {
-            //  UN ENVIO: su mezcla es de la mesa entera, asi que se lee UNA vez.
-            const float m = juce::jlimit (0.0f, 1.0f,
-                                          fxParamDe (0, f, 2).load (std::memory_order_relaxed));
-            for (int c = 0; c < kNumCanales; ++c) fxMixNow[c][f] = m;
-        }
-        else
-        {
-            //  UN INSERTO: uno por canal, y hay que preguntarle a cada uno.
-            for (int c = 0; c < kNumCanales; ++c)
-                fxMixNow[c][f] = juce::jlimit (0.0f, 1.0f,
-                                               fxParamDe (c, f, 2).load (std::memory_order_relaxed));
-        }
-    }
-
     float sendGain[kNumPads][kNumFx];
     float dryGain[kNumPads];
     //  Lo que el CANAL escala, aparte del seco: el medidor mide lo que pasa por
@@ -1096,8 +1113,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         bool  any = false;
         bool  hot = canalHot;
         //  Y SIN CANAL NO SE INDEXA NADA, que era un desbordamiento de verdad y
-        //  no una hipotesis: aqui abajo se lee `canalSend[canal]` y ahora
-        //  tambien `fxMixNow[canal]`, y `canal` vale `kSinCanal` -o sea 255-
+        //  no una hipotesis: aqui abajo se lee `canalSend[canal]`, y `canal`
+        //  vale `kSinCanal` -o sea 255-
         //  para un pad que no esta en ninguna tira. El `continue` de arriba tapa
         //  el caso normal, pero no el de un pad al que se le acaba de QUITAR el
         //  canal: `smSendHot` sigue puesto mientras el envio baja, y por ahi se
@@ -1128,10 +1145,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  se lo pasa al siguiente -ver `returnBus`- y el MIX de cada ranura se
         //  aplica ALLI, alrededor de su etapa, que es donde significa algo.
         //
-        //  Los CINCO de la mesa -DLY, REV, CHO y compania no: solo DLY y REV
-        //  desde esta tanda- siguen recibiendo su copia del pad cuando el canal
-        //  no tiene cadena; cuando la tiene, la copia sale del final de la
-        //  cadena, que es lo que hace una mesa.
+        //  Y SIN EXCEPCIONES desde la Tanda 30. Los de la mesa -DLY, REV, AMB
+        //  y PNG- recibian aqui su copia del pad cuando el canal no tenia
+        //  cadena; ahora son eslabones de su tira como los demas -ver
+        //  `fxEsEnvio`- y la copia la toman del final de la cadena siempre.
         const int primero = primerFxDe (canal);
 
         for (int f = 0; f < kNumFx; ++f)
@@ -1144,16 +1161,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  que siempre fue, un factor heredado, y no puede recortar un
                 //  inserto: el aparato es del canal, no del pad.
                 target = 1.0f;
-            }
-            else if (! fxPorCanal[f])
-            {
-                //  Y LOS DE LA MESA, solo si el canal no tiene cadena. Si la
-                //  tiene, la derivacion se hace al final y no aqui.
-                target = (primero < 0)
-                           ? fxMixNow[(size_t) canal][(size_t) f]
-                               * canalSend[(size_t) canal][(size_t) f].load (std::memory_order_relaxed)
-                               * padRecorte[(size_t) p][(size_t) f].load (std::memory_order_relaxed)
-                           : 0.0f;
             }
             float& sm = smSend[(size_t) p][(size_t) f];
             sm += kSend * (target - sm);
@@ -1892,6 +1899,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
         // Block-rate smoothing coefficient for a ~20 ms time constant.
         const float kBlock = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
+        //  Y el de ~20 ms POR MUESTRA, para el tiempo de DLY y PNG. Uno y no
+        //  treinta y dos: ahora esas etapas corren en el bucle de canales.
+        const float kSamp  = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
         const float nyq    = (float) (systemSampleRate * 0.45);
 
         //  EL CANAL QUE LA ETAPA ESTA PROCESANDO. Las tres funciones de abajo
@@ -2042,8 +2052,52 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //
             //  Ahora un tipo DE CANAL no vuelve: se mezcla con su seco segun el
             //  MIX de su ranura y se lo pasa al siguiente eslabon. Solo el
-            //  ULTIMO de la cadena vuelve al master, y por el camino deja su
-            //  copia en los buses de la mesa —DLY y REV— si el canal les manda.
+            //  ULTIMO de la cadena vuelve al master.
+            //  ============================================================
+            //  LOS CUATRO QUE SE PORTAN COMO UN ENVIO. Ver `fxEsEnvio`.
+            //  ============================================================
+            //
+            //  El bus trae SOLO lo humedo -las cuatro etapas escriben la cola y
+            //  no el directo-, sacado de lo que salio de los insertos. Vuelve
+            //  al master YA, escalado por la mezcla de la ranura y el envio del
+            //  canal, que es exactamente lo que la mesa hacia con su copia:
+            //  `env x humedo(x)` es `humedo(env x x)` porque los cuatro son
+            //  lineales. Y el seco NO se toca: el siguiente de los cuatro recibe
+            //  el mismo `x` -en paralelo, como dos envios del mismo punto- y el
+            //  ultimo lo devuelve una vez.
+            //
+            //  Solo si le ENTRO algo este bloque: una sala que solo suena por
+            //  su cola no tiene seco que devolver, y el `secoDeCanal` de un
+            //  canal callado es lo que quedo del bloque anterior.
+            if (fxEsEnvio[f])
+            {
+                const int c = juce::jlimit (0, kNumCanales - 1, canalEtapa);
+                const float mix = juce::jlimit (0.0f, 1.0f, P (f, 2))
+                                    * juce::jlimit (0.0f, 1.0f,
+                                        canalSend[(size_t) c][(size_t) f].load (std::memory_order_relaxed));
+                busRinging[busIdx (f)] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
+                if (mix > 0.0f)
+                    for (int ch = 0; ch < chans; ++ch)
+                        out.addFrom (ch, startSample, bus, ch, startSample, numSamples, mix);
+                if (! busFed[busIdx (f)]) return;
+
+                auto& sec = secoDeCanal[(size_t) c];
+                const int sig = siguienteFxDe (c, f);
+                if (sig >= 0)
+                {
+                    auto& dst = fxBus[(size_t) busDe (c, sig)];
+                    for (int ch = 0; ch < chans; ++ch)
+                        dst.copyFrom (ch, startSample, sec, ch, startSample, numSamples);
+                    busFed[(size_t) busDe (c, sig)] = true;
+                }
+                else
+                {
+                    for (int ch = 0; ch < chans; ++ch)
+                        out.addFrom (ch, startSample, sec, ch, startSample, numSamples);
+                }
+                return;
+            }
+
             if (fxPorCanal[f])
             {
                 //  EL MIX DE LA RANURA, alrededor de la etapa. Antes se aplicaba
@@ -2129,23 +2183,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     return;
                 }
 
-                //  Y EL ULTIMO DERIVA A LA MESA ANTES DE VOLVER. Un envio se
-                //  toma del final de la tira y no del pad, que es lo que hace
-                //  que la reverb oiga el canal ECUALIZADO y no el pad crudo.
-                for (int m = 0; m < kNumFx; ++m)
-                    if (! fxPorCanal[m])
-                    {
-                        const float env = juce::jlimit (0.0f, 1.0f, fxMixNow[0][(size_t) m])
-                                            * canalSend[(size_t) canalEtapa][(size_t) m]
-                                                .load (std::memory_order_relaxed);
-                        if (env > 0.0005f)
-                        {
-                            auto& bm = fxBus[(size_t) busDe (canalEtapa, m)];
-                            for (int ch = 0; ch < chans; ++ch)
-                                bm.addFrom (ch, startSample, bus, ch, startSample, numSamples, env);
-                            busFed[(size_t) busDe (canalEtapa, m)] = true;
-                        }
-                    }
+                //  Aqui el ultimo eslabon derivaba su copia a los buses de la
+                //  mesa. Ya no hay mesa aparte: DLY, REV, AMB y PNG son los
+                //  ultimos eslabones de la tira y la toman ellos -ver la rama
+                //  de arriba-.
             }
 
             for (int ch = 0; ch < chans; ++ch)
@@ -3544,210 +3585,215 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     }
                 }
             }
+
+            //  === LOS CUATRO QUE ERAN DE LA MESA, AHORA DE CADA CANAL =======
+            //
+            //  DLY, REV, AMB y PNG corrian UNA vez, fuera de este bucle, sobre
+            //  un bus que sumaba lo que le mandaban todos los canales. La reverb
+            //  del canal 10 -la que recoge el Skank- y la del 4 -la de la caja-
+            //  eran el mismo aparato: apagar una apagaba la otra y mover una
+            //  movia la otra, que es exactamente lo que la persona conto. Ahora
+            //  corren aqui, una vez por canal, con la memoria del canal
+            //  (`Inserto`) y la fila de mandos del canal (`P`).
+            //
+            //  VAN AL FINAL DE LA TIRA por lo mismo que iban al final del motor:
+            //  la reverb oye el canal ya ecualizado y ya paneado. Es el orden
+            //  que da `siguienteFxDe` -primero los insertos, luego estos cuatro
+            //  en este orden- y tiene que ser el del codigo: un eslabon que corre
+            //  antes que el que lo alimenta lee un bus vacio.
+            //
+            //  LA MEMORIA ES PEREZOSA: 897 KiB por canal a 48 kHz, 28 MiB si se
+            //  reservaran los 32, en un motor de 21.7 MB y una gama baja de 64.
+            //  La reserva `reservaMesa`, fuera de este hilo, cuando el canal
+            //  enciende uno de los cuatro, y `mesaLista` la publica. Hasta
+            //  entonces la etapa deja pasar el seco y no toca una linea vacia.
+            //
+            //  Y CON EL MANDO ABAJO NO ENTRA NADA. La mesa escalaba lo que le
+            //  entraba, asi que con la mezcla a cero su linea no se llenaba y al
+            //  subirla el eco empezaba desde ese instante. Aqui el bus trae el
+            //  canal entero y la mezcla se aplica a la salida -ver `returnBus`-,
+            //  asi que sin este corte una linea con el mando a cero se llenaria
+            //  en silencio y al subirlo sonaria de golpe lo de hace un segundo.
+            //  Se vacia la entrada y la etapa corre SOLO mientras suene su cola.
+            {
+                const bool lista = I.mesaLista.load (std::memory_order_acquire);
+
+                //  Devuelve si la etapa procesa. Si no -sin memoria, o con el
+                //  mando abajo y la cola ya muerta- vacia el bus y `returnBus`
+                //  pasa el seco al siguiente eslabon, que es lo que un envio
+                //  apagado hace en una mesa.
+                auto entra = [&] (int f, bool suena) noexcept
+                {
+                    const float oido = juce::jlimit (0.0f, 1.0f, P (f, 2))
+                                     * juce::jlimit (0.0f, 1.0f,
+                                           canalSend[(size_t) canal][(size_t) f].load (std::memory_order_relaxed));
+                    const bool mudo = oido < 0.0005f;
+                    const bool procesa = lista && (suena || ! mudo);
+                    if (mudo || ! procesa)
+                        for (int ch = 0; ch < chans; ++ch)
+                            fxBus[busIdx (f)].clear (ch, startSample, numSamples);
+                    if (! procesa) returnBus (f);
+                    return procesa;
+                };
+
+                // --- 5. DELAY. El tiempo se suaviza POR MUESTRA: un salto por
+                //        bloque a traves de una linea interpolada es una
+                //        discontinuidad dura, un chasquido en cada movimiento.
+                {
+                    const float fbT = juce::jlimit (0.0f, 0.95f, P (kFxDly, 1));
+                    const float dsT = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
+                                                    P (kFxDly, 0) * (float) systemSampleRate / 1000.0f);
+                    I.smDlyFb += kBlock * (fbT - I.smDlyFb);
+                    if (I.smDlySamp <= 0.0f) I.smDlySamp = dsT;      // primer bloque: sin barrido desde 0
+
+                    if (live (kFxDly) && entra (kFxDly, busRinging[busIdx (kFxDly)]))
+                    {
+                        float* w0 = fxBus[busIdx (kFxDly)].getWritePointer (0, startSample);
+                        float* w1 = (chans > 1) ? fxBus[busIdx (kFxDly)].getWritePointer (1, startSample) : w0;
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            I.smDlySamp += kSamp * (dsT - I.smDlySamp);
+                            I.dlyLine.setDelay (I.smDlySamp);
+                            for (int ch = 0; ch < chans; ++ch)
+                            {
+                                float* w = (ch == 0) ? w0 : w1;
+                                const float in = w[i];
+                                const float d  = I.dlyLine.popSample (ch);
+                                //  LA CUARTA BARRERA: esta linea se realimenta,
+                                //  asi que un NaN que entre una vez da vueltas
+                                //  para siempre y el delay se queda mudo hasta
+                                //  que alguien cambie de ruta. Un estado con
+                                //  memoria se protege por dentro. Se pregunta por
+                                //  lo finito porque comparar con NaN siempre es
+                                //  falso.
+                                const float realim = in + d * I.smDlyFb;
+                                I.dlyLine.pushSample (ch, std::isfinite (realim) ? realim : 0.0f);
+                                w[i] = std::isfinite (d) ? d : 0.0f;
+                            }
+                        }
+                        returnBus (kFxDly);
+                    }
+                }
+
+                // --- 6. REVERB. Solo lo humedo: el seco ya vuelve por la tira,
+                //        y sumarlo dos veces solo haria un peine.
+                //
+                //  live O la energia interna de la FDN, y no dentro del if:
+                //  poner al dia busRinging solo cuando ya se procesa es un
+                //  candado -en cuanto el bus se declara muerto una vez no vuelve
+                //  a procesarse y no puede volver a declararse vivo-.
+                if ((live (kFxRev) || (lista && I.reverb.ringing()))
+                    && entra (kFxRev, I.reverb.ringing()))
+                {
+                    I.reverb.setParameters (P (kFxRev, 0), P (kFxRev, 1));
+                    I.reverb.process (fxBus[busIdx (kFxRev)], startSample, numSamples);
+                    returnBus (kFxRev);
+                    //  ...y la reverb manda sobre lo que returnBus acaba de
+                    //  deducir: la cola esta dentro de las lineas antes de estar
+                    //  en la salida. Ver Fdn::ringing.
+                    busRinging[busIdx (kFxRev)] = busRinging[busIdx (kFxRev)] || I.reverb.ringing();
+                }
+
+                // --- 6b. AMBIENTE. Las primeras reflexiones y nada mas: ocho
+                //         ecos sueltos por lado, sin una sola realimentacion.
+                //
+                //  NO ES UNA REVERB PEQUEÑA: son ocho tomas de una linea que no
+                //  se realimenta, asi que la cola dura exactamente lo que la
+                //  ultima toma -99 ms con el tamano al maximo- y ni una muestra
+                //  mas. Es lo que dice de que tamano es la sala ANTES de la cola.
+                //
+                //  Sin realimentacion no hace falta la cuarta barrera: un NaN
+                //  que entre sale por la ultima toma. Lo que no puede es entrar
+                //  en la linea, asi que se limpia lo que se escribe.
+                //
+                //  LAS TOMAS SON PRIMAS ENTRE SI -11.3, 19.7, 28.1 ms...- y las
+                //  del lado derecho estan corridas: cada lado tiene sus PROPIAS
+                //  reflexiones del MISMO directo, sin un retardo entre lados,
+                //  que es un peine en cuanto alguien escucha en mono.
+                if (live (kFxAmb) && entra (kFxAmb, busRinging[busIdx (kFxAmb)]))
+                {
+                    //  Las ocho tomas, sus ganancias y la escala viven en la
+                    //  cabecera: las comparte el VISOR. Ver `kAmbMsL`.
+                    constexpr int kTomas = kAmbTomas;
+                    const float tam    = juce::jlimit (0.0f, 1.0f, P (kFxAmb, 0));
+                    const float preMs  = juce::jlimit (0.0f, 120.0f, P (kFxAmb, 1));
+                    const float escala = ambEscala (tam);
+                    const float porMs  = (float) systemSampleRate / 1000.0f;
+                    const float pre    = preMs * porMs;
+                    const float tope   = (float) (I.ambLine.getMaximumDelayInSamples() - 1);
+
+                    float* w0 = fxBus[busIdx (kFxAmb)].getWritePointer (0, startSample);
+                    float* w1 = (chans > 1) ? fxBus[busIdx (kFxAmb)].getWritePointer (1, startSample) : w0;
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        for (int ch = 0; ch < chans; ++ch)
+                        {
+                            float* w = (ch == 0) ? w0 : w1;
+                            const float in = std::isfinite (w[i]) ? w[i] : 0.0f;
+                            I.ambLine.pushSample (ch, in);
+
+                            const float* ms = (ch == 0) ? kAmbMsL : kAmbMsR;
+                            float suma = 0.0f;
+                            for (int t = 0; t < kTomas; ++t)
+                            {
+                                const float d = juce::jlimit (1.0f, tope, pre + ms[t] * escala * porMs);
+                                suma += kAmbGan[t] * I.ambLine.popSample (ch, d, false);
+                            }
+                            w[i] = suma;
+                        }
+                        //  El puntero de lectura avanza UNA vez por muestra y no
+                        //  una por toma: `popSample` con `false` lee sin moverlo.
+                        for (int ch = 0; ch < chans; ++ch) I.ambLine.popSample (ch, 1.0f, true);
+                    }
+                    returnBus (kFxAmb);
+                }
+
+                // --- 6c. PING-PONG. El eco que rebota de un lado al otro.
+                //
+                //  NO ES DLY EN ESTEREO. Un delay con dos lados son dos ecos
+                //  paralelos; esto es UNA cola que cruza: lo que sale por la
+                //  izquierda vuelve a entrar por la derecha. El tiempo se suaviza
+                //  POR MUESTRA, por lo mismo que en DLY.
+                {
+                    const float fbT = juce::jlimit (0.0f, 0.95f, P (kFxPng, 1));
+                    const float dsT = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
+                                                    P (kFxPng, 0) * (float) systemSampleRate / 1000.0f);
+                    I.smPngFb += kBlock * (fbT - I.smPngFb);
+                    if (I.smPngSamp <= 0.0f) I.smPngSamp = dsT;
+
+                    if (live (kFxPng) && entra (kFxPng, busRinging[busIdx (kFxPng)]))
+                    {
+                        float* w0 = fxBus[busIdx (kFxPng)].getWritePointer (0, startSample);
+                        float* w1 = (chans > 1) ? fxBus[busIdx (kFxPng)].getWritePointer (1, startSample) : w0;
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            I.smPngSamp += kSamp * (dsT - I.smPngSamp);
+                            I.pngLine.setDelay (I.smPngSamp);
+
+                            const float dL = I.pngLine.popSample (0);
+                            const float dR = (chans > 1) ? I.pngLine.popSample (1) : dL;
+
+                            //  EL CRUCE, y la misma barrera que DLY: esta linea
+                            //  se realimenta.
+                            const float aL = w0[i] + (chans > 1 ? dR : dL) * I.smPngFb;
+                            I.pngLine.pushSample (0, std::isfinite (aL) ? aL : 0.0f);
+                            if (chans > 1)
+                            {
+                                const float aR = w1[i] + dL * I.smPngFb;
+                                I.pngLine.pushSample (1, std::isfinite (aR) ? aR : 0.0f);
+                            }
+
+                            w0[i] = std::isfinite (dL) ? dL : 0.0f;
+                            if (chans > 1) w1[i] = std::isfinite (dR) ? dR : 0.0f;
+                        }
+                        returnBus (kFxPng);
+                    }
+                }
+            }
         }
         canalEtapa = 0;
-
-        //  === Y LOS DOS DE LA MESA, AL FINAL ===========================
-        //
-        //  DLY y REV corrian AQUI ARRIBA, antes de los insertos, y desde que las
-        //  ranuras son una cadena eso no puede ser: la copia para el envio se
-        //  toma del FINAL de la tira -para que la reverb oiga el canal ya
-        //  ecualizado y ya paneado- y si su etapa ya ha pasado, esa copia cae en
-        //  un bus que nadie procesa y se borra al empezar el bloque siguiente.
-        //  Lo canto el banco en el acto: «la cola se inclina x0.00», o sea que
-        //  la reverb no recibia NADA en cuanto el canal tenia un eslabon.
-        //
-        //  Y ademas es lo que la cabecera decia que eran desde el principio:
-        //  «Reverb, last in the chain so everything ahead of it lands in the
-        //  room». Estaba escrito como intencion y el orden decia otra cosa.
-        //
-        //  MOVERLAS CAMBIA EL ORDEN DE LA SUMA y eso esta advertido en
-        //  `AudioEngine.h`: la fila de control compara DOS corridas del MISMO
-        //  binario, asi que sigue valiendo -las dos se mueven igual-, y lo que
-        //  no se puede es comparar contra una salida guardada de antes.
-        // --- 5. DELAY. Time is smoothed PER SAMPLE: a per-block jump through
-        //        a linear-interp line is a hard discontinuity (crackle on
-        //        every TIME move).
-        {
-            const float fbT  = juce::jlimit (0.0f, 0.95f, dlyFb.load (std::memory_order_relaxed));
-            const float dsT  = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
-                                             dlyTime.load (std::memory_order_relaxed) * (float) systemSampleRate / 1000.0f);
-            smDlyFb  += kBlock * (fbT  - smDlyFb);
-            if (smDlySamp <= 0.0f) smDlySamp = dsT;            // first block: no sweep from 0
-            const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
-
-            if (live (3))
-            {
-                float* w0 = fxBus[busIdx (kFxDly)].getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? fxBus[busIdx (kFxDly)].getWritePointer (1, startSample) : w0;
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    smDlySamp += kSamp * (dsT - smDlySamp);
-                    delayLine.setDelay (smDlySamp);
-                    for (int ch = 0; ch < chans; ++ch)
-                    {
-                        float* w = (ch == 0) ? w0 : w1;
-                        const float in = w[i];
-                        const float d  = delayLine.popSample (ch);
-                        //  LA CUARTA BARRERA, que faltaba: esta linea se
-                        //  realimenta, asi que un NaN que entre una vez da
-                        //  vueltas para siempre y el delay se queda mudo hasta
-                        //  que alguien cambie de ruta -prepareToPlay es lo
-                        //  unico que lo limpia-. Las otras tres protegen lo que
-                        //  sale; un estado con memoria hay que protegerlo por
-                        //  dentro. Se pregunta por lo finito porque comparar
-                        //  con NaN siempre es falso.
-                        const float realim = in + d * smDlyFb;
-                        delayLine.pushSample (ch, std::isfinite (realim) ? realim : 0.0f);
-                        w[i] = std::isfinite (d) ? d : 0.0f;
-                    }
-                }
-                returnBus (3);
-            }
-        }
-
-        // --- 6. REVERB. Wet only: the dry it would mix back already reached
-        //        the master by the direct path, and adding it twice would
-        //        only comb-filter the sound.
-        {
-            //  live(5) OR la energia interna de la FDN, y no dentro del if:
-            //  poner al dia busRinging solo cuando ya se procesa es un candado
-            //  - en cuanto el bus se declara muerto una vez, no vuelve a
-            //  procesarse y no puede volver a declararse vivo. Con Freeverb no
-            //  se notaba porque siempre sacaba algo en la primera muestra.
-            if (live (5) || reverb.ringing())
-            {
-                reverb.setParameters (rvSize.load (std::memory_order_relaxed),
-                                      rvDamp.load (std::memory_order_relaxed));
-                reverb.process (fxBus[busIdx (kFxRev)], startSample, numSamples);
-                returnBus (5);
-                //  ...y la reverb manda sobre lo que returnBus acaba de
-                //  deducir: la cola esta dentro de las lineas antes de estar en
-                //  la salida. Ver Fdn::ringing.
-                busRinging[busIdx (kFxRev)] = busRinging[busIdx (kFxRev)] || reverb.ringing();
-            }
-        }
-
-        // --- 6b. AMBIENTE. Las primeras reflexiones y nada mas: ocho ecos
-        //         sueltos por canal, sin una sola realimentacion.
-        //
-        //  NO ES UNA REVERB PEQUEÑA. Una reverb es una red realimentada que
-        //  devuelve energia durante segundos; esto son ocho tomas de una linea
-        //  que no se realimenta, asi que la cola dura exactamente lo que la
-        //  ultima toma -99 ms con el tamano al maximo- y ni una muestra mas.
-        //  Es lo que dice de que tamano es la sala ANTES de que llegue la cola,
-        //  y por eso se usan juntos y no uno en lugar del otro.
-        //
-        //  Y SIN REALIMENTACION NO HACE FALTA LA CUARTA BARRERA que el delay
-        //  si necesita: un NaN que entre aqui sale por la ultima toma y se va.
-        //  Lo que no se puede es que entre en la linea, asi que se limpia lo
-        //  que se escribe, que es la barrera barata.
-        //
-        //  LAS TOMAS SON PRIMAS ENTRE SI en milisegundos -11.3, 19.7, 28.1...-
-        //  y las del canal derecho estan corridas: dos juegos iguales darian
-        //  ocho ecos en el centro, o sea una sala de un solo punto. Corridos,
-        //  la sala tiene ancho sin un solo retardo entre canales, que es lo que
-        //  esta casa ya tiene escrito que no se hace -un retardo entre canales
-        //  es un peine en cuanto alguien escucha en mono-: aqui cada canal
-        //  tiene sus PROPIAS reflexiones del MISMO directo, que es como suena
-        //  una sala de verdad.
-        {
-            //  Las ocho tomas, sus ganancias y la escala viven en la
-            //  cabecera: las comparte el VISOR. Ver `kAmbMsL`.
-            constexpr int kTomas = kAmbTomas;
-
-            if (live (kFxAmb))
-            {
-                const float tam = juce::jlimit (0.0f, 1.0f,
-                                                ambTam.load (std::memory_order_relaxed));
-                const float preMs = juce::jlimit (0.0f, 120.0f,
-                                                  ambPre.load (std::memory_order_relaxed));
-                const float escala = ambEscala (tam);
-                const float porMs  = (float) systemSampleRate / 1000.0f;
-                const float pre    = preMs * porMs;
-                const float tope   = (float) (ambLine.getMaximumDelayInSamples() - 1);
-
-                float* w0 = fxBus[busIdx (kFxAmb)].getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? fxBus[busIdx (kFxAmb)].getWritePointer (1, startSample) : w0;
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    for (int ch = 0; ch < chans; ++ch)
-                    {
-                        float* w = (ch == 0) ? w0 : w1;
-                        const float in = std::isfinite (w[i]) ? w[i] : 0.0f;
-                        ambLine.pushSample (ch, in);
-
-                        const float* ms = (ch == 0) ? kAmbMsL : kAmbMsR;
-                        float suma = 0.0f;
-                        for (int t = 0; t < kTomas; ++t)
-                        {
-                            const float d = juce::jlimit (1.0f, tope, pre + ms[t] * escala * porMs);
-                            suma += kAmbGan[t] * ambLine.popSample (ch, d, false);
-                        }
-                        w[i] = suma;
-                    }
-                    //  El puntero de lectura avanza UNA vez por muestra y no
-                    //  una por toma: `popSample` con `false` lee sin moverlo,
-                    //  que es justo para lo que esta.
-                    for (int ch = 0; ch < chans; ++ch) ambLine.popSample (ch, 1.0f, true);
-                }
-                returnBus (kFxAmb);
-            }
-        }
-
-        // --- 6c. PING-PONG. El eco que rebota de un lado al otro.
-        //
-        //  NO ES DLY EN ESTEREO. Un delay con dos canales son dos ecos
-        //  paralelos, cada uno en su lado y con su propia cola; esto es UNA
-        //  cola que cruza: lo que sale por la izquierda vuelve a entrar por la
-        //  derecha, asi que la repeticion va saltando de lado. Con los mismos
-        //  dos mandos el resultado no se parece, y es lo que se pone en un eco
-        //  cuando se quiere que abra la mezcla en vez de engordar el centro.
-        //
-        //  El tiempo se suaviza POR MUESTRA, por lo mismo que en DLY: un salto
-        //  por bloque a traves de una linea interpolada es una discontinuidad
-        //  dura, o sea un chasquido en cada movimiento del mando.
-        {
-            const float fbT = juce::jlimit (0.0f, 0.95f, pngFb.load (std::memory_order_relaxed));
-            const float dsT = juce::jlimit (1.0f, (float) (systemSampleRate - 1.0),
-                                            pngTime.load (std::memory_order_relaxed)
-                                              * (float) systemSampleRate / 1000.0f);
-            smPngFb += kBlock * (fbT - smPngFb);
-            if (smPngSamp <= 0.0f) smPngSamp = dsT;
-            const float kSamp = 1.0f - std::exp (-1.0f / (0.020f * (float) systemSampleRate));
-
-            if (live (kFxPng))
-            {
-                float* w0 = fxBus[busIdx (kFxPng)].getWritePointer (0, startSample);
-                float* w1 = (chans > 1) ? fxBus[busIdx (kFxPng)].getWritePointer (1, startSample) : w0;
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    smPngSamp += kSamp * (dsT - smPngSamp);
-                    pngLine.setDelay (smPngSamp);
-
-                    const float dL = pngLine.popSample (0);
-                    const float dR = (chans > 1) ? pngLine.popSample (1) : dL;
-
-                    //  EL CRUCE. Y la misma barrera que DLY: esta linea se
-                    //  realimenta, asi que un NaN que entre una vez da vueltas
-                    //  para siempre. Se pregunta por lo finito porque comparar
-                    //  con NaN siempre es falso.
-                    const float aL = w0[i] + (chans > 1 ? dR : dL) * smPngFb;
-                    pngLine.pushSample (0, std::isfinite (aL) ? aL : 0.0f);
-                    if (chans > 1)
-                    {
-                        const float aR = w1[i] + dL * smPngFb;
-                        pngLine.pushSample (1, std::isfinite (aR) ? aR : 0.0f);
-                    }
-
-                    w0[i] = std::isfinite (dL) ? dL : 0.0f;
-                    if (chans > 1) w1[i] = std::isfinite (dR) ? dR : 0.0f;
-                }
-                returnBus (kFxPng);
-            }
-        }
 
         //  EL ANILLO DEL VISOR SE VACIA CUANDO EL EFECTO MIRADO NO SACA NADA.
         //
@@ -4524,11 +4570,11 @@ void AudioEngine::setFxParam (int canal, int fx, int par, float v) noexcept
 
     //  Y UN NO-FINITO NO ENTRA, que es la guarda que faltaba y costaba un
     //  SEGMENTATION FAULT. Medido: `setFxParam (canal, kFxDly, 0, NaN)` mata
-    //  la app. El camino entero, que es corto: `dlyTime` se guarda tal cual;
+    //  la app. El camino entero, que es corto: el tiempo de DLY se guarda tal cual;
     //  el bloque lo pasa por `juce::jlimit (1.0f, sr-1, t)` y **jlimit no
     //  atrapa un NaN** -son dos comparaciones y las dos son falsas con NaN,
     //  asi que devuelve el NaN intacto-; el suavizado lo arrastra a
-    //  `smDlySamp`; y `juce::dsp::DelayLine::setDelay` convierte eso a un
+    //  `Inserto::smDlySamp`; y `juce::dsp::DelayLine::setDelay` convierte eso a un
     //  indice entero, que con NaN es basura, y `popSample` lee fuera del
     //  array. No es un ruido raro: es la app cerrandose.
     //
@@ -5435,9 +5481,21 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     for (size_t c = 0; c < ins.size(); ++c) ins[c].cebaSuavizados (fxP[c]);
 
     duckPad.store (s.duckPad.load (std::memory_order_relaxed), std::memory_order_relaxed);
-    smDlyMix  = dlyMix.load   (std::memory_order_relaxed);
-    smDlyFb   = dlyFb.load    (std::memory_order_relaxed);
-    smDlySamp = (float) (dlyTime.load (std::memory_order_relaxed) * 0.001 * systemSampleRate);
+    //  Y LOS CUATRO QUE ERAN DE LA MESA, tambien por canal: eran tres lineas
+    //  que cebaban UN delay con la fila del canal cero. Un canal que el rebote
+    //  va a usar reserva aqui su memoria -este no es el hilo de audio- y
+    //  arranca con sus mandos; uno que no los usa no paga nada, igual que en
+    //  directo.
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        for (int f : { kFxDly, kFxRev, kFxAmb, kFxPng })
+            if (canalSend[(size_t) c][(size_t) f].load (std::memory_order_relaxed) > 0.0f)
+            {
+                reservaMesa (c);
+                break;
+            }
+        ins[(size_t) c].cebaMesa (fxP[(size_t) c], systemSampleRate);
+    }
     //  Y LOS TRES DE MODULACION SE CEBAN POR CANAL, que es donde viven desde
     //  esta tanda. Antes eran tres lineas leyendo el canal cero —cuando el coro
     //  era uno para toda la mesa— y dejarlas asi habria cebado los treinta y dos

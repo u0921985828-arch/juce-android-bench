@@ -165,17 +165,21 @@ public:
         repaint();
     }
 
-    //  How hard the last strike was, 0.10 to 1.
+    //  How hard the last strike was, 0.35 to 1.
     //
-    //  A touchscreen has no strike force, so the pad has to get it from
-    //  somewhere else. Pressure (MouseEvent::pressure) is the obvious answer
-    //  and the wrong one: most Android panels report a constant, and a control
-    //  that works on one phone and not the next is worse than none.
+    //  A touchscreen has no strike force. Pressure (MouseEvent::pressure) is
+    //  the only honest source, and where the platform gives it, it is used -
+    //  see mouseDown.
     //
-    //  Position is what every pad instrument without real sensors uses, and it
-    //  is the one thing a touchscreen always knows: low on the tile is soft,
-    //  high is hard, the way a drum reads its own head. It also stays playable
-    //  with one thumb, which pressure never was.
+    //  SIN PRESION, EL GOLPE ES FIJO: `kFuerzaTapeo`. Aqui se leia la ALTURA
+    //  del dedo sobre el pad -arriba 1.0, abajo 0.35- con el argumento de que
+    //  «asi lee un tambor su parche», y no es verdad: un parche no suena mas
+    //  flojo por golpearlo mas abajo. Eran unos 9 dB de diferencia entre dos
+    //  toques iguales segun donde cayera el dedo -medido en el banco: 0.97,
+    //  0.68 y 0.38 en y = 0.05, 0.5 y 0.95-, y la persona lo conto asi: «los
+    //  golpes tienen que ser de la misma intensidad al tapear». Ver
+    //  `Tests/pasos.py`.
+    static constexpr float kFuerzaTapeo = 1.0f;
     float getLastVelocity() const noexcept { return lastVelocity; }
 
     //  ...and where the platform DOES report a real force, use it.
@@ -184,18 +188,13 @@ public:
     //  than leaving as a surprise: juce_Windowing_android.cpp hands every
     //  touch event MouseInputSource::defaultPressure, which is 0.0f, and
     //  isPressureValid() is `pressure > 0 && pressure < 1`. So on a phone this
-    //  branch is dead and the position rule below is what plays - which was
-    //  the original design and is the one that works everywhere.
+    //  branch is dead and every tap plays at `kFuerzaTapeo`.
     //
     //  It stays because it costs one comparison, because it is correct on the
     //  platforms that do supply the figure (a stylus, a desktop tablet), and
     //  because the day JUCE passes MotionEvent.getPressure() through, this
     //  starts working with no other change. What it must not do is pretend:
     //  the announcement it triggers cannot appear on an Android build.
-    //
-    //  Both paths land on the same 0.35..1 range, so a pattern recorded where
-    //  force is measured and played back where it is not is the same
-    //  performance rather than a different one.
     void mouseDown (const juce::MouseEvent& e) override
     {
         held = false;
@@ -214,14 +213,6 @@ public:
         //  `mouseUp`, que llega igual con la ficha delante.
         if (modoTinte.isTransparent()) startTimer (kHoldMs);
 
-        const float h = (float) juce::jmax (1, getHeight());
-        const float y = juce::jlimit (0.0f, 1.0f, (float) e.position.y / h);
-
-        //  Struck at the top = 1, at the bottom = 0.35 rather than silence:
-        //  the softest edge of the pad still has to make a sound, and a floor
-        //  of 0.35 is about 9 dB of range, which is what a finger can aim for.
-        const float byPosition = juce::jmap (1.0f - y, 0.35f, 1.0f);
-
         if (e.isPressureValid())
         {
             //  A finger at rest on a capacitive panel reads around 0.1-0.2 and
@@ -234,7 +225,7 @@ public:
         }
         else
         {
-            lastVelocity = byPosition;
+            lastVelocity = kFuerzaTapeo;
             usedPressure = false;
         }
 

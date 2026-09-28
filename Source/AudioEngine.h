@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
+#include <mutex>
 #include <cstdint>
 #include <cmath>
 #include "Voice.h"
@@ -173,9 +174,10 @@ public:
     //      con el mismo inserto serian dos ventanas al mismo aparato con dos
     //      interruptores que se contradicen. Dieciseis insertos, dieciseis
     //      canales: el numero ya cuadraba.
-    //    · un ENVIO es de TODOS. Una linea de retardo existe para que varias
-    //      fuentes entren en la misma cola; restringir el DLY a un canal es lo
-    //      contrario de lo que un envio significa.
+    //    · un ENVIO era de TODOS -«una linea de retardo existe para que
+    //      varias fuentes entren en la misma cola»- y eso cayo en la Tanda 30,
+    //      cuando dos canales con reverb resultaron ser un solo aparato con dos
+    //      tapas. Hoy los treinta tipos son de su canal: ver `fxPorCanal`.
     //
     //  Y CADA CANAL TIENE SUS DIECISEIS INSERTOS DE VERDAD, que es lo que
     //  costo la tanda siguiente: `struct Inserto` con su estado y un array de
@@ -224,8 +226,10 @@ public:
 
     //  QUE CANAL LLEVA DE VERDAD ESE PARAMETRO, escrito UNA vez y aqui.
     //
-    //  Un INSERTO es de un canal y un ENVIO es de todos, asi que la fila de un
-    //  envio vive en el canal cero escriba quien escriba. `fxParamDe` lo usa
+    //  Un INSERTO es de un canal y un ENVIO era de todos, asi que la fila de un
+    //  envio vivia en el canal cero escribiera quien escribiera; desde la Tanda
+    //  30 no hay tipo sin canal y esto devuelve siempre el canal, pero la
+    //  condicion se queda en UN sitio -`fxPorCanal`-. `fxParamDe` lo usa
     //  para indexar `fxP` y la CARA para saber que casilla de `fxOn` mira y de
     //  donde recarga sus sesenta y tres deslizadores: con la condicion escrita
     //  en los dos sitios, la que se quedara vieja dejaria la fila de la cara
@@ -1425,13 +1429,17 @@ public:
     std::uint64_t fetchTriggered() noexcept { return triggeredMask.exchange (0, std::memory_order_relaxed); }
 
     // --- Master FX: filter + drive (message thread setters) ---
-    void setDlyTime  (float ms)  noexcept { dlyTime.store  (ms,  std::memory_order_relaxed); }
-    void setDlyFb    (float f)    noexcept { dlyFb.store    (f,   std::memory_order_relaxed); }
-    void setDlyMix   (float m)    noexcept { dlyMix.store   (m,   std::memory_order_relaxed); }
+    //  LOS ATAJOS DEL BANCO, Y DEL CANAL CERO. Escribian la fila de la mesa,
+    //  que era una para las treinta y dos tiras; desde que el delay es de cada
+    //  canal escriben la del cero, que es donde `enCanalCero` pone los pads y
+    //  por tanto lo mismo que hacian. Otro canal va por `setFxParam`.
+    void setDlyTime  (float ms)  noexcept { fxP[0][kFxDly][0].store (ms, std::memory_order_relaxed); }
+    void setDlyFb    (float f)    noexcept { fxP[0][kFxDly][1].store (f,  std::memory_order_relaxed); }
+    void setDlyMix   (float m)    noexcept { fxP[0][kFxDly][2].store (m,  std::memory_order_relaxed); }
     //  Para el banco: lo que la automatizacion acaba de escribir. Sin un
     //  getter, «el evento llego» solo se puede mirar por el sonido, y ahi un
     //  cambio de mezcla del delay tarda su cola en notarse.
-    float getDlyMix() const noexcept { return dlyMix.load (std::memory_order_relaxed); }
+    float getDlyMix() const noexcept { return fxP[0][kFxDly][2].load (std::memory_order_relaxed); }
 
     // --- The six effects -------------------------------------------------
     //  FLT, HPF, DRIVE, DELAY, CRUSH, REVERB. Six independent stages in that
@@ -1895,9 +1903,30 @@ public:
     void setCanalSend (int canal, int fx, float v) noexcept
     {
         if (canal < 0 || canal >= kNumCanales || fx < 0 || fx >= kNumFx) return;
+        //  LA MESA SE RESERVA ANTES DE ABRIR EL ENVIO, y en ese orden: con el
+        //  envio abierto primero, el hilo de audio veria el eslabon en la
+        //  cadena un bloque antes de que su linea exista. No pasaria nada -la
+        //  etapa deja pasar el seco mientras `mesaLista` sea falso- pero ese
+        //  bloque seria silencio de efecto sin motivo.
+        if (v > 0.0f && fxEsEnvio[fx]) reservaMesa (canal);
         canalSend[(size_t) canal][(size_t) fx].store (juce::jlimit (0.0f, 1.0f, v),
                                                       std::memory_order_relaxed);
         refrescaSendMask();
+    }
+
+    //  LA MESA DE UN CANAL: la linea del delay, la del ping-pong, la del
+    //  ambiente y la sala. Ver `Inserto::mesaLista`. La llama `setCanalSend`
+    //  y NUNCA el hilo de audio -reserva memoria y coge un cerrojo-. Sin
+    //  dispositivo preparado solo la apunta, y `prepareToPlay` la cumple. Una
+    //  vez reservada no se suelta: soltarla con el flujo en marcha seria un
+    //  `delete` debajo de un hilo que puede estar leyendo.
+    void reservaMesa (int canal) noexcept;
+    //  Cuantos canales tienen la mesa reservada. Para el banco.
+    int mesasListas() const noexcept
+    {
+        int n = 0;
+        for (const auto& I : ins) if (I.mesaLista.load (std::memory_order_acquire)) ++n;
+        return n;
     }
     float getCanalSend (int canal, int fx) const noexcept
     {
@@ -2041,9 +2070,10 @@ public:
         return fx >= 0 && fx < kNumFx && fxSustituye[fx];
     }
 
-    void setRevSize (float s) noexcept { rvSize.store (s, std::memory_order_relaxed); }
-    void setRevDamp (float d) noexcept { rvDamp.store (d, std::memory_order_relaxed); }
-    void setRevMix  (float m) noexcept { rvMix.store  (m, std::memory_order_relaxed); }
+    //  Del canal cero, por lo mismo que `setDlyTime`.
+    void setRevSize (float s) noexcept { fxP[0][kFxRev][0].store (s, std::memory_order_relaxed); }
+    void setRevDamp (float d) noexcept { fxP[0][kFxRev][1].store (d, std::memory_order_relaxed); }
+    void setRevMix  (float m) noexcept { fxP[0][kFxRev][2].store (m, std::memory_order_relaxed); }
 
     //  EL EQ. Sus diez numeros no pasan por atomicos uno a uno: `Eq5` guarda
     //  los cinco pares y una bandera `sucio`, y el hilo de audio recalcula los
@@ -2063,13 +2093,33 @@ public:
     // How much silence a bounce must keep past the last note so the tail is
     // not guillotined. Only AUDIBLE stages count — a ten-second delay with
     // its mix at zero must not pad every export.
+    //
+    //  CANAL A CANAL desde que cada tira tiene su delay y su reverb: la cola
+    //  la pone el canal que mas dura, y cuenta solo donde el efecto suena de
+    //  verdad -la mezcla Y el envio del canal-. Con la fila unica bastaba la
+    //  mezcla; con treinta y dos, la mezcla de una tira sin envio es un mando
+    //  encendido en un aparato al que no le llega nada.
+    //
+    //  Y EL PING-PONG CUENTA, que no contaba: es un eco con realimentacion
+    //  como el delay y su mando llega a un segundo, asi que cuatro vueltas
+    //  son cuatro segundos que el rebote cortaba a los dos.
     double getFxTailSeconds() const noexcept
     {
         double t = 0.0;
-        if (dlyMix.load (std::memory_order_relaxed) > 0.001f)
-            t = juce::jmax (t, 4.0 * (double) dlyTime.load (std::memory_order_relaxed) * 0.001);
-        if (rvMix.load (std::memory_order_relaxed) > 0.001f)
-            t = juce::jmax (t, 3.0);
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            const auto suena = [this, c] (int f) noexcept
+            {
+                return fxParamDe (c, f, 2).load (std::memory_order_relaxed) > 0.001f
+                    && canalSend[(size_t) c][(size_t) f].load (std::memory_order_relaxed) > 0.0f;
+            };
+            if (suena (kFxDly))
+                t = juce::jmax (t, 4.0 * (double) fxParamDe (c, kFxDly, 0).load (std::memory_order_relaxed) * 0.001);
+            if (suena (kFxPng))
+                t = juce::jmax (t, 4.0 * (double) fxParamDe (c, kFxPng, 0).load (std::memory_order_relaxed) * 0.001);
+            if (suena (kFxRev))
+                t = juce::jmax (t, 3.0);
+        }
         return t;
     }
 
@@ -2941,73 +2991,13 @@ private:
         return fxP[(size_t) canalDeParam (c, f)][(size_t) f][(size_t) par];
     }
 
-    //  Y LOS NOMBRES SE QUEDAN, como REFERENCIAS a su hueco — pero SOLO los de
-    //  los dos ENVIOS que quedan aqui: los trece de inserto se retiran, porque
-    //  una referencia no sabe de canal y dejarla seria una puerta trasera al
-    //  canal cero. Las ~50 lecturas de las etapas de DLY y REV no se tocan.
-
-    // Audio-thread-only smoothed FX params (one-pole toward the atomics):
-    // knob moves arrive as per-block jumps otherwise — zipper on the filter,
-    // crackle on the delay time. ~20 ms time constant.
-    float smDlyMix  = 0.0f;
-    float smDlyFb   = 0.35f;
-    float smDlySamp = 0.0f;      // delay time in samples, smoothed per sample
-
-    // Master delay.
-    //  LAGRANGE, NO LINEAL, PORQUE HAY REALIMENTACION.
-    //
-    //  Interpolar linealmente un retardo fraccionario no es aproximar: es un
-    //  paso bajo cuya frecuencia de corte depende de la PARTE FRACCIONARIA
-    //  del retardo - transparente en fraccion 0, y en fraccion 0.5 unos 3 dB
-    //  menos en Nyquist/2 y un cero en Nyquist. Con una sola pasada eso se
-    //  perdona; aqui la linea se realimenta hasta 0.95, asi que el error se
-    //  COMPONE en cada repeticion y la cola se apaga en agudos mucho antes de
-    //  lo que dice el mando. Y como el retardo se suaviza por muestra, la
-    //  fraccion barre todo su recorrido durante un movimiento de TIME: el
-    //  brillo de las repeticiones modula con ella.
-    //
-    //  Medido en el banco - un tono de 8 kHz, 33.34375 ms de retardo (1600.5
-    //  muestras, media muestra clavada de fraccion) y 0.9 de realimentacion:
-    //  la octava repeticion salia 5.9 dB por debajo de lo que la
-    //  realimentacion sola predice. Con Lagrange, 0.7 dB. Cinco decibelios de
-    //  agudos que el mando prometia y la linea se comia.
-    //
-    //  Cuesta tres multiplicaciones-acumulaciones mas por muestra y por canal
-    //  sobre una etapa que no llega al 1% de carga.
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> delayLine { 96000 };
-    std::atomic<float>& dlyTime = fxP[0][kFxDly][0];   // ms
-    std::atomic<float>& dlyFb   = fxP[0][kFxDly][1];   // 0..0.95
-
-    //  EL AMBIENTE: una linea y ocho tomas, sin realimentacion ninguna.
-    //
-    //  32768 muestras son 683 ms a 48 kHz y 341 a 96, y lo mas largo que se
-    //  pide son 120 ms de previo mas 99 de la ultima toma: sobra a las dos
-    //  tasas. Un cuarto de mega por los dos canales, que es la mitad de lo que
-    //  ya cuesta `pitLine` por canal de inserto.
-    //
-    //  SIN INTERPOLAR, y por eso `None`: las tomas son fijas -no barren- asi
-    //  que un Lagrange de tercer orden por toma serian ocho filtros de cuatro
-    //  puntos por muestra para leer la misma muestra entera. `delayLine` si lo
-    //  necesita porque su TIME se suaviza por muestra.
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> ambLine { 32768 };
-
-    //  PNG: la linea del ping-pong. Del mismo tipo que la de DLY -Lagrange de
-    //  tercer orden- porque su TIME tambien se suaviza por muestra y un retardo
-    //  que se barre sin interpolar crepita: 5.9 dB de perdida con lineal contra
-    //  0.7 con Lagrange, medido en esta casa.
-    //
-    //  Y ES UNA SOLA LINEA CON DOS CANALES Y LA REALIMENTACION CRUZADA, que es
-    //  lo unico que separa esto de DLY: lo que sale por la izquierda vuelve a
-    //  entrar por la derecha. Con dos lineas independientes saldrian dos ecos
-    //  paralelos, o sea DLY en estereo.
-    juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pngLine { 96000 };
-    std::atomic<float>& pngTime = fxP[0][kFxPng][0];   // ms
-    std::atomic<float>& pngFb   = fxP[0][kFxPng][1];   // 0..0.95
-    float smPngSamp = 0.0f, smPngFb = 0.0f;
-    std::atomic<float>& ambTam  = fxP[0][kFxAmb][0];   // 0..1
-    std::atomic<float>& ambPre  = fxP[0][kFxAmb][1];   // ms
-    std::atomic<float>& dlyMix  = fxP[0][kFxDly][2];   // 0..1
-
+    //  LOS CUATRO QUE ERAN DE LA MESA -DLY, REV, AMB y PNG- YA NO VIVEN AQUI.
+    //  Eran una instancia para las treinta y dos tiras, con sus mandos atados
+    //  a la fila del canal cero por diez referencias, y desde la Tanda 30 son
+    //  de cada canal: su linea, su sala y sus suavizados estan en `Inserto`,
+    //  y sus mandos se leen con `P (f, par)` como los de cualquier otro tipo.
+    //  Una referencia no sabe de canal, asi que dejar una seria una puerta
+    //  trasera al canal cero — que es exactamente el fallo que se quita.
     // ISO wet/dry, so the low-pass can be blended rather than only replacing.
 
     // HPF: its OWN filter, not the ISO one switched to high-pass. Two objects
@@ -3019,15 +3009,6 @@ private:
 
     // Crush: bit depth and sample-and-hold rate, the two halves of lo-fi.
 
-    // Reverb, last in the chain so everything ahead of it lands in the room.
-    //  Ver Fdn.h. Sustituye a juce::dsp::Reverb, que es Freeverb: ocho peines
-    //  y cuatro allpass publicados en 2000, con la cola metalica que eso
-    //  implica. En una caja que apunta a produccion, la reverb es lo primero
-    //  que delata que el motor es de juguete.
-    Fdn reverb;
-    std::atomic<float>& rvSize = fxP[0][kFxRev][0];
-    std::atomic<float>& rvDamp = fxP[0][kFxRev][1];
-    std::atomic<float>& rvMix  = fxP[0][kFxRev][2];
 
     //  EL EQ DE CINCO BANDAS. Es un INSERTO -fxSustituye- y no un envio: lo que
     //  un pad manda aqui deja de ir por el camino seco, porque ecualizar la
@@ -3341,26 +3322,63 @@ private:
     //  estaban les niega el canal.
     //
     //  Asi que la primera pregunta se queda en `fxSustituye` y la segunda vive
-    //  aqui. Los tres unicos que difieren son CHO, FLA y PHA: suman y son de su
-    //  canal. DLY y REV siguen siendo de la mesa entera, que ademas es lo que se
-    //  pidio —«que el reverb y el delay fuese el mismo, para que todo este en el
-    //  mismo espacio»— y lo que un envio significa.
-    static constexpr bool fxPorCanal[kNumFx] = { true, true, true, false, true, false, true,
+    //  aqui.
+    //
+    //  Y DESDE LA TANDA 30 CONTESTA «POR CANAL» PARA LOS TREINTA. DLY, REV, AMB
+    //  y PNG eran de la mesa entera -se pidio asi: «que el reverb y el delay
+    //  fuese el mismo, para que todo este en el mismo espacio»- y con dos
+    //  canales usandolos eso resulto ser un solo aparato con dos tapas. Llego
+    //  del telefono con el caso exacto: «si yo hago un envio al Canal 10 que
+    //  tiene reverb, que ahi recojo el Skank y suena con reverb, a su vez tengo
+    //  en el Canal 4 otro reverb que suena con la caja, cuando yo desactivo el
+    //  del canal 10, se desactiva el otro, se cambia el otro». Era literal:
+    //  `canalDeParam` colapsaba su fila y su luz al canal cero, asi que apagar
+    //  la del 10 escribia la MEZCLA de todos. Como en una mesa, cada tira tiene
+    //  ahora su reverb, y un canal que hace de retorno es una tira mas.
+    //
+    //  La tabla se QUEDA aunque diga lo mismo en las treinta filas, porque es
+    //  el unico interruptor que dice si un tipo tiene una instancia por canal:
+    //  la rotura a proposito de `Tests/canales.py` es poner una fila a `false`,
+    //  y el dia que alguien quiera un retorno compartido de verdad es aqui.
+    static constexpr bool fxPorCanal[kNumFx] = { true, true, true, true, true, true, true,
                                                  true, true, true, true,
-                                                 //  CHO, FLA y PHA: SUMAN y son de SU canal.
                                                  true, true, true, true,
                                                  true, true, true, true, true, true,
                                                  true, true,
-                                                 //  AMB es de la mesa, como DLY y REV: un
-                                                 //  ambiente por canal serian dieciseis salas
-                                                 //  distintas sonando a la vez, que es justo lo
-                                                 //  contrario de lo que un ambiente hace.
-                                                 false,
-                                                 //  Los cinco nuevos que sustituyen son de SU
-                                                 //  canal; PNG es de la mesa, como DLY y REV.
-                                                 true, true, true, false, true, true };
+                                                 true,
+                                                 true, true, true, true, true, true };
     static_assert (sizeof (fxPorCanal) / sizeof (fxPorCanal[0]) == kNumFx,
                    "fxPorCanal tiene que tener una fila por tipo");
+
+    //  ============================================================
+    //  Y LOS CUATRO QUE SE PORTAN COMO UN ENVIO, DENTRO DE SU TIRA
+    //  ============================================================
+    //
+    //  Que DLY, REV, AMB y PNG sean de su canal no los vuelve insertos en
+    //  serie, y la diferencia se oye: con los dos en la misma tira, en serie
+    //  la reverb se come las repeticiones del delay —`REV(x + DLY(x))`— y lo
+    //  que un proyecto guardado sonaba era `x + DLY(x) + REV(x)`, dos
+    //  envios en PARALELO sacados del mismo punto. Asi que estos cuatro:
+    //
+    //    · van al FINAL de la cadena, que es de donde la mesa sacaba su copia
+    //      -«la reverb oye el canal ya ecualizado»- y lo que ya decia la
+    //      cabecera: «Reverb, last in the chain»;
+    //    · toman TODOS la misma entrada, la salida de los insertos;
+    //    · y devuelven solo lo HUMEDO, escalado por su mezcla y por el envio
+    //      del canal, directo al master. El seco pasa una vez.
+    //
+    //  Con eso la suma de treinta y dos reverbs iguales es la reverb de la
+    //  suma -la FDN es lineal y no modula-, o sea que un proyecto de ayer
+    //  suena igual con un aparato por canal. Lo mide `Tests/StressTest.cpp`.
+    static constexpr bool fxEsEnvio[kNumFx] = { false, false, false, true, false, true, false,
+                                                false, false, false, false,
+                                                false, false, false, false,
+                                                false, false, false, false, false, false,
+                                                false, false,
+                                                true,
+                                                false, false, false, true, false, false };
+    static_assert (sizeof (fxEsEnvio) / sizeof (fxEsEnvio[0]) == kNumFx,
+                   "fxEsEnvio tiene que tener una fila por tipo");
 
     //  Y LA RELACION ENTRE LAS DOS, VIGILADA POR EL COMPILADOR: un inserto no
     //  puede NO ser de su canal. Su estado en el motor es uno —un filtro, un
@@ -3377,8 +3395,12 @@ private:
     //  por lo mismo: aqui dentro la clase esta incompleta y no se puede llamar.
 
     //  ============================================================
-    //  EL INDICE DEL BUS: UN INSERTO ES DE UN CANAL, UN ENVIO ES DE TODOS
+    //  EL INDICE DEL BUS: CADA TIPO, UNO POR CANAL
     //  ============================================================
+    //
+    //  El titulo decia «un inserto es de un canal, un envio es de todos», y la
+    //  segunda mitad es la que cayo en la Tanda 30: ver `fxPorCanal`. Lo de
+    //  abajo es como se llego a la primera y se deja por eso.
     //
     //  Llego del telefono: «hay un error cuando colocas en diferentes canales
     //  ciertos efectos como un ecualizador, solo es posible que funcione y sea
@@ -3424,7 +3446,7 @@ private:
     //  que CHO, FLA y PHA son de su canal. `kNumIns` sigue contando los que
     //  RESTAN SECO —lo publica el banco y lo usa el reparto— y esto cuenta los
     //  que tienen UNO POR CANAL. Eran el mismo numero y ya no lo son: 18 y 21.
-    static constexpr int kNumPorCanal = 26;
+    static constexpr int kNumPorCanal = 30;
     static constexpr int contarPorCanal() noexcept
     {
         int n = 0;
@@ -3479,28 +3501,37 @@ private:
     //  `renderNextBlock`; ejecutarlos en el orden en el que la persona arrastra
     //  pide sacarlos a funciones, y eso es otra tanda. Se dice en vez de fingir
     //  que la lista ya manda.
-    int primerFxDe (int canal) const noexcept
+    //
+    //  Y LOS CUATRO DE `fxEsEnvio` VAN DETRAS DE TODOS, que es donde el cuerpo
+    //  de sus etapas esta escrito -al final del bucle de canal- y de donde la
+    //  mesa sacaba su copia. El orden de esta funcion y el del codigo tienen
+    //  que ser EL MISMO: un eslabon que le pasa su salida a otro cuya etapa ya
+    //  corrio este bloque la deja en un bus que nadie procesa, y el canal se
+    //  queda mudo. Por eso son dos pasadas y no una tabla: primero los
+    //  insertos por indice, despues los cuatro por indice.
+    bool enCadena (int canal, int f) const noexcept
     {
-        for (int f = 0; f < kNumFx; ++f)
-            if (fxPorCanal[f] && canalSend[(size_t) canal][(size_t) f]
-                                   .load (std::memory_order_relaxed) > 0.0f)
-                return f;
-        return -1;
+        return fxPorCanal[f] && canalSend[(size_t) canal][(size_t) f]
+                                   .load (std::memory_order_relaxed) > 0.0f;
     }
+
+    int primerFxDe (int canal) const noexcept { return siguienteFxDe (canal, -1); }
 
     int siguienteFxDe (int canal, int fx) const noexcept
     {
-        for (int f = fx + 1; f < kNumFx; ++f)
-            if (fxPorCanal[f] && canalSend[(size_t) canal][(size_t) f]
-                                   .load (std::memory_order_relaxed) > 0.0f)
-                return f;
+        const bool desdeEnvio = fx >= 0 && fx < kNumFx && fxEsEnvio[fx];
+        if (! desdeEnvio)
+            for (int f = fx + 1; f < kNumFx; ++f)
+                if (! fxEsEnvio[f] && enCadena (canal, f)) return f;
+        for (int f = desdeEnvio ? fx + 1 : 0; f < kNumFx; ++f)
+            if (fxEsEnvio[f] && enCadena (canal, f)) return f;
         return -1;
     }
 
     static constexpr int busDe (int canal, int fx) noexcept
     {
         const int i = canalIdx (fx);
-        if (i < 0) return fx;                       // DLY y REV son de todos
+        if (i < 0) return fx;                       // un tipo sin canal: uno para todos
         const int c = (canal < 0 || canal >= kNumCanales) ? 0 : canal;
         return kNumFx + i * kNumCanales + c;
     }
@@ -3517,10 +3548,9 @@ private:
     //  argumento que ya vale para `copyStateFrom`, cuyo propio comentario dice
     //  que ese sitio ya se olvido tres veces.
     //
-    //  Lo que NO entra aqui son los CINCO ENVIOS -DLY, REV, CHO, FLA y PHA-,
-    //  que siguen siendo unicos: su linea de retardo, su reverb y sus LFO se
-    //  quedan en la clase. Un envio existe para que varias fuentes entren en
-    //  la misma cola.
+    //  Aqui decia que los ENVIOS no entraban -«su linea de retardo, su
+    //  reverb y sus LFO se quedan en la clase»- y desde la Tanda 30 entran los
+    //  treinta: ver `fxPorCanal` y el bloque de la mesa al final del struct.
     //
     //  Y tampoco los PARAMETROS: `fxP` es lo que la persona mueve y lo que se
     //  guarda; esto es lo que el hilo de audio se lleva de un bloque al
@@ -3700,6 +3730,75 @@ private:
         bool  repWasActive = false;
         float repFaseAnt = 0.0f;
 
+        //  ============================================================
+        //  Y LA MESA DE LA TIRA: DLY, REV, AMB y PNG
+        //  ============================================================
+        //
+        //  Vivian en la clase, UNO para las treinta y dos tiras. Ver
+        //  `fxPorCanal`: la queja fue apagar la reverb del canal 10 y que se
+        //  callara la del 4.
+        //
+        //  Y ESTOS SI PESAN, que es lo que los separa de todo lo de arriba: una
+        //  linea de un segundo en estereo son 375 KiB a 48 kHz. Los treinta y
+        //  dos canales con los cuatro reservados serian unos 28 MiB en una app
+        //  cuya gama baja tiene 64 de techo. Asi que NO se reservan en
+        //  `prepareToPlay`: los reserva `reservaMesa` el dia que un canal
+        //  enciende uno de los cuatro, fuera del hilo de audio, y el hilo de
+        //  audio no los toca hasta que `mesaLista` lo publica. Un canal que
+        //  nunca los usa no paga nada.
+        //
+        //  NACEN SIN MEMORIA: el constructor de `DelayLine` con cero muestras y
+        //  sin canales no reserva nada, y la FDN tampoco hasta su `prepare`.
+
+        //  LAGRANGE, NO LINEAL, PORQUE HAY REALIMENTACION.
+        //
+        //  Interpolar linealmente un retardo fraccionario no es aproximar: es un
+        //  paso bajo cuya frecuencia de corte depende de la PARTE FRACCIONARIA
+        //  del retardo. Con una sola pasada eso se perdona; aqui la linea se
+        //  realimenta hasta 0.95, asi que el error se COMPONE en cada repeticion.
+        //  Medido en el banco -8 kHz, 1600.5 muestras de retardo y 0.9 de
+        //  realimentacion-: la octava repeticion salia 5.9 dB por debajo de lo
+        //  que la realimentacion sola predice. Con Lagrange, 0.7 dB.
+        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> dlyLine { 0 };
+        //  Los suavizados del delay, de ~20 ms: un salto por bloque a traves de
+        //  una linea interpolada es un chasquido en cada movimiento de TIME.
+        float smDlyFb   = 0.35f;
+        float smDlySamp = 0.0f;      // el retardo en muestras, suavizado por muestra
+
+        //  EL AMBIENTE: una linea y ocho tomas, sin realimentacion. SIN
+        //  INTERPOLAR, porque las tomas son fijas: un Lagrange por toma serian
+        //  ocho filtros por muestra para leer la misma muestra entera.
+        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> ambLine { 0 };
+
+        //  EL PING-PONG: una linea de dos canales con la realimentacion
+        //  CRUZADA -lo que sale por la izquierda vuelve por la derecha-, y
+        //  Lagrange por lo mismo que el delay.
+        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pngLine { 0 };
+        float smPngSamp = 0.0f, smPngFb = 0.0f;
+
+        //  LA SALA. Ver Fdn.h: cuatro lineas primas entre si y dos difusores.
+        Fdn reverb;
+
+        //  QUE LA MESA DE ESTA TIRA ESTA RESERVADA, publicado con `release`
+        //  por quien la reserva y leido con `acquire` por el hilo de audio: es
+        //  lo que garantiza que cuando el audio ve `true` ve tambien las lineas
+        //  enteras. Nunca vuelve a `false` con el flujo en marcha.
+        std::atomic<bool> mesaLista { false };
+
+        //  Y SUS SUAVIZADOS ARRANCAN EN SU DESTINO, por lo mismo que
+        //  `cebaSuavizados`: un delay recien reservado o un rebote que desliza
+        //  desde el defecto mete un barrido de TIME en el primer compas.
+        void cebaMesa (const std::array<std::array<std::atomic<float>, kNumParFx>, kNumFx>& fila,
+                       double fs) noexcept
+        {
+            const auto v = [&fila] (int f, int par) noexcept
+            { return fila[(size_t) f][(size_t) par].load (std::memory_order_relaxed); };
+            smDlyFb   = v (kFxDly, 1);
+            smDlySamp = (float) (v (kFxDly, 0) * 0.001 * fs);
+            smPngFb   = v (kFxPng, 1);
+            smPngSamp = (float) (v (kFxPng, 0) * 0.001 * fs);
+        }
+
         //  LOS SUAVIZADOS ARRANCAN YA EN SU DESTINO, y esto vive AQUI y no
         //  suelto en `copyStateFrom` por la razon que ese sitio ya lleva
         //  escrita: es la lista que se ha olvidado TRES veces. Con dieciseis
@@ -3726,10 +3825,22 @@ private:
         }
     };
 
-    //  Y DIECISEIS, uno por canal. `Inserto` no tiene punteros ni reserva
-    //  fuera de `frzVent` y `pitLine`, que se dimensionan en `prepareToPlay`
-    //  como se dimensionaban antes.
+    //  Y TREINTA Y DOS, uno por canal. `Inserto` no tiene punteros y reserva
+    //  en dos sitios: `frzVent`, `pitLine` y compania en `prepareToPlay`, como
+    //  siempre, y la mesa -ver `reservaMesa`- cuando un canal la pide.
     std::array<Inserto, kNumCanales> ins;
+
+    //  LA RESERVA DE LA MESA, y su cerrojo, que NO toca el hilo de audio: lo
+    //  cogen `reservaMesa` -el hilo de mensajes o el del rebote- y
+    //  `prepareToPlay` -con el flujo parado-, y lo unico que el audio lee es
+    //  `Inserto::mesaLista`. `mesaPedida` es «este canal la quiere», y existe
+    //  porque un proyecto se abre ANTES de que haya dispositivo: sin ella, lo
+    //  que se pidio sin tasa de muestreo se perderia al preparar.
+    std::mutex mesaCerrojo;
+    std::array<bool, kNumCanales> mesaPedida {};
+    double mesaFs = 0.0;          // la tasa con la que se reserva; cero = sin preparar
+    int    mesaBloque = 0;
+    bool   preparaMesa (int canal) noexcept;
 
 public:
     //  LA PUERTA ACOTADA, que es la hermana de `fxParamDe` para el ESTADO: el
@@ -3819,8 +3930,9 @@ private:
     //  envio a medio cerrar. Solo del hilo de audio, como smSend.
     std::array<bool, kNumPads> smSendHot {};
     //  Un buffer por BUS y no por tipo. Ver `busDe`: los primeros `kNumFx`
-    //  siguen siendo los del tipo -que es lo que usan los cinco envios- y
-    //  detras van los dieciseis insertos por los dieciseis canales.
+    //  son los del tipo sin canal -ninguno desde la Tanda 30, y los usaria una
+    //  fila de `fxPorCanal` puesta a `false`- y detras van los treinta tipos
+    //  por los treinta y dos canales.
     std::array<juce::AudioBuffer<float>, kNumBuses> fxBus;
 
     //  EL SECO DE CADA ESLABON, uno por canal. Es lo que hace que el MIX de una

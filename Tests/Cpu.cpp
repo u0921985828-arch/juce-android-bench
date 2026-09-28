@@ -325,12 +325,19 @@ int main()
     {
         const auto monton_e = std::make_unique<AudioEngine>();
         AudioEngine& e = *monton_e; prepara (e);
-        for (int f = 0; f < AudioEngine::kNumFx; ++f)
-        {
-            e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
-            e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
-            e.setFxParam (0, f, 2, 1.0f);
-        }
+        //  LOS MANDOS EN CADA CANAL, y no solo en el 0. Hasta la Tanda 30 los
+        //  cuatro envios colapsaban su fila al canal 0 y esta fila los tenia a
+        //  mix 1 en los dieciseis canales sin pedirlo; desde que son de cada
+        //  canal, escribir solo el 0 dejaba quince canales con los treinta
+        //  efectos a mix 0 -mudos, sin coste- y la fila salia MAS barata sin
+        //  que el motor hubiera mejorado nada.
+        for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+            for (int f = 0; f < AudioEngine::kNumFx; ++f)
+            {
+                e.setFxParam (c, f, 0, AudioEngine::kFxDef[f][0]);
+                e.setFxParam (c, f, 1, AudioEngine::kFxDef[f][1]);
+                e.setFxParam (c, f, 2, 1.0f);
+            }
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
@@ -340,6 +347,67 @@ int main()
             for (int f = 0; f < AudioEngine::kNumFx; ++f) e.setCanalSend (c, f, 0.5f);
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         fila ("16 pads en 16 CANALES -> TODOS", corre (e, buf, 2000));
+    }
+
+    //  EL PEOR CASO DE LA TANDA 30: treinta y dos canales, cada uno con SU
+    //  delay, SU reverb, SU ambiente y SU ping-pong, y un pad sonando en cada
+    //  uno. Antes eran cuatro aparatos para toda la mesa; ahora son ciento
+    //  veintiocho, y esta fila es la que dice lo que cuesta.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
+        constexpr int kMesa[] = { AudioEngine::kFxDly, AudioEngine::kFxRev,
+                                  AudioEngine::kFxAmb, AudioEngine::kFxPng };
+        for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+            for (int f : kMesa)
+            {
+                e.setFxParam (c, f, 0, AudioEngine::kFxDef[f][0]);
+                e.setFxParam (c, f, 1, AudioEngine::kFxDef[f][1]);
+                e.setFxParam (c, f, 2, 1.0f);
+                e.setCanalSend (c, f, 0.5f);
+            }
+        //  `prepara` carga dieciseis: los otros dieciseis, aqui, o la mitad
+        //  de los canales mediria su efecto sin nada que procesar.
+        for (int p = 16; p < AudioEngine::kNumCanales; ++p)
+        {
+            e.setPadGain (p, 0.85f);
+            e.publishSample (p, makeSample (44100.0, 2.0, 55.0f * (float) (p + 1)));
+        }
+        for (int p = 0; p < AudioEngine::kNumCanales; ++p)
+        {
+            e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
+            e.setPadCanal (p, p);
+        }
+        corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < AudioEngine::kNumCanales; ++p) e.postNoteOn (p, 0.9f); });
+        fila ("32 pads en 32 CANALES -> DLY REV AMB PNG", corre (e, buf, 2000));
+    }
+
+    //  Y EL CASO DE LA PERSONA, que es el que se toca: la caja en el canal 4
+    //  con SU reverb, el Skank en el 10 con OTRA, y un delay en el 9 -el
+    //  testigo `09-mesa-vieja`-, con los dieciseis pads repartidos. La fila de
+    //  arriba es el techo imposible; esta es la que dice lo que cuesta tener
+    //  las reverbs separadas en una sesion de verdad.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
+        const struct { int canal, fx; } kCaso[] = { { 4, AudioEngine::kFxRev },
+                                                    { 10, AudioEngine::kFxRev },
+                                                    { 9, AudioEngine::kFxDly } };
+        for (auto k : kCaso)
+        {
+            e.setFxParam (k.canal, k.fx, 0, AudioEngine::kFxDef[k.fx][0]);
+            e.setFxParam (k.canal, k.fx, 1, AudioEngine::kFxDef[k.fx][1]);
+            e.setFxParam (k.canal, k.fx, 2, 1.0f);
+            e.setCanalSend (k.canal, k.fx, 0.5f);
+        }
+        constexpr int kCanalDe[] = { 4, 10, 9 };
+        for (int p = 0; p < 16; ++p)
+        {
+            e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
+            e.setPadCanal (p, kCanalDe[p % 3]);
+        }
+        corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
+        fila ("16 pads, REV en el 4 y el 10, DLY en el 9", corre (e, buf, 2000));
     }
 
     //  Y LO QUE CUESTA EL MEDIDOR DEL CANAL QUE SE MIRA.

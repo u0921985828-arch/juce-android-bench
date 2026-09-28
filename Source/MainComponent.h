@@ -448,6 +448,7 @@ private:
     bool tocaPadDetras (juce::Point<int> p);
     //  Los siete mandos de la tira, apuntando al paso tocado del pad elegido.
     void refrescaTiraPaso();
+    bool pasoEditable() const;       // el paso que la tira edita esta encendido
     //  Las dos herramientas del piano. Excluyentes: con las dos apagadas se
     //  dibuja, que es lo que hace falta el 90% del tiempo.
     juce::TextButton pianoLapizBtn { "LAPIZ" }, pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
@@ -1940,6 +1941,7 @@ public:
     //  LAS SEIS RANURAS DE LA FILA DE EFECTOS. Ver Tests/ranuras.py.
     void auditRanuras();
     void auditCanales();
+    void auditPasos();
     void auditRack();
     //  LOS PRESETS DE CADA EFECTO. Ver Tests/presets.py.
     void auditFxPresets();
@@ -3614,8 +3616,11 @@ private:
     //  lo sea: `fxOn` era una fila de veintiuno y con dieciseis canales el
     //  mismo tipo puede estar encendido en uno y apagado en el de al lado.
     //  Quien decide que casilla se mira es `AudioEngine::canalDeParam`, que es
-    //  la MISMA condicion con la que el motor indexa `fxP`: un envio colapsa
-    //  al canal cero, asi que su luz es una y no dieciseis.
+    //  la MISMA condicion con la que el motor indexa `fxP`. Un envio colapsaba
+    //  al canal cero y su luz era una para toda la mesa: encender la reverb del
+    //  canal 10 encendia la del 4. Desde la Tanda 30 no colapsa ninguno, y la
+    //  consulta se queda para que el dia que un tipo vuelva a ser de la mesa la
+    //  luz lo siga sola.
     std::array<std::array<bool, kNumFx>, kNumCanales> fxOn {};
     bool  fxEncendido (int fx) const
     { return juce::isPositiveAndBelow (fx, kNumFx)

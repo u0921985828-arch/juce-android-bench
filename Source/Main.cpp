@@ -642,6 +642,12 @@ public:
                     {
                         c2->auditCanales();
                     }
+                    //  LOS PASOS NO SE PISAN Y EL TAPEO ES PLANO. Ver
+                    //  Tests/pasos.py.
+                    else if (UiAudit::env ("ZATI_PASOS").isNotEmpty())
+                    {
+                        c2->auditPasos();
+                    }
                     //  LA FILA DEL RACK: inserto contra envio, y la miniatura.
                     //  Ver Tests/rack.py.
                     else if (UiAudit::env ("ZATI_RACK").isNotEmpty())

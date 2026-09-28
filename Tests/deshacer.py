@@ -76,8 +76,15 @@ SIN_RED = {
                             " onInstElegido y eligePreset toman la foto antes"
                             " de encolar la sintesis, y el banco llama sin cara"
                             " que deshacer",
-    "resintetizaInstrumento": "la toman los dos que llaman: el arrastre de un mando"
-                              " en onDragStart -una sola por arrastre- y VOLVER",
+    #  Y lo mismo con la RE-sintesis, que se fue a la hebra en la tanda 27
+    #  (1610 ms el peor soltar un mando): `resintetizaInstrumento` ya solo
+    #  encola, y el perdon se quedo con su nombre -la regla lo canto como
+    #  perdon huerfano y a `montaResintesis` como pad pisado sin foto, las dos
+    #  caras del mismo renombre-. La foto sigue donde estaba: antes de encolar.
+    "montaResintesis": "lo saca del buzon en el hilo de mensajes: la foto la"
+                       " toman los dos que llaman a resintetizaInstrumento, el"
+                       " arrastre de un mando en onDragStart -una sola por"
+                       " arrastre- y VOLVER, antes de encolar",
 }
 
 
