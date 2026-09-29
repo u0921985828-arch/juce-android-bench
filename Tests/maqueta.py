@@ -175,6 +175,48 @@ def tokens():
     fin = txt.find("\nclass ZatiLookAndFeel", corte)
     fin = len(txt) if fin < 0 else fin
     met, laf = {}, {}
+    #  LO QUE `ZatiColours` DECLARA Y `Metrics` CITA.
+    #
+    #  `bandaTitulo` es `banda (fLabel + labelExtra)` y `labelExtra` vale
+    #  `ZatiColours::labelExtra`, que vive ANTES del corte y ademas se declara
+    #  `inline constexpr` y no `static constexpr`: el bucle de abajo no lo veia
+    #  por partida doble y `bandaTitulo` salia huerfano, o sea la banda de
+    #  titulo de las veintiuna fichas sin juzgar. Se lee lo de antes del corte
+    #  con la misma cuenta y se mete en el ambito.
+    previo = {}
+    for m in re.finditer(r"(?:inline|static)\s+constexpr\s+(?:int|float)\s+(\w+)\s*=\s*([^;]+);",
+                         txt[:corte]):
+        expr = re.sub(r"(\d)f\b", r"\1", m.group(2)).replace("ZatiColours::", "")
+        try:
+            previo[m.group(1)] = eval(expr, {"__builtins__": {}}, dict(previo))  # noqa: S307
+        except Exception:
+            pass
+    #  LAS FUNCIONES `constexpr` DE Metrics, TRADUCIDAS DEL FUENTE Y NO
+    #  COPIADAS AQUI.
+    #
+    #  Desde la tanda 33 media tabla de bandas no es un literal sino una
+    #  llamada -`bandaTitulo = banda (fLabel + labelExtra)`- y sin esto el
+    #  `eval` de abajo levantaba NameError, se comia el token en silencio por
+    #  el `except: continue`... y `contrato()` devolvia cinco huerfanos y
+    #  `expo.py` moria diciendo «ANATOMIA no mide nada». Que muriera es lo
+    #  correcto: la alternativa era medir la anatomia contra un diccionario
+    #  corto.
+    #
+    #  Y se TRADUCE en vez de reescribirse: si esta prueba llevara su propia
+    #  copia de la formula, el dia que la interlinea cambie en la app esto
+    #  seguiria juzgando con la vieja y daria verde por el motivo equivocado.
+    #  Es la leccion de `Tests/maquetas.py` con el 0.78 copiado.
+    funcs = {}
+    for m in re.finditer(r"constexpr\s+int\s+(\w+)\s*\(\s*float\s+(\w+)\s*\)"
+                         r"[^{]*\{\s*return\s+([^;]+);", txt[corte:fin]):
+        nombre, arg, cuerpo = m.group(1), m.group(2), m.group(3)
+        cuerpo = re.sub(r"(\d)f\b", r"\1", cuerpo).replace("(int)", "int")
+        try:
+            funcs[nombre] = eval("lambda %s: %s" % (arg, cuerpo),  # noqa: S307
+                                 {"__builtins__": {"int": int}}, {})
+            funcs[nombre](12.0)
+        except Exception:
+            funcs.pop(nombre, None)
     for ambito, trozo in ((met, txt[corte:fin]), (laf, txt[fin:])):
         for m in re.finditer(r"static\s+constexpr\s+(int|float)\s+([^;]+);", trozo):
             tipo = m.group(1)
@@ -190,9 +232,11 @@ def tokens():
                 #  `halGap` y se perdian la mitad de los tokens -y con ellos,
                 #  los literales que valen lo que ellos-. Una prueba que se come
                 #  su propia tabla da verde por el motivo equivocado.
-                expr = re.sub(r"(\d)f\b", r"\1", expr).replace("Metrics::", "")
+                expr = (re.sub(r"(\d)f\b", r"\1", expr)
+                        .replace("Metrics::", "").replace("ZatiColours::", ""))
                 try:
-                    val = eval(expr, {"__builtins__": {}}, dict(met, **ambito))  # noqa: S307
+                    val = eval(expr, {"__builtins__": {}},  # noqa: S307
+                               dict(previo, **dict(funcs, **dict(met, **ambito))))
                 except Exception:
                     continue
                 if not isinstance(val, (int, float)):
@@ -450,6 +494,46 @@ def main():
         print("FALLA  la tabla ya no tiene %s: la regla del filo y la del radio"
               " no miden nada" % ", ".join(sinfilo))
         return 1
+
+    #  Y LAS CUATRO BANDAS SALEN DE LA LETRA, que es lo unico que esta regla
+    #  no podia preguntar.
+    #
+    #  En la tanda 33 las cuatro pasaron de ser un numero a ser una llamada
+    #  -`bandaTitulo = banda (fLabel + labelExtra)`- y la rotura a proposito
+    #  que lo tenia que proteger, volver a escribir `bandaTitulo = 16` a mano,
+    #  salio VERDE en las tres puertas que podian verla: `expo.py` no la ve
+    #  porque `ANATOMIA` compara la banda publicada contra el token y los dos
+    #  se mueven juntos -esta escrito en el plan de la tanda y es cierto-, y
+    #  esta prueba tampoco, porque su tabla lee el VALOR y 16 es un entero tan
+    #  legitimo como 20. O sea: el trabajo de derivar las bandas no tenia
+    #  juez, y sin juez vuelve a caerse en la siguiente tanda como ya se cayo
+    #  el papel `titulo` con cuatro alturas.
+    #
+    #  Lo que se mide es la DEFINICION y no el valor, que es lo unico que
+    #  distingue «20 porque la letra mide 14 + 2 y su interlinea» de «20
+    #  porque alguien escribio 20».
+    BANDAS = ("bandaFina", "bandaSubtitulo", "bandaTitulo", "bandaParrafo")
+    defBanda, sinBanda = {}, []
+    for t in BANDAS:
+        m = re.search(r'constexpr\s+int\s+%s\s*=\s*([^;]+);' % t, src)
+        if m is None:
+            sinBanda.append(t)
+        else:
+            defBanda[t] = " ".join(m.group(1).split())
+    if sinBanda:
+        print("FALLA  Metrics ya no declara %s: la regla de la banda derivada"
+              " no mide nada" % ", ".join(sinBanda))
+        return 1
+    aMano = [(t, d) for t, d in sorted(defBanda.items())
+             if not re.search(r'\bbanda\s*\(', d)]
+    if aMano:
+        print("FALLA  %d bandas llevan el alto a mano en vez de salir de"
+              " Metrics::banda (cuerpo de letra + interlinea):" % len(aMano))
+        for t, d in aMano:
+            print("  Metrics::%s = %s" % (t, d))
+        return 1
+    print("bandas derivadas: %s"
+          % "  ".join("%s=%s" % (t, defBanda[t]) for t in BANDAS))
 
     fallas, sueltos, tam, porValor, fronteras = barre(met, laf or {})
 

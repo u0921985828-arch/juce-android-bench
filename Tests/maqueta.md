@@ -57,6 +57,7 @@ frontera; entre dos filas del mismo grupo, el aire de fila.
 | `fila` | `xs` |
 | `seccion` | `bandaSubtitulo` |
 | `pie` | `bandaSubtitulo` |
+| `parrafo` | `bandaParrafo` |
 | `canalon` | `canalonSeccion` |
 
 Tres cosas que la tabla no dice y hay que leer aqui:
@@ -97,9 +98,37 @@ los iconos contada desde el otro lado.
 | `titulo` | el nombre de la ficha. Uno por ficha | `bandaTitulo` |
 | `subtitulo` | la segunda linea de la cabecera | `bandaSubtitulo` |
 | `dato` | el renglon de ayuda, una banda por linea | `bandaSubtitulo` |
+| `parrafo` | un renglon de CUERPO -el texto de la guia- | `bandaParrafo` |
 | `seccion` | el rotulo de un grupo del cuerpo | se imprime, no se juzga |
 | `chapa` | el rotulo grande de identidad -la familia del instrumento- | suya |
 | `cristal` | una lectura sobre pantalla -el preset- | del cristal |
+
+**Un renglon que se LEE no es el pie de una ficha.** El cuerpo de la GUIA se
+apunto en la tanda 33 -antes se dibujaba con `drawFittedText` a pelo y era
+invisible para el banco- y salio con el papel `dato`, que este contrato ata a
+`bandaSubtitulo`: **3060 incumplimientos de ANATOMIA de una tacada**, y ni uno
+era un fallo de maqueta. Era un papel prestado, la misma figura que el `titulo`
+con cuatro alturas de aqui arriba. El parrafo tiene su banda -`bandaParrafo`,
+que es de donde sale `kManualLineH`- y por eso se puede juzgar.
+
+Y esa banda ya no es un numero: desde la tanda 33 las cuatro -`bandaFina`,
+`bandaSubtitulo`, `bandaTitulo` y `bandaParrafo`- salen de `Metrics::banda`,
+que es el cuerpo de letra mas su interlinea redondeado a par. `bandaParrafo`
+son DOS de esas, porque el renglon de la guia deja que `drawFittedText` parta
+en dos lineas. Aqui se sigue nombrando el token y no el pixel, que es la regla
+de la seccion 1; lo que cambia es que ahora el pixel tampoco esta escrito a
+mano en `Metrics`.
+
+Y **eso lo juzga `maqueta.py` leyendo la DEFINICION y no el valor**, que es la
+unica forma de distinguir «20 porque la letra mide 14 + 2 y su interlinea» de
+«20 porque alguien escribio 20». Hizo falta porque la rotura a proposito que
+tenia que proteger este trabajo -volver a escribir `bandaTitulo = 16` a mano-
+salio **verde en las tres puertas que podian verla**: `ANATOMIA` compara la
+banda publicada contra el token y los dos se mueven juntos, y la tabla de
+tokens de esta prueba lee el valor, donde 16 es un entero tan legitimo como 20.
+Con la regla puesta, la misma rotura imprime `FALLA 1 bandas llevan el alto a
+mano`. Un trabajo sin juez se vuelve a caer a la tanda siguiente, que es
+exactamente lo que le paso al papel `titulo` con cuatro alturas.
 
 **El rotulo de seccion se imprime y no se juzga**, y esa es la unica pieza de la
 anatomia que no entra en el veredicto. Tiene DOS formas legitimas y el volcado

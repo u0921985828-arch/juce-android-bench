@@ -648,6 +648,84 @@ def judge_tapado(rows, size, lang, sheet):
     #  rotulo» es el ALTO; el ancho es lo que se esta midiendo. La exencion de
     #  elidir sigue valiendo sola: `pide == 0` nunca dispara `pide > w`.
     pin = [r for r in rows if r.get("rotulo") and r.get("h", 0) > 0]
+
+    #  ------------------------------------------------------------------
+    #  PEQUENO y APRETADO: cuanto mide la letra, que es lo que no medía nadie.
+    #
+    #  El volcado publica `cuerpoLetra` por rotulo desde la tanda 30 y el
+    #  propio comentario que lo puso (`UiAudit.h`) dice para que: «cinco
+    #  tamanos con nombre mas CATORCE sitios con un literal. Se apunta antes de
+    #  escribir ninguna regla». El censo se hizo y la regla no, asi que el dato
+    #  llevaba tandas saliendo por la salida estandar sin que ningun script lo
+    #  leyera. Censado ahora en 412x915 x (es, ar): **610 rotulos, 254 por
+    #  debajo de 12 px** — 222 a diez, 28 a nueve, 4 a once — y el papel
+    #  `seccion` aparece a NUEVE, DIEZ, DOCE y TRECE, que es el mismo hallazgo
+    #  de las cuatro alturas del papel `titulo` que cuenta `Tests/maqueta.md`
+    #  con otra pieza.
+    #
+    #  EL SUELO ES DE LA PRUEBA Y NO DE `Metrics`, que es la regla de la casa:
+    #  una prueba que lee la constante que juzga cambia de opinion a la vez que
+    #  el fallo. Sale de la referencia del sistema sobre el que corre esto:
+    #  Material 3 pone su escalon mas pequeno -`label-small`- en 11 sp y SOLO
+    #  para rotulos, y lo que alguien lee empieza en 12 (`body-small`). Doce,
+    #  para todo: el censo dice que en esta app no hay ningun papel que no se
+    #  lea, asi que un suelo mas bajo «para rotulos» seria una excepcion sin
+    #  caso — y una categoria declarada que no usa nadie es media regla.
+    #
+    #  SE JUZGA EL TAMANO DECLARADO Y NO EL ENCAJE. Hubo un campo de «alto de
+    #  letra contra alto de banda» y se retiro con su medida: `Font::getHeight`
+    #  es ascendente mas descendente -el hueco que la linea RESERVA- y «ZATI
+    #  SAMPLER» declara 26.0 con catorce pixeles de tinta. Preguntar si CABE
+    #  con este numero es la pregunta que no contesta; preguntar si es
+    #  DEMASIADO PEQUENO si, porque el cuerpo declarado es exactamente lo que
+    #  se le pidio a la fuente.
+    #
+    #  Y APRETADO es la otra mitad, porque un cuerpo de 9 dibujado al 0.85 no
+    #  son 9: `drawFittedText` condensa la letra hasta ese factor y condensar
+    #  es hacerla menos legible. El liston es 0.9: condensar por encima del
+    #  10 % deja de ser la misma tipografia.
+    #
+    #  PERO NO A TODOS LOS PAPELES, y esto se escribio mal la primera vez. El
+    #  comentario que iba aqui decia que 0.9 «es ademas el que la app ya usa en
+    #  casi todas partes» y que los unicos que se salian eran tres sitios. Eso
+    #  no se habia medido. Censado sobre la corrida entera —9 tamanos x 4
+    #  idiomas x 62 fichas— salen **164 grupos** y ninguno es de los tres:
+    #  96 `titulo` al 0.85, 35 `seccion` al 0.75, 28 `dato` al 0.80, 4
+    #  `subtitulo` al 0.85 y 1 `dato` al 0.85. Una regla justificada con «lo
+    #  que la app ya hace» sobre un «ya hace» inventado es la misma figura que
+    #  el `MIN_SECTION = 3.00` que esta tanda acaba de tumbar en `skins.py`.
+    #
+    #  Y medido ASI, la regla uniforme se contradice con una decision que este
+    #  proyecto ya tomo midiendo. `Metrics::canalonSeccion` —el canalon de 44
+    #  px donde vive el rotulo de una fila de chips— lleva escrito: pedir el
+    #  canalon con el texto puesto quita catorce pixeles a los chips y sale
+    #  PEOR, 3492 incumplimientos del dedo contra 3498, asi que *entre un
+    #  rotulo apretado y uno cortado no hay duda*. Para un NOMBRE en un hueco
+    #  fijo —`titulo`, `seccion`— la alternativa a condensar es cortar, y
+    #  cortar se lee peor que condensar.
+    #
+    #  La PROSA no tiene ese dilema: tiene una tercera salida que un nombre no
+    #  tiene —parte en dos renglones, o se cae entera, que es lo que
+    #  `pintaAyuda` ya hace con `cabeEntero`—. Asi que APRETADO juzga los
+    #  papeles que llevan frases (`parrafo`, `gesto`, `dato`, `subtitulo`) y no
+    #  los que llevan nombres. Los nombres los sigue juzgando CORTADO, que es
+    #  la regla que de verdad les toca: al subir la escala, «MOVIMIENTO» paso a
+    #  pedir 57 px en un canalon de 44 y salio por ahi.
+    MIN_LETRA   = 12.0
+    MIN_APRETON = 0.90
+    PAPEL_PROSA = ("parrafo", "gesto", "dato", "subtitulo", "capitulo")
+    for r in pin:
+        cuerpo = r.get("cuerpoLetra", 0.0)
+        if 0.0 < cuerpo < MIN_LETRA:
+            out.append(("PEQUENO", f"{size}/{lang}/{sheet or 'face'}",
+                        f'{r["tipo"]} "{r["rotulo"]}" a {cuerpo:.1f} px, minimo {MIN_LETRA:.0f}',
+                        cuerpo - MIN_LETRA))
+        apr = r.get("apreton", 1.0)
+        if r.get("tipo") in PAPEL_PROSA and apr < MIN_APRETON - 1e-6:
+            out.append(("APRETADO", f"{size}/{lang}/{sheet or 'face'}",
+                        f'{r["tipo"]} "{r["rotulo"]}" al {apr:.2f}, minimo {MIN_APRETON:.2f}',
+                        apr - MIN_APRETON))
+
     for r in pin:
         if r.get("pide", 0) > r["w"]:
             out.append(("CORTADO", f"{size}/{lang}/{sheet or 'face'}",
@@ -1146,7 +1224,8 @@ def judge_marco(rows, size, lang, sheet):
 #  TARJETA y antes la del porcentaje de iconos.
 # ============================================================================
 #  Que papel del volcado es cada pieza del contrato.
-PAPEL = {"titulo": "titulo", "subtitulo": "subtitulo", "dato": "pie"}
+PAPEL = {"titulo": "titulo", "subtitulo": "subtitulo", "dato": "pie",
+         "parrafo": "parrafo"}
 
 
 def judge_anatomia(rows, size, lang, sheet, piezas):
@@ -1787,7 +1866,8 @@ def main():
     duros = [k for k in ("TRUNC", "SQUEEZE", "OVERLAP", "OFFSCREEN", "CELDA",
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
-                         "CHIPS", "ANATOMIA", "TARJETA", "SOBRA", "CRASH") if juzgado.get(k)]
+                         "CHIPS", "ANATOMIA", "TARJETA", "SOBRA", "PEQUENO", "APRETADO",
+                         "CRASH") if juzgado.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

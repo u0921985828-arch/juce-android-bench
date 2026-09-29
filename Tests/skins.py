@@ -52,10 +52,38 @@ MIN_TEXT    = 4.50   # AA: la tinta sobre la tapa que la lleva
 MIN_CELL    = 25.0   # dE: un paso puesto contra el hueco de una celda vacia
 MIN_WELL    = 6.0    # dE: el hueco contra la tarjeta en la que esta
 #  Texto de verdad, no tapas: aqui si manda WCAG. 4.5 para lo que hay que leer
-#  seguido - la pantalla - y 3.0 para los rotulos de seccion, que van en
-#  mayusculas grandes y espaciadas y entran en la excepcion de texto grande.
+#  seguido - la pantalla - y para el rotulo de seccion, que NO entra en la
+#  excepcion de texto grande por mucho que vaya en mayusculas.
+#
+#  ESTE NUMERO VALIA 3.00 SOBRE UNA PREMISA QUE NADIE HABIA MEDIDO. El
+#  comentario decia «van en mayusculas grandes y espaciadas y entran en la
+#  excepcion de texto grande», y la excepcion de WCAG 1.4.3 no la concede una
+#  descripcion: la concede un TAMANO -18.66 px en negrita o 24 en redonda-.
+#  Medido con el volcado, el rotulo de seccion de esta app se pinta a 12.0 px
+#  en cuatro sitios y a 13.0 en dos: la mitad del umbral. La excepcion no
+#  aplicaba y el liston llevaba tandas siendo un punto y medio mas blando de
+#  lo que le toca. Es la misma figura que el `androidPluginVersion` de
+#  `Tests/fuentes.py`: un numero citado como si mandara.
+#
+#  Y AHORA EL TAMANO SE LEE DE UNA CORRIDA -ver `tam_seccion`- en vez de
+#  suponerse aqui: el dia que el rotulo de seccion suba de verdad por encima
+#  de los 24 px, la excepcion se concede sola y con su medida detras.
 MIN_LCD     = 4.50   # la tinta de la pantalla sobre el cristal
-MIN_SECTION = 3.00   # el rotulo de una seccion sobre su tarjeta
+#  WCAG 1.4.3: «texto grande» es 18.66 px en negrita o 24 px en redonda. El
+#  rotulo de seccion no es negrita -`labelFont` no lo es-, asi que el umbral
+#  que le toca es el de redonda.
+WCAG_GRANDE = 24.0
+MIN_SECTION_GRANDE = 3.00
+MIN_SECTION_NORMAL = 4.50
+#  LA TINTA APAGADA sobre la tarjeta. Es TEXTO -la 2.ª columna de GESTOS, las
+#  unidades, los datos secundarios- asi que le toca el 4.50 de AA y no el 3.00
+#  de lo que no se lee. Censado antes de escribir el liston, que es la regla de
+#  la casa: PAPEL 5.17, GRAFITO 5.26, ACERO 5.25 y LACA 4.5042. Las cuatro
+#  pasan, y LACA por cuatro milesimas: la columna nace en verde y lo que hace
+#  es que la proxima carcasa -o el proximo retoque de `inkDim`- no pueda
+#  bajarla en silencio. Una regla no tiene que nacer en rojo para servir; tiene
+#  que poder ponerse en rojo, y esta se rompe moviendo `inkDim` un escalon.
+MIN_DIM     = 4.50
 #  El anillo del mando contra el chasis. El mando es HUECO a proposito - la
 #  cara deja ver el chasis - asi que lo unico que lo dibuja es su borde: si ese
 #  borde no se separa del chasis, no hay mando, hay un numero flotando.
@@ -77,7 +105,23 @@ MIN_KNOB    = 3.00
 MIN_CHROMA  = 1.00
 
 #  Los alfas con los que la app dibuja cada una de esas tres cosas.
-SECTION_ALPHA = 0.55   # paintPadSheetContent
+#
+#  EL DE LA SECCION SE LEE DEL FUENTE y no se copia: estaba escrito A MANO en
+#  NUEVE sitios de la app y una decima vez AQUI, y una prueba que copia la
+#  constante que juzga cambia de opinion a la vez que el fallo. Ahora la app
+#  lo tiene con nombre -`Metrics::alfaSeccion`- y esto lo lee de ahi, que es
+#  lo mismo que ya se hace con los colores y con los ocho zatis.
+def alfa_seccion():
+    src = open (LNF, encoding="utf8").read()
+    src = re.sub (r'//[^\n]*', '', src)
+    m = re.search (r'alfaSeccion\s*=\s*([0-9.]+)f', src)
+    if m is None:
+        sys.exit ("no encuentro Metrics::alfaSeccion en ZatiLookAndFeel.h: "
+                  "sin el, el contraste del rotulo de seccion se mediria con "
+                  "un alfa inventado.")
+    return float (m.group (1))
+
+SECTION_ALPHA = alfa_seccion()
 KNOB_ALPHA    = 0.85   # drawRotarySlider
 #  ...y el del PANEL que agrupa varios controles. Ver MainComponent::pintaPaneles.
 PANEL_ALPHA   = 0.16
@@ -86,6 +130,48 @@ PANEL_ALPHA   = 0.16
 #  una placa. Si esto se queda corto, el borde existe en la tabla y no en la
 #  pantalla - que es la clase de fallo que no falla, se publica.
 BORDE_ALPHA   = 0.12
+
+#  EL TAMANO DEL ROTULO DE SECCION, LEIDO DE UNA CORRIDA DE LA APP.
+#
+#  No se puede sacar del fuente como se sacan los colores: el tamano no es una
+#  constante, lo pone quien llama a `pintaTitulo` con un `g.setFont` justo
+#  antes, y hay diecisiete sitios. Lo que la app sabe, la app lo dice: el
+#  volcado publica `cuerpoLetra` en cada rotulo pintado desde la tanda 30.
+#
+#  Si no se puede medir, esto FALLA y no se salta. Un liston que se ablanda
+#  solo porque la pantalla virtual no estaba levantada es exactamente la linea
+#  que imprime OK que esta casa no escribe.
+BIN = os.environ.get ("ZATI_BIN") or os.path.join (
+          HERE, "..", "build", "Zati_artefacts", "Release", "Zati")
+PANTALLA = os.environ.get ("DISPLAY", ":99")
+#  Las fichas donde hay rotulo de seccion. Escritas y no adivinadas: con una
+#  sola ficha la medida depende de cual toco, y el liston tiene que salir del
+#  PEOR caso de la app y no de la primera pantalla que se abra.
+FICHAS_SECCION = ["", "pad", "audio", "aspecto", "gest", "inst", "fx"]
+
+
+def tam_seccion():
+    """El cuerpo de letra MAS GRANDE con el que la app pinta un rotulo de
+    seccion, medido. Devuelve None si no se pudo medir ni uno."""
+    import subprocess, json
+    vistos = []
+    for ficha in FICHAS_SECCION:
+        env = dict (os.environ, ZATI_AUDIT="1", ZATI_SIZE="412x915",
+                    ZATI_LANG="es", ZATI_OPEN=ficha, DISPLAY=PANTALLA)
+        try:
+            out = subprocess.run ([BIN], env=env, capture_output=True,
+                                  timeout=120).stdout.decode ("utf8", "replace")
+        except Exception:
+            continue
+        for linea in out.splitlines():
+            linea = linea.strip()
+            if not linea.startswith ("{"): continue
+            try: d = json.loads (linea)
+            except Exception: continue
+            if d.get ("tipo") == "seccion" and d.get ("cuerpoLetra", 0.0) > 0.0:
+                vistos.append (float (d["cuerpoLetra"]))
+    return max (vistos) if vistos else None
+
 
 #  Los ocho fragmentos, LEIDOS DE Zati.h. No dependen de la carcasa - el color
 #  es del sistema de zatis y de nada mas - asi que un paso puesto lleva siempre
@@ -215,14 +301,30 @@ def ink_on (d, surface):
 #  no con quince indices escritos a mano: ver el comentario de la fila.
 TITULOS = ['apag/enc', 'escalon', 'tinta/tapa', 'tinta/acento', 'paso/hueco',
            'hueco/tarj', 'panel/tarj', 'borde/pan', 'pantalla', 'seccion',
-           'mando', 'tira', 'zonas', 'filo/pad', 'zati/acento']
-ANCHOS  = [9, 8, 11, 13, 10, 11, 11, 10, 9, 8, 7, 6, 7, 9, 12]
+           'apagada', 'mando', 'tira', 'zonas', 'filo/pad', 'zati/acento']
+ANCHOS  = [9, 8, 11, 13, 10, 11, 11, 10, 9, 8, 8, 7, 6, 7, 9, 12]
 
 def main():
     skins = parse()
     ZATI = zati_colours()
     SIG  = signal_colours()
     bad = []
+    #  EL LISTON DEL ROTULO DE SECCION SALE DE UNA MEDIDA Y NO DE UN ADJETIVO.
+    #  Ver MIN_SECTION_*: la excepcion de texto grande de WCAG se concede por
+    #  tamano, y el tamano lo dice la app.
+    tam = tam_seccion()
+    if tam is None:
+        sys.exit ("no he podido medir el cuerpo del rotulo de seccion "
+                  "(binario %s, pantalla %s): sin esa cifra el liston de "
+                  "'seccion' seria un numero inventado, asi que esta prueba "
+                  "no mide nada." % (BIN, PANTALLA))
+    MIN_SECTION = (MIN_SECTION_GRANDE if tam >= WCAG_GRANDE
+                   else MIN_SECTION_NORMAL)
+    print ("rotulo de seccion medido a %.1f px: %s de WCAG (%.0f px), "
+           "liston %.2f" % (tam,
+                            "entra en la excepcion de texto grande"
+                            if tam >= WCAG_GRANDE else "POR DEBAJO del texto grande",
+                            WCAG_GRANDE, MIN_SECTION))
     print (f"{'carcasa':9} " + " ".join (f"{t:>{w}}" for t, w in zip (TITULOS, ANCHOS)))
     for name, d in zip (SKINS, skins):
         #  La sombra cae sobre la superficie que hay detras de la tapa, que es
@@ -292,6 +394,13 @@ def main():
             #  disfrazada de decision de estilo, y nadie la habia medido.
             "rotulo de seccion":        (ratio (over (d['ink'], d['top'], SECTION_ALPHA), d['top']),
                                          MIN_SECTION),
+            #  LA TINTA APAGADA SOBRE LA TARJETA, que es el gris medio con el
+            #  que se pinta media app -la 2.ª columna de GESTOS va con
+            #  `inkDim` PELADO, sin alfa- y que no juzgaba nadie: la tabla
+            #  tenia tinta-sobre-tapa, tinta-sobre-acento, cristal y seccion,
+            #  y el gris de lo secundario se colaba entre las cuatro. Un color
+            #  que ya ES un gris medio no necesita alfa para quedarse corto.
+            "tinta apagada":            (ratio (d['inkDim'], d['top']), MIN_DIM),
             #  EL ANILLO DEL MANDO contra el chasis que se ve por dentro.
             "anillo del mando":         (ratio (over (d['ink'], d['panel'], KNOB_ALPHA), d['top']),
                                          MIN_KNOB),

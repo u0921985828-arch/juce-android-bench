@@ -718,8 +718,14 @@ public:
         g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
         for (int c = 0; c < barsView; c += 2)
             g.drawText (juce::String (base + c + 1),
+                        //  LA BANDA SALE DE LA LETRA y no de un 9 escrito a
+                        //  mano: con `fTiny` a 8 colaba de milagro, y al subir
+                        //  la escala a 11 los numeros de compas se habrian
+                        //  quedado sin descendente dentro de una banda que ya
+                        //  no les llega. Ver Metrics::banda.
                         (int) ((float) r.getX() + gutter + barW * (float) c) + 2, r.getY(),
-                        (int) barW, 9, juce::Justification::topLeft);
+                        (int) barW, Metrics::banda (Metrics::fTiny),
+                        juce::Justification::topLeft);
     }
 
     //  Un marco alrededor del LIENZO y no de la ficha, por lo mismo que en el

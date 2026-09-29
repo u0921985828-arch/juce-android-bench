@@ -6000,11 +6000,11 @@ void MainComponent::resized()
                      + Metrics::sm + nameH + Metrics::hit             // EUCLIDES
                      + Metrics::sm + nameH + Metrics::hit;            // REJILLA
             };
-            auto pide = [&] (int lc, int cadena)
+            auto pide = [&] (int lc, int cadena, bool pie)
             {
                 return chrome + (pasoDosCol ? juce::jmax (colACon (cadena), colBCon (lc))
                                           : stepBandsCon (lc, cadena))
-                              + Metrics::sm + kSeqFootH;
+                              + (pie ? Metrics::sm + kSeqFootH : 0);
             };
 
             //  CABE O NO CABE, con la misma pregunta que ya deciden BANCO y
@@ -6024,15 +6024,25 @@ void MainComponent::resized()
             //  rota alli de todas formas. Y si al quitar la cadena vuelve a
             //  haber sitio, los bloqueos vuelven: la prioridad es esa y no el
             //  orden en que se pregunta.
+            //  Y EL TERCER ESCALON ES EL PIE. Los dos de arriba se agotaron
+            //  con la escala de la tanda 33: en 640x360, con los bloqueos y la
+            //  cadena YA caidos, la pagina seguia pidiendo 336 px sobre una
+            //  tarjeta de 324 y `expo.py` lo canto ocho veces como `TARJETA`.
+            //  Lo ultimo que se suelta es el renglon que dice que paso se
+            //  edita: es lo unico de la pagina que no ACTUA sobre nada, y la
+            //  rejilla de arriba ya ensena cual esta tocado.
             const bool quiereLock = (pasoAqui && tiraFilas < 3);
             int lockCost = quiereLock ? bandH : 0;
             int cadenaAqui = cadenaCost;
-            if (pide (lockCost, cadenaAqui) > topeSeq && lockCost > 0) lockCost = 0;
-            if (pide (lockCost, cadenaAqui) > topeSeq)                 cadenaAqui = 0;
-            if (quiereLock && lockCost == 0 && pide (bandH, cadenaAqui) <= topeSeq) lockCost = bandH;
+            bool pieAqui = true;
+            if (pide (lockCost, cadenaAqui, pieAqui) > topeSeq && lockCost > 0) lockCost = 0;
+            if (pide (lockCost, cadenaAqui, pieAqui) > topeSeq)                 cadenaAqui = 0;
+            if (pide (lockCost, cadenaAqui, pieAqui) > topeSeq)                 pieAqui = false;
+            if (quiereLock && lockCost == 0 && pide (bandH, cadenaAqui, pieAqui) <= topeSeq) lockCost = bandH;
             seqLocksAqui  = (lockCost > 0);
             seqCadenaAqui = (cadenaAqui > 0);
-            wanted = pide (lockCost, cadenaAqui);
+            seqPieAqui    = pieAqui;
+            wanted = pide (lockCost, cadenaAqui, pieAqui);
         }
 
         //  LA PAGINA DEL PIANO pide lo suyo: la rejilla de tono se lleva todo lo
@@ -6291,8 +6301,16 @@ void MainComponent::resized()
             //  con dos numeros.
             const auto fDato = ZatiColours::monoFont (Metrics::fMeta, true)
                                    .withExtraKerningFactor (0.10f);
+            //  Y CON EL AIRE QUE `dejaSitio` LE VA A QUITAR. La banda de la
+            //  cadena la recorta `dejaSitio` contra CINCO tapas con
+            //  `Metrics::sm` de separacion, y esta cuenta solo reservaba UNA:
+            //  con la escala de la tanda 33 el renglon se quedo con 69 px
+            //  pidiendo 73 en 280x653, cuatro `CORTADO` por cuatro pixeles.
+            //  Reservar con una cuenta y recortar con otra es la figura que
+            //  este bloque ya tiene escrita dos parrafos mas arriba.
             const int pideCadena = (seqPage == seqPagePiano) ? 0
-                : (int) std::ceil (juce::GlyphArrangement::getStringWidth (fDato, T ("sin cadena")));
+                : (int) std::ceil (juce::GlyphArrangement::getStringWidth (fDato, T ("sin cadena")))
+                    + Metrics::sm;
 
             const bool cabe = titleRow.getWidth() >= Metrics::hit + Metrics::xs
                                                        + parDelPiano
@@ -7427,8 +7445,16 @@ void MainComponent::resized()
                 b->setVisible (true);
 
             //  The foot line first, so no column can lay a control over it.
-            seqFootArea = inner.removeFromBottom (kSeqFootH);
-            inner.removeFromBottom (Metrics::sm);
+            //  Y solo si la cuenta de la altura lo reservo: colocar lo que no
+            //  se pidio es exactamente como la ULTIMA fila de la columna se
+            //  queda sin sitio, que es lo que ya costo un mando de 393x0.
+            if (seqPieAqui)
+            {
+                seqFootArea = inner.removeFromBottom (kSeqFootH);
+                inner.removeFromBottom (Metrics::sm);
+            }
+            else
+                seqFootArea = {};
 
             //  Two columns rotated, one stacked upright - the same four groups
             //  either way, so the card never has to be taller than it is wide.

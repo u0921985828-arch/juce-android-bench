@@ -424,7 +424,7 @@ public:
                     //  casillas es lo unico que dice donde empieza la nota.
                     if (cu > 4)
                     {
-                        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+                        g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
                         g.fillRect (barra.withWidth (2.0f));
                     }
 

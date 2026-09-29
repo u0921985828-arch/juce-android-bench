@@ -1018,7 +1018,12 @@ private:
     //  ...and the line at the foot of the PASO page that names the step being
     //  edited. Reserved by resized() for the same reason: drawn from the card's
     //  bottom edge without being booked, it landed on the swing slider.
-    static constexpr int kSeqFootH = 14;
+    //  Y ES LA BANDA DEL CONTRATO, no un catorce a mano. Era `14`, que fue el
+    //  valor de `Metrics::bandaSubtitulo` hasta que la tanda 33 lo derivo de la
+    //  escala de tipo: el renglon siguio midiendo catorce mientras la letra que
+    //  lleva dentro subia, y `ANATOMIA` lo canto 38 veces -«la banda de pie
+    //  mide 14 px y el contrato dice 18»- en las cuatro lenguas.
+    static constexpr int kSeqFootH = Metrics::bandaSubtitulo;
     //  Cuantas filas de mandos del paso se llevo la tira de la rejilla en la
     //  ultima maqueta. Lo apunta resized() y lo lee paint(): es lo que decide
     //  si la pagina del patron todavia tiene algo del paso que explicar.
@@ -1067,9 +1072,17 @@ private:
     //  con un rectangulo, y hasta ahora solo se le podian dar tapas. En CANCION
     //  el titulo y la ayuda se apartaban cada uno de las dos tapas del renglon
     //  y NINGUNO del otro - 112 hallazgos, 46x16 px de solape.
+    //  `minimo` hace DOS cosas y hasta ahora se confundian: es el factor con el
+    //  que se va a apretar la letra, y CERO significa ademas «no juzgues si el
+    //  ancho cabe». Los cuatro sitios que ponen cero -las dos columnas de
+    //  GESTOS, la ruta del navegador- SI aprietan, a 0.9, 0.85 y 0.7, y con un
+    //  solo parametro publicaban un apreton de 1.0 que es falso. `apreton` por
+    //  debajo de cero quiere decir «el mismo que `minimo`», que es el caso de
+    //  todos los demas.
     juce::Rectangle<int> apunta (juce::Graphics& g, juce::Rectangle<int> caja,
                                  const juce::String& texto, const char* tipo,
-                                 float minimo = 1.0f, int lineas = 1);
+                                 float minimo = 1.0f, int lineas = 1,
+                                 float apreton = -1.0f);
     void ponTransporte (bool on);
     void ponModoCancion (bool on);
     //  `apretar` a cero deja el `drawText` de siempre; por encima de cero se
@@ -3438,6 +3451,14 @@ private:
     bool seqLocksAqui = false;
     //  Y si se quedo con la fila de la CADENA. Misma razon.
     bool seqCadenaAqui = true;
+    //  Y si se quedo con el renglon del pie. Misma razon, y es el TERCER
+    //  escalon de esa escalera: con la escala de la tanda 33 la pagina pide
+    //  336 px sobre una tarjeta de 324 en 640x360 con los bloqueos y la cadena
+    //  YA caidos, o sea que los dos escalones que habia se agotaron y
+    //  `TARJETA` lo canto ocho veces. Lo que queda por soltar es el renglon que
+    //  dice que paso se edita, que es lo unico de la pagina que no hace nada:
+    //  la misma escalera que ya deciden BANCO, PADS y la cabecera de la cara.
+    bool seqPieAqui = true;
     //  Y si la pagina de CANCION se quedo con su fila de herramientas de
     //  arreglo. Misma razon, y ver donde se decide: en 412x480 la pagina pide
     //  434 px sobre una tarjeta de 368 con el carril YA en su suelo, asi que

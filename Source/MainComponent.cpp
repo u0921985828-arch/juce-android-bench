@@ -8364,7 +8364,7 @@ void MainComponent::releaseResources()
 //  titulada "MIX" a mano durante meses.
 juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<int> caja,
                                             const juce::String& texto, const char* tipo,
-                                            float minimo, int lineas)
+                                            float minimo, int lineas, float apreton)
 {
     auto real = caja;
     const int pide  = (int) std::ceil (juce::GlyphArrangement::getStringWidth (
@@ -8408,7 +8408,13 @@ juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<i
                      (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                           g.getCurrentFont(), texto)
                                           * minimo / (float) juce::jmax (1, lineas)),
-                     g.getCurrentFont().getHeight(), lineas);
+                     g.getCurrentFont().getHeight(), lineas,
+                     //  Y EL APRETON SUELTO, ademas de disuelto en `pide`. Ver
+                     //  UiAudit::Rotulo: multiplicado no se puede despejar, y
+                     //  es la mitad del tamano real de un rotulo. Quien no dice
+                     //  el suyo aprieta lo que dice `minimo`, y si `minimo` es
+                     //  cero -«no juzgues el ancho»- no aprieta nada.
+                     apreton >= 0.0f ? apreton : (minimo > 0.0f ? minimo : 1.0f));
     return real;
 }
 
@@ -8417,9 +8423,25 @@ bool MainComponent::pintaAyuda (juce::Graphics& g, juce::Rectangle<int> banda,
                                 float apreton, int lineas)
 {
     //  «Cabe entero» de una sola linea, que es lo que esta funcion existia
-    //  para preguntar. Con varias, `drawFittedText` reparte por palabras y la
-    //  pregunta la contesta el propio reparto.
+    //  para preguntar.
     if (lineas <= 1 && ! cabeEntero (g, banda, texto, apreton))
+        return false;
+
+    //  Y CON VARIAS TAMBIEN SE PREGUNTA. Decia aqui que «con varias,
+    //  `drawFittedText` reparte por palabras y la pregunta la contesta el
+    //  propio reparto», y eso es falso: `drawFittedText` reparte lo que puede
+    //  y lo que no lo CORTA. El pie de tres renglones de la ficha del
+    //  instrumento salio por ahi en la tanda 33 -«pide 223 tiene 217» en
+    //  280x653, en las cuatro lenguas- sin que nadie lo hubiera decidido.
+    //
+    //  La condicion es la misma que juzga `CORTADO`, y es NECESARIA y no
+    //  suficiente a proposito: un texto de ancho W no cabe en N renglones de
+    //  menos de W/N, asi que no puede tirar nada que si se lea. Y la salida es
+    //  la que esta casa ya tiene escrita en cinco sitios: lo que no cabe
+    //  entero no sale.
+    if (lineas > 1
+         && (int) std::ceil (juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), texto)
+                               * apreton / (float) lineas) > banda.getWidth())
         return false;
 
     apunta (g, banda, texto, "dato", apreton, lineas);
@@ -16974,7 +16996,7 @@ void MainComponent::tourPrepara (int paso)
 //  Ver MainComponent::tourBodyFont.
 juce::Font MainComponent::tourBodyFont()
 {
-    return ZatiColours::monoFont (Metrics::fLabel + 3.0f, false).withExtraKerningFactor (0.02f);
+    return ZatiColours::monoFont (Metrics::fBody, false).withExtraKerningFactor (0.02f);
 }
 
 int MainComponent::tourBodyHeight (int ancho) const

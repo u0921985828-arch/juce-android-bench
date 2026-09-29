@@ -555,7 +555,7 @@ void MainComponent::paint (juce::Graphics& g)
             const bool touched = macroTouched[(size_t) i];
 
             // Label names, readout measures — never the other way round.
-            g.setColour (touched ? ZatiColours::ink : ZatiColours::ink.withAlpha (0.55f));
+            g.setColour (touched ? ZatiColours::ink : ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
             g.setFont (ZatiColours::labelFont (touched ? 10.5f : 10.0f, 0.16f));
             g.drawText (touched ? macroParamLabel (i) : macroBaseLabel (i),
                         r.getX() - 8, r.getY() - ZatiLookAndFeel::kCtrlName + ZatiLookAndFeel::kTextPad,
@@ -931,7 +931,7 @@ void MainComponent::paintBrowseSheetContent (juce::Graphics& g)
     //  por orden: enteros, apretados, y donde ni asi, fuera.
     if (picked)
     {
-        apunta (g, browseSubRow, sub, "dato", 0.0f);
+        apunta (g, browseSubRow, sub, "dato", 0.0f, 1, 1.0f);
         g.drawText (sub, browseSubRow, Lang::start(), true);
     }
     else
@@ -971,7 +971,8 @@ void MainComponent::paintBusy (juce::Graphics& g)
     g.setColour (ZatiColours::lcdFg);
     g.drawText (busyWhat, label, Lang::start(), true);
     g.setColour (ZatiColours::lcdDim);
-    g.drawText (time, timeCell.withHeight (14).withY (label.getY()), Lang::end());
+    g.drawText (time, timeCell.withHeight (Metrics::bandaSubtitulo)
+                              .withY (label.getY()), Lang::end());
 
     //  La barra. Con progreso cuando se sabe - exportar y cargar un kit lo
     //  saben - y un bloque que va y viene cuando no: decodificar no puede
@@ -1344,13 +1345,18 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
         //  que el ancho de la cadena entera no dice si se lee — un texto que
         //  parte por palabras cabe en la mitad de lo que mide. La regla del
         //  rotulo cortado es de una linea y estas no lo son.
-        apunta (g, howCell, T (rows[i].how), "gesto", 0.0f);
-        g.drawFittedText (T (rows[i].how), howCell, Lang::start(), 2, 0.9f);
+        apunta (g, howCell, T (rows[i].how), "gesto", 0.0f, 1, 1.0f);
+        g.drawFittedText (T (rows[i].how), howCell, Lang::start(), 2, 1.0f);
 
-        g.setColour (ZatiColours::inkDim);
+        //  LA COLUMNA QUE MENOS SE LEIA DE TODA LA APP, y la que la queja
+        //  senalaba: `inkDim` PELADO -un gris medio, sin alfa- a `fFine` 9
+        //  apretado a 0.85, o sea 7.7 px reales. Tres golpes a la vez sobre
+        //  el mismo texto. Ahora lleva la misma tinta que la columna de al
+        //  lado -esto se LEE, no es un pie de foto- y no se aprieta.
+        g.setColour (ZatiColours::ink.withAlpha (0.92f));
         g.setFont (ZatiColours::monoFont (Metrics::fFine));
-        apunta (g, text, T (rows[i].what), "gesto", 0.0f);
-        g.drawFittedText (T (rows[i].what), text, Lang::start(), 2, 0.85f);
+        apunta (g, text, T (rows[i].what), "gesto", 0.0f, 1, 1.0f);
+        g.drawFittedText (T (rows[i].what), text, Lang::start(), 2, 1.0f);
     }
 }
 
@@ -1504,16 +1510,25 @@ void MainComponent::paintManualBody (juce::Graphics& g)
             if (ver->isVisible())
                 band = antesDe (band.translated (0, 0), *ver);
         const auto secText = T (ch.title);
-        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+        g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.22f));
         //  Apuntado para el banco: es lo unico que hace que «cuantos capitulos
         //  se dibujan» sea una cifra y no una lectura. Ver Tests/plano.py.
         //
-        //  Y APRETADO HASTA Metrics::apretonAyuda, porque desde que cada
-        //  capitulo lleva su ENSENAMELO el titulo tiene media banda: en 280x653
-        //  «GRABAR Y REMUESTREAR» pedia 138 px con 120, y otros cinco igual.
-        apunta (g, band, secText, "capitulo", Metrics::apretonAyuda);
-        g.drawFittedText (secText, band, Lang::start(), 1, Metrics::apretonAyuda);
+        //  EN DOS RENGLONES, Y NO APRETADO. Desde que cada capitulo lleva su
+        //  ENSENAMELO el titulo tiene media banda: en 280x653 «GRABAR Y
+        //  REMUESTREAR» pedia 138 px con 120, y otros cinco igual. Se tapaba
+        //  condensando; con la escala de la tanda 33 pide 172 sobre los mismos
+        //  120 y condensar ya no alcanza -salia CORTADO en once titulos entre
+        //  las dos lenguas largas-.
+        //
+        //  La banda es `kManualTitleH`, o sea `Metrics::btn` = 44 px: caben dos
+        //  renglones de sobra, asi que el segundo no cuesta un pixel de alto.
+        //  Y un titulo de capitulo es lo unico de esta ficha que NO se puede
+        //  dejar caer -es el indice-, asi que la salida es partirlo, que es
+        //  ademas como se lee un titulo largo en cualquier indice de papel.
+        apunta (g, band, secText, "capitulo", Metrics::apretonAyuda, 2);
+        g.drawFittedText (secText, band, Lang::start(), 2, Metrics::apretonAyuda);
 
         const float tw = juce::GlyphArrangement::getStringWidth (
                              ZatiColours::labelFont (Metrics::fMeta, 0.22f), secText);
@@ -1536,9 +1551,26 @@ void MainComponent::paintManualBody (juce::Graphics& g)
                 g.setColour (Zati::colour (c).withAlpha (0.9f));
                 g.fillEllipse ((float) dot.getX() + 2.0f, (float) dot.getCentreY() - 2.5f, 5.0f, 5.0f);
                 g.setColour (ZatiColours::ink.withAlpha (0.92f));
-                g.setFont (ZatiColours::monoFont (Metrics::fMeta));
-                g.drawFittedText (T (gf.how) + "  " + juce::String (juce::CharPointer_UTF8 ("\xc2\xb7")) + "  " + T (gf.what),
-                                  row.reduced (Metrics::aireTapa, 0), Lang::start(), 2, 0.9f);
+                g.setFont (ZatiColours::monoFont (Metrics::fBody));
+                //  Y APUNTADOS, que es lo que faltaba. El CUERPO de la guia
+                //  -sus dieciocho capitulos y la tabla de gestos que repite-
+                //  se dibujaba a pelo, sin pasar por `apunta`, asi que no salia
+                //  en el volcado de rotulos: la pantalla cuyo trabajo entero es
+                //  explicar la app era la unica cuyo texto el banco no podia
+                //  medir. Es el mismo argumento por el que las dieciseis
+                //  cadenas de la pagina AYUDA se apuntaron en la tanda 30.
+                //  `pide` en CERO porque son dos lineas: el ancho de la cadena
+                //  entera no dice si se lee.
+                //  Y `lineas` en UNO, que no es lo mismo: en el volcado
+                //  `lineas` son BANDAS -es lo que `ANATOMIA` multiplica por el
+                //  token del papel, ver Tests/maqueta.md- y esto es UNA banda
+                //  de `kManualLineH` dentro de la cual `drawFittedText` puede
+                //  partir en dos. Puesto a dos, el contrato pedia 60 px para
+                //  una banda de 30 y salieron 3060 incumplimientos.
+                const auto gtxt = T (gf.how) + "  " + juce::String (juce::CharPointer_UTF8 ("\xc2\xb7")) + "  " + T (gf.what);
+                auto gcaja = row.reduced (Metrics::aireTapa, 0);
+                apunta (g, gcaja, gtxt, "gesto", 0.0f, 1, 1.0f);
+                g.drawFittedText (gtxt, gcaja, Lang::start(), 2, 1.0f);
             }
 
         for (const char* line : ch.lines)
@@ -1554,8 +1586,16 @@ void MainComponent::paintManualBody (juce::Graphics& g)
             g.fillEllipse ((float) dot.getX() + 2.0f, (float) dot.getCentreY() - 2.5f, 5.0f, 5.0f);
 
             g.setColour (ZatiColours::ink.withAlpha (0.92f));
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta));
-            g.drawFittedText (guiaTexto (line), row.reduced (Metrics::aireTapa, 0), Lang::start(), 2, 0.9f);
+            g.setFont (ZatiColours::monoFont (Metrics::fBody));
+            //  Ver el bloque de arriba: el cuerpo de la guia tambien se apunta.
+            //  Con papel PROPIO -`parrafo`- y no `dato`: `dato` es el renglon
+            //  de ayuda de una ficha y el contrato lo ata a `bandaSubtitulo`
+            //  (14), asi que prestarselo al cuerpo de la guia -que vive en
+            //  bandas de `kManualLineH`- saco 3060 ANATOMIA de golpe.
+            const auto ltxt = guiaTexto (line);
+            auto lcaja = row.reduced (Metrics::aireTapa, 0);
+            apunta (g, lcaja, ltxt, "parrafo", 0.0f, 1, 1.0f);
+            g.drawFittedText (ltxt, lcaja, Lang::start(), 2, 1.0f);
         }
 
         r.removeFromTop (kManualGap);
@@ -1569,7 +1609,28 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
     auto inner = manualSheet.areaContenido();
     //  Se para antes del boton de cerrar, como todas las demas fichas - y por
     //  el lado en el que ESTE, que en arabe es el izquierdo.
-    auto titleRow = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+    //  ¿HAY SUBTITULO? SE PREGUNTA ANTES DE COLOCAR EL TITULO, que es lo que
+    //  hace `altoCabecera` en las otras dos fichas que tienen segunda linea.
+    //  Aqui estaba escrito a mano -`bandaTitulo + bandaSubtitulo` siempre- y
+    //  desde que el subtitulo se cae donde no cabe, la cabecera reservaba dos
+    //  lineas para una: `CABECERA` lo canto en 360x640 y 280x653.
+    //
+    //  La banda se consume IGUAL cuando no se dibuja: los capitulos de abajo
+    //  los coloca `resized()` con sus ENSENAMELO, asi que subirlos dieciocho
+    //  pixeles dejaria cada titulo separado de su tapa.
+    const auto guiaSub = T ("lo que hay que saber, en %1 capitulos",
+                            Lang::ltr (juce::String (kManualChapterCount)));
+    bool hayGuiaSub = false;
+    {
+        auto sonda = antesDe (inner.withHeight (Metrics::bandaSubtitulo)
+                                   .translated (0, Metrics::bandaTitulo),
+                              manualCloseButton);
+        g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+        hayGuiaSub = cabeEntero (g, sonda, guiaSub, Metrics::apretonAyuda);
+    }
+    const int cabGuia = altoCabecera (hayGuiaSub);
+
+    auto titleRow = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo), cabGuia),
                              manualCloseButton);
 
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
@@ -1589,12 +1650,19 @@ void MainComponent::paintManualSheetContent (juce::Graphics& g)
     //
     //  Apuntado y recortado antes de la x, como el titulo: se dibuja con
     //  drawText y no era un componente, asi que no lo veia nadie.
-    //  Y APRETADO donde no cabe entero: pedia 206 px con 181 en 280x653.
-    pintaTitulo (g, antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
-                             manualCloseButton),
-                 T ("lo que hay que saber, en %1 capitulos",
-                    Lang::ltr (juce::String (kManualChapterCount))),
-                 "subtitulo", false, 0.85f);
+    //
+    //  Y YA NO SE APRIETA: SE CAE. Se dibujaba al 0.85 porque «pedia 206 px
+    //  con 181 en 280x653», y con la escala de la tanda 33 pide 227 con los
+    //  mismos 181, o sea que el apreton ya no tapaba el agujero: salia
+    //  APRETADO **y** CORTADO a la vez. Condensar un cuarto para que quepa
+    //  media frase es lo peor de las dos salidas. Esta linea no lleva ningun
+    //  dato que no se vea -la GUIA esta abierta delante- asi que donde no
+    //  cabe entera no sale, que es la misma escalera de `pintaAyuda`,
+    //  BANCO, PADS y la cabecera de la cara.
+    const auto subRow = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), cabGuia),
+                                 manualCloseButton);
+    if (hayGuiaSub)
+        pintaTitulo (g, subRow, guiaSub, "subtitulo", false, Metrics::apretonAyuda);
 }
 
 // Build the chips from what THIS device actually offers. Nothing is
@@ -1613,7 +1681,8 @@ void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
     auto label = [&g] (juce::Rectangle<int> ctrl, const juce::String& text)
     {
         if (ctrl.isEmpty()) return;
-        g.drawText (text, ctrl.withY (ctrl.getY() - 14).withHeight (14),
+        g.drawText (text, ctrl.withY (ctrl.getY() - Metrics::bandaSubtitulo)
+                              .withHeight (Metrics::bandaSubtitulo),
                     juce::Justification::centredLeft, false);
     };
     label (midiOutBtn.getBounds(), T ("MANDAR NOTAS A"));
@@ -1977,7 +2046,7 @@ void MainComponent::paintMandosContent (juce::Graphics& g)
         for (int p = 0; p < 3; ++p) if (enPlato[p] == mandosFichaDestino[i]) suyo = p;
         juce::String nombre = nombreDestino (mandosFichaDestino[i]);
         if (suyo >= 0) nombre = Lang::ltr (juce::String (suyo + 1)) + " " + dot + " " + nombre;
-        g.setColour (suyo >= 0 ? ZatiColours::accent : ZatiColours::ink.withAlpha (0.55f));
+        g.setColour (suyo >= 0 ? ZatiColours::accent : ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         g.drawText (nombre, bandAbove (*k, ZatiLookAndFeel::kKnobName, ZatiLookAndFeel::kKnobNameGap,
                                        ZatiLookAndFeel::kKnobNameBleed),
@@ -2016,7 +2085,7 @@ void MainComponent::paintEqBandaContent (juce::Graphics& g)
     //  lector de pantalla no pueden ser dos cadenas mantenidas a mano.
     if (const char* clave = claveDeMando (eqQKnob))
     {
-        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+        g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         g.drawText (T (clave), bandAbove (eqQKnob, ZatiLookAndFeel::kKnobName, ZatiLookAndFeel::kKnobNameGap, ZatiLookAndFeel::kKnobNameBleed),
                     juce::Justification::centred);
@@ -2071,7 +2140,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             const auto r = padSectionArea[(size_t) i];
             if (r.isEmpty()) continue;
 
-            g.setColour (ZatiColours::ink.withAlpha (0.55f));
+            g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
             g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.22f));
             //  Sitting on the bottom edge of its band put the word straight
             //  onto the control under it. It keeps its own padding now, and
@@ -2105,7 +2174,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         //
         //  0.55 es el mismo con el que la cara pinta los nombres de sus tres
         //  mandos, medido en Tests/skins.py como "rotulo de seccion".
-        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+        g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         //  placeKnobRow reserves 16 for the name and then insets the knob by
         //  2, so the band is the sixteen pixels that end two above the dial.
@@ -2142,7 +2211,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
         else if (padPage == padPageTrim)
         {
             // Start/End stay linear (a trim range, not a knob): label to the left.
-            g.setColour (ZatiColours::ink.withAlpha (0.55f));
+            g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
             g.setFont (ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f));
             auto lab = [this, &g] (juce::Slider& s)
             {
@@ -2250,7 +2319,13 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
                                         T ("toca el teclado para oir, la rejilla para escribir"),
                                         T ("OCTAVA") + " " + PianoRoll::nombreDe (pianoBase)
                                           + " - " + PianoRoll::nombreDe (pianoBase + pianoGrid.getFilas() - 1),
-                                        "   " + dot + "   ", 0.8f);
+    //  Y CON EL MISMO APRETON CON EL QUE SE VA A DIBUJAR. Preguntaba al 0.80
+    //  y `pintaAyuda` dibuja al `apretonAyuda`: desde que ese paso a 1.0 en la
+    //  tanda 33, `ayudaYDato` decia «cabe» y el pintor la dejaba fuera, asi
+    //  que `altoCabecera` reservaba DOS lineas para una. El titulo se quedaba
+    //  un pixel por debajo del borde de su fila en vez de centrado, y
+    //  `CABECERA` lo canto 55 veces. Dos numeros para la misma pregunta.
+                                        "   " + dot + "   ", Metrics::apretonAyuda);
     g.setFont (fuenteTit);
 
     const int cabPiano = altoCabecera (ayudaPiano.isNotEmpty());
@@ -2293,7 +2368,14 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  99. Se cae la ayuda y queda el dato, que es la misma regla que gobierna
     //  el icono contra la palabra en una tapa. Lo que se dibuje ya se decidio
     //  arriba, que es lo que dice cuanto mide la cabecera.
-    pintaAyuda (g, ayuda, ayudaPiano, Lang::start(), 0.8f);
+    //  Y SIN CONDENSAR, que es lo que cambio en la tanda 33. Este renglon
+    //  se dibujaba al 0.80: una frase de lectura con la letra encogida un
+    //  quinto, que es justo lo que la peticion de esa tanda llamaba «poco
+    //  legible». Condensar solo se gana un sitio donde no lo hay, y aqui hay
+    //  una salida mejor que ya esta escrita dos parrafos mas arriba: donde no
+    //  cabe entera, `pintaAyuda` la deja fuera. Media frase encogida no es
+    //  mejor que ninguna frase.
+    pintaAyuda (g, ayuda, ayudaPiano, Lang::start(), Metrics::apretonAyuda);
 }
 
 //  The PROJECTS card. The name, where it lives, and the list.
@@ -2323,7 +2405,8 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
                              : (projModel.names.isEmpty()
                                     ? T ("sin proyectos - GUARDAR crea el primero")
                                     : T ("elige uno de la lista"));
-    pintaAyuda (g, subRow, subProj, Lang::start(), 0.8f);
+    //  Sin condensar, por lo mismo que la ayuda del piano: ver la tanda 33.
+    pintaAyuda (g, subRow, subProj, Lang::start(), Metrics::apretonAyuda);
 
     //  NAME, and under it the folder these projects actually live in. The
     //  path is there because when a save goes missing the answer is almost
@@ -2356,9 +2439,14 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         //  como el volcado dice «no lo juzgues». Y ademas la que sale en el
         //  banco es la del ANDAMIO: esta casa ya pago una vez que sus hallazgos
         //  crecieran con el nombre del directorio temporal.
-        apunta (g, r, Lang::ltr (raizCache.getFullPathName()), "dato", 0.0f);
-        g.drawFittedText (Lang::ltr (raizCache.getFullPathName()),
-                          r, Lang::start(), 1, 0.7f);
+        //  Y SE ELIDE DE VERDAD, que es lo que el comentario de arriba dice
+        //  y el codigo no hacia: `drawFittedText` con 0.7 no elide, CONDENSA
+        //  -la ruta salia a 6.3 px de ancho real sobre 9 declarados- y una
+        //  ruta condensada no se lee mejor que una cortada: se lee peor que
+        //  las dos. `drawText` con elipsis corta por el final y deja los
+        //  glifos a su tamano.
+        apunta (g, r, Lang::ltr (raizCache.getFullPathName()), "dato", 0.0f, 1, 1.0f);
+        g.drawText (Lang::ltr (raizCache.getFullPathName()), r, Lang::start(), true);
     }
 }
 
@@ -2481,8 +2569,19 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  con la tapa puesta. Es la cadena de siempre y no una cuenta nueva -cada
     //  tapa que se deja fuera saca su propio hallazgo- y `antesDe` decide el
     //  lado comparando los centros, que es lo unico que vale en arabe.
-    auto tituloRow = dejaSitio (centraEnRenglon (inner.removeFromTop (Metrics::bandaTitulo),
-                                                 Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+    //  Y LA CABECERA MIDE LO QUE SE VA A DIBUJAR, no lo que se reservo.
+    //
+    //  Esta cabecera centraba SIEMPRE la pareja titulo+cadena, y desde que el
+    //  renglon de la cadena se cae entero cuando no cabe -«sin cadena» pide 73
+    //  sobre los 69 que deja esta fila en 280x653- quedaba el titulo solo,
+    //  centrado para dos lineas y por tanto NUEVE pixeles alto dentro de su
+    //  fila de tapas: 115..135 contra 114..154, cuatro hallazgos de CABECERA
+    //  en secp, sec, secsel y llena-sec. Es la misma escalera que ya estaba
+    //  escrita en `altoCabecera` para la ayuda del piano, y aqui faltaba:
+    //  primero se arma el texto de la cadena, y el alto de la cabecera sale de
+    //  si ese texto existe. La banda se consume igual en los dos casos, que lo
+    //  que va debajo son las bandas que `resized()` ya reservo.
+    auto tituloRow = dejaSitio (inner.removeFromTop (Metrics::bandaTitulo),
                                 { &seqCloseButton, &pianoPadPickBtn, &midiBtn,
                                   &seqPistasBtn, &seqZoomBtn }, Metrics::sm);
     //  Y CAE POR CAMPOS, como el del piano: el nombre del pad se lee en el pad,
@@ -2496,7 +2595,6 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
                                               ? "   " + padName[(size_t) sp] : juce::String(),
                                           "   " + dot + "   P" + juce::String (selectedPattern + 1) },
                                         0.85f);
-    pintaTitulo (g, tituloRow, t, "titulo", false, 0.85f);
 
     //  The bank selector and the chain toggles used to sit adjacent, look
     //  identical and never say which does what. Now each row is named, and the
@@ -2517,18 +2615,26 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  Lo que se queda es lo que no se puede deducir mirando la maquina: que
     //  no hay cadena. Que repite el patron puesto lo dice la paleta, donde P1
     //  esta encendido.
-    seqChainBand = dejaSitio (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo),
-                                               Metrics::bandaTitulo + Metrics::bandaSubtitulo),
+    seqChainBand = dejaSitio (inner.removeFromTop (Metrics::bandaSubtitulo),
                               { &seqPistasBtn, &seqCloseButton, &pianoPadPickBtn,
                                 &midiBtn, &seqZoomBtn }, Metrics::sm);
 
     juce::String chainStr;
     if (engine.getChainLength() <= 0)
     {
+        //  Y SI NO CABE NI EL PRIMER CAMPO, NO SALE NINGUNO. `campoAcampo`
+        //  suma campos «mientras quepan enteros» pero da el primero por
+        //  bueno sin preguntar: con la escala de la tanda 33 «sin cadena»
+        //  paso a pedir 73 px sobre los 69 que deja esta fila en 280x653 y
+        //  salia CORTADO cuatro veces. Media palabra no dice que no hay
+        //  cadena; la paleta, con P1 encendido, si dice que repite el patron
+        //  puesto. Es la escalera de siempre.
         chainStr = campoAcampo (g.getCurrentFont(), seqChainBand.getWidth(),
                                 T ("sin cadena"),
                                 { "  " + dot + "  "
                                     + T ("repite P%1", juce::String (selectedPattern + 1)) });
+        if (! cabeEntero (g, seqChainBand, T ("sin cadena"), 1.0f))
+            chainStr = {};
     }
     else
     {
@@ -2540,6 +2646,20 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
                                     ? "   " + dot + "  " + T ("suena P%1", juce::String (engine.getPlayingPattern() + 1))
                                     : juce::String() });
     }
+
+    //  Y AHORA SI, con el texto de la cadena ya decidido, el alto de la
+    //  cabecera y el centrado de las dos bandas.
+    const int cabSeq = altoCabecera (chainStr.isNotEmpty());
+    tituloRow    = centraEnRenglon (tituloRow,    cabSeq);
+    seqChainBand = centraEnRenglon (seqChainBand, cabSeq);
+
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, tituloRow, t, "titulo", false, 0.85f);
+
+    g.setColour (ZatiColours::inkDim);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
+
     //  Apuntado al pintarlo y no calculado aparte, para que la banda que se
     //  repinta sea LA MISMA que se dibuja: dos cuentas del mismo rectangulo
     //  en dos sitios distintos es como quedan renglones a medio borrar.
@@ -2781,7 +2901,11 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
     //  como un fallo, y esta es SOLO ayuda -no lleva ningun dato que no se vea
     //  en la pantalla-, asi que se cae entera. La misma escalera que ya deciden
     //  BANCO, PADS y la cabecera de la cara.
-    pintaAyuda (g, hintRow, hint, juce::Justification::centredRight, 0.85f);
+    //  Sin condensar: el 0.85 que habia era el grupo mas grande de APRETADO
+    //  de toda la corrida -48 de 164- y esta frase es la que MAS se lee de la
+    //  ficha. La escalera de «no cabe, no sale» ya la decide la linea de
+    //  arriba, asi que encogerla no compraba nada.
+    pintaAyuda (g, hintRow, hint, juce::Justification::centredRight, Metrics::apretonAyuda);
 }
 
 void MainComponent::paintTourSheetContent (juce::Graphics& g)
@@ -3042,10 +3166,17 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
         const int usado = juce::jmin (vstPreArea.getWidth(),
                                       (int) std::ceil (juce::GlyphArrangement::getStringWidth (
                                                            g.getCurrentFont(), txt)));
+        //  Y PIDE CERO, porque ELIDE. Es la convencion que `pintaTitulo` ya
+        //  tiene escrita -`elipsis ? 0.0f : ...`, o sea un rotulo que se corta
+        //  con puntos suspensivos no publica ancho pedido- y este era el unico
+        //  sitio de la app que publicaba el ancho REAL dibujando con `drawText
+        //  (..., true)`. Con la escala de la tanda 33 salio por ahi: «14/16
+        //  BRIGHT GT» pide 123 tiene 101 en 280x653, ocho CORTADO sobre un
+        //  cristal que se lee «14/16 BRIGH…» y dice lo que tiene que decir.
+        //  Es la misma falta que la ruta del navegador, arreglada en esta
+        //  misma tanda.
         UiAudit::rotulo (vstPreArea.withSizeKeepingCentre (usado, vstPreArea.getHeight()),
-                         txt, "cristal",
-                         (int) std::ceil (juce::GlyphArrangement::getStringWidth (
-                                              g.getCurrentFont(), txt)),
+                         txt, "cristal", 0,
                          g.getCurrentFont().getHeight());
         g.drawText (txt, vstPreArea, juce::Justification::centred, true);
     }
@@ -3108,7 +3239,7 @@ void MainComponent::paintVstSheetContent (juce::Graphics& g)
     //  ser dos textos mantenidos a mano.
     if (fam >= 0 && vstMandos.size() == Sintes::kMandos && ! vstPanelMandos.isEmpty())
     {
-        g.setColour (ZatiColours::ink.withAlpha (0.55f));
+        g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
         for (int i = 0; i < Sintes::kMandos; ++i)
             if (auto* k = vstMandos[i])

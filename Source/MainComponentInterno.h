@@ -864,7 +864,7 @@ namespace
         { "GESTOS", { nullptr }, 23, 23, true },
     };
 
-    constexpr int kManualLineH  = 30;   // una linea de texto y su aire
+    constexpr int kManualLineH  = Metrics::bandaParrafo;  // una linea de texto y su aire
     //  EL TITULO DEL CAPITULO LLEVA SU TAPA ENSENAMELO, asi que mide lo que
     //  un dedo: con los 26 de antes la tapa no cabia en su propio renglon.
     constexpr int kManualTitleH = Metrics::btn;

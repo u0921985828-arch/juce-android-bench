@@ -422,6 +422,13 @@ namespace ZatiColours
     //
     //  Oswald is condensed, so it needs a couple of pixels of height to match
     //  the mono it sits next to.
+    //  LO QUE UN ROTULO DE CONTROL SUMA SOBRE EL TOKEN QUE LE DAN.
+    //
+    //  Estaba suelto dentro de `labelFont` -dos `h + 2.0f`- y no lo sabia
+    //  nadie de fuera: quien derive la banda de un titulo tiene que sumar
+    //  esto o la banda se le queda dos pixeles corta. Ver `Metrics::banda`.
+    inline constexpr float labelExtra = 2.0f;
+
     inline juce::Font labelFont (float h, float tracking = 0.18f)
     {
         //  No tracking in Arabic. Letter-spacing is what makes Latin lettering
@@ -430,9 +437,9 @@ namespace ZatiColours
         //  pad came out as three loose letters, which is not a spaced word, it
         //  is a different thing that does not read.
         if (Lang::isRightToLeft (Lang::current()))
-            return displayFont (h + 2.0f, true);
+            return displayFont (h + labelExtra, true);
 
-        return displayFont (h + 2.0f, true).withExtraKerningFactor (tracking);
+        return displayFont (h + labelExtra, true).withExtraKerningFactor (tracking);
     }
 }
 
@@ -645,12 +652,26 @@ namespace Metrics
     //  de los siete pintores. La misma regla en dos sitios, y la que se quedara
     //  vieja dejaria los chips empezando donde el rotulo no acaba.
     //
-    //  Y SIGUE VALIENDO 44, que es una MEDIDA y no una herencia: pedirlo con el
-    //  texto puesto -«MOVIMIENTO» pide 58, «LANGUAGE» 46 y «المراقبة» 45- quita
-    //  catorce pixeles a los chips y sale PEOR, 3492 incumplimientos del dedo a
-    //  3498. Lo que se aprieta es el ROTULO, que es lo que esta casa ya tiene
-    //  escrito: *entre un rotulo apretado y uno cortado no hay duda*.
-    static constexpr int canalonSeccion = 44;
+    //  VALIA 44 Y AHORA VALE 58, y las dos veces por una MEDIDA.
+    //
+    //  Decia aqui: pedirlo con el texto puesto -«MOVIMIENTO» pide 58,
+    //  «LANGUAGE» 46 y «المراقبة» 45- quita catorce pixeles a los chips y
+    //  sale PEOR, 3492 incumplimientos del dedo contra 3498, asi que se aprieta
+    //  el ROTULO: *entre un rotulo apretado y uno cortado no hay duda*.
+    //
+    //  Esa cuenta se hizo con la escala vieja, donde el rotulo era
+    //  `labelFont (fMeta = 10)`, o sea DOCE pixeles, y el apreton de 0.75 lo
+    //  dejaba justo en 44. Con la escala de la tanda 33 son QUINCE, y el mismo
+    //  0.75 pide 57: el canalon dejo de tener las dos salidas y solo le quedaba
+    //  la mala. `expo.py` lo canto con 45 hallazgos de CORTADO -«MOVIMIENTO»
+    //  pide 57 tiene 44, «LANGUAGE» 45, «التسجيلات» 53-.
+    //
+    //  58 es el numero que esa misma medida ya habia calculado: lo que pide
+    //  «MOVIMIENTO» con el texto puesto. Lo que cambio no es la cuenta sino el
+    //  otro lado de la balanza: entonces comparaba 3492 contra 3498 con el
+    //  rotulo legible en los dos casos; ahora la alternativa es un rotulo
+    //  cortado, y catorce pixeles de chip valen menos que eso.
+    static constexpr int canalonSeccion = 58;
 
     //  Y SE INTENTO `lg + halfGap` PARA QUE LA LOSA NO CRUZARA EL MARGEN, y
     //  el banco lo tumbo. El razonamiento era bueno -la losa de grupo era el
@@ -692,7 +713,112 @@ namespace Metrics
     //  linea -doce pixeles de desplazamiento en vez de cinco- y `pintaAyuda` la
     //  dibujaba igual, porque a 0.75 si cabe. Diecisiete hallazgos de CABECERA,
     //  siete pixeles cada uno.
-    static constexpr float apretonAyuda = 0.75f;
+    //  EL APRETON DEL RENGLON DE AYUDA, QUE YA NO APRIETA. Valia 0.75, o sea
+    //  que un renglon declarado a 10 px se dibujaba a 7.5 de ancho real, y
+    //  encoger la letra es literalmente hacerla menos legible: era la mitad
+    //  del tamano de un rotulo y no la veia ninguna regla porque el volcado
+    //  solo publicaba `pide`, que la lleva MULTIPLICADA. Con `APRETADO` en
+    //  `Tests/expo.py` ya se ve, y lo que hacia era esconder los CORTADO:
+    //  un texto que no cabe se condensaba en vez de fallar. Se queda el token
+    //  -es quien dice «este renglon se lee»- y su valor es 1.0: lo que no
+    //  quepa tiene que salir en el banco y arreglarse en la maqueta.
+    static constexpr float apretonAyuda = 1.0f;
+
+
+    //  LA ESCALA SUBIO ENTERA EN LA TANDA 33, y la peticion fue literal:
+    //  «texto mas grande no? y mas legible», sobre una captura de AJUSTES -
+    //  AYUDA con el muelle de la GUIA abierto. La captura mide 900 px para un
+    //  maquetado de 412 dp -2.18 px por dp- asi que lo que ahi se ve pequeno
+    //  se ve pequeno en el telefono.
+    //
+    //  MEDIDO, la queja senalaba el sitio exacto: lo que menos se lee de toda
+    //  la app era justo lo que la captura ensenaba. La 2.ª columna de GESTOS
+    //  se declaraba a `fFine` 9, se pintaba con `inkDim` PELADO y encima
+    //  `drawFittedText` la apretaba a 0.85, o sea 7.7 px reales. Y la
+    //  referencia del sistema sobre el que corre esto: Material 3 pone su
+    //  escalon mas pequeno -`label-small`- en 11 sp y SOLO para rotulos, y lo
+    //  que alguien LEE empieza en 12, con 14 de tamano normal. CUATRO de los
+    //  seis escalones caian por debajo de ese suelo.
+    //
+    //  Los dos que NO se tocan, y por que: `fTitle` es la marca serigrafiada
+    //  y ya es grande -crecerla solo le quita sitio a lo que si se lee mal- y
+    //  las TAPAS no salen de aqui sino de `letraDeTapa`, que es
+    //  `jlimit (10, 14.5, altoTapa * 0.38)` y con `hit = 40` satura en 14.5:
+    //  AUDIO, MIDI, ASPECTO y AYUDA ya se leian, y moverlas habria arrastrado
+    //  los cien iconos, que salen de `letraDeTapa().getHeight()`.
+    //
+    //  Dos acoplamientos que hay que tener delante al leer estos numeros:
+    //  `labelFont` SUMA 2 px en silencio (ver arriba), asi que un
+    //  `labelFont (fLabel)` se pinta a 16; y `getLabelFont` devuelve
+    //  `monoFont (fValue)`, o sea que ese token manda en TODO `juce::Label`.
+    static constexpr float fTiny = 11.0f;   // rotulo en sitio estrecho. No se LEE
+    static constexpr float fFine = 12.0f;   // nota al pie, ruta, texto de celda
+    static constexpr float fMeta = 13.0f;   // unidad, dato secundario
+    static constexpr float fLabel = 14.0f;  // nombre de control
+    //  EL ESCALON QUE FALTABA, y no es un tamano mas. El cuerpo del manual era
+    //  `fMeta` -el MISMO token que las unidades- y el del muelle de la guia era
+    //  `fLabel + 3`, un token con un tres sumado a mano: dos parrafos con dos
+    //  tamanos que no eligio nadie. Es letra por letra lo que `Tests/maqueta.md`
+    //  cuenta del papel `titulo` con cuatro alturas.
+    static constexpr float fBody = 15.0f;   // lo que se lee SEGUIDO
+    static constexpr float fValue = 16.0f;  // lectura
+
+    //  Y LA LECTURA DE UN MANDO SE QUEDA EN TRECE, que es el UNICO escalon de
+    //  la tanda 33 que no subio, y con su medida al lado.
+    //
+    //  `getLabelFont` devuelve la fuente de TODO `juce::Label` de la app, y la
+    //  caja de texto de un `juce::Slider` es un Label: subir ese token de 13 a
+    //  16 ensancho cada lectura un 23 % sobre unas cajas cuyo ancho esta
+    //  escrito en pixeles en veinticinco `setTextBoxStyle`. `expo.py` lo canto
+    //  con 81 `SQUEEZE` juzgados -de CERO- y todos son Labels: «مازورة واحدة»
+    //  pide 93 con 78, «file:» 36 con 30, «0.0 dB» 44 con 42, «straight» 58
+    //  con 52.
+    //
+    //  El techo que esas cajas dejan es el peor de esos cocientes: 78/93, o
+    //  sea 16 x 0.839 = 13.4. TRECE es lo que cabe, y subir el token sin tocar
+    //  las cajas es escribir la letra con una cuenta y el hueco con otra —la
+    //  figura que esta tanda lleva arreglada en cuatro sitios—.
+    //
+    //  Lo que falta para que esta linea pueda subir es DERIVAR el ancho de una
+    //  caja de lectura de su fuente, en vez de los veinticinco literales de
+    //  hoy; es una tanda con su propia matriz y no una linea de esta.
+    static constexpr float fLectura = 13.0f;
+    static constexpr float fTitle = 26.0f;
+
+    //  LA BANDA QUE LE HACE FALTA A UNA LETRA, en vez de cuatro constantes que
+    //  no sabian de que letra eran.
+    //
+    //  `bandaFina` valia 11 para una letra de 9, `bandaSubtitulo` 14 para una
+    //  de 10 y `bandaTitulo` 16 para una de 13: tres proporciones distintas
+    //  porque cada una se escribio un dia distinto. Subir la letra sin esto la
+    //  mete en una banda que no le llega, que es la mitad de los CORTADO de
+    //  esta tanda.
+    //
+    //  El 1.25 es la interlinea: `Font::getHeight` en JUCE es ascendente mas
+    //  descendente y no incluye el hueco entre renglones. Y se redondea a PAR
+    //  porque media banda impar deja el texto medio pixel descentrado en todo
+    //  lo que usa `centraEnRenglon`.
+    constexpr int banda (float h) noexcept
+    {
+        return ((int) (h * 1.25f + 0.999f) + 1) & ~1;
+    }
+
+    //  LO QUE `labelFont` SUMA, CITADO y no copiado: vive en `ZatiColours`,
+    //  que es quien lo suma. Escrito dos veces seria el numero que un dia se
+    //  queda viejo en uno de los dos sitios.
+    static constexpr float labelExtra = ZatiColours::labelExtra;
+
+    //  EL ALFA DE LO SECUNDARIO -el rotulo de seccion, el titulo de capitulo,
+    //  el nombre de un control apagado-, que estaba escrito A MANO en NUEVE
+    //  sitios con el mismo 0.55.
+    //
+    //  Y ese 0.55 no era un estilo: era una decision de CONTRASTE disfrazada
+    //  de estilo. Medido con `Tests/skins.py`, daba 3.52 a 1 en PAPEL y ACERO
+    //  y 3.63 en LACA, por debajo del 4.50 de WCAG AA para texto; el liston
+    //  viejo de la prueba era 3.00 y se justificaba con la excepcion de TEXTO
+    //  GRANDE, que pide 24 px en redonda y este rotulo se pinta a 12 y a 13.
+    //  A 0.70 las cuatro carcasas pasan: 5.46, 6.85, 5.48 y 4.87.
+    static constexpr float alfaSeccion = 0.70f;
 
 
     //  LA CABECERA DE UNA FICHA: el alto del titulo y el de su subtitulo.
@@ -700,13 +826,25 @@ namespace Metrics
     //  Estaban escritos a mano en los pintores y con CUATRO valores -16, 14,
     //  18 y 12- para una banda que el maquetado ya reserva una sola vez con
     //  `Metrics::hit`. Ver `centraEnRenglon`, que es quien la centra.
-    static constexpr int bandaTitulo    = 16;
-    static constexpr int bandaSubtitulo = 14;
+    static constexpr int bandaTitulo    = banda (fLabel + labelExtra);
+    static constexpr int bandaSubtitulo = banda (fMeta);
     //  Y LA BANDA DE PIE DE PAGINA, que estaba escrita a mano. Los renglones
     //  de `fFine` -las notas del recuadro de AUDIO, los seis intentos de la
     //  sonda del carril rapido- pedian `removeFromTop (11)` con el 11 suelto,
     //  que es exactamente el numero que se queda viejo en un sitio de tres.
-    static constexpr int bandaFina      = 11;
+    static constexpr int bandaFina      = banda (fFine);
+    //  Y LA BANDA DE UN RENGLON DE CUERPO -el parrafo de la GUIA-, que
+    //  estaba escrita a mano en `kManualLineH = 30` y no la nombraba nadie.
+    //  Hizo falta al apuntar el cuerpo de la guia: sus renglones salian con
+    //  el papel `dato`, que el contrato de `Tests/maqueta.md` ata a
+    //  `bandaSubtitulo` (14), y `ANATOMIA` saco 3060 incumplimientos de una
+    //  tacada. No era un fallo de maqueta: era un papel prestado. Un renglon
+    //  que se LEE no es el pie de una ficha, y una banda sin nombre no se
+    //  puede meter en un contrato.
+    //  DOS renglones, que es lo que `drawFittedText` tiene permitido partir
+    //  ahi dentro: una banda de un solo renglon cortaria la mitad de las
+    //  frases del manual por la mitad.
+    static constexpr int bandaParrafo   = 2 * banda (fBody);
 
     //  EL AIRE QUE UN PANEL DE GRUPO DEJA ALREDEDOR DE LO QUE ENVUELVE, y por
     //  que NO es el mismo por los cuatro lados.
@@ -868,15 +1006,9 @@ namespace Metrics
     static constexpr int tab = 44;
     static constexpr int row = 44;    // list row
 
-    // Type — four sizes, each with one job.
-    //  Below fMeta there was nothing named, so five places wrote 8, 8.5 and 9
-    //  by hand and no two of them agreed. Fine print is a size, not a guess.
-    static constexpr float fTiny = 8.0f;    // labels inside an 8px gutter
-    static constexpr float fFine = 9.0f;    // footnotes, paths, cell text
-    static constexpr float fMeta = 10.0f;   // units, secondary facts
-    static constexpr float fLabel = 11.0f;  // control names
-    static constexpr float fValue = 13.0f;  // readouts
-    static constexpr float fTitle = 26.0f;
+    //  LA ESCALA DE TIPO YA NO ESTA AQUI: subio a antes de las bandas, que es
+    //  quien la usa (`banda (fLabel + labelExtra)` no compila si el token
+    //  todavia no existe). Buscar `LA ESCALA SUBIO ENTERA EN LA TANDA 33`.
 }
 
 //  UNA REJILLA QUE SE PINTA ENTERA DICE CUANTAS CELDAS TIENE.
@@ -1914,6 +2046,8 @@ public:
 
     juce::Font getLabelFont (juce::Label&) override
     {
-        return ZatiColours::monoFont (Metrics::fValue, true);
+        //  `fLectura` y no `fValue`: ver el comentario del token. Las cajas de
+        //  texto de los sliders llevan su ancho escrito en pixeles.
+        return ZatiColours::monoFont (Metrics::fLectura, true);
     }
 };

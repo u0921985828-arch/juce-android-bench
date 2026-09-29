@@ -199,8 +199,17 @@ namespace UiAudit
     //  censo que filtre «tiene la clave cuerpo» mezcla las dos lineas y saca
     //  un cuerpo de letra de 736. El espacio de claves del volcado es PLANO,
     //  que es lo que ya costo `on`, `lit` y `fila` en la tanda de los chips.
+    //  Y EL APRETON CON EL QUE SE DIBUJO, que es la mitad del tamano que no se
+    //  podia despejar. `pide` lo lleva MULTIPLICADO -es `ancho * apreton`- asi
+    //  que de la cifra publicada no hay forma de sacar cuanto se ha encogido la
+    //  letra, y encoger la letra es literalmente hacerla menos legible: la 2.ª
+    //  columna de GESTOS se declara a 9 px y se dibuja con `drawFittedText` a
+    //  0.85, o sea **7.7 px reales**, que es el texto mas pequeno de la app y
+    //  ninguna regla podia verlo. Un factor que solo existe multiplicado por
+    //  otra cosa no se puede juzgar, que es el argumento de `pide` contra
+    //  `usado` una vuelta mas adentro.
     struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide;
-                    float cuerpoLetra; int lineas; };
+                    float cuerpoLetra; int lineas; float apreton; };
     inline std::vector<Rotulo> rotulos;
 
     //  EN QUE CAPA SE ESTA PINTANDO.
@@ -228,12 +237,12 @@ namespace UiAudit
     inline bool midiendo = false;
 
     inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo,
-                        int pide = 0, float cuerpo = 0.0f, int lineas = 1)
+                        int pide = 0, float cuerpo = 0.0f, int lineas = 1, float apreton = 1.0f)
     {
         if (! midiendo || t.isEmpty()) return;
         r += origenPintado;
         rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual,
-                             pide, cuerpo, lineas });
+                             pide, cuerpo, lineas, apreton });
     }
 
     //  CUANTOS TOQUES DESDE LA CARA, QUE ES LA CIFRA QUE DEFINE «INTUITIVO» Y
@@ -1612,6 +1621,7 @@ namespace UiAudit
                       << ",\"capa\":" << r.capa
                       << ",\"pide\":" << r.pide
                       << ",\"cuerpoLetra\":" << juce::String (r.cuerpoLetra, 2)
+                      << ",\"apreton\":" << juce::String (r.apreton, 2)
                       << ",\"lineas\":" << r.lineas << "}" << std::endl;
 
         for (const auto& a : aperturas)
