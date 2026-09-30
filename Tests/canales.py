@@ -273,6 +273,46 @@ def main():
         malas.append ("apagar el solo del canal 7 dejo anyCanalSolo en %s: los otros "
                       "treinta y uno se quedan callados" % r["solo_tras_apagar"])
 
+    #  5b-bis. SIN SOLO EN LAS DOS PAGINAS, Y CADA UNA EN SU AMBITO.
+    #
+    #      Del telefono: «la opcion SIN SOLO que hay en el Mixer de pads
+    #      deberia estar tambien en el de canales; funcionaria por separado, una
+    #      los canales y otra los pads». Estaba a medias desde que la mesa gano
+    #      el solo por canal: las treinta y dos tapas de solo se pusieron y la
+    #      forma de VACIARLAS no, asi que `AudioEngine::clearCanalSolo` existia
+    #      y no la llamaba nadie desde la cara. Con la lista desplazandose, el
+    #      canal encendido puede estar fuera de la pantalla: la mesa muda y lo
+    #      que lo explica sin verse.
+    #
+    #      CUATRO cifras y ninguna sobra, porque «por separado» son DOS
+    #      direcciones. Se encienden un solo de canal y uno de pad a la vez y se
+    #      vacia desde CANALES: el de canal cae y el de pad SIGUE. Luego la
+    #      vuelta desde PADS. Con una sola direccion, lo pedido lo cumple un
+    #      `clearSolo()` que vacia los dos ambitos — que es justo lo contrario.
+    #
+    #      Y la quinta, `vaciar_visible_canales`, porque un gesto que funciona y
+    #      no se ve no lo usa nadie: es el fallo que se esta arreglando, no uno
+    #      distinto.
+    print ("mesa     SIN SOLO en canales: visible %s, canal %s, y el pad sigue %s "
+           "| desde pads: pad %s, canal %s"
+           % (r["vaciar_visible_canales"], r["canal_tras_vaciar_canales"],
+              r["pad_tras_vaciar_canales"], r["pad_tras_vaciar_pads"],
+              r["canal_tras_vaciar_pads"]))
+    if r["vaciar_visible_canales"] != 1:
+        malas.append ("la tapa SIN SOLO no sale en la pagina de CANALES")
+    if r["canal_tras_vaciar_canales"] != 0:
+        malas.append ("SIN SOLO en CANALES dejo anyCanalSolo en %s: no vacio nada"
+                      % r["canal_tras_vaciar_canales"])
+    if r["pad_tras_vaciar_canales"] != 1:
+        malas.append ("SIN SOLO en CANALES se llevo por delante el solo del PAD: "
+                      "son dos ambitos y se pidieron por separado")
+    if r["pad_tras_vaciar_pads"] != 0:
+        malas.append ("SIN SOLO en PADS dejo anySolo en %s: no vacio nada"
+                      % r["pad_tras_vaciar_pads"])
+    if r["canal_tras_vaciar_pads"] != 1:
+        malas.append ("SIN SOLO en PADS se llevo por delante el solo del CANAL: "
+                      "son dos ambitos y se pidieron por separado")
+
     #  5c. UN EFECTO ENTRA SONANDO, que es la otra peticion de la misma tanda:
     #      «el envio predeterminado al mixer del efecto debe ser al 100 como
     #      Default, pero que este activado tambien el efecto cuando se mete en el

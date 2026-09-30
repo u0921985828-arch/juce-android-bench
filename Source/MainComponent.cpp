@@ -3632,8 +3632,34 @@ MainComponent::MainComponent()
     }
     mixBankBtns[0]->setToggleState (true, juce::dontSendNotification);
 
+    //  SIN SOLO, Y EN LAS DOS PAGINAS, cada una en SU ambito.
+    //
+    //  Llego del telefono: «la opcion SIN SOLO que hay en el Mixer de pads
+    //  deberia estar tambien en el de canales; funcionaria por separado, una
+    //  los canales y otra los pads». Estaba a medias desde que la mesa gano el
+    //  solo por canal (c51e285): las tapas de solo de canal se pusieron y la
+    //  forma de VACIARLOS no, asi que `AudioEngine::clearCanalSolo` existia y
+    //  no lo llamaba nadie desde la cara — con treinta y dos canales, deshacer
+    //  a mano lo que se encendio en un momento.
+    //
+    //  UNA tapa y no dos, y el ambito lo dice la pagina que se esta mirando:
+    //  las dos listas no salen a la vez -`mixVistaBtn` cambia de vista- asi que
+    //  dos tapas serian una siempre apagada ocupando el mismo renglon. Y es lo
+    //  que ya hacen el RACK y los cuatro chips de banco en esta misma ficha.
+    //
+    //  Por separado de verdad: vaciar el de canales no toca un solo de pad, y
+    //  al reves. Los dos filtros se resuelven en cadena dentro del motor -el
+    //  pad pasa `effectiveGain` y el canal su propia guarda- asi que mezclarlos
+    //  aqui seria contestar por un ambito que no se ha tocado. Lo mide
+    //  `Tests/canales.py` con las dos direcciones, que una sola la cumple un
+    //  `clearSolo()` que vacia los dos.
     styleButton (mixClearSolo, kKey);
-    mixClearSolo.onClick = [this] { engine.clearSolo(); refreshMixStrip(); };
+    mixClearSolo.onClick = [this]
+    {
+        if (mixPage == mixPageCanales) engine.clearCanalSolo();
+        else                           engine.clearSolo();
+        refreshMixStrip();
+    };
     mixSheet.addAndMakeVisible (mixClearSolo);
 
     //  EL MASTER. En decibelios y con los mismos ayudantes que los otros
@@ -8079,12 +8105,16 @@ void MainComponent::showMixPage (MixPage p)
         if (auto* m = canMutes[c])  { m->setVisible (on); if (! on) m->setBounds ({}); }
         if (auto* s = canSolos[c])  { s->setVisible (on); if (! on) s->setBounds ({}); }
     }
-    //  Y VACIAR SOLO se queda en la pagina de PADS, que es donde sigue estando
-    //  su lista: la de CANALES tiene sus propias tapas de solo y quien las
-    //  encendio las ve encendidas delante. Apagar *Y* vaciar los limites, las
-    //  dos cosas.
-    mixClearSolo.setVisible (p == mixPagePads);
-    if (p != mixPagePads) mixClearSolo.setBounds ({});
+    //  Y VACIAR SOLO SALE EN LAS DOS, cada una vaciando la suya.
+    //
+    //  Este parrafo decia que se quedaba en PADS «porque la de CANALES tiene
+    //  sus propias tapas de solo y quien las encendio las ve encendidas
+    //  delante». Es falso en cuanto la lista se desplaza: son treinta y dos
+    //  canales en una tarjeta que ensena seis o siete, asi que el que esta
+    //  encendido puede estar fuera de la pantalla, y entonces la mesa esta
+    //  muda y lo que lo explica no se ve. Es exactamente el argumento por el
+    //  que la pagina de PADS tiene esta tapa, con sesenta y cuatro.
+    mixClearSolo.setVisible (true);
 
     //  Los cuatro chips de banco son de la pagina de PADS: un canal no vive en
     //  un banco.
@@ -16245,6 +16275,15 @@ void MainComponent::refreshMixStrip()
             m->setToggleState (engine.getCanalMute (c), juce::dontSendNotification);
         if (auto* s = canSolos[c])
             s->setToggleState (engine.getCanalSolo (c), juce::dontSendNotification);
+        //  Y EL CANAL QUE NO SE OYE SE VE QUE NO SE OYE, con el mismo 0.45 que
+        //  los pads: sin esto, encender un solo dejaba treinta y un faders
+        //  pintados a plena tinta sin que ninguno mueva un decibelio.
+        if (auto* f = canFaders[c])
+        {
+            const bool suena = ! engine.getCanalMute (c)
+                             && (! engine.anyCanalSolo() || engine.getCanalSolo (c));
+            f->setAlpha (suena ? 1.0f : 0.45f);
+        }
     }
 
     const bool any = engine.anySolo();
@@ -16260,7 +16299,10 @@ void MainComponent::refreshMixStrip()
             if (mixAnchos[i] != nullptr) mixAnchos[i]->setAlpha (audible ? 1.0f : 0.45f);
         }
     }
-    mixClearSolo.setEnabled (any);
+    //  Y SE ENCIENDE POR EL AMBITO QUE VACIA, no por el del pad: en CANALES
+    //  preguntaba `anySolo()` -los pads- asi que con un canal en solo y ningun
+    //  pad la tapa salia apagada justo cuando hacia falta.
+    mixClearSolo.setEnabled (mixPage == mixPageCanales ? engine.anyCanalSolo() : any);
     mixSheet.repaint();
 }
 

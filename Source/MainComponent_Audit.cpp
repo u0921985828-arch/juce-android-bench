@@ -5623,6 +5623,42 @@ void MainComponent::auditCanales()
                                   if (canSolos[7]->onClick) canSolos[7]->onClick(); }
     const int soloTrasApagar = engine.anyCanalSolo() ? 1 : 0;
 
+    //  5b-bis. SIN SOLO, Y QUE LOS DOS AMBITOS NO SE PISEN.
+    //
+    //      Del telefono: «la opcion SIN SOLO que hay en el Mixer de pads
+    //      deberia estar tambien en el de canales; funcionaria por separado,
+    //      una los canales y otra los pads». Estaba a medias: las tapas de solo
+    //      de canal se pusieron en c51e285 y la de vaciarlos no, asi que
+    //      `clearCanalSolo` existia sin que la llamara nadie desde la cara.
+    //
+    //      CUATRO cifras, y ninguna sobra. Se encienden un solo de CANAL y uno
+    //      de PAD a la vez, se aprieta SIN SOLO en la pagina de CANALES y se
+    //      pregunta por los DOS: el de canal tiene que caer y el de pad tiene
+    //      que seguir en pie. Luego la vuelta, desde la pagina de PADS. Con una
+    //      sola direccion, «por separado» lo cumple un `clearSolo()` que vacia
+    //      los dos ambitos, que es exactamente lo contrario de lo que se pidio.
+    //
+    //      Y va por la TAPA -`mixClearSolo.onClick`- y no llamando al motor:
+    //      lo que se prueba es que el gesto llegue, incluido el que la tapa
+    //      sepa en que pagina esta.
+    engine.setPadSolo (3, true);
+    if (canSolos[7] != nullptr) { canSolos[7]->setToggleState (true, juce::dontSendNotification);
+                                  if (canSolos[7]->onClick) canSolos[7]->onClick(); }
+    showMixPage (mixPageCanales);
+    const int vaciarVisibleEnCanales = mixClearSolo.isVisible() ? 1 : 0;
+    if (mixClearSolo.onClick) mixClearSolo.onClick();
+    const int canalTrasVaciarCanales = engine.anyCanalSolo() ? 1 : 0;
+    const int padTrasVaciarCanales   = engine.anySolo()      ? 1 : 0;
+
+    if (canSolos[7] != nullptr) { canSolos[7]->setToggleState (true, juce::dontSendNotification);
+                                  if (canSolos[7]->onClick) canSolos[7]->onClick(); }
+    showMixPage (mixPagePads);
+    if (mixClearSolo.onClick) mixClearSolo.onClick();
+    const int padTrasVaciarPads   = engine.anySolo()      ? 1 : 0;
+    const int canalTrasVaciarPads = engine.anyCanalSolo() ? 1 : 0;
+    engine.clearSolo(); engine.clearCanalSolo();
+    showMixPage (mixPageCanales);
+
     //  5c. UN EFECTO ENTRA SONANDO: encendido y con el envio de su canal al
     //      maximo.
     //
@@ -5806,6 +5842,11 @@ void MainComponent::auditCanales()
               << ",\"solo_canal7\":" << soloCanal7
               << ",\"hay_solo\":" << haySolo
               << ",\"solo_tras_apagar\":" << soloTrasApagar
+              << ",\"vaciar_visible_canales\":" << vaciarVisibleEnCanales
+              << ",\"canal_tras_vaciar_canales\":" << canalTrasVaciarCanales
+              << ",\"pad_tras_vaciar_canales\":" << padTrasVaciarCanales
+              << ",\"pad_tras_vaciar_pads\":" << padTrasVaciarPads
+              << ",\"canal_tras_vaciar_pads\":" << canalTrasVaciarPads
               << ",\"envio_al_entrar\":" << envioAlEntrar
               << ",\"encendido_al_entrar\":" << encendidoAlEntrar
               << ",\"envio_del_vecino\":" << envioDelVecino

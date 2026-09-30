@@ -5369,20 +5369,16 @@ void MainComponent::resized()
         //  por debajo del dedo minimo de 40. Es el mismo fallo que
         //  layoutModuleBar tenia con el mismo numero, escrito a mano aqui.
         auto bottom = inner.removeFromBottom (Metrics::btn);
-        //  En CANALES la fila es SOLO el RACK, y se lleva el renglon entero:
-        //  SIN SOLO no se maqueta alli -ver showMixPage- porque el solo es de
-        //  un pad y esa pagina no tiene ninguno.
-        if (mixPage == mixPageCanales)
-        {
-            rackButton.setBounds (bottom.reduced (Metrics::halfGap,
-                                                  Metrics::centraDedo));
-        }
-        else
-        {
-            rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3)
-                                      .reduced (Metrics::halfGap, Metrics::centraDedo));
-            mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, Metrics::centraDedo));
-        }
+        //  LA MISMA FILA EN LAS DOS PAGINAS: RACK a la derecha y SIN SOLO en
+        //  lo que queda. Aqui habia una rama que en CANALES le daba el renglon
+        //  entero al RACK, «porque el solo es de un pad y esa pagina no tiene
+        //  ninguno» — y esa pagina tiene treinta y dos tapas de solo desde que
+        //  la mesa las gano. Un reparto distinto entre las dos vistas de la
+        //  MISMA ficha mueve el RACK de sitio al cambiar de vista, que es la
+        //  misma razon por la que S y M se piden en el mismo orden arriba.
+        rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3)
+                                  .reduced (Metrics::halfGap, Metrics::centraDedo));
+        mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, Metrics::centraDedo));
         inner.removeFromBottom (Metrics::xs);
 
         //  EL MASTER, encima de las dos tapas y debajo de los canales. Fuera
