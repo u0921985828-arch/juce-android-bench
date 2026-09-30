@@ -7755,8 +7755,20 @@ void MainComponent::resized()
         tourFoco = tourObjetivo (tourPaso);
         //  Ver UiAudit::tourPaso: que "este paso no señala nada" sea un numero.
         UiAudit::tourPaso  = tourPaso;
+        //  Y ACOTADO A LA VENTANA. Un anillo solo puede marcar lo que se ve:
+        //  el paso de INSTRUMENTOS senalaba la union de las tapas de las 24
+        //  familias -337x596 desde y=420, o sea hasta y=1016 en una ventana de
+        //  915- porque `instSheet` tambien se desplaza y su lista es mas alta
+        //  que la tarjeta. El velo se dibuja con cuatro rectangulos alrededor
+        //  del hueco, asi que un foco que se sale deja el borde de abajo sin
+        //  pintar y el anillo cortado por el filo de la pantalla.
+        tourFoco = tourFoco.getIntersection (getLocalBounds());
         UiAudit::tourFocoW = tourFoco.getWidth();
         UiAudit::tourFocoH = tourFoco.getHeight();
+        //  Y DONDE quedo. Ver UiAudit::tourFocoX: el tamano solo no ve un
+        //  rectangulo bien medido y mal colocado.
+        UiAudit::tourFocoX = tourFoco.getX();
+        UiAudit::tourFocoY = tourFoco.getY();
         //  Y lo que dicen las dos salidas: en el paso de la PUERTA la tercera
         //  tapa deja de decir SALTAR y ofrece seguir con los once que quedan.
         UiAudit::tourSig     = tourNextBtn.getButtonText().toStdString();

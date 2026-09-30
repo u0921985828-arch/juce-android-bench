@@ -299,6 +299,11 @@ private:
 
         //  Donde se anaden los hijos: el cuerpo si se desplaza, la ficha si no.
         juce::Component& donde() { return desplazable ? (juce::Component&) cuerpo : (juce::Component&) *this; }
+        //  Y la misma pregunta desde un metodo const: `tourObjetivo` es
+        //  const y solo quiere el componente para convertir coordenadas
+        //  con `getLocalArea`, que no toca nada.
+        const juce::Component& donde() const { return desplazable ? (const juce::Component&) cuerpo
+                                                                  : (const juce::Component&) *this; }
 
         //  Y EL MISMO RECTANGULO QUE RECIBIO EL MAQUETADO, para quien PINTA.
         //

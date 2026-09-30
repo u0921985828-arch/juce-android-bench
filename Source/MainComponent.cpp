@@ -16925,7 +16925,30 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
                      .getUnion (deComponente (skinButtons[skinButtons.size() - 1]));
             return r;
         }
-        case 23: return gesturesArea;
+        //  LA LISTA DE GESTOS, TRAIDA A COORDENADAS DE VENTANA.
+        //
+        //  Devolvia `gesturesArea` tal cual y el anillo salia sobre la
+        //  cabecera de AJUSTES, escapandose por el filo izquierdo: medido,
+        //  347x326 en (0,128) cuando la primera fila de gestos que esa pagina
+        //  pinta empieza en (35,352). El tamano era EXACTO -por eso
+        //  `Tests/tour.py` lo daba en verde, que solo miraba `focoW` y
+        //  `focoH`- y el origen era de otro sistema de coordenadas.
+        //
+        //  `sheetFromBottom` devuelve `cuerpo.getLocalBounds()` cuando la
+        //  ficha se desplaza -y AJUSTES se desplaza-, o sea un rectangulo que
+        //  empieza en (0,0) dentro del cuerpo; el velo y el anillo se pintan
+        //  en coordenadas de ventana. Es el mismo fallo de dos origenes que
+        //  `Sheet::areaContenido` ya documenta con lo de «CABECERA 20 en las
+        //  cinco pantallas de pie»; esta es la casa que faltaba, y es la unica
+        //  del tour porque los otros veintitres pasos pasan por
+        //  `deComponente`, que convierte con `getLocalArea`.
+        //
+        //  `donde()` es el componente que recibio ese maquetado -el cuerpo si
+        //  se desplaza, la ficha si no- asi que la conversion vale en las dos
+        //  ramas y no hay que preguntar por `desplazable` aqui.
+        case 23: return gesturesArea.isEmpty()
+                        ? juce::Rectangle<int>()
+                        : getLocalArea (&setSheet.donde(), gesturesArea);
         default: return {};
     }
 }

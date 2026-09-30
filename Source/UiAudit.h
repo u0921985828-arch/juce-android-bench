@@ -899,6 +899,20 @@ namespace UiAudit
 
     inline int tourPaso = -1;
     inline int tourFocoW = 0, tourFocoH = 0;
+    //  Y DONDE ESTA, no solo cuanto mide.
+    //
+    //  El anillo del paso 24 salia sobre la cabecera de AJUSTES y se escapaba
+    //  por el filo izquierdo, y esta prueba lo daba en VERDE: medir el TAMANO
+    //  no ve un rectangulo bien medido y mal colocado. Media 347x326 -exacto-
+    //  y salia en (0,128) cuando la primera fila de gestos que esa misma
+    //  pagina pinta empieza en (35,352).
+    //
+    //  El objetivo era `gesturesArea`, que `sheetFromBottom` devuelve en
+    //  coordenadas del CUERPO desplazable -que empieza en (0,0)- mientras el
+    //  foco se pinta en coordenadas de ventana. Es el mismo fallo de dos
+    //  origenes que ya se anoto en `Sheet::areaContenido` («CABECERA 20 en las
+    //  cinco pantallas de pie»), una casa mas.
+    inline int tourFocoX = 0, tourFocoY = 0;
     //  Lo que dicen las dos salidas de la tarjeta: la que avanza y la tercera,
     //  que en el paso de la PUERTA deja de decir SALTAR. Ver `tourSkipCaption`.
     inline std::string tourSig, tourTercera;
@@ -1701,6 +1715,8 @@ namespace UiAudit
 
         if (tourPaso >= 0)
             std::cout << "{\"tour\":" << tourPaso
+                      << ",\"focoX\":" << tourFocoX
+                      << ",\"focoY\":" << tourFocoY
                       << ",\"focoW\":" << tourFocoW
                       << ",\"focoH\":" << tourFocoH
                       //  Y LO QUE DICEN LAS DOS SALIDAS. La bienvenida son

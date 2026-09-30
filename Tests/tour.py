@@ -50,6 +50,21 @@ PASOS = int (_re.search (r"kTourPasos\s*=\s*(\d+)",
 MIN   = 40          # Metrics::hit: el mismo liston que un blanco tocable
 PORTADA = 0         # el unico sin objetivo
 
+#  LOS PASOS CUYO OBJETIVO ES TEXTO PINTADO Y NO UN COMPONENTE, con el `tipo`
+#  con el que el volcado publica sus filas. Son los unicos que pueden llevar
+#  el foco mal COLOCADO sin que se note en su tamano: los demas salen de
+#  `deComponente`, que convierte coordenadas con `getLocalArea`.
+#
+#  El paso sale del fuente y no de un numero escrito aqui: la guia ya paso de
+#  quince a veinticuatro una vez, y una regla clavada a un indice deja de
+#  mirar lo que mira en cuanto alguien mete un capitulo en medio.
+_TITULOS = _re.findall (
+    r'"([^"]*)"',
+    _re.search (r"titulos\s*\[[^\]]*\]\s*=\s*\{(.*?)\};",
+                open (os.path.join (ROOT, "Source", "MainComponentInterno.h"),
+                      encoding="utf8").read(), _re.S).group (1))
+TIPO_DEL_PASO = {_TITULOS.index ("GESTOS"): "gesto"} if "GESTOS" in _TITULOS else {}
+
 
 def foco (paso, size):
     casa = tempfile.mkdtemp (prefix="zati-tour-")
@@ -62,12 +77,22 @@ def foco (paso, size):
         return None
     finally:
         shutil.rmtree (casa, ignore_errors=True)
-    ult = None
+    ult, rots = None, []
     for l in out.splitlines():
         l = l.strip()
-        if l.startswith ("{") and '"tour"' in l:
+        if not l.startswith ("{"): continue
+        if '"tour"' in l:
             try: ult = json.loads (l)
             except Exception: pass
+        elif '"rotulo"' in l:
+            try: rots.append (json.loads (l))
+            except Exception: pass
+    #  Los rotulos PINTADOS del paso, en coordenadas de ventana -el volcado ya
+    #  corrige el origen del cuerpo desplazable, ver UiAudit::origenPintado-.
+    #  Van con el foco porque la regla de abajo los contrasta: el anillo tiene
+    #  que CONTENER lo que el paso explica, y eso no se puede saber mirando
+    #  solo su tamano.
+    if ult is not None: ult["_rotulos"] = rots
     return ult
 
 
@@ -244,6 +269,7 @@ def main():
     if not display_alive(): sys.exit ("la pantalla virtual no responde")
 
     size = sys.argv[1] if len (sys.argv) > 1 else "412x915"
+    VENT = [int (v) for v in size.lower().split ("x")]
     malas = []
     guia (malas)
     pags  = {}
@@ -269,7 +295,58 @@ def main():
             malas.append ("el paso %d señala %dx%d, bajo el minimo de %d" % (n, w, h, MIN))
         else:
             estado = "correcto"
-        print ("%-6d %10s   %s" % (n, "%dx%d" % (w, h), estado))
+
+        #  --- Y DENTRO DE LA VENTANA, Y SOBRE LO QUE EXPLICA -----------
+        #
+        #  UN RECTANGULO BIEN MEDIDO Y MAL COLOCADO PASABA EN VERDE. El
+        #  paso 24 -GESTOS- senalaba 347x326, el tamano exacto de la lista
+        #  de gestos, y lo pintaba en (0,128): sobre la cabecera de
+        #  AJUSTES y escapandose por el filo izquierdo, con la primera
+        #  fila de gestos empezando 224 px mas abajo. Llego por una
+        #  captura, igual que los dos de arriba, porque las tres reglas
+        #  anteriores solo miran `focoW` y `focoH`.
+        #
+        #  La causa es de coordenadas y no de maquetado: `gesturesArea`
+        #  sale de `sheetFromBottom`, que en una ficha DESPLAZABLE
+        #  devuelve `cuerpo.getLocalBounds()` -origen (0,0)- mientras el
+        #  velo y el anillo se pintan en coordenadas de ventana.
+        #
+        #  Son DOS reglas y no una porque cazan dos cosas distintas, y la
+        #  primera sola no bastaba: (0,128) esta DENTRO de la ventana.
+        if not vacio:
+            x, y = d.get ("focoX", 0), d.get ("focoY", 0)
+
+            #  CABE EN LA PANTALLA. Se mide contencion y no «x >= 0»: un
+            #  foco medio fuera por abajo es igual de inutil que uno medio
+            #  fuera por la izquierda, y una sola cuenta caza las cuatro.
+            #  Lo saco el paso de INSTRUMENTOS, 337x596 desde y=420 en una
+            #  ventana de 915.
+            if (x < 0 or y < 0 or x + w > VENT[0] or y + h > VENT[1]):
+                estado = "FUERA DE LA VENTANA"
+                malas.append ("el paso %d senala %dx%d en (%d,%d): se sale de %dx%d"
+                              % (n, w, h, x, y, VENT[0], VENT[1]))
+
+            #  Y CUBRE LO QUE EXPLICA, contrastado contra lo que la pagina
+            #  PINTA -que el volcado ya publica en coordenadas de ventana-.
+            #  Es la unica forma de cazar un origen equivocado sin escribir
+            #  aqui el rectangulo correcto a mano, que seria copiar la
+            #  maqueta y quedarse viejo a la vuelta siguiente.
+            filas = [r for r in d.get ("_rotulos", [])
+                     if r.get ("tipo") == TIPO_DEL_PASO.get (n)]
+            if filas:
+                fx0 = min (r["x"] for r in filas)
+                fy0 = min (r["y"] for r in filas)
+                fx1 = max (r["x"] + r["w"] for r in filas)
+                fy1 = max (r["y"] + r["h"] for r in filas)
+                if not (x <= fx0 and y <= fy0 and x + w >= fx1 and y + h >= fy1):
+                    estado = "NO CUBRE LO QUE EXPLICA"
+                    malas.append ("el paso %d senala (%d,%d)+%dx%d y las %d filas "
+                                  "de '%s' ocupan (%d,%d)..(%d,%d)"
+                                  % (n, x, y, w, h, len (filas), TIPO_DEL_PASO[n],
+                                     fx0, fy0, fx1, fy1))
+            print ("%-6d %14s   %s" % (n, "%dx%d@%d,%d" % (w, h, x, y), estado))
+        else:
+            print ("%-6d %14s   %s" % (n, "%dx%d" % (w, h), estado))
 
     #  --- Y EL PASO ABRE LA PAGINA QUE NOMBRA -----------------------------
     #
