@@ -93,8 +93,18 @@ TOPE_REFRESCOS = 80
 
 sys.path.insert (0, os.path.dirname (os.path.abspath (__file__)))
 from kits import (APP, ROOT, BANDS, ENVBINS, FLOOR, NFFT, MAX_LOUD_SPREAD_DB,
-                  MAX_PEAK, MIN_LOUD, MIN_PEAK, PANTALLA, descriptor, display_alive,
-                  distancia, fft, load, loudness)
+                  MAX_EDGE, MAX_PEAK, MAX_START, MIN_LOUD, MIN_PEAK, PANTALLA,
+                  biquad, descriptor, display_alive, distancia, fft, load, loudness)
+
+#  MAX_START Y MAX_EDGE LLEVABAN AQUI SIN IMPORTARSE.
+#
+#  `kits.py` los declara desde que existe -0.02, la primera y la ultima muestra
+#  de un golpe tienen que valer casi cero o se oye un chasquido al empezar y al
+#  acabar- y se los aplica a sus 64. Esta prueba importaba CUATRO de los ocho
+#  listones de ese fichero y estos dos no. O sea que de los 64 golpes se sabia
+#  que no chascan y de los **384 instrumentos no lo sabia nadie**: lo unico que
+#  se miraba era la costura INTERNA del bucle (`SALTO_MAX`), que es otra cosa —
+#  esa es la vuelta, y estos son los dos extremos.
 
 RAICES   = [-24, -12, 0, 12, 24]
 #  TRES CAPAS. Ver `Sintes::kCapas`: con dos, el motor cambiaba de capa a mitad
@@ -164,6 +174,11 @@ CAPA_HZ  = 1.12    # y los agudos, en RAZON: 12% de energia alta de mas
 #  son dieciseis y tres por cinco raices ya son quince. Un techo absoluto
 #  confunde «responde al toque» -que es lo que se quiere- con «da un salto».
 CAPA_REPARTO = 0.60
+#  Y LO MISMO PARA EL TIMBRE. Ver el cuarto numero del bloque de capas: mismo
+#  valor y misma derivacion que la de arriba, sobre `agudos()` en vez de sobre
+#  `loudness()`. No es un liston nuevo: es el mismo aplicado a la magnitud que
+#  la capa NO deshace al disparar. Lleva SUELO, y el porque esta en la regla.
+CAPA_REPARTO_HZ = 0.60
 #  Y ENTRE OCTAVAS DE UN MISMO PRESET. Este si puede fallar: la ganancia se
 #  saca de UNA zona -la raiz 0, capa fuerte- y se aplica a las diez, asi que si
 #  una octava sale mucho mas sonora que otra, el instrumento pega un salto al
@@ -231,14 +246,45 @@ CENTS_ABS = 5.0
 #  esta casa. Ver el bloque de la regla.
 DERIVA_DB = 1.0
 
-#  LAS DOS QUE NO SE JUZGAN CON EL LISTON DE AFINACION, por su nombre y con su
-#  cifra. No es una excepcion de conveniencia: una campana es inarmonica por
-#  construccion y un acordeon son dos lengüetas desafinadas por nota, asi que
-#  el numero que sale de las dos es correcto y describe el instrumento.
-#  El tope propio existe para que la lista no sea un cheque en blanco: si
-#  CAMPANAS se va a treinta cents eso ya no es una campana.
-INARMONICAS = ("CAMPANAS", "ACORDEON")
+#  LAS QUE NO SE JUZGAN CON EL LISTON DE AFINACION, Y YA NO POR SU NOMBRE.
+#
+#  Aqui habia una lista escrita a mano —`INARMONICAS = ("CAMPANAS",
+#  "ACORDEON")`— y en `Tests/StressTest.cpp:1784` otra que decia *«CAMPANAS,
+#  MAZOS y ARPAS»*. Las dos se contradecian y ninguna se habia contrastado
+#  nunca contra el audio, porque nadie medía la inarmonicidad.
+#
+#  Medido ya (mediana de los 16 presets de cada familia, parciales 2..6, ver
+#  `inarmonico`), las DOS listas estaban mal y en las dos direcciones:
+#
+#      CAMPANAS   64.8 cents   declarada en la lista     -> correcto
+#      MAZOS      64.0 cents   NO declarada              -> se perdonaba sola
+#      PIANO ELEC 58.4 cents   NO declarada              -> tampoco estaba
+#      ARPAS      24.8 cents   declarada en StressTest   -> es armonica
+#      ACORDEON   11.2 cents   declarada aqui            -> es armonica
+#
+#  El acordeon eran «dos lengüetas desafinadas por nota» en la prosa, y eso
+#  es un batido de unos pocos cents entre dos copias del MISMO parcial: no
+#  mueve los parciales de su multiplo, que es lo que esta regla mide. La
+#  prosa describia el instrumento bien y la regla mal.
+#
+#  Asi que la lista desaparece y el perdon lo da la MEDIDA. Ver
+#  `inarmMedida`, que se llena en la pasada de las 384 zonas de referencia y
+#  se consulta en la regla de afinacion, que va detras.
 CENTS_INARM = 20.0
+#  Y LA LISTA DE ARRIBA PASA A TENER JUEZ. Ver `inarmonico`.
+#
+#  CINCUENTA CENTS y no un numero a ojo: es un cuarto de tono, la mitad de la
+#  distancia entre dos notas. Un parcial que cae a menos de eso de su multiplo
+#  entero esta en la serie armonica —el oido lo oye como el mismo sonido—; uno
+#  que cae a mas, no. Es el mismo argumento con el que `CAPA_DB` se justifica
+#  como «dos veces el JND»: el liston sale de lo que se distingue, no de lo que
+#  la medida da hoy.
+#
+#  Se juzga en las DOS direcciones, que es lo que convierte una excepcion en
+#  una regla: una familia declarada inarmonica que mide como armonica tiene un
+#  perdon que no le hace falta, y una que no esta declarada y mide inarmonica
+#  esta pasando el liston de afinacion por casualidad.
+INARM_CENTS = 50.0
 
 #  CUADRE DEL LFO: `lfoHz * bucleSeg` entero, o exactamente 0 si se congelo.
 #  Cuatro veces mas estricto que el 0.02 de ciclos de la raiz, y se dice por
@@ -266,9 +312,24 @@ COSTE_PEOR = 400.0
 
 def carga2 (path):
     """LOS DOS CANALES. `kits.load` devuelve el izquierdo -se salta el resto de
-    cada trama- y eso vale para todo lo que mide TIMBRE, porque el timbre es el
-    mismo en los dos. Para el ANCHO no vale: mediria su propia eleccion de
-    canal."""
+    cada trama-.
+
+    ESTE COMENTARIO DECIA QUE EL IZQUIERDO VALE PARA TODO LO QUE MIDE TIMBRE
+    «porque el timbre es el mismo en los dos», Y ESO ES FALSO Y ESTA MEDIDO.
+    SITAR OPEN, misma nota, mismos tres estratos: por el izquierdo la escalera
+    de brillo va **+3.07 y -1.37 dB** -o sea el segundo escalon vuelve hacia
+    atras- y por el derecho **+0.29 y +2.72**. Dos escaleras contrarias del
+    mismo sonido. Con los dos canales juntos, que es como se oye y como lo
+    corrige `Sintes::agudosCon`, sale **+1.38 y +1.20**.
+
+    La razon es que el estereo de esta casa es de canales DECORRELACIONADOS
+    -detune y desfase por canal, tanda 10 fase 4- y la correccion de brillo del
+    motor es UNA inclinacion para los dos, resuelta sobre la suma de las dos
+    energias. Medir un canal es medir medio sonido: lo que se ve no es un
+    escalon mal repartido, es el reparto del estereo.
+
+    Para el ANCHO tampoco vale, y por lo de siempre: mediria su propia eleccion
+    de canal."""
     import wave
     w = wave.open (path, "rb")
     n, sw, ch = w.getnframes(), w.getsampwidth(), w.getnchannels()
@@ -313,22 +374,89 @@ def afina (x, esperada, n=4096):
     if len (x) < n: return 0.0
     #  Desde un cuarto del cuerpo, que es donde el ataque ya no manda.
     ini = len (x) // 4
-    seg = x[ini:ini + n]
-    if len (seg) < n: seg = x[:n]
-    mejor, mejorP = esperada, -1.0
-    #  Barrido de +-80 cents en pasos de un cent alrededor de la esperada: lo
-    #  que se quiere medir es el desafine de la SINTESIS, y ochenta cents es
-    #  mucho mas de lo que cualquiera de estos fallos ha producido nunca.
-    for c in range (-80, 81):
-        f = esperada * (2.0 ** (c / 1200.0))
-        p = goertzel (seg, f) + goertzel (seg, 2.0 * f) + goertzel (seg, 3.0 * f)
-        if p > mejorP: mejorP, mejor = p, f
-    return mejor
+
+    def pico (seg, centro, radio):
+        mejor, mejorP = centro, -1.0
+        for c in range (-radio, radio + 1):
+            f = centro * (2.0 ** (c / 1200.0))
+            p = goertzel (seg, f) + goertzel (seg, 2.0 * f) + goertzel (seg, 3.0 * f)
+            if p > mejorP: mejorP, mejor = p, f
+        return mejor
+
+    #  DOS PASADAS, Y LA SEGUNDA CON VENTANA LARGA. AQUI ESTABAN 53 FALLOS.
+    #
+    #  Con una sola pasada de 4096 muestras -85 ms- la regla de afinacion sacaba
+    #  **53 de los 384 fuera de liston**, y agrupados por FAMILIA y no por
+    #  preset: los cuatro CELLOS a +6 cents, los seis LEADS de -3 a -8, los seis
+    #  COROS de vocal clavados en +2/-4. Un desafine que sale igual en los
+    #  dieciseis presets de una forma no es de la receta.
+    #
+    #  No lo era: la misma zona rendida, medida con ventanas mas largas, da
+    #  **+0.0 cents en las diez** que se probaron -CELLOS SOLO +6.0 a 4096 y
+    #  +0.0 a 65536; LEADS PWM -7.0 y +0.0; BAJOS REESE +6.0 y +0.0-. La sintesis
+    #  esta clavada por construccion -el oscilador avanza `hz/fs` exacto- y lo
+    #  que se estaba midiendo era el sesgo del estimador: a 85 ms el lobulo de
+    #  un armonico rico y con ruido mide 155 cents de ancho a 130 Hz, o sea que
+    #  el pico de la puntuacion lo arrastra la FORMA del espectro y no la nota.
+    #
+    #  Primero se duda de la prueba, y van dieciseis veces.
+    #
+    #  Se hace en dos pasadas para no pagarlo: el barrido de +-80 cents sigue
+    #  con la ventana corta -0.1 s por llamada- y solo los +-20 cents de
+    #  alrededor se repiten con 65536 muestras -1.37 s de audio, 0.27 s de
+    #  cuenta-. Una sola pasada larga serian 1.1 s por llamada y son 768
+    #  llamadas: catorce minutos contra cinco.
+    disp = len (x) - ini
+    corto = x[ini:ini + n] if disp >= n else x[:n]
+    fino  = min (65536, disp)
+    largo = x[ini:ini + fino] if fino >= n else corto
+    return pico (largo, pico (corto, esperada, 80), 20)
 
 
 def cents (a, b):
     if a <= 0.0 or b <= 0.0: return 0.0
     return 1200.0 * math.log (a / b, 2.0)
+
+
+def inarmonico (x, f0, n=2048):
+    """CUANTO SE SALE DEL PEINE ARMONICO, en cents de media.
+
+    Para cada parcial k=2..6 se busca el maximo alrededor de k*f0 y se apunta
+    a cuantos cents del multiplo exacto cayo. Un sonido armonico -una sierra,
+    un organo, una lengueta- los tiene clavados; una campana, una barra o una
+    cuerda gruesa los tiene estirados hacia arriba, y eso es lo que significa
+    «inarmonico a proposito».
+
+    ESTO EXISTE PORQUE HABIA DOS LISTAS ESCRITAS A MANO Y NO COINCIDEN:
+    `INARMONICAS = ("CAMPANAS", "ACORDEON")` aqui abajo, y
+    *«marcaria a CAMPANAS, MAZOS y ARPAS, que son inarmonicos A PROPOSITO»* en
+    `Tests/StressTest.cpp:1784`. Nadie medía la inarmonicidad, asi que nadie
+    habia visto que las dos se contradicen. Una lista de nombres que nadie
+    contrasta no es una regla: es una excepcion.
+
+    Medido, las dos estaban mal: CAMPANAS 64.8 y MAZOS 64.0 lo son, PIANO
+    ELEC 58.4 lo es y no estaba en ninguna, y ARPAS 24.8 y ACORDEON 11.2 no
+    lo son. La lista ya no existe; el perdon lo da esta funcion.
+
+    CON GOERTZEL Y NO CON LA FFT, por lo mismo que `afina`: a 130 Hz un bin de
+    16384 puntos son 38 cents, o sea que la FFT no puede ni ver el liston. Y la
+    rejilla es de CUATRO cents y no de uno porque el liston son cincuenta:
+    medir doce veces mas fino de lo que la regla distingue es tiempo tirado.
+    Medido: 19 ms por preset, 7 s los 384."""
+    if len (x) < n or f0 <= 0.0: return 0.0
+    ini = len (x) // 4
+    seg = x[ini:ini + n]
+    if len (seg) < n: seg = x[:n]
+    desv = []
+    for k in (2, 3, 4, 5, 6):
+        base = k * f0
+        if base > 0.45 * SR: break
+        mejor, mejorP = 0.0, -1.0
+        for c in range (-100, 101, 4):
+            p = goertzel (seg, base * (2.0 ** (c / 1200.0)))
+            if p > mejorP: mejorP, mejor = p, float (c)
+        desv.append (abs (mejor))
+    return (sum (desv) / len (desv)) if desv else 0.0
 
 
 def ancho (izq, der):
@@ -368,6 +496,58 @@ def agudos (x):
         alta += d * d; total += v * v
         prev = v
     return math.sqrt (alta / total) if total > 1e-12 else 0.0
+
+
+def agudos2 (a, b):
+    """LA MISMA CUENTA QUE `agudos` PERO DEL SONIDO ENTERO, que es lo que el
+    motor corrige y lo que se oye.
+
+    Es letra por letra `Sintes::agudosCon (z, 1.0f)`: las dos energias se suman
+    ANTES de dividir, no se promedian dos razones. Y la diferencia no es
+    cosmetica -esta medida en `carga2`-: con `agudos` del canal izquierdo las
+    384 daban **33 escalones de timbre mal repartidos**, once de ellos SITAR y
+    cuatro por encima del 100 %; con esta, COROS, CLAVES y TUBOS enteras -48
+    presets- caen por debajo del liston, y las tres reglas de capa que
+    acusaban a sesenta y cinco de las 384 -CAPA_HZ, CAPA_REPARTO y
+    CAPA_REPARTO_HZ- acusaban al estereo."""
+    alta = total = 0.0
+    for xs in (a, b):
+        prev = 0.0
+        for v in xs:
+            d = v - prev
+            alta += d * d; total += v * v
+            prev = v
+    return math.sqrt (alta / total) if total > 1e-12 else 0.0
+
+
+#  Los cuatro de la curva K de BS.1770 a 48 kHz, los mismos que `kits.loudness`
+#  y que `Kits::gananciaSonoridad`. Viven aqui porque `loudness2` los necesita
+#  sueltos: la version de dos canales no puede llamar dos veces a la de uno.
+_SHELF_B = (1.53512485958697, -2.69169618940638, 1.19839281085285)
+_SHELF_A = (-1.69065929318241, 0.73248077421585)
+_HP_B    = (1.0, -2.0, 1.0)
+_HP_A    = (-1.99004745483398, 0.99007225036621)
+
+
+def loudness2 (a, b):
+    """LA SONORIDAD DEL PAR, y no la media de dos sonoridades.
+
+    `Kits::gananciaSonoridad (l, r, len)` suma las dos energias MUESTRA A
+    MUESTRA y luego busca la ventana de 400 ms mas sonora de esa suma. Llamar
+    dos veces a la de un canal y promediar daria otro numero -cada canal tiene
+    su propia ventana mas sonora- y entonces la prueba y el motor discreparian
+    por su aritmetica y no por el audio, que es el fallo que ya cometio la
+    segunda version de `kits.loudness` con sus filtros a mano."""
+    ka = biquad (biquad (a, _SHELF_B, _SHELF_A), _HP_B, _HP_A)
+    kb = biquad (biquad (b, _SHELF_B, _SHELF_A), _HP_B, _HP_A)
+    sq = [x * x + y * y for x, y in zip (ka, kb)]
+    win = min (len (sq), int (48000 * 0.400))
+    if win <= 0: return 0.0
+    run = sum (sq[:win]); best = run
+    for n in range (win, len (sq)):
+        run += sq[n] - sq[n - win]
+        if run > best: best = run
+    return math.sqrt (best / win)
 
 
 def centroide (x, n=8192):
@@ -413,10 +593,14 @@ def pendiente_local (x, i, radio):
     return max ((abs (x[k] - x[k - 1]) for k in range (a, b)), default=0.0)
 
 
-def corre (dirtemp):
+def corre (dirtemp, fam=None):
+    """Una corrida del binario. Con `fam` puesta rinde SOLO esa familia y
+    vuelca los dieciseis buffers enteros; sin ella hace la pasada de siempre -las
+    384 zonas de referencia y los gestos de interfaz-. Ver `Volcado`."""
     casa = tempfile.mkdtemp (prefix="zati-instr-")
     try:
         env = dict (os.environ)
+        if fam is not None: env["ZATI_INSTR_FAM"] = str (fam)
         #  DISPLAY va PUESTA: `display_alive` cae a ":99" cuando el entorno no
         #  la trae, asi que sin esta linea la comprobacion decia que si contra
         #  una pantalla y la app arrancaba sin ninguna — `salieron 0 presets y
@@ -455,6 +639,46 @@ def corre (dirtemp):
         elif d.get ("instr") == "piano":    extra["piano"] = d
         elif d.get ("instr") == "error":  extra["error"] = d.get ("que", "")
     return filas, extra
+
+
+class Volcado:
+    """El audio ENTERO de un preset, familia a familia y borrando detras.
+
+    LAS REGLAS DE ESTRUCTURA JUZGABAN 24 DE 384. El bucle de abajo empezaba con
+    `if d["pre"] != 0: continue`, y no por decision: el binario solo escribia el
+    buffer entero del preset 0 de cada familia. O sea que capas, reparto,
+    afinacion, deriva, octavas, la octava desplazada y el click de la costura
+    miraban **24 presets**, y los otros **360** pasaban solo por mapa, mudo, DC,
+    ancho y pares. Un preset 7 con la octava mal rendida no lo veia nadie.
+
+    NO SE ARREGLA PIDIENDO LOS 384 DE GOLPE: son ~11 MB por preset -quince zonas
+    por dos canales, cuerpo de 0.6 a 1.6 s- o sea **4.4 GB** en la carpeta
+    temporal. Una familia son 184 MB, que si caben, asi que esta clase pide una
+    familia, deja que se juzguen sus dieciseis y la borra antes de la siguiente.
+
+    Y LA FAMILIA LA ELIGE EL BINARIO (`ZATI_INSTR_FAM`) y no este bucle: sin eso
+    las veinticuatro pasadas rendirian las 384 cada una -24 x 3 min = 72 min-.
+    Rindiendo solo la que se pide son unos 15 s por pasada, **~6 min las 24**."""
+
+    def __init__ (self, dirtemp):
+        self.dir = dirtemp
+        self.fam = -1
+
+    def dame (self, f, p):
+        if f != self.fam:
+            self.suelta()
+            corre (self.dir, f)
+            self.fam = f
+        return carga2 (os.path.join (self.dir, "todo-%02d-%02d.wav" % (f, p)))
+
+    def suelta (self):
+        if self.fam >= 0:
+            pre = "todo-%02d-" % self.fam
+            for fn in os.listdir (self.dir):
+                if fn.startswith (pre):
+                    try: os.remove (os.path.join (self.dir, fn))
+                    except OSError: pass
+        self.fam = -1
 
 
 def main():
@@ -555,6 +779,9 @@ def main():
         # ---- LOS 384, UNO A UNO ------------------------------------------
         descs = []
         peorDC = (-999.0, "")
+        peorArr, peorFilo = (0.0, ""), (0.0, "")
+        filos = 0
+        inarms = {}
         for d in filas:
             f, p = d["fam"], d["pre"]
             etiq = "%s %s" % (d["familia"], d["nombre"])
@@ -582,7 +809,80 @@ def main():
                 fallos.append ("%s: %.1f dBFS de continua (liston %.0f)" % (etiq, dc, DC_DBFS))
             if dc > peorDC[0]: peorDC = (dc, etiq)
 
+            #  EL CHASQUIDO DE ENTRADA Y EL DE SALIDA. Ver MAX_START/MAX_EDGE.
+            #
+            #  EL ARRANQUE SE JUZGA SIEMPRE y el FILO solo en lo que NO
+            #  sostiene, y esto es la prueba corregida antes de creerla.
+            #
+            #  La primera version juzgaba los dos en los 384 y salio con
+            #  **461 fallos, de los que 40 impresos eran TODOS de filo**: el
+            #  peor 0.1239 en CUERDAS MARCATO contra un liston de 0.02, y
+            #  BAJOS, SUBS, ORGANOS y CUERDAS enteras dentro. Cuatro familias
+            #  que sostienen no pueden estar las cuatro rotas de la misma
+            #  forma: primero se duda de la prueba.
+            #
+            #  Y la prueba estaba mal. El WAV que se mide aqui es la zona de
+            #  referencia RECORTADA de `Z.ini` a `Z.fin`, y en una familia que
+            #  sostiene ese final no es un final: es el `bucleFin` de
+            #  `Sintes.cpp:1930-1931`, el punto por el que el motor vuelve al
+            #  `bucleIni`. Exigirle que acabe en cero es exigir que una onda
+            #  sostenida no se pueda buclar. Esa costura YA tiene juez —el
+            #  salto `bucleFin`→`bucleIni` contra `SALTO_MAX`— y es el juez
+            #  correcto porque mide el ESCALON entre los dos extremos y no el
+            #  valor de uno.
+            #
+            #  Lo que no sostiene se rinde entero (`Sintes.cpp:1822-1827`,
+            #  `bucleIni = bucleFin = 0`): ahi la voz llega al ultimo sample y
+            #  para, asi que el ultimo valor SI es un flanco y SI se oye.
+            arr, filo = abs (x[0]), abs (x[-1])
+            if arr  > peorArr[0]:  peorArr  = (arr, etiq)
+            if arr > MAX_START:
+                fallos.append ("%s: arranca en %.4f y eso es un chasquido (liston %.2f)"
+                               % (etiq, arr, MAX_START))
+            if not d["sostiene"]:
+                filos += 1
+                if filo > peorFilo[0]: peorFilo = (filo, etiq)
+                if filo > MAX_EDGE:
+                    fallos.append ("%s: acaba en %.4f y eso es un chasquido (liston %.2f)"
+                                   % (etiq, filo, MAX_EDGE))
+
+            #  LA INARMONICIDAD, Y EL CAMPO `forma` QUE NADIE LEIA.
+            #
+            #  `forma` viaja en las 384 lineas del volcado desde que existe
+            #  (`MainComponent_Audit.cpp`) y no tenia un solo lector en todo
+            #  `Tests/` — la misma figura que `cuerpoLetra` en la tanda 33. Se
+            #  lee aqui porque es lo que permite ver de un vistazo si la que se
+            #  sale es una TECNICA entera y no un preset suelto.
+            ia = inarmonico (x, afina (x, RAIZ_HZ))
+            inarms.setdefault (d["familia"], []).append ((ia, d.get ("forma", -1)))
+
         print ("continua: la peor %.1f dBFS (%s)" % (peorDC[0], peorDC[1]))
+        print ("filos: el peor arranque %.4f (%s) en %d   el peor final %.4f (%s) "
+               "en los %d que no sostienen   (liston %.2f)"
+               % (peorArr[0], peorArr[1], len (filas),
+                  peorFilo[0], peorFilo[1], filos, MAX_START))
+        if filos == 0:
+            fallos.append ("la regla del filo no juzgo ni un preset: o no queda una "
+                           "familia que no sostenga, o `sostiene` dejo de venir")
+
+        # ---- LA LISTA DE INARMONICAS, CONTRASTADA -------------------------
+        #
+        #  Se juzga por FAMILIA y con la mediana de sus dieciseis, que es lo que
+        #  la lista declara: la lista dice «CAMPANAS», no «CAMPANAS preset 7».
+        inarmMedida = set()
+        for fam, vs in sorted (inarms.items()):
+            ms = sorted (v for v, _ in vs)
+            med = ms[len (ms) // 2]
+            forma = vs[0][1]
+            if med > INARM_CENTS: inarmMedida.add (fam)
+            print ("%-12s inarmonico: %5.1f cents de media en los parciales 2..6   "
+                   "(forma %2d, %s)"
+                   % (fam, med, forma, "INARMONICA" if med > INARM_CENTS else "armonica"))
+        print ("inarmonicas por medida: %s  (liston %.0f cents)"
+               % (", ".join (sorted (inarmMedida)) or "ninguna", INARM_CENTS))
+        if not inarmMedida:
+            fallos.append ("ni una familia pasa de %.0f cents: o la sintesis perdio las "
+                           "inarmonicas, o `inarmonico` dejo de medir" % INARM_CENTS)
 
         # ---- EL COSTE, EN PROPORCION -------------------------------------
         msRef = extra.get ("msKits", 0.0)
@@ -695,24 +995,41 @@ def main():
             print ("   %6.2f dB  %s / %s" % (dist, a2, b2))
 
         # ---- ESTRUCTURA: capas, octavas y bucle --------------------------
+        #
+        #  LAS 384 Y NO LAS 24. Ver `Volcado` para el porque y para el troceado.
+        #  Lo que se imprime sigue siendo el preset 0 de cada familia -la misma
+        #  tabla de veinticuatro filas que se lleva mirando desde la tanda 10- y
+        #  lo que se JUZGA son las 384. Imprimir las 384 serian dos mil renglones
+        #  por corrida y la tabla dejaria de leerse; un fallo se imprime siempre,
+        #  venga del preset que venga, porque `fallos` no pasa por este filtro.
+        volc = Volcado (dirtemp)
+        juzgados = 0
         for d in filas:
-            if d["pre"] != 0: continue
-            etiq = d["familia"]
-            x = load (os.path.join (dirtemp, "todo-%02d.wav" % d["fam"]))
+            etiq = "%s %s" % (d["familia"], d["nombre"])
+            di = print if d["pre"] == 0 else (lambda *a, **k: None)
+            #  LOS DOS CANALES, y `x` es el izquierdo para lo que mide altura
+            #  y forma de onda -afinacion, la octava desplazada, el salto de la
+            #  costura-, donde sumar dos canales desfasados solo borraria lo
+            #  que se busca. Lo que mide ENERGIA -las tres reglas de capa y la
+            #  de octavas- va con los dos, porque es lo que el motor corrige.
+            izq, der = volc.dame (d["fam"], d["pre"])
+            x = izq
             if not x:
                 fallos.append ("%s: no escribio el preset entero" % etiq); continue
+            juzgados += 1
             mapa = d["mapa"]
 
             #  LAS DOS CAPAS DE LA RAIZ CENTRAL, en dos numeros.
             zs = [z for z in mapa if z[0] == 0]
             suave = [z for z in zs if z[1] == 0][0]
             duro  = [z for z in zs if z[1] == CAPAS - 1][0]
-            a = x[suave[2]:suave[3]]; b = x[duro[2]:duro[3]]
-            la, lb = loudness (a), loudness (b)
-            ca, cb = agudos (a), agudos (b)
+            la = loudness2 (izq[suave[2]:suave[3]], der[suave[2]:suave[3]])
+            lb = loudness2 (izq[duro[2]:duro[3]],  der[duro[2]:duro[3]])
+            ca = agudos2   (izq[suave[2]:suave[3]], der[suave[2]:suave[3]])
+            cb = agudos2   (izq[duro[2]:duro[3]],  der[duro[2]:duro[3]])
             db = 20.0 * math.log10 (lb / la) if la > 1e-9 and lb > 1e-9 else 0.0
             raz = cb / ca if ca > 1e-6 else 1.0
-            print ("%-12s capas: %+5.1f dB   agudos x%.2f  (%.4f -> %.4f)"
+            di ("%-22s capas: %+5.1f dB   agudos x%.2f  (%.4f -> %.4f)"
                    % (etiq, db, raz, ca, cb))
             if db < CAPA_DB:
                 fallos.append ("%s: la capa fuerte solo sube %.1f dB" % (etiq, db))
@@ -756,7 +1073,7 @@ def main():
                 #  intacta. Si el pico esta a mas de diez cents del fundamental es
                 #  que el pico NO es el fundamental.
                 cerca = abs (abs0) < 10.0 and abs (abs12) < 10.0
-                print ("%-12s afina: raiz 0 %+.1f cents   la octava %+.1f cents%s"
+                di ("%-22s afina: raiz 0 %+.1f cents   la octava %+.1f cents%s"
                        % (etiq, abs0, rel, "" if cerca else "  (el pico no es el fundamental)"))
                 #  YA JUZGA, y lo que faltaba para poder hacerlo no era un
                 #  metodo mejor sino DECIR QUIEN NO CUENTA. La regla llevaba tres
@@ -789,11 +1106,12 @@ def main():
                 #  fundamental, y eso es la regla funcionando y no un agujero.
                 if not cerca:
                     pass
-                elif etiq in INARMONICAS:
+                elif d["familia"] in inarmMedida:
                     if abs (rel) > CENTS_INARM or abs (abs0) > CENTS_INARM:
-                        fallos.append ("%s: afinacion %+.0f/%+.0f cents, y es de las "
-                                       "declaradas inarmonicas pero se pasa hasta de su "
-                                       "tope propio de %.0f" % (etiq, abs0, rel, CENTS_INARM))
+                        fallos.append ("%s: afinacion %+.0f/%+.0f cents, y mide por encima "
+                                       "de los %.0f cents de inarmonicidad pero se pasa "
+                                       "hasta de su tope propio de %.0f"
+                                       % (etiq, abs0, rel, INARM_CENTS, CENTS_INARM))
                 elif abs (rel) > CENTS_REL or abs (abs0) > CENTS_ABS:
                     fallos.append ("%s: afinacion fuera de liston, raiz %+.0f cents "
                                    "(tope %.0f) y octava %+.0f cents (tope %.0f)"
@@ -955,7 +1273,7 @@ def main():
                 vv   = max (v for _, v, _ in tendencias)
                 baja = all (t < 0.0 for t, _, _ in tendencias)
                 sube = all (t > 0.0 for t, _, _ in tendencias)
-                print ("%-12s deriva: %.2f dB de tendencia (vaiven %.2f) en %d raices, "
+                di ("%-22s deriva: %.2f dB de tendencia (vaiven %.2f) en %d raices, "
                        "signos %s" % (etiq, peor, vv, len (tendencias),
                                       "".join ("-" if t < 0 else "+" for t, _, _ in tendencias)))
                 #  ROTURA A PROPOSITO, HECHA, y con DOS intentos que se cuentan
@@ -992,7 +1310,7 @@ def main():
             for c in range (CAPAS):
                 zc = [z for z in zs if z[1] == c]
                 if not zc: continue
-                sons.append (loudness (x[zc[0][2]:zc[0][3]]))
+                sons.append (loudness2 (izq[zc[0][2]:zc[0][3]], der[zc[0][2]:zc[0][3]]))
             pasos = []
             for i in range (1, len (sons)):
                 if sons[i - 1] > 1e-9 and sons[i] > 1e-9:
@@ -1001,12 +1319,66 @@ def main():
                 total = sum (pasos)
                 peor  = max (abs (v) for v in pasos)
                 cuota = (peor / total) if total > 1e-6 else 1.0
-                print ("%-12s escalones: %s dB   (recorrido %.1f, el mayor se lleva %.0f%%)"
+                di ("%-22s escalones: %s dB   (recorrido %.1f, el mayor se lleva %.0f%%)"
                        % (etiq, " ".join ("%+.2f" % v for v in pasos), total, 100.0 * cuota))
                 if cuota > CAPA_REPARTO:
                     fallos.append ("%s: un escalon se lleva el %.0f%% del recorrido de fuerza "
                                    "(liston %.0f%%): las capas no estan repartidas"
                                    % (etiq, 100.0 * cuota, 100.0 * CAPA_REPARTO))
+
+            #  Y EL CUARTO: EL ESCALON DE TIMBRE TAMPOCO.
+            #
+            #  `CAPA_HZ` EXIGE que las capas suenen distinto de brillo -si no,
+            #  es un fader con pasos- y `CAPA_REPARTO` exige que el salto de
+            #  NIVEL este repartido. Que el salto de BRILLO lo este no lo pedia
+            #  nadie: se exigia el escalon y no se medía su continuidad, que es
+            #  media regla. Y el timbre es justo lo que NO se deshace al
+            #  disparar -`Zona::fuerza` devuelve el volumen, y el filtro mas
+            #  abierto se queda (`SampleBuffer.h:70-73`)-, asi que si hay un
+            #  escalon audible al cruzar de capa, hoy sale por aqui y no por la
+            #  regla de nivel.
+            #
+            #  MISMO NUMERO Y MISMA DERIVACION QUE SU HERMANA, y por la misma
+            #  razon: un techo absoluto en «razon de agudos» confundiria una
+            #  familia con mucho recorrido de timbre -que es lo que se quiere-
+            #  con una que da un salto. Lo que se mide es el REPARTO.
+            brillos = []
+            for c in range (CAPAS):
+                zc2 = [z for z in zs if z[1] == c]
+                if not zc2: continue
+                brillos.append (agudos2 (izq[zc2[0][2]:zc2[0][3]], der[zc2[0][2]:zc2[0][3]]))
+            pasosHz = []
+            for i in range (1, len (brillos)):
+                if brillos[i - 1] > 1e-6 and brillos[i] > 1e-6:
+                    pasosHz.append (20.0 * math.log10 (brillos[i] / brillos[i - 1]))
+            if pasosHz:
+                totalHz = sum (pasosHz)
+                peorHz  = max (abs (v) for v in pasosHz)
+                cuotaHz = (peorHz / totalHz) if abs (totalHz) > 1e-6 else 1.0
+                di ("%-22s timbre:    %s dB   (recorrido %.1f, el mayor se lleva %.0f%%)"
+                    % (etiq, " ".join ("%+.2f" % v for v in pasosHz), totalHz,
+                       100.0 * cuotaHz))
+                #  Y CON SUELO, que es lo que la hermana de nivel no necesita
+                #  y esta si. El recorrido de NIVEL va de 5.4 a 11.0 dB en las
+                #  24 familias: ahi un escalon desigual siempre es audible. El
+                #  de TIMBRE va de **1.3 dB en TUBOS BOURDON a 7.4 en PIANO
+                #  ELEC**, y con 1.3 de recorrido el peor escalon posible son
+                #  **0.86 dB**: la regla acusaba a TUBOS de llevarse el 67 %
+                #  del recorrido y lo que describia era un cambio de brillo que
+                #  no se oye. Un porcentaje de una cantidad inaudible no es un
+                #  defecto.
+                #
+                #  El suelo NO es un numero nuevo: son los **0.98 dB** que ya
+                #  vale `CAPA_HZ = 1.12`, el liston con el que esta casa
+                #  declara que dos capas «suenan distinto de brillo». Por
+                #  debajo de eso la propia regla de al lado dice que no hay
+                #  diferencia; por encima, el reparto manda.
+                if peorHz > 20.0 * math.log10 (CAPA_HZ) and cuotaHz > CAPA_REPARTO_HZ:
+                    fallos.append ("%s: un escalon de %.2f dB se lleva el %.0f%% del "
+                                   "recorrido de TIMBRE (liston %.0f%%, suelo %.2f dB): el "
+                                   "brillo cambia de golpe al cruzar de capa"
+                                   % (etiq, peorHz, 100.0 * cuotaHz, 100.0 * CAPA_REPARTO_HZ,
+                                      20.0 * math.log10 (CAPA_HZ)))
 
             #  LAS CINCO OCTAVAS, EN SONORIDAD. La ganancia sale de una sola
             #  zona, asi que esto SI puede desmadrarse - y es lo que la linea de
@@ -1022,11 +1394,11 @@ def main():
             #  raices caen dentro de 1.4 dB. Que el escalon de una capa a otra sea
             #  parejo ya lo mira `CAPA_REPARTO`, que es su sitio.
             for z in [q for q in mapa if q[1] == CAPAS - 1]:
-                porOctava.append ((z[0], loudness (x[z[2]:z[3]])))
+                porOctava.append ((z[0], loudness2 (izq[z[2]:z[3]], der[z[2]:z[3]])))
             vivos = [v for _, v in porOctava if v > 1e-9]
             if len (vivos) == len (porOctava) and vivos:
                 salto = 20.0 * math.log10 (max (vivos) / min (vivos))
-                print ("%-12s octavas: baila %.1f dB   (%s)"
+                di ("%-22s octavas: baila %.1f dB   (%s)"
                        % ("", salto, "  ".join ("%+d:%.3f" % (r, v) for r, v in porOctava)))
                 if salto > OCTAVA_DB:
                     fallos.append ("%s: la sonoridad baila %.1f dB entre sus octavas"
@@ -1060,6 +1432,17 @@ def main():
                                        "%.4f contra %.4f de al lado: CLICK"
                                        % (etiq, z[0], z[1], salto, cerca))
                         break
+
+        volc.suelta()
+        #  LA COBERTURA SE IMPRIME, que es lo que permite que una rotura la
+        #  mueva. Reponer el `if d["pre"] != 0: continue` deja este numero en 24
+        #  y la prueba sigue diciendo OK: sin el renglon, esa rotura no la ve
+        #  nadie —es el mismo agujero que la tanda 33 encontro con las bandas—.
+        print ("estructura: %d presets juzgados de %d  (capas, reparto, afinacion, "
+               "deriva, octavas y costura)" % (juzgados, len (filas)))
+        if juzgados < len (filas):
+            fallos.append ("las reglas de estructura solo juzgaron %d de %d presets"
+                           % (juzgados, len (filas)))
 
         # ---- QUE VUELVA SIENDO UN INSTRUMENTO --------------------------
         v = extra.get ("vuelta")
@@ -1502,8 +1885,27 @@ def main():
 
         print()
         if fallos:
-            for f in fallos[:40]: print ("FALLA  " + f)
-            if len (fallos) > 40: print ("...y %d mas" % (len (fallos) - 40))
+            #  EL RECUENTO POR REGLA ANTES DE LA LISTA, que con 384 presets
+            #  juzgados en vez de 24 es la diferencia entre ver el banco y no
+            #  verlo. La primera pasada de la tanda 34 salio con **461 fallos
+            #  y los 40 impresos eran los 40 primeros de UNA sola regla**: las
+            #  otras cinco no aparecian por ningun lado. Una lista truncada
+            #  por orden de insercion no dice cuantas reglas estan rojas.
+            cuenta = {}
+            for f in fallos:
+                cuenta.setdefault (re.sub (r"[-+]?\d[\d.]*", "N",
+                                           f.split (": ", 1)[-1]), []).append (f)
+            #  Y LOS EJEMPLOS POR REGLA Y NO LOS 40 PRIMEROS DE LA LISTA.
+            #  Con el recuento solo se sabe CUANTOS; para saber si una regla
+            #  esta rota por una familia o por las veinticuatro hace falta ver
+            #  a quien acusa, y los 40 primeros de una lista ordenada por
+            #  insercion son siempre los de la primera familia.
+            print ("por regla:")
+            for k in sorted (cuenta, key=lambda k: -len (cuenta[k])):
+                print ("  %4d  %s" % (len (cuenta[k]), k))
+                for f in cuenta[k][:6]: print ("        FALLA  " + f)
+                if len (cuenta[k]) > 6:
+                    print ("        ...y %d mas de esta" % (len (cuenta[k]) - 6))
             return 1
         print ("384 instrumentos: ninguno mudo, ninguno repetido, y las octavas cuadran")
         return 0

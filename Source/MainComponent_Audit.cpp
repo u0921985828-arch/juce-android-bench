@@ -2103,8 +2103,31 @@ void MainComponent::auditInstr()
         std::cout << "{\"instr\":\"ref\",\"msKits\":" << juce::String (msRef, 2) << "}" << std::endl;
     }
 
+    //  LA PASADA DE UNA SOLA FAMILIA, Y POR QUE HACE FALTA.
+    //
+    //  Hasta aqui el buffer entero solo se escribia del preset 0 (`if (pr == 0)`
+    //  mas abajo), y eso dejaba las reglas de estructura de `instr.py` -capas,
+    //  reparto, afinacion, deriva, octavas y el click de la costura- juzgando
+    //  **24 presets de 384**. Los otros 360 pasaban solo por mapa, mudo, DC,
+    //  ancho y pares. Un preset 7 con la octava mal rendida no lo veia NADIE.
+    //
+    //  No se arregla escribiendo los 384 de golpe: el cuerpo son 0.6-1.6 s por
+    //  zona, quince zonas por dos canales a 48 kHz son ~11 MB por preset y los
+    //  384 juntos son **4.4 GB**. Una familia son 184 MB, que si caben.
+    //
+    //  Y POR ESO LA FAMILIA SE ELIGE AQUI Y NO EN PYTHON: sin esto, las 24
+    //  pasadas rendirian las 384 cada una -24 x 3 min = 72 min-. Rindiendo solo
+    //  la que se pide son 16 presets por pasada, unos 15 s, **~6 min las 24**.
+    //
+    //  Con la familia puesta no se escribe `ref` -ya lo hizo la pasada de los
+    //  384- ni se corren los gestos de la interfaz que van detras del bucle:
+    //  esta pasada existe solo para volcar audio.
+    const juce::String famPedida = UiAudit::env ("ZATI_INSTR_FAM");
+    const int soloFam = famPedida.isNotEmpty() ? famPedida.getIntValue() : -1;
+
     for (int f = 0; f < Sintes::kFamilias; ++f)
     {
+        if (soloFam >= 0 && f != soloFam) continue;
         const auto& F = Sintes::tabla()[f];
         for (int pr = 0; pr < Sintes::kPresets; ++pr)
         {
@@ -2118,15 +2141,19 @@ void MainComponent::auditInstr()
             //  1.000 siempre y la regla del ancho mediria su propia suma.
             const auto& Z = sb->zonas[(size_t) Sintes::kZonaRef];
             const int nCh = sb->buffer.getNumChannels();
-            juce::AudioBuffer<float> ref (nCh, Z.fin - Z.ini);
-            for (int ch = 0; ch < nCh; ++ch)
-                ref.copyFrom (ch, 0, sb->buffer, ch, Z.ini, Z.fin - Z.ini);
-            ProjectStore::writeSample (dir.getChildFile (juce::String::formatted ("ref-%02d-%02d.wav", f, pr)),
-                                       ref, sb->sourceSampleRate);
-
-            if (pr == 0)
-                ProjectStore::writeSample (dir.getChildFile (juce::String::formatted ("todo-%02d.wav", f)),
+            if (soloFam < 0)
+            {
+                juce::AudioBuffer<float> ref (nCh, Z.fin - Z.ini);
+                for (int ch = 0; ch < nCh; ++ch)
+                    ref.copyFrom (ch, 0, sb->buffer, ch, Z.ini, Z.fin - Z.ini);
+                ProjectStore::writeSample (dir.getChildFile (juce::String::formatted ("ref-%02d-%02d.wav", f, pr)),
+                                           ref, sb->sourceSampleRate);
+            }
+            else
+            {
+                ProjectStore::writeSample (dir.getChildFile (juce::String::formatted ("todo-%02d-%02d.wav", f, pr)),
                                            sb->buffer, sb->sourceSampleRate);
+            }
 
             std::cout << "{\"instr\":\"preset\",\"fam\":" << f << ",\"pre\":" << pr
                       << ",\"familia\":\"" << F.nombre << "\""
@@ -2154,6 +2181,13 @@ void MainComponent::auditInstr()
             std::cout << "]}" << std::endl;
         }
     }
+
+    //  Y LA PASADA DE UNA FAMILIA TERMINA AQUI. Lo que viene detras son gestos
+    //  de interfaz -poner el pad, mover un mando, abrir la ficha, el teclado- y
+    //  no dependen de la familia: correrlos veinticuatro veces mas seria medir
+    //  lo mismo veinticuatro veces y alargar el banco por nada.
+    if (soloFam >= 0)
+        return;
 
     // ------------------------------------------------------------------
     //  Y QUE VUELVA SIENDO UN INSTRUMENTO.

@@ -4778,6 +4778,265 @@ int main()
         std::printf ("%-34s nota 0 %.3f   +24 %.3f (x%.2f)   costura +5/+7 x%.2f   %s\n",
                      "el instrumento elige zona", n0, n24, rango, costura,
                      ok ? "OK" : zatiFalla());
+
+        // --------------------------------------------------------------
+        //  Y LA MISMA COSTURA EN LAS VEINTICUATRO FAMILIAS, que hasta hoy
+        //  se miraba en UNA. El renglon de arriba juzga BAJOS y nada mas, y
+        //  el comentario de veinte lineas mas arriba dice por que: con COROS
+        //  salia x0.60 y el motor estaba BIEN. La conclusion que se saco
+        //  entonces fue cambiar de familia, y eso deja el defecto audible
+        //  mejor documentado del motor sin nadie que lo mida en las otras 23.
+        //
+        //  EL LISTON ES RELATIVO, que es la misma correccion que ya hubo que
+        //  hacerle dos veces a CAPA_REPARTO. Un techo absoluto -el x0.85 a
+        //  x1.45 de arriba- confunde dos cosas distintas: una familia de
+        //  formantes FIJOS, donde estirar cambia el timbre porque asi esta
+        //  hecha, y una zona rendida a la frecuencia equivocada, que es el
+        //  fallo. Con techo absoluto COROS sale roja por estar bien hecha.
+        //
+        //  Y EL DIVISOR NO ES UN SEMITONO CUALQUIERA, que es lo que hace que
+        //  esto mida algo. La costura compara la nota +5 -raiz 0 estirada
+        //  CINCO ARRIBA- con la +7 -raiz 12 estirada CINCO ABAJO-: dos
+        //  semitonos de altura pero DIEZ de estiramiento. El testigo tiene
+        //  que traer esos mismos diez y no cruzar costura: -5 y +5, las dos
+        //  dentro de la raiz 0. Asi el divisor mide exactamente lo que le
+        //  CUESTA a esa familia que le muevan el formante diez semitonos, y
+        //  lo que sobre de ahi ya no es la familia: es la zona mal puesta.
+        //
+        //  En EXCESOS y no en veces, que es lo que hace que el numero
+        //  signifique lo mismo en las dos puntas: un testigo de x1.00
+        //  -familia que sigue a la nota, donde estirar no cambia el timbre-
+        //  deja el techo en x1.12, que es justo el margen que esta prueba ya
+        //  tenia escrito para BAJOS; y COROS se gana su holgura MEDIDA en vez
+        //  de por lista de nombres.
+        constexpr double kCosturaVeces  = 3.0;
+        constexpr double kCosturaMargen = 0.12;
+
+        auto brilloDe = [&] (SampleBuffer::Ptr sb, int semis)
+        {
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (false);
+            e.publishSample (0, sb);
+            e.setPadGain (0, 1.0f);
+            return centro (e, semis, 40);
+        };
+
+        int    cosJuzgadas = 0, cosMalas = 0, cosPeorFam = -1;
+        double cosPeorRazon = 0.0, cosPeorSalto = 0.0, cosPeorTestigo = 0.0;
+
+        for (int f = 0; f < Sintes::kFamilias; ++f)
+        {
+            //  Una sintesis por familia y TRES motores sobre ella: el buffer
+            //  es contado por referencias, asi que las tres notas comparten
+            //  la muestra. Rendir tres veces la familia serian 72 sintesis
+            //  -sobre 1 s cada una- en vez de 24.
+            SampleBuffer::Ptr sb = Sintes::sintetiza (f, 0);
+            if (sb == nullptr) continue;
+
+            const double c5  = brilloDe (sb,  5);
+            const double c7  = brilloDe (sb,  7);
+            const double cm5 = brilloDe (sb, -5);
+            ++cosJuzgadas;
+
+            if (c5 < 1.0e-9 || c7 < 1.0e-9 || cm5 < 1.0e-9)
+            {
+                ++cosMalas;
+                std::printf ("    costura %-13s MUDA   (+5 %.4f  +7 %.4f  -5 %.4f)\n",
+                             Sintes::tabla()[f].nombre, c5, c7, cm5);
+                continue;
+            }
+
+            const double salto   = std::max (c7 / c5, c5 / c7);
+            const double testigo = std::max (c5 / cm5, cm5 / c5);
+            const double techo   = 1.0 + kCosturaVeces * (testigo - 1.0) + kCosturaMargen;
+            const double razon   = salto / techo;
+
+            if (razon > cosPeorRazon)
+            {
+                cosPeorRazon   = razon;   cosPeorFam     = f;
+                cosPeorSalto   = salto;   cosPeorTestigo = testigo;
+            }
+            if (salto > techo)
+            {
+                ++cosMalas;
+                std::printf ("    costura %-13s salto x%.2f  testigo x%.2f  techo x%.2f\n",
+                             Sintes::tabla()[f].nombre, salto, testigo, techo);
+            }
+        }
+
+        const bool cosOk = cosJuzgadas == Sintes::kFamilias && cosMalas == 0;
+        std::printf ("%-34s %d de %d familias, %d fuera; peor %s x%.2f "
+                     "(testigo x%.2f, %.0f%% del techo)   %s\n",
+                     "la costura de octava", cosJuzgadas, Sintes::kFamilias, cosMalas,
+                     cosPeorFam >= 0 ? Sintes::tabla()[cosPeorFam].nombre : "-",
+                     cosPeorSalto, cosPeorTestigo, cosPeorRazon * 100.0,
+                     cosOk ? "OK" : zatiFalla());
+    }
+
+    // ------------------------------------------------------------------
+    //  POLIFONIA: OCHO VOCES DEL MISMO INSTRUMENTO, Y NO UNA.
+    //
+    //  `MAX_PEAK = 0.80` de `Tests/kits.py:59` se justifica desde que existe
+    //  con el renglon «techo: cuatro pads a la vez sin llegar al master», y
+    //  eso NUNCA se ha tocado de verdad: las 384 medidas de instrumento son
+    //  de UNA nota sola, y el unico sitio donde suenan varias a la vez es el
+    //  acorde del secuenciador, que se mide por notas y no por audio. El
+    //  liston lleva dos anos hablando de una situacion que nadie rinde.
+    //
+    //  DOS NUMEROS Y NO UNO, por la misma razon que en la costura:
+    //
+    //  El PICO va con la red puesta -`setSafetyLimiter (true)`, que es el
+    //  camino de verdad- y contra 1.0, que es el techo del convertidor y no
+    //  una opinion. Sin red, ocho voces de la misma muestra a fuerza 1.0
+    //  suman por encima de uno POR CONSTRUCCION y medir eso no dice nada;
+    //  lo que hay que saber es si lo que SALE recorta.
+    //
+    //  La CONTINUA va sin red -para que el limitador no la disimule- y
+    //  contra los -60 dBFS de `Tests/instr.py:230`, y se imprime al lado la
+    //  de UNA voz. Es la pareja que importa: una continua se suma LINEAL con
+    //  las voces mientras la senal se suma en raiz de N, asi que un desnivel
+    //  por voz que a una nota queda diez dB por debajo del liston se lo come
+    //  a ocho. Y la cifra de una voz es la que dice si el desnivel es de la
+    //  muestra o lo fabrica la mezcla.
+    //
+    //  Las ocho notas van repartidas -0 3 7 12 15 19 24 27- y no en racimo:
+    //  cruzan las costuras de raiz, que es donde una zona mal puesta mete su
+    //  continua propia, y con ocho unisonos no se cruzaria ninguna.
+    {
+        constexpr int  kPoliVoces   = 8;
+        constexpr double kPoliTecho = 1.0;
+        //  EL LISTON DE LA CONTINUA NO SON LOS -60 dBFS DE UNA MUESTRA, y esto
+        //  es la prueba corregida por segunda vez.
+        //
+        //  La version anterior heredaba literal el `DC_DBFS = -60` de
+        //  `Tests/instr.py:230` y sacaba cuatro familias fuera, la peor PIANOS
+        //  en **-47.7 dBFS con 8 voces contra -56.1 con una**. Se miro lo que
+        //  ese numero significa en vez de lo que vale: -47.7 dBFS son **el
+        //  0.41 % del pico**, o sea 0.04 dB de margen comidos. El -60 de
+        //  `instr.py` protege una muestra SOLA porque una continua ahi se
+        //  multiplica por las voces que la toquen; aplicarlo otra vez a la
+        //  suma de ocho es cobrar dos veces el mismo margen -pedirle a cada
+        //  voz que este en -78-.
+        //
+        //  Lo que si hay que medir son DOS cosas, y ninguna es esa:
+        //
+        //  · que la continua acumulada no se coma margen de verdad: **-40
+        //    dBFS, o sea el 1 %**, que es donde un limitador de master empieza
+        //    a contarla;
+        //  · y que NO SE ACUMULE PEOR QUE LINEAL. Ocho desniveles identicos
+        //    suman ocho -+18.06 dB- mientras la senal suma en raiz de ocho; si
+        //    la medida se pasa de ese techo es que hay algo mas que la suma de
+        //    los desniveles de cada voz, y eso si es el motor. Un decibelio de
+        //    margen por el ruido de la propia medida.
+        constexpr double kPoliDcDbfs = -40.0;
+        constexpr double kPoliDcMargen = 1.0;
+        static const int kPoliNotas[kPoliVoces] = { 0, 3, 7, 12, 15, 19, 24, 27 };
+
+        auto suena = [] (SampleBuffer::Ptr sb, const int* notas, int n, bool red,
+                         double* pico, double* dcDbfs)
+        {
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (red);
+            e.publishSample (0, sb);
+            e.setPadGain (0, 1.0f);
+
+            juce::AudioBuffer<float> out (2, 512);
+            out.clear(); e.renderNextBlock (out, 0, 512);      // que adopte la muestra
+            for (int i = 0; i < n; ++i)
+                e.postNoteOnAt (0, notas[i], 1.0f);
+
+            //  EL PICO EN TODA LA VENTANA Y LA CONTINUA SOLO EN LA SEGUNDA
+            //  MITAD, y esto es la prueba corregida antes de creerla.
+            //
+            //  La primera version promediaba los 60 bloques enteros y sacaba
+            //  cuatro familias fuera de liston, con FM en **-51.5 dBFS a ocho
+            //  voces y -49.4 a UNA**: la continua MEJORABA al anadir voces.
+            //  Eso no puede ser un desnivel -un desnivel se suma lineal y
+            //  empeora-, asi que la prueba estaba midiendo otra cosa: la
+            //  ASIMETRIA DEL ATAQUE. La media de una ventana de 0.64 s que
+            //  empieza con el golpe de la nota la domina el transitorio, no un
+            //  offset. Por eso `Tests/instr.py:690` se salta el arranque
+            //  (`cuerpo = x[ini:]`) para exactamente esta medida; aqui se hace
+            //  igual, con la segunda mitad.
+            //
+            //  El PICO si va en la ventana entera: un recorte en el ataque es
+            //  el recorte que importa.
+            double p = 0.0, suma = 0.0;
+            long long cuenta = 0;
+            for (int b = 0; b < 60; ++b)
+            {
+                out.clear();
+                e.renderNextBlock (out, 0, 512);
+                for (int ch = 0; ch < out.getNumChannels(); ++ch)
+                {
+                    const auto* w = out.getReadPointer (ch);
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        p = std::max (p, std::abs ((double) w[i]));
+                        if (b >= 30) { suma += (double) w[i]; ++cuenta; }
+                    }
+                }
+            }
+            const double media = cuenta > 0 ? std::abs (suma / (double) cuenta) : 0.0;
+            *pico = p;
+            *dcDbfs = 20.0 * std::log10 (std::max (1.0e-12, media)
+                                       / std::max (1.0e-12, p));
+        };
+
+        int    poliJuzgadas = 0, poliMalas = 0, poliPeorFam = -1, poliPeorSumaFam = -1;
+        double poliPeorPico = 0.0, poliPeorDc = -200.0, poliPeorDc1 = -200.0;
+        double poliPeorSuma = 0.0;
+
+        for (int f = 0; f < Sintes::kFamilias; ++f)
+        {
+            SampleBuffer::Ptr sb = Sintes::sintetiza (f, 0);
+            if (sb == nullptr) continue;
+            ++poliJuzgadas;
+
+            double picoRed = 0.0, dcRed = 0.0;
+            double picoOcho = 0.0, dcOcho = 0.0;
+            double picoUna = 0.0, dcUna = 0.0;
+            suena (sb, kPoliNotas, kPoliVoces, true,  &picoRed,  &dcRed);
+            suena (sb, kPoliNotas, kPoliVoces, false, &picoOcho, &dcOcho);
+            suena (sb, kPoliNotas, 1,          false, &picoUna,  &dcUna);
+
+            const double techoDc = dcUna + 20.0 * std::log10 ((double) kPoliVoces)
+                                 + kPoliDcMargen;
+            const bool malPico = picoRed > kPoliTecho;
+            const bool malDc   = dcOcho  > kPoliDcDbfs || dcOcho > techoDc;
+            if (malPico || malDc)
+            {
+                ++poliMalas;
+                std::printf ("    polifonia %-13s pico %.3f (techo %.2f)  continua %.1f "
+                             "dBFS (absoluto %.0f, una voz %.1f + lineal = %.1f)\n",
+                             Sintes::tabla()[f].nombre, picoRed, kPoliTecho, dcOcho,
+                             kPoliDcDbfs, dcUna, techoDc);
+            }
+            if (picoRed > poliPeorPico) { poliPeorPico = picoRed; }
+            if (picoUna > 1.0e-9 && picoOcho / picoUna > poliPeorSuma)
+            {
+                poliPeorSuma = picoOcho / picoUna; poliPeorSumaFam = f;
+            }
+            if (dcOcho > poliPeorDc)
+            {
+                poliPeorDc = dcOcho; poliPeorDc1 = dcUna; poliPeorFam = f;
+            }
+        }
+
+        const bool poliOk = poliJuzgadas == Sintes::kFamilias && poliMalas == 0;
+        std::printf ("%-34s %d de %d familias x%d voces, %d fuera; pico peor %.3f "
+                     "(techo %.2f)   suman x%.2f en %s   continua peor %.1f dBFS en %s "
+                     "(una voz %.1f)   %s\n",
+                     "polifonia", poliJuzgadas, Sintes::kFamilias, kPoliVoces, poliMalas,
+                     poliPeorPico, kPoliTecho, poliPeorSuma,
+                     poliPeorSumaFam >= 0 ? Sintes::tabla()[poliPeorSumaFam].nombre : "-",
+                     poliPeorDc,
+                     poliPeorFam >= 0 ? Sintes::tabla()[poliPeorFam].nombre : "-",
+                     poliPeorDc1, poliOk ? "OK" : zatiFalla());
     }
 
     // ------------------------------------------------------------------

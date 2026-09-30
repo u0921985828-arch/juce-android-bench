@@ -2034,6 +2034,229 @@ namespace Sintes
                 }
             }
 
+        //  Y EL ESCALON DE TIMBRE TAMBIEN SE REPARTE, que era la otra mitad.
+        //
+        //  Veinte lineas mas abajo se reparte el escalon de NIVEL entre capas
+        //  -«lo que se corrige es el resultado medido, que es lo unico que las
+        //  dos formas comparten»- y el de BRILLO se quedaba como saliera. Con
+        //  el banco juzgando un preset de cada familia eso no se veia; juzgando
+        //  los 384 (`Tests/instr.py`, regla CAPA_REPARTO_HZ) salen **139 de 384
+        //  con un escalon de timbre por encima del 60 % del recorrido**: BAJOS
+        //  SOFT BS se lleva el **85 %** con 1.27 dB, SUBS SINE el **75 %** con
+        //  2.00 y SUBS THICK el **61 %** con **4.57 dB de golpe**. Cruzar de
+        //  capa suena a que alguien ha movido el filtro, que es exactamente lo
+        //  que la tercera capa vino a quitar.
+        //
+        //  Y NO SE ARREGLA MOVIENDO `cap`, que es lo primero que sale. Los
+        //  cuatro escalares ya son geometricos; lo que no es geometrico es lo
+        //  que la FORMA hace con ellos, y es distinto en cada una -y en
+        //  sentidos contrarios, igual que pasaba con el nivel-. Moverlo en el
+        //  parametro tambien moveria `fuerza`, que hoy reparte el nivel clavado
+        //  al 50/51 %, y romperia una regla verde para arreglar otra.
+        //
+        //  Se corrige EL RESULTADO, como su hermana: se mide el brillo de las
+        //  tres capas ya rendidas -`agudos`, la misma medida que el banco y que
+        //  `Tests/StressTest.cpp`-, se calcula donde tendria que caer la de en
+        //  medio para que los dos escalones sean iguales -la media GEOMETRICA
+        //  de las otras dos, porque el oido cuenta en razones- y se la lleva
+        //  ahi con una inclinacion de primer orden. Los EXTREMOS no se tocan:
+        //  el recorrido de timbre del toque sigue siendo el que la receta puso.
+        //
+        //  Cuesta cero renders: es una pasada de memoria sobre las cinco zonas
+        //  de la capa de en medio, con doce evaluaciones de biseccion sobre el
+        //  mismo buffer. Re-rendirla -que es lo otro que sale- serian cinco
+        //  zonas de quince, o sea **+33 % de sintesis**, y la mediana de un
+        //  preset ya son 417 ms.
+        if (kCapas >= 3)
+        {
+            const int cMed = kCapas / 2;
+            //  EL POLO A 1 kHz. Es donde esta la frontera de `agudos` en la
+            //  practica -un paso alto de primer orden pesa cada frecuencia por
+            //  f, asi que el grueso de la medida vive por encima del kilo- y
+            //  ademas es donde la curva K de la sonoridad tiene su realce, o
+            //  sea que inclinar aqui mueve el brillo sin mover el cuerpo.
+            const float aPolo = (float) (1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi
+                                                         * 1000.0 / kRate));
+
+            //  El brillo de una zona, con la inclinacion `k` aplicada de
+            //  mentira: con k = 1 no toca nada y devuelve el brillo tal cual.
+            auto agudosCon = [&] (int z, float k)
+            {
+                const auto& Z = sb->zonas[(size_t) z];
+                double alta = 0.0, total = 0.0;
+                for (int ch = 0; ch < (est ? 2 : 1); ++ch)
+                {
+                    const float* d = (ch == 0) ? dstL : dstR;
+                    float lp = 0.0f, prev = 0.0f;
+                    for (int i = Z.ini; i < Z.fin; ++i)
+                    {
+                        lp += aPolo * (d[i] - lp);
+                        const float y = lp + k * (d[i] - lp);
+                        const double e = (double) y - (double) prev;
+                        alta += e * e; total += (double) y * (double) y;
+                        prev = y;
+                    }
+                }
+                return total > 1.0e-12 ? std::sqrt (alta / total) : 0.0;
+            };
+
+            //  LA BISECCION Y LA PASADA, cada una escrita una vez: desde que
+            //  hay DOS correcciones -el recorrido y el reparto- copiarlas seria
+            //  tener dos sitios donde equivocarse con el mismo polo.
+            //
+            //  BISECCION EN LOG DE k, catorce vueltas sobre x0.016 a x64.
+            //  `agudos` crece con k de forma monotona -k pesa el agudo contra
+            //  el grave- asi que converge sin derivadas.
+            //
+            //  Y TIENE TOPE, que es lo que no es obvio: con k enorme la salida
+            //  tiende a `k * agudo` y `agudos` es una RAZON, o sea que se
+            //  satura en el brillo del agudo solo. Si el objetivo cae fuera de
+            //  lo alcanzable la biseccion se queda en el extremo, que sigue
+            //  siendo la mejor inclinacion posible y acerca aunque no llegue.
+            //  Pasa en las de formantes fijos.
+            //
+            //  SEIS OCTAVAS Y NO TRES, Y EL QUE LO PIDIO FUE SYNC.
+            //
+            //  Se abrio creyendo que lo pedia SITAR -once de los 34 escalones
+            //  de timbre mal repartidos eran suyos, con SITAR OPEN al 181 %-.
+            //  Medido, SITAR NO SE MOVIO UNA CENTESIMA: las once cifras salen
+            //  identicas con x0.125..x8 y con x0.016..x64, porque aquello no
+            //  era una biseccion clavada en el extremo sino la PRUEBA midiendo
+            //  un solo canal de un sonido estereo (ver `Tests/instr.py`,
+            //  `carga2`). Un rango no arregla una medida equivocada.
+            //
+            //  Lo que SI movio, y por eso se queda, fue la familia donde
+            //  `agudos` de verdad se satura: **SYNC**, que es sincronia dura y
+            //  tiene casi toda su energia en el formante de sync. GLASS S paso
+            //  de llevarse el **65 %** del recorrido a estar dentro del liston,
+            //  ZAP de **3.85 dB al 70 %** a 3.75 al 68 %, y SCREAM subio su
+            //  recorrido de capa de x1.04 a x1.05. Subir satura -`agudos` es
+            //  una razon y con k grande tiende al agudo solo-, asi que ahi el
+            //  rango es lo unico que ata la solucion; bajar no satura, que con
+            //  k -> 0 queda el grave solo. Catorce vueltas sobre doce octavas
+            //  siguen cerrando a 0.0044 dB.
+            auto resuelveK = [&] (int z, double obj)
+            {
+                double lo = -6.0, hi = 6.0;
+                for (int it = 0; it < 14; ++it)
+                {
+                    const double mid = 0.5 * (lo + hi);
+                    if (agudosCon (z, (float) std::pow (2.0, mid)) < obj) lo = mid;
+                    else                                                  hi = mid;
+                }
+                return (float) std::pow (2.0, 0.5 * (lo + hi));
+            };
+
+            auto inclina = [&] (int capa, float k)
+            {
+                for (int r = 0; r < kRaices; ++r)
+                {
+                    const auto& Z = sb->zonas[(size_t) (r * kCapas + capa)];
+                    for (int ch = 0; ch < (est ? 2 : 1); ++ch)
+                    {
+                        float* d = (ch == 0) ? dstL : dstR;
+                        float lp = 0.0f;
+                        for (int i = Z.ini; i < Z.fin; ++i)
+                        {
+                            lp += aPolo * (d[i] - lp);
+                            d[i] = lp + k * (d[i] - lp);
+                        }
+                    }
+                }
+            };
+
+            //  UNA SOLA INCLINACION PARA LAS CINCO OCTAVAS, Y SALE DE LA
+            //  RAIZ DE REFERENCIA.
+            //
+            //  La primera version la resolvia por octava, y arreglo 106 de los
+            //  139 pero **subio de 5 a 7 los presets donde la octava de arriba
+            //  ya no es la de abajo desplazada** — todos COROS. Normal: con una
+            //  `k` distinta por raiz, la capa de en medio deja de ser el mismo
+            //  timbre en las cinco, que es justo lo que esa regla comprueba.
+            //
+            //  Y ademas es lo correcto: la escalera de capas es una propiedad
+            //  de la RECETA -cuanto abre el toque este sonido- y no de la
+            //  octava en que se toque. Se mide en la raiz de referencia
+            //  (`kZonaRef` vive en la raiz de indice 2, que es el DO3 central)
+            //  y se aplica igual a las cinco.
+            {
+                const int rRef = kZonaRef / kCapas;
+                const int z0 = rRef * kCapas, zM = z0 + cMed, z2 = z0 + kCapas - 1;
+                double b0 = agudosCon (z0, 1.0f);
+                double b2 = agudosCon (z2, 1.0f);
+                if (b0 > 1.0e-9 && b2 > 1.0e-9)
+                {
+
+                //  PRIMERO QUE HAYA RECORRIDO, Y DESPUES QUE ESTE REPARTIDO.
+                //
+                //  Repartir el escalon de brillo entre tres capas no sirve de
+                //  nada si el recorrido entero es cero, y en **24 de los 384**
+                //  lo era o iba AL REVES: COROS BASS CH mide **x0.86** -la capa
+                //  fuerte sale mas OSCURA que la suave-, CUERDA PULS MUTED GT
+                //  x1.08, SUBS PURE x1.04, CAMPANAS SOFT BELL x1.09, contra el
+                //  x1.12 que `CAPA_HZ` pide. En esos el tercer estrato no es
+                //  una capa: es un fader, que es justo lo que la tercera capa
+                //  vino a quitar.
+                //
+                //  No se arregla en la receta porque no es de la receta: son
+                //  las formas de formantes fijos y las de espectro cerrado, que
+                //  hacen con `brillo` cosas distintas y en sentidos contrarios
+                //  -el mismo argumento que ya obligo a corregir EL RESULTADO en
+                //  el nivel y en el reparto-. Aqui se mide el recorrido y, si
+                //  falta, se inclina la capa FUERTE hasta el liston. La suave
+                //  no se toca: es la que el toque flojo tiene que dar.
+                //
+                //  UN 5 % POR ENCIMA DEL LISTON y no clavado en el: la
+                //  biseccion cierra a 0.10 dB -un 1.2 %-, asi que el margen es
+                //  cuatro veces el error de la solucion. Y ni un punto mas: las
+                //  veinticuatro que hoy pasan miden de x1.16 a x2.98, o sea que
+                //  subir el objetivo moveria muestra que nadie ha acusado.
+                constexpr double kCapaHzObj = 1.12 * 1.05;
+                if (b2 < b0 * kCapaHzObj)
+                {
+                    inclina (kCapas - 1, resuelveK (z2, b0 * kCapaHzObj));
+                    b2 = agudosCon (z2, 1.0f);
+
+                    //  Y SI LA FUERTE NO LLEGA, SE OSCURECE LA SUAVE.
+                    //
+                    //  Subir tiene tope y bajar no: `agudos` es una razon, asi
+                    //  que con `k` grande la salida tiende al agudo solo y la
+                    //  medida se satura -esta escrito arriba, en `resuelveK`-.
+                    //  Con la capa fuerte sola quedaban **cinco de 384** sin
+                    //  recorrido: SYNC SCREAM en **x1.00** -o sea el escalon
+                    //  entero perdido-, TUBOS GEDACKT x1.02, TUBOS SMOOTH
+                    //  x1.03, CUERDA PULS BASS GT x1.08 y COROS BASS CH x1.11,
+                    //  que venia de x0.86 y se quedo a dos centesimas.
+                    //
+                    //  Bajar no se satura: con k -> 0 queda el grave solo. Y
+                    //  ademas es lo que el toque flojo pide: un toque suave de
+                    //  cualquier instrumento de verdad sale mas OSCURO, no solo
+                    //  mas bajo. Se oscurece solo lo que falte, medido contra
+                    //  la fuerte ya inclinada.
+                    if (b2 < b0 * kCapaHzObj)
+                    {
+                        inclina (0, resuelveK (z0, b2 / kCapaHzObj));
+                        b0 = agudosCon (z0, 1.0f);
+                    }
+                }
+
+                //  LA MEDIA GEOMETRICA, que es lo que hace los dos escalones
+                //  iguales en dB. Y vale igual cuando la fuerte sale MAS OSCURA
+                //  que la suave -pasa, y el banco lo caza aparte con CAPA_HZ-:
+                //  la media sigue cayendo entre las dos.
+                const double obj = std::sqrt (b0 * b2);
+                const double bM  = agudosCon (zM, 1.0f);
+                //  Y si ya esta donde tiene que estar no se toca: inclinar por
+                //  un 1 % seria gastar una pasada y mover una muestra que no lo
+                //  necesita.
+                if (bM > 1.0e-9 && std::abs (20.0 * std::log10 (bM / obj)) >= 0.10)
+                {
+                inclina (cMed, resuelveK (zM, obj));
+                }
+                }
+            }
+        }
+
         //  UNA GANANCIA POR OCTAVA, Y LAS DOS CAPAS DE ESA OCTAVA LA COMPARTEN.
         //
         //  Ni una sola para las diez ni una por zona. Con una sola -que fue la
@@ -2114,6 +2337,43 @@ namespace Sintes
 
                 Kits::aplicaGanancia (dstL + Z.ini, Z.fin - Z.ini, gAplica, false);
                 if (est) Kits::aplicaGanancia (dstR + Z.ini, Z.fin - Z.ini, gAplica, false);
+            }
+        }
+
+        //  Y LO QUE NO SOSTIENE SE APAGA EN EL FILO, que es un chasquido.
+        //
+        //  Una familia que no sostiene se rinde entera y la voz llega al ultimo
+        //  sample y para: ahi el ultimo valor SI se oye. Medido sobre las 144
+        //  de las 384 que no sostienen (`Tests/instr.py`, regla del filo):
+        //  **15 acaban por encima de 0.02**, la peor SITAR DRONE en **0.0451**,
+        //  y PIANOS entera -GRAND 0.0272, SOFT P 0.0349, WARM P 0.0352- porque
+        //  su cola natural es mas larga que el tope de 1.80 s que
+        //  `zonaDe[r]` le da.
+        //
+        //  Alargar la muestra es lo que NO se hace: el cuerpo ya son 1.00 s por
+        //  zona y las 384 juntas 4.4 GB. Lo que se hace es lo que hace
+        //  cualquier fabrica de muestras con una cola recortada: cinco
+        //  milisegundos de apagado en coseno alzado. A un sonido que ya esta
+        //  decayendo eso no se oye -son 240 muestras de las 86 400 de la zona
+        //  mas corta-, y lo que quita si se oye.
+        if (! F.sostiene)
+        {
+            const int nFade = juce::jmin (240, 1 + (int) (kRate * 0.005));
+            for (int q = 0; q < kZonas; ++q)
+            {
+                const auto& Z = sb->zonas[(size_t) q];
+                const int n = juce::jmin (nFade, (Z.fin - Z.ini) / 4);
+                if (n <= 1) continue;
+                for (int ch = 0; ch < (est ? 2 : 1); ++ch)
+                {
+                    float* d = (ch == 0) ? dstL : dstR;
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const float t = (float) i / (float) (n - 1);
+                        const float g = 0.5f * (1.0f + std::cos (juce::MathConstants<float>::pi * t));
+                        d[Z.fin - n + i] *= g;
+                    }
+                }
             }
         }
 
