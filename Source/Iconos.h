@@ -824,18 +824,30 @@ namespace Iconos
             //  FLT y HPF son espejo el uno del otro a proposito: son la misma
             //  curva por los dos lados y asi se leen como pareja, igual que
             //  acortar y alargar.
+            //
+            //  Con RESONANCIA y RELLENO. La curva sola daba 0.146 de tinta en
+            //  los dos -un trazo gris a 17 px-; la meseta con su pico en la
+            //  rodilla y el hueco relleno hasta la base es la respuesta del
+            //  filtro como la pinta cualquier analizador, y sigue leyendose
+            //  en espejo.
             case Id::flt:
                 linea (L, 2.0f, 20.0f, 22.0f, 20.0f);
-                L.startNewSubPath (2.0f, 6.0f);
-                L.lineTo (11.0f, 6.0f);
-                L.cubicTo (15.5f, 6.0f, 16.0f, 17.5f, 21.5f, 17.5f);
+                R.startNewSubPath (2.0f, 20.0f);
+                R.lineTo (2.0f, 8.0f);  R.lineTo (9.5f, 8.0f);
+                R.quadraticTo (11.5f, 8.0f, 12.5f, 4.5f);
+                R.quadraticTo (13.5f, 8.0f, 14.5f, 9.0f);
+                R.cubicTo (17.0f, 11.0f, 18.0f, 17.0f, 21.0f, 20.0f);
+                R.closeSubPath();
                 break;
 
             case Id::hpf:
                 linea (L, 2.0f, 20.0f, 22.0f, 20.0f);
-                L.startNewSubPath (22.0f, 6.0f);
-                L.lineTo (13.0f, 6.0f);
-                L.cubicTo (8.5f, 6.0f, 8.0f, 17.5f, 2.5f, 17.5f);
+                R.startNewSubPath (22.0f, 20.0f);
+                R.lineTo (22.0f, 8.0f); R.lineTo (14.5f, 8.0f);
+                R.quadraticTo (12.5f, 8.0f, 11.5f, 4.5f);
+                R.quadraticTo (10.5f, 8.0f, 9.5f, 9.0f);
+                R.cubicTo (7.0f, 11.0f, 6.0f, 17.0f, 3.0f, 20.0f);
+                R.closeSubPath();
                 break;
 
             //  DRV: la onda RECORTADA contra sus dos topes, que es literalmente
@@ -861,13 +873,27 @@ namespace Iconos
 
             //  BIT: la escalera. Un reductor de bits convierte una rampa en
             //  peldanos, y eso es exactamente el dibujo.
+            //
+            //  Y GRUESA, con la rampa que entro por encima. La escalera de
+            //  trazo media 0.104 de tinta -el mas gris de los 109- y a los 17
+            //  px a los que se lee eran cuatro peldanos de un pelo. Maciza
+            //  hasta la base tampoco: un bloque que sube a la derecha es
+            //  `niveles` -0.272 de distancia, el par mas cercano de todos-.
+            //  Asi que es la misma escalera con cuerpo, y la rampa que le
+            //  corta las esquinas es lo que entro: los dos a la vez.
             case Id::bit:
-                L.startNewSubPath (2.0f, 20.0f);
-                L.lineTo (7.0f, 20.0f); L.lineTo (7.0f, 15.5f);
-                L.lineTo (12.0f, 15.5f); L.lineTo (12.0f, 11.0f);
-                L.lineTo (17.0f, 11.0f); L.lineTo (17.0f, 6.5f);
-                L.lineTo (22.0f, 6.5f);
+            {
+                juce::Path escalera;
+                escalera.startNewSubPath (2.0f, 20.0f);
+                escalera.lineTo (7.0f, 20.0f);  escalera.lineTo (7.0f, 15.5f);
+                escalera.lineTo (12.0f, 15.5f); escalera.lineTo (12.0f, 11.0f);
+                escalera.lineTo (17.0f, 11.0f); escalera.lineTo (17.0f, 6.5f);
+                escalera.lineTo (22.0f, 6.5f);
+                juce::PathStrokeType (3.4f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt)
+                    .createStrokedPath (R, escalera);
+                linea (L, 2.0f, 20.0f, 22.0f, 6.5f);
                 break;
+            }
 
             //  --- LOS CUATRO DE MODULACION -----------------------------
             //
@@ -881,16 +907,27 @@ namespace Iconos
             //  CHO: la misma onda dos veces y desfasada. El efecto ES la
             //  copia, y por eso son dos trazos iguales y no uno ondulado -que
             //  seria `automacion` con otro nombre-.
+            //
+            //  La original MACIZA y la copia de trazo. Dos trazos finos
+            //  iguales median 0.137 de tinta y a 17 px eran una mancha
+            //  ondulada; con la primera onda como banda se ve cual es la
+            //  original y cual la copia, que es exactamente el efecto.
             case Id::cho:
-                for (int c = 0; c < 2; ++c)
+            {
+                auto onda = [] (juce::Path& p, float dx, float dy)
                 {
-                    const float dy = 4.5f + (float) c * 8.0f;
-                    const float dx = (float) c * 2.6f;
-                    L.startNewSubPath (2.0f + dx, dy + 2.5f);
-                    L.cubicTo (6.0f + dx, dy - 2.5f, 9.0f + dx, dy + 7.5f, 13.0f + dx, dy + 2.5f);
-                    L.cubicTo (16.0f + dx, dy - 1.5f, 18.0f + dx, dy + 5.0f, 21.0f - dx, dy + 2.5f);
-                }
+                    p.startNewSubPath (2.0f + dx, dy);
+                    p.cubicTo (6.0f + dx, dy - 5.0f, 9.0f + dx, dy + 5.0f, 13.0f + dx, dy);
+                    p.cubicTo (16.0f + dx, dy - 3.5f, 18.0f + dx, dy + 3.5f, 21.0f + dx, dy);
+                };
+                onda (R, 0.0f, 6.5f);                        // la original, como banda
+                R.lineTo (21.0f, 9.9f);
+                R.cubicTo (18.0f, 13.4f, 16.0f, 6.4f, 13.0f, 9.9f);
+                R.cubicTo (9.0f, 14.9f, 6.0f, 4.9f, 2.0f, 9.9f);
+                R.closeSubPath();
+                onda (L, 1.0f, 17.0f);                       // y la copia, desfasada
                 break;
+            }
 
             //  FLA: el peine. Muescas EQUIESPACIADAS sobre el renglon, que es
             //  lo que hace un retardo corto sumado al seco — y lo que lo
@@ -912,6 +949,15 @@ namespace Iconos
             //  CABE la otra. Con lineas, lo declarado y lo dibujado son lo
             //  mismo. Un peine de dientes rectos ademas es lo que un flanger
             //  hace: ceros regulares, no ondas.
+            //
+            //  Y SE QUEDA COMO ESTA, medido: los dientes del 8 al 16 dan 0.335
+            //  contra `pit` -desenfocados, cinco dientes cortos sobre un
+            //  renglon son una onda apretada-, y se intento alejarlos dos veces.
+            //  Curvos del 6 al 20, la tinta cae a 4 px del centro de su caja
+            //  por lo de los puntos de control. Rectos del 6 al 19.5, la tinta
+            //  sube a 0.405 y el peine se va a 0.301 de `sec` y a 0.339 de
+            //  `sonido`: cinco puas gordas son una fila de bloques. Los dos
+            //  numeros son peores que el que habia, asi que el que habia.
             case Id::fla:
                 linea (L, 2.0f, 8.0f, 22.0f, 8.0f);
                 for (int i = 0; i < 5; ++i)
@@ -925,30 +971,42 @@ namespace Iconos
 
             //  PHA: DOS muescas anchas y separadas sobre una linea plana. Un
             //  phaser no peina: pone unos pocos ceros y los pasea.
+            //
+            //  Las muescas RELLENAS y el renglon como banda: de trazo daba
+            //  0.120 de tinta y a 17 px eran dos uves grises. Siguen siendo
+            //  dos, anchas y separadas, que es lo que lo aparta de `fla`.
             case Id::pha:
-                L.startNewSubPath (2.0f, 8.0f);
-                L.lineTo (5.0f, 8.0f);
-                L.lineTo (7.5f, 16.0f);
-                L.lineTo (10.0f, 8.0f);
-                L.lineTo (13.0f, 8.0f);
-                L.lineTo (16.0f, 16.0f);
-                L.lineTo (19.0f, 8.0f);
-                L.lineTo (22.0f, 8.0f);
+                R.addRectangle (2.0f, 5.0f, 20.0f, 3.2f);
+                R.startNewSubPath (4.0f, 8.0f);  R.lineTo (7.5f, 20.0f);  R.lineTo (11.0f, 8.0f);  R.closeSubPath();
+                R.startNewSubPath (13.0f, 8.0f); R.lineTo (16.5f, 20.0f); R.lineTo (20.0f, 8.0f); R.closeSubPath();
                 break;
 
             //  TRM: la ENVOLVENTE que late. El relleno dice amplitud y no
             //  tono, que es lo unico que un temblor cambia; dibujarlo como una
             //  onda lo dejaria a un pelo de `cho`.
+            //
+            //  Y SOBRE UN RENGLON, como las demas envolventes de esta tabla
+            //  -`insPluck` sube de golpe y cae, `insColchon` abre despacio-:
+            //  esta sube y baja DOS VECES, que es latir. Los tres lobulos
+            //  centrados median 0.396 contra `pit` -los dos eran una
+            //  oscilacion horizontal en el renglon del medio- y llenaban el
+            //  83% de su caja; en barras verticales se iban a 0.33 de
+            //  `sonido`, que son once barras sobre ese mismo renglon. Dos
+            //  jorobas macizas sobre la base no son una onda ni son barras.
+            //
+            //  Y SEPARADAS, con un tramo de renglon entre las dos: pegadas por
+            //  el valle median 0.375 contra `stop`, que desenfocado es la misma
+            //  mancha cuadrada. Con el hueco, a 17 px son dos golpes y no uno.
             case Id::trm:
-                for (int i = 0; i < 3; ++i)
-                {
-                    const float x = 3.0f + (float) i * 6.6f;
-                    R.startNewSubPath (x, 12.0f);
-                    R.quadraticTo (x + 2.6f, 2.5f, x + 5.2f, 12.0f);
-                    R.quadraticTo (x + 2.6f, 21.5f, x, 12.0f);
-                    R.closeSubPath();
-                }
-                t.lleno = 0.88f;
+                linea (L, 1.5f, 20.5f, 22.5f, 20.5f);
+                R.startNewSubPath (2.0f, 20.5f);
+                R.quadraticTo (3.5f, 3.5f, 6.0f, 3.5f);
+                R.quadraticTo (8.5f, 3.5f, 10.0f, 20.5f);
+                R.closeSubPath();
+                R.startNewSubPath (14.0f, 20.5f);
+                R.quadraticTo (15.5f, 3.5f, 18.0f, 3.5f);
+                R.quadraticTo (20.5f, 3.5f, 22.0f, 20.5f);
+                R.closeSubPath();
                 break;
 
             //  ==================================================================
@@ -1698,24 +1756,46 @@ namespace Iconos
             //  se juntan en 0.1987, o sea el mismo dibujo. Lo que separa un
             //  Rhodes de un piano no es una tecla: es el diapason que el
             //  martillo golpea, y eso no se parece a nada de la tabla.
+            //
+            //  Y CON CUERPO: de trazo daba 0.160 de tinta y a 17 px el
+            //  diapason era una U de un pelo con un punto al lado. Las puas y
+            //  el mango van macizos y el martillo mas grande y con su palo:
+            //  lo que golpea y lo que suena, los dos con peso.
             case Id::insEp:
-                linea (L, 8.0f, 4.0f, 8.0f, 13.0f);          // las dos puas
-                linea (L, 16.0f, 4.0f, 16.0f, 13.0f);
-                L.startNewSubPath (8.0f, 13.0f);             // y la horquilla
-                L.quadraticTo (12.0f, 17.5f, 16.0f, 13.0f);
-                linea (L, 12.0f, 16.4f, 12.0f, 21.0f);       // el mango
-                R.addEllipse (2.0f, 6.0f, 4.4f, 4.4f);       // el martillo
+                R.addRoundedRectangle (7.0f, 3.0f, 2.6f, 10.5f, 1.0f);      // las dos puas
+                R.addRoundedRectangle (14.4f, 3.0f, 2.6f, 10.5f, 1.0f);
+                L.startNewSubPath (8.3f, 13.0f);                          // y la horquilla
+                L.quadraticTo (12.0f, 18.0f, 15.7f, 13.0f);
+                R.addRoundedRectangle (10.7f, 16.0f, 2.6f, 6.0f, 1.0f);   // el mango
+                R.addEllipse (1.5f, 5.0f, 5.0f, 5.0f);                    // el martillo
+                linea (L, 4.0f, 10.0f, 4.0f, 20.0f);                      // y su palo
                 break;
 
             //  ORGANOS: las tres barras de registro, cada una a su altura. Un
             //  organo se toca moviendo eso, no apretando teclas.
+            //
+            //
+            //  Y YA NO: las barras de registro son, desenfocadas, `mezcla`
+            //  -tres lineas verticales con un tirador cada una a su altura- y
+            //  median 0.360 contra `cuadrar`, el par mas cercano de las
+            //  familias de instrumentos. Se probaron dos cosas antes de esta y
+            //  las dos se midieron: cinco tubos en monte sobre una base, a
+            //  0.368 de `insTubo`, que en esta tabla ya ES los tubos; y cuatro
+            //  barras macizas con tirador ancho sobre un panel, a 0.367 de
+            //  `dly`, que son cuatro barras que bajan. Queda lo que un organo
+            //  tiene y ningun otro instrumento de la tabla: DOS TECLADOS uno
+            //  sobre otro, el de arriba metido, y la pedalera debajo. No es
+            //  «un teclado», que es lo que PIANOS no dibuja a proposito: es
+            //  el apilamiento. Y los dos manuales macizos median 0.369 contra
+            //  `rack`, que son tres bandas apiladas: el de arriba va a trazo,
+            //  con sus teclas negras, y el de abajo macizo.
             case Id::insOrgano:
-                linea (L, 5.5f, 2.5f, 5.5f, 21.5f);
-                linea (L, 12.0f, 2.5f, 12.0f, 21.5f);
-                linea (L, 18.5f, 2.5f, 18.5f, 21.5f);
-                R.addRoundedRectangle (3.3f,  8.0f, 4.4f, 2.6f, 1.0f);
-                R.addRoundedRectangle (9.8f, 14.5f, 4.4f, 2.6f, 1.0f);
-                R.addRoundedRectangle (16.3f, 5.0f, 4.4f, 2.6f, 1.0f);
+                L.addRoundedRectangle (4.5f, 3.0f, 15.0f, 5.4f, 0.9f);     // el manual de arriba
+                for (int i = 0; i < 3; ++i)
+                    R.addRectangle (7.5f + (float) i * 4.2f, 3.0f, 2.0f, 3.0f);   // sus teclas negras
+                R.addRoundedRectangle (2.0f, 10.5f, 20.0f, 4.8f, 0.9f);    // el de abajo, macizo
+                for (int i = 0; i < 5; ++i)                                 // y la pedalera
+                    R.addRoundedRectangle (3.4f + (float) i * 4.2f, 17.5f, 2.2f, 4.5f, 0.7f);
                 break;
 
             //  CUERDAS: el ARCO cruzando las cuerdas. Sin el arco esto son
@@ -1730,11 +1810,17 @@ namespace Iconos
 
             //  COLCHONES: el regulador que abre y cierra. Un colchon es una
             //  envolvente lenta por los dos lados y nada mas.
+            //
+            //  Y RELLENO: de trazo daba 0.136 de tinta y a 17 px eran dos
+            //  pelos que se abren. El hueco entre las dos curvas es el sonido
+            //  que crece, asi que se pinta; la boca va curva para que no sea
+            //  el triangulo de `play` mirado del reves.
             case Id::insColchon:
-                L.startNewSubPath (2.0f, 12.0f);
-                L.cubicTo (9.0f, 11.6f, 13.0f, 3.5f, 22.0f, 3.0f);
-                L.startNewSubPath (2.0f, 12.0f);
-                L.cubicTo (9.0f, 12.4f, 13.0f, 20.5f, 22.0f, 21.0f);
+                R.startNewSubPath (2.0f, 12.0f);
+                R.cubicTo (9.0f, 11.6f, 13.0f, 3.5f, 22.0f, 3.0f);
+                R.quadraticTo (19.5f, 12.0f, 22.0f, 21.0f);
+                R.cubicTo (13.0f, 20.5f, 9.0f, 12.4f, 2.0f, 12.0f);
+                R.closeSubPath();
                 break;
 
             //  PLUCKS: el golpe y su caida. Sube de golpe y se apaga, que es
