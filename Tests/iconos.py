@@ -21,9 +21,9 @@
 #   - CABE: los limites del trazo, con su grosor, dentro de la rejilla de 24.
 #   - TINTA: que porcion de la caja se pinta. Muy poca es una mancha gris; el
 #     tope de arriba caza el otro extremo, un icono que es un cuadrado negro.
-#   - LLENA: que el dibujo OCUPE su caja. Uno centrado al 50% se lee como si
-#     estuviera mas lejos que sus vecinos, y en una fila se nota antes que
-#     cualquier otra cosa.
+#   - MARCO: que el dibujo OCUPE su caja POR LOS DOS LADOS. Uno centrado al
+#     50% se lee como si estuviera mas lejos que sus vecinos, y en una fila se
+#     nota antes que cualquier otra cosa.
 #   - DISTINTOS: la distancia entre cada par de los rasterizados. Se comparan
 #     DESENFOCADOS a proposito: dos dibujos que se diferencian en que un trazo
 #     esta un pixel mas alla son el mismo icono para el ojo, y la distancia a
@@ -71,7 +71,7 @@ N_LEE = None               # lo publica la app: Iconos::kLadoMin
 CABE_TOL   = 0.30          # px de la rejilla de 24
 TINTA_MIN  = 0.045
 TINTA_MAX  = 0.55
-LLENA_MIN  = 0.70          # el lado mayor del dibujo, en fraccion de la caja
+LLENA_MIN  = 0.70          # el lado MENOR del dibujo, en fraccion de la caja
 DISTINTO   = 0.25
 
 
@@ -285,7 +285,7 @@ def main():
 
     print ("== %d iconos, rasterizados a %dx%d ==" % (len (iconos), N, N))
     print ("%-14s %6s %6s %5s   %s"
-           % ("icono", "tinta", "llena", "centro", "caja en la rejilla de 24"))
+           % ("icono", "tinta", "marco", "centro", "caja en la rejilla de 24"))
 
     mapas, borrosos = {}, {}
     for d in iconos:
@@ -296,7 +296,23 @@ def main():
 
         tinta = sum (m) / len (m)
         w, h = caja (m, n)
-        llena = max (w, h) / float (n)
+        #  EL MARCO TIENE DOS LADOS, Y ESTA REGLA MIRABA UNO.
+        #
+        #  Miraba `max (w, h)`, o sea el lado LARGO, y el largo lo llena
+        #  siempre: `Iconos::dibuja` escala cada dibujo hasta que su lado mayor
+        #  toca el 96 % de la caja. Lo que no veia es el OTRO lado, y por ahi se
+        #  colaba el juego entero. El escalado es uniforme —y tiene que serlo,
+        #  que deformar saca la rueda de AJUSTES ovalada— asi que el lado corto
+        #  cae donde lo deje la PROPORCION del dibujo. Medido sobre los 140: la
+        #  mediana del lado corto estaba en 0.83 de la caja y TREINTA Y SIETE
+        #  iconos por debajo de 0.70, con `fla` y `pit` en 0.42 —una banda de
+        #  diez pixeles de alto en una caja de veinticuatro—. En una fila de
+        #  tapas eso se lee como iconos de dos tamanos distintos, que es de
+        #  donde vino: «que todos los sprites esten dentro del mismo marco de
+        #  altura y anchura».
+        #
+        #  El liston no es nuevo: es el MISMO, aplicado a los dos lados.
+        llena = min (w, h) / float (n)
         #  Y DONDE CAE LA TINTA DENTRO DE SU CAJA, que es lo que ninguna de las
         #  cuatro miraba.
         #
@@ -329,14 +345,20 @@ def main():
         if se_sale:            marca += " FUERA"; fallos.append ("%s se sale de su caja" % nombre)
         if tinta < TINTA_MIN:  marca += " SIN_TINTA"; fallos.append ("%s casi no pinta (%.3f)" % (nombre, tinta))
         if tinta > TINTA_MAX:  marca += " MANCHA"; fallos.append ("%s es una mancha (%.3f)" % (nombre, tinta))
-        #  LLENA no aplica al SIGNO, y es una excepcion declarada y no una
-        #  rebaja del liston: un menos ES una barra corta. La regla existe
-        #  porque un dibujo centrado al 50 % se lee como si estuviera mas lejos
-        #  que sus vecinos, y eso vale para un icono —que dice una cosa entera—
-        #  y no para un signo, cuya forma es justamente ocupar poco. Exigirle
-        #  que llene seria pedirle que deje de ser un menos.
-        if llena < LLENA_MIN and nombre != "cifra -":
-            marca += " PEQUENO"; fallos.append ("%s no llena su caja (%.2f)" % (nombre, llena))
+        #  EL MARCO NO APLICA A LAS CIFRAS, y es una excepcion declarada y no
+        #  una rebaja del liston. Eran una -el menos- cuando la regla miraba el
+        #  lado largo, y son las once desde que mira el corto, por la misma
+        #  razon y no por una nueva: la PROPORCION de una cifra es parte de la
+        #  cifra. Un 1 es estrecho, un menos es una barra corta y los diez
+        #  digitos salen a 0.67 x 0.92 porque es la caja de un digito; pedirles
+        #  que llenen un cuadrado es pedirles que dejen de parecer numeros, y
+        #  entre ellas —que es con quien se ven, en una fila de pasos— la
+        #  proporcion ya es la misma para todas. La regla existe porque un
+        #  dibujo pequeno se lee como si estuviera mas lejos que sus vecinos, y
+        #  eso vale para un icono, que dice una cosa entera.
+        if llena < LLENA_MIN and not nombre.startswith ("cifra"):
+            marca += " PEQUENO"
+            fallos.append ("%s no llena su marco por el lado corto (%.2f)" % (nombre, llena))
         if desvio > CENTRO_MAX:
             marca += " DESCENTRADO"
             fallos.append ("%s tiene la tinta a %.1f px del centro de su caja (tope %.1f)"
