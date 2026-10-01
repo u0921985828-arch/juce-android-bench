@@ -49,7 +49,14 @@ from kits import PANTALLA                                          # noqa: E402
 from expo import SHEETS, SIZES                                     # noqa: E402
 
 HERE = os.path.dirname (os.path.abspath (__file__))
-APP  = os.path.join (HERE, "..", "build", "Zati_artefacts", "Release", "Zati")
+#  Y EL BINARIO SE LEE DEL ENTORNO, como en `iconos.py`, `expo.py` y
+#  `planos.py`. Escrita a mano, la ruta solo acierta con una compilacion: con
+#  el binario en otro sitio `corre` no arranca nada, devuelve la lista vacia
+#  por el `except`, y este fichero imprimia «0 cajas medidas» y salia con CERO.
+#  Medido en esta tanda: una corrida entera en verde sin haber mirado una sola
+#  caja. Ver la cadena de control de `main`.
+APP  = os.environ.get ("ZATI_BIN") or os.path.join (
+        HERE, "..", "build", "Zati_artefacts", "Release", "Zati")
 
 #  Las tres que se fotografian: el movil normal, el apaisado -la orientacion
 #  que nadie prueba- y el peor caso que alguien vende. Las nueve se MIDEN; solo
@@ -139,6 +146,18 @@ def main():
 
     print ("limites: %d fichas x %d pantallas, %d cajas medidas"
            % (len (SHEETS), len (SIZES), len (filas)))
+
+    #  LA CADENA DE CONTROL: si el barrido no ve lo que tiene que ver, esto no
+    #  mide nada y lo dice en rojo. Es la misma regla que `marcas.py` y
+    #  `suministro.py` ya tienen, y la que faltaba aqui: sin ella, el unico
+    #  sintoma de que no se arranco la app era un cero en una linea que nadie
+    #  lee cuando el veredicto sale verde. Un ranking vacio no es «ningun
+    #  panel con hueco»: es ningun panel.
+    if not filas:
+        print ("FALLA  no he medido una sola caja con %s en la pantalla %s: "
+               "o no existe el binario -compila con  cmake --build build- o no "
+               "arranca. Esta prueba no mide nada." % (APP, PANTALLA))
+        return 1
     print ()
     print ("los veinte PANELES con mas hueco (parte de la caja que esta vacia):")
     for p in paneles[:20]:

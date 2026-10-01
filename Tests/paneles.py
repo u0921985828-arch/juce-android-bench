@@ -48,7 +48,14 @@ from concurrent.futures import ProcessPoolExecutor
 from kits import PANTALLA                                          # noqa: E402
 
 HERE = os.path.dirname (os.path.abspath (__file__))
-APP  = os.path.join (HERE, "..", "build", "Zati_artefacts", "Release", "Zati")
+#  Y EL BINARIO SE LEE DEL ENTORNO, como en `iconos.py`, `expo.py` y
+#  `planos.py`. Aqui `main` ya se niega a correr si el fichero no esta, asi
+#  que esto no tapa un agujero: evita la otra mitad del mismo problema, que
+#  quien arranca el banco tenga el binario en otro sitio y la prueba se
+#  plante en vez de mirarlo. El agujero -arrancar y no medir- lo tapa la
+#  cadena de control del cierre.
+APP  = os.environ.get ("ZATI_BIN") or os.path.join (
+        HERE, "..", "build", "Zati_artefacts", "Release", "Zati")
 
 #  Las mismas siete pantallas y los mismos cuatro idiomas que expo.py: una
 #  pantalla que alli se mide y aqui no es una pantalla donde esto no se sabe.
@@ -504,6 +511,14 @@ def main():
     print()
     print (f"paneles: {corridas} corridas, {paneles} paneles medidos, "
            f"aire {AIRE_X} x {AIRE_Y}, separacion {SEPARACION}")
+    #  LA CADENA DE CONTROL, antes del veredicto: «ningun panel mal envuelto»
+    #  y «ningun panel» se imprimen igual de verdes, y solo uno de los dos es
+    #  una prueba. La misma regla que `marcas.py` y `suministro.py`.
+    if not paneles:
+        print (f"FALLA  no he medido un solo panel con {APP} en la pantalla "
+               f"{PANTALLA}: o no existe el binario -compila con  cmake --build "
+               f"build- o no arranca. Esta prueba no mide nada.")
+        return 1
     if todos:
         print (f"FALLA: " + ", ".join (f"{k} {len (v)}" for k, v in porclase.items() if v))
         return 1
