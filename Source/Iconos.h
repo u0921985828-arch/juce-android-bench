@@ -1724,16 +1724,26 @@ namespace Iconos
 
             // --- LOS DIECISEIS INSTRUMENTOS ------------------------------
 
-            //  BAJOS: la pala de un bajo con sus cuatro clavijas. Se dibuja el
-            //  mastil y no la onda porque la onda de un bajo y la de un lead se
-            //  parecen demasiado - ver el comentario del enum.
+            //  BAJOS: el CLAVIJERO de un bajo, con sus CUATRO clavijas - dos
+            //  por lado y a distinta altura, como van de verdad para que no
+            //  choquen - la cejuela y las cuatro cuerdas bajando por el
+            //  mastil. Cuatro y no seis es lo que lo hace un bajo y no una
+            //  guitarra.
             case Id::insBajo:
-                L.addRoundedRectangle (8.5f, 2.0f, 7.0f, 13.0f, 2.0f);
-                linea (L, 12.0f, 15.0f, 12.0f, 22.0f);
-                R.addEllipse (4.6f, 4.0f, 2.6f, 2.6f);
-                R.addEllipse (4.6f, 9.0f, 2.6f, 2.6f);
-                R.addEllipse (16.8f, 4.0f, 2.6f, 2.6f);
-                R.addEllipse (16.8f, 9.0f, 2.6f, 2.6f);
+                R.addRoundedRectangle (7.6f, 1.4f, 8.8f, 9.8f, 2.2f);      // la pala
+                //  Las cuatro clavijas con su boton, escalonadas.
+                linea (L,  7.6f,  4.0f,  4.6f,  4.0f);
+                R.addEllipse (2.0f, 2.6f, 2.8f, 2.8f);
+                linea (L,  7.6f,  8.4f,  4.6f,  8.4f);
+                R.addEllipse (2.0f, 7.0f, 2.8f, 2.8f);
+                linea (L, 16.4f,  5.8f, 19.4f,  5.8f);
+                R.addEllipse (19.2f, 4.4f, 2.8f, 2.8f);
+                linea (L, 16.4f, 10.2f, 19.4f, 10.2f);
+                R.addEllipse (19.2f, 8.8f, 2.8f, 2.8f);
+                R.addRectangle (7.2f, 11.6f, 9.6f, 1.4f);                  // la cejuela
+                for (int i = 0; i < 4; ++i)                                // y las cuatro cuerdas
+                    linea (L, 9.0f + (float) i * 2.0f, 13.0f,
+                              9.0f + (float) i * 2.0f, 22.0f);
                 break;
 
             //  SUBS: tres barras que ENGORDAN hacia abajo. No es una onda: es
@@ -1798,14 +1808,48 @@ namespace Iconos
                     R.addRoundedRectangle (3.4f + (float) i * 4.2f, 17.5f, 2.2f, 4.5f, 0.7f);
                 break;
 
-            //  CUERDAS: el ARCO cruzando las cuerdas. Sin el arco esto son
-            //  cuatro lineas verticales, o sea cualquier otra cosa.
+            //  CUERDAS: LA VOLUTA, o sea la cabeza tallada de un instrumento de
+            //  arco - el caracol, el clavijero y sus clavijas.
+            //
+            //  Eran cuatro lineas verticales con una diagonal encima, que es
+            //  "unas rayas y un palo" y ademas la misma idea que CELLO, el de
+            //  al lado en la tabla: los dos eran un arco cruzando algo. Lo que
+            //  separa de verdad esta familia de la de al lado no es el arco
+            //  -lo tienen las dos- sino la cabeza, y no hay otro dibujo en la
+            //  tabla que sea una espiral.
+            //
+            //  Y EL CARACOL SE DIBUJA COMO ESPIRAL Y NO COMO DOS CIRCULOS: una
+            //  elipse con otra dentro es, a 17 px, una diana. La espiral se
+            //  traza punto a punto y se engorda con `createStrokedPath`, que es
+            //  como ya se engorda la escalera de BIT: asi hay vuelta de verdad
+            //  y no dos anillos.
             case Id::insCuerdas:
-                linea (L, 5.0f,  4.5f, 5.0f, 19.5f);
-                linea (L, 9.7f,  4.5f, 9.7f, 19.5f);
-                linea (L, 14.4f, 4.5f, 14.4f, 19.5f);
-                linea (L, 19.1f, 4.5f, 19.1f, 19.5f);
-                linea (L, 2.0f, 18.5f, 22.0f, 6.5f);
+            {
+                juce::Path espiral;
+                for (int i = 0; i <= 40; ++i)               // vuelta y media, con hueco
+                {
+                    const float a = (float) i / 40.0f * 1.45f * juce::MathConstants<float>::twoPi;
+                    const float r = 6.6f - (float) i / 40.0f * 4.4f;
+                    const float x = 11.2f + r * std::cos (a - 1.1f);
+                    const float y = 7.6f  + r * std::sin (a - 1.1f);
+                    if (i == 0) espiral.startNewSubPath (x, y); else espiral.lineTo (x, y);
+                }
+                juce::PathStrokeType (1.75f, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded)
+                    .createStrokedPath (R, espiral);
+                R.addRoundedRectangle (9.7f, 12.8f, 4.6f, 6.8f, 1.0f);     // el clavijero
+                //  CUATRO clavijas, dos por lado y a distinta altura, que son
+                //  las que lleva: cuatro cuerdas, cuatro clavijas.
+                linea (L,  9.7f, 14.5f, 6.9f, 14.1f);
+                R.addEllipse (4.4f, 12.8f, 2.8f, 2.8f);
+                linea (L,  9.7f, 17.9f, 6.9f, 17.5f);
+                R.addEllipse (4.4f, 16.2f, 2.8f, 2.8f);
+                linea (L, 14.3f, 15.5f, 17.1f, 15.1f);
+                R.addEllipse (16.8f, 13.8f, 2.8f, 2.8f);
+                linea (L, 14.3f, 18.9f, 17.1f, 18.5f);
+                R.addEllipse (16.8f, 17.2f, 2.8f, 2.8f);
+                R.addRectangle (10.1f, 19.4f, 3.8f, 3.4f);                 // el arranque del mastil
+            }
                 break;
 
             //  COLCHONES: el regulador que abre y cierra. Un colchon es una
@@ -1832,24 +1876,56 @@ namespace Iconos
                 L.cubicTo (10.0f, 4.5f, 12.5f, 19.5f, 22.0f, 20.0f);
                 break;
 
-            //  CAMPANAS: una campana, con su badajo debajo.
+            //  CAMPANAS: DOS, que el rotulo esta en plural y una sola no se
+            //  distingue de las otras cosas de la tabla que son "ancho abajo y
+            //  estrecho arriba". Macizas, con su ojo arriba -de trazo, que es
+            //  por donde cuelgan- el aro de la boca y el badajo de la grande.
+            //
+            //  Medido, y por eso son dos: de trazo y sola era una U con un
+            //  punto -0.180 de tinta-; maciza y de pie se puso a 0.391 de
+            //  CUERDA PULS, que es una caja con un mastil, y a 0.396 de
+            //  `recortar`; volteada se leia como un cono. Dos campanas de
+            //  distinto tamano, una detras de otra, no se parecen a nada mas.
             case Id::insCampana:
-                L.startNewSubPath (5.0f, 17.5f);
-                L.cubicTo (5.5f, 8.0f, 8.5f, 3.5f, 12.0f, 3.5f);
-                L.cubicTo (15.5f, 3.5f, 18.5f, 8.0f, 19.0f, 17.5f);
-                L.closeSubPath();
-                R.addEllipse (10.6f, 19.0f, 2.8f, 2.8f);
+                L.addEllipse (6.6f, 5.4f, 3.4f, 2.8f);                     // el ojo de la grande
+                R.addRectangle (7.9f, 7.8f, 1.8f, 1.4f);
+                R.startNewSubPath (3.0f, 18.0f);                           // y su cuerpo
+                R.cubicTo (3.3f, 12.2f, 5.6f, 9.2f, 8.8f, 9.2f);
+                R.cubicTo (12.0f, 9.2f, 14.3f, 12.2f, 14.6f, 18.0f);
+                R.closeSubPath();
+                R.addRoundedRectangle (1.8f, 18.4f, 14.0f, 2.3f, 1.0f);    // el aro de la boca
+                R.addEllipse (7.4f, 21.0f, 2.4f, 2.4f);                    // y el badajo
+                L.addEllipse (16.4f, 1.4f, 2.8f, 2.4f);                    // la chica, detras
+                R.addRectangle (17.5f, 3.4f, 1.4f, 1.2f);
+                R.startNewSubPath (13.6f, 12.6f);
+                R.cubicTo (13.8f, 8.2f, 15.6f, 5.8f, 17.9f, 5.8f);
+                R.cubicTo (20.2f, 5.8f, 22.0f, 8.2f, 22.2f, 12.6f);
+                R.closeSubPath();
+                R.addRoundedRectangle (12.8f, 12.9f, 10.2f, 1.9f, 0.8f);
                 break;
 
-            //  METALES: la campana de un metal, o sea el cono que se abre.
+            //  METALES: la TROMPETA entera y no "un cono y una rayita" - la
+            //  boquilla, el tudel, los TRES PISTONES de pie con sus varillas,
+            //  y la campana abierta con su aro. Los tres pistones son lo que
+            //  no tiene ningun otro dibujo de la tabla.
+            //
+            //  Y LA CAMPANA MANDA: con el tudel largo y la campana corta esto
+            //  era un tubo con bultos encima, o sea VIENTOS - 0.398 medido. El
+            //  triangulo que se abre es la firma de un metal, asi que se lleva
+            //  la mitad del ancho y el tudel se acorta.
             case Id::insMetales:
-                L.startNewSubPath (3.0f, 10.0f);
-                L.lineTo (14.0f, 4.0f);
-                L.lineTo (14.0f, 20.0f);
-                L.lineTo (3.0f, 14.0f);
-                L.closeSubPath();
-                L.startNewSubPath (17.5f, 6.0f);
-                L.cubicTo (20.5f, 9.0f, 20.5f, 15.0f, 17.5f, 18.0f);
+                R.addRoundedRectangle (1.0f, 10.3f, 2.6f, 3.4f, 0.9f);     // la boquilla
+                R.addRectangle (3.4f, 11.2f, 9.4f, 2.4f);                  // el tudel
+                for (int i = 0; i < 3; ++i)                                // los tres pistones
+                {
+                    const float x = 4.9f + (float) i * 2.6f;
+                    R.addRoundedRectangle (x, 9.4f, 1.8f, 6.6f, 0.7f);
+                    linea (L, x + 0.9f, 9.4f, x + 0.9f, 7.2f);
+                }
+                R.startNewSubPath (12.6f, 10.2f);                          // la campana
+                R.lineTo (20.8f, 3.6f); R.lineTo (20.8f, 21.2f);
+                R.lineTo (12.6f, 14.6f); R.closeSubPath();
+                R.addRectangle (20.8f, 3.6f, 1.6f, 17.6f);                 // y su aro
                 break;
 
             //  LEADS: una CUADRADA. Se gana la excepcion porque un lead ES eso:
@@ -1861,23 +1937,54 @@ namespace Iconos
                 L.lineTo (16.0f, 5.5f); L.lineTo (22.0f, 5.5f);
                 break;
 
-            //  COROS: una persona. Es lo unico que separa una voz de un
-            //  sintetizador que suena a voz.
+            //  COROS: DOS personas y no una, una detras de la otra, y las dos
+            //  MACIZAS. Un coro es mas de uno, y la silueta doble es lo que lo
+            //  separa de cualquier icono de "persona" de la tabla.
+            //
+            //  Los hombros iban de trazo y la de atras se quedaba partida por
+            //  la cabeza de la de delante: dos arcos cruzados no son dos
+            //  personas. Macizas y sin tocarse son dos siluetas.
             case Id::insCoro:
-                R.addEllipse (8.6f, 3.0f, 6.8f, 6.8f);
-                L.startNewSubPath (3.5f, 21.5f);
-                L.cubicTo (4.0f, 13.0f, 20.0f, 13.0f, 20.5f, 21.5f);
+                R.addEllipse (13.2f, 1.8f, 6.0f, 6.0f);                    // la de atras
+                R.startNewSubPath (11.2f, 14.0f);
+                R.cubicTo (11.5f, 8.8f, 20.9f, 8.8f, 21.2f, 14.0f);
+                R.closeSubPath();
+                R.addEllipse (3.6f, 8.6f, 7.2f, 7.2f);                     // y la de delante
+                R.startNewSubPath (1.2f, 22.2f);
+                R.cubicTo (1.6f, 15.2f, 13.0f, 15.2f, 13.4f, 22.2f);
+                R.closeSubPath();
                 break;
 
-            //  CUERDA PULSADA: el cuerpo de una guitarra, con su boca.
+            //  CUERDA PULSADA: la guitarra entera - la caja con su CINTURA, la
+            //  boca, el puente, las cuerdas que van del puente al mastil, el
+            //  mastil largo y la pala CON SUS SEIS CLAVIJAS. Era la caja y la
+            //  boca sueltas, que es media guitarra.
+            //
+            //  La cintura y el mastil largo son lo que la separa de CAMPANAS,
+            //  que tambien es un cuerpo con algo encima: medido, con la caja
+            //  ancha y el mastil corto los dos se ponian a 0.380. Y las seis
+            //  clavijas son lo que la separa de BAJOS, que tiene cuatro: es la
+            //  misma cuenta que hace cualquiera que mire una pala.
             case Id::insGuitarra:
-                L.startNewSubPath (12.0f, 2.5f);
-                L.cubicTo (18.5f, 4.0f, 20.0f, 9.0f, 17.0f, 12.0f);
-                L.cubicTo (20.5f, 15.5f, 18.0f, 21.5f, 12.0f, 21.5f);
-                L.cubicTo (6.0f, 21.5f, 3.5f, 15.5f, 7.0f, 12.0f);
-                L.cubicTo (4.0f, 9.0f, 5.5f, 4.0f, 12.0f, 2.5f);
+                L.startNewSubPath (12.0f, 9.2f);                           // la caja
+                L.cubicTo (17.0f, 10.4f, 18.2f, 13.9f, 15.6f, 15.9f);
+                L.cubicTo (18.8f, 18.7f, 16.8f, 22.3f, 12.0f, 22.3f);
+                L.cubicTo (7.2f, 22.3f, 5.2f, 18.7f, 8.4f, 15.9f);
+                L.cubicTo (5.8f, 13.9f, 7.0f, 10.4f, 12.0f, 9.2f);
                 L.closeSubPath();
-                R.addEllipse (9.8f, 13.8f, 4.4f, 4.4f);
+                R.addEllipse (9.7f, 13.4f, 4.6f, 4.6f);                    // la boca
+                R.addRoundedRectangle (9.2f, 19.4f, 5.6f, 1.6f, 0.6f);     // el puente
+                for (int i = 0; i < 3; ++i)                                // las cuerdas
+                    linea (L, 11.0f + (float) i * 1.0f, 19.4f,
+                              11.0f + (float) i * 1.0f, 12.0f);
+                R.addRectangle (10.9f, 3.2f, 2.2f, 6.2f);                  // el mastil, largo
+                R.addRoundedRectangle (9.6f, 1.0f, 4.8f, 2.6f, 0.9f);      // la pala
+                for (int i = 0; i < 3; ++i)                                // y sus seis clavijas
+                {
+                    const float y = 1.4f + (float) i * 0.9f;
+                    R.addEllipse (7.6f, y, 1.6f, 1.6f);
+                    R.addEllipse (14.8f, y, 1.6f, 1.6f);
+                }
                 break;
 
             //  MAZOS: la baqueta encima de las laminas.
@@ -1900,13 +2007,36 @@ namespace Iconos
                 linea (L, 22.0f, 21.0f, 22.0f, 17.5f);
                 break;
 
-            //  VIENTOS: el tubo con sus agujeros.
+            //  VIENTOS: la travesera, con la embocadura ovalada en un extremo
+            //  -el agujero por el que se sopla, de TRAZO para que sea un
+            //  agujero y no un punto-, el bloque de llaves sobre el tubo y el
+            //  pie ensanchado en el otro. Eran un tubo de trazo con cuatro
+            //  puntos dentro, que a 17 px es una pastilla con unas motas.
+            //
+            //  Y VA INCLINADA, como se sostiene. No es un capricho: TUMBADA no
+            //  se la puede distinguir de `pit` ni de `fla`, que son las otras
+            //  dos cosas largas de la tabla que viven sobre el renglon del
+            //  medio. Medido, con el tubo horizontal: 0.330 de `pit` con las
+            //  llaves pegadas al tubo y 0.335 con las llaves colgando de una
+            //  varilla -desenfocadas, cuatro bolas sobre una linea son una
+            //  onda- y 0.334 de `fla`. Los dos peines y la onda apretada son
+            //  horizontales por definicion; una flauta no, asi que la que se
+            //  mueve es la flauta.
             case Id::insFlauta:
-                L.addRoundedRectangle (2.0f, 9.0f, 20.0f, 6.0f, 3.0f);
-                R.addEllipse (5.6f, 10.9f, 2.2f, 2.2f);
-                R.addEllipse (9.6f, 10.9f, 2.2f, 2.2f);
-                R.addEllipse (13.6f, 10.9f, 2.2f, 2.2f);
-                R.addEllipse (17.6f, 10.9f, 2.2f, 2.2f);
+            {
+                juce::Path cuerpo, boca;
+                cuerpo.addRoundedRectangle (3.4f, 11.6f, 16.6f, 3.0f, 1.5f);   // el tubo
+                boca.addEllipse (0.8f, 9.8f, 5.4f, 6.2f);                      // la embocadura
+                cuerpo.addRoundedRectangle (19.2f, 9.2f, 2.8f, 7.8f, 1.1f);    // el pie
+                for (int i = 0; i < 4; ++i)                                    // y las llaves
+                    cuerpo.addRoundedRectangle (6.6f + (float) i * 3.3f, 8.4f,
+                                                2.8f, 3.4f, 0.9f);
+                const auto giro = juce::AffineTransform::rotation (-0.42f, 12.0f, 12.0f);
+                cuerpo.applyTransform (giro);
+                boca.applyTransform (giro);
+                R.addPath (cuerpo);
+                L.addPath (boca);
+            }
                 break;
 
             //  ARPAS: la columna curva, la base y las cuerdas, que van de mas
@@ -1971,41 +2101,79 @@ namespace Iconos
                 R.addEllipse (19.6f, 11.0f, 1.8f, 1.8f);
                 break;
 
-            //  SITAR: la calabaza y el mastil LARGO Y EN DIAGONAL, mas la
-            //  segunda calabaza arriba. La diagonal es lo que lo separa de
-            //  CUERDA PULS, que es una caja de frente.
+            //  SITAR: la calabaza MACIZA abajo a la izquierda, el mastil
+            //  largo en diagonal con sus TRASTES, y el clavijero arriba con
+            //  dos clavijas atravesadas. La diagonal es lo que lo separa de
+            //  CUERDA PULS, que es una caja de frente; los trastes y las
+            //  clavijas son lo que lo separa de un circulo con un palo.
             case Id::insSitar:
-                L.addEllipse (1.5f, 12.5f, 10.0f, 9.0f);
-                L.startNewSubPath (8.6f, 15.4f);
-                L.lineTo (19.0f, 2.8f); L.lineTo (21.4f, 4.8f); L.lineTo (11.0f, 17.4f);
-                L.closeSubPath();
-                R.addEllipse (18.6f, 1.2f, 4.4f, 4.4f);
+                R.addEllipse (1.5f, 11.5f, 11.0f, 10.5f);                  // la calabaza
+                //  El mastil, de la calabaza al clavijero: dos cantos
+                //  paralelos a trazo y no una banda maciza, que los trastes
+                //  encima de un macizo no se ven - se pintan con la misma
+                //  tinta.
+                linea (L, 6.6f, 14.3f, 18.4f, 2.5f);
+                linea (L, 8.7f, 16.4f, 20.5f, 4.6f);
+                linea (L, 18.4f, 2.5f, 20.5f, 4.6f);                       // y el remate
+                //  CUATRO TRASTES, perpendiculares al mastil.
+                for (int i = 0; i < 4; ++i)
+                {
+                    const float t = 0.26f + (float) i * 0.15f;
+                    const float cx = 7.65f + 11.8f * t, cy = 15.35f - 11.8f * t;
+                    linea (L, cx - 1.15f, cy - 1.15f, cx + 1.15f, cy + 1.15f);
+                }
+                //  Y LAS DOS CLAVIJAS del clavijero, con su boton.
+                linea (L, 15.3f, 3.8f, 19.3f, 7.8f);
+                linea (L, 16.9f, 2.2f, 20.9f, 6.2f);
+                R.addEllipse (18.4f, 6.9f, 2.4f, 2.4f);
+                R.addEllipse (20.0f, 5.3f, 2.4f, 2.4f);
                 break;
 
-            //  CELLOS: la caja de ocho y EL ARCO cruzandola. El arco es lo que
-            //  dice que esto se toca frotando y no pulsando, que es la unica
-            //  diferencia que importa entre esta familia y las de al lado.
+            //  CELLOS: la caja de ocho CON LO QUE LLEVA DENTRO - las dos efes y
+            //  el puente - el mastil con su cabeza, y EL ARCO cruzandola, con
+            //  su vara, su crin y el talon. El arco es lo que dice que esto se
+            //  toca frotando y no pulsando.
+            //
+            //  Las efes y el puente van MACIZOS dentro de una caja de TRAZO:
+            //  es la unica forma de que un detalle se vea cuando el dibujo
+            //  entero se pinta con una sola tinta.
             case Id::insCello:
-                L.startNewSubPath (12.0f, 2.2f);
-                L.cubicTo (16.6f, 4.0f, 16.6f, 8.2f, 13.4f, 10.2f);
-                L.cubicTo (18.6f, 11.8f, 18.6f, 19.2f, 12.0f, 21.6f);
-                L.cubicTo (5.4f, 19.2f, 5.4f, 11.8f, 10.6f, 10.2f);
-                L.cubicTo (7.4f, 8.2f, 7.4f, 4.0f, 12.0f, 2.2f);
+                L.startNewSubPath (12.0f, 5.2f);
+                L.cubicTo (16.5f, 6.9f, 16.5f, 10.9f, 13.4f, 12.8f);
+                L.cubicTo (18.4f, 14.3f, 18.4f, 21.3f, 12.0f, 21.6f);
+                L.cubicTo (5.6f, 21.3f, 5.6f, 14.3f, 10.6f, 12.8f);
+                L.cubicTo (7.5f, 10.9f, 7.5f, 6.9f, 12.0f, 5.2f);
                 L.closeSubPath();
-                linea (L, 1.8f, 18.4f, 22.2f, 5.6f);
+                R.addRoundedRectangle ( 9.3f, 13.4f, 1.1f, 4.4f, 0.55f);   // las dos efes
+                R.addRoundedRectangle (13.6f, 13.4f, 1.1f, 4.4f, 0.55f);
+                R.addRectangle (10.1f, 18.2f, 3.8f, 1.1f);                 // el puente
+                R.addRectangle (11.2f, 2.6f, 1.6f, 2.8f);                  // el mastil
+                R.addRoundedRectangle (10.5f, 1.0f, 3.0f, 1.9f, 0.7f);     // y su cabeza
+                //  EL ARCO: la vara y la crin, que son dos y no una.
+                linea (L, 1.6f, 18.4f, 21.6f, 5.6f);
+                linea (L, 2.4f, 19.8f, 22.4f, 7.0f);
+                R.addRoundedRectangle (1.2f, 18.0f, 2.6f, 2.4f, 0.7f);     // y el talon
                 break;
 
-            //  CANAS: el tubo DE PIE, con su pabellon abierto abajo y la caña
-            //  arriba. VIENTOS es un tubo tumbado; de pie y con campana es otro
-            //  dibujo, y ademas es como se sostiene un oboe.
+            //  CANAS: el oboe DE PIE - la cana doble arriba, el cuerpo conico
+            //  macizo, las tres llaves saliendo por un lado con su varilla, y
+            //  el pabellon abierto abajo. VIENTOS es un tubo tumbado; de pie,
+            //  conico y con campana es otro dibujo, y ademas es como se
+            //  sostiene un oboe.
             case Id::insCana:
-                R.addRoundedRectangle (10.7f, 1.2f, 2.6f, 2.4f, 0.7f);
-                L.startNewSubPath (10.2f, 4.0f);
-                L.lineTo (10.6f, 15.5f); L.lineTo (6.2f, 21.5f); L.lineTo (17.8f, 21.5f);
-                L.lineTo (13.4f, 15.5f); L.lineTo (13.8f, 4.0f);
-                L.closeSubPath();
-                R.addEllipse (11.0f, 6.4f, 2.0f, 2.0f);
-                R.addEllipse (11.0f, 10.2f, 2.0f, 2.0f);
+                R.addRoundedRectangle (11.0f, 0.8f, 2.0f, 2.8f, 0.6f);     // la cana
+                R.startNewSubPath (10.4f, 3.6f);                           // el cuerpo, conico
+                R.lineTo (13.6f, 3.6f); R.lineTo (14.4f, 16.0f);
+                R.lineTo (9.6f, 16.0f); R.closeSubPath();
+                R.startNewSubPath (9.6f, 16.0f);                           // y el pabellon
+                R.lineTo (14.4f, 16.0f); R.lineTo (18.4f, 22.2f);
+                R.lineTo (5.6f, 22.2f); R.closeSubPath();
+                for (int i = 0; i < 3; ++i)                                // las tres llaves
+                {
+                    const float y = 6.2f + (float) i * 3.4f;
+                    linea (L, 13.9f, y, 16.4f, y);
+                    R.addEllipse (16.0f, y - 1.3f, 2.6f, 2.6f);
+                }
                 break;
 
             //  TUBOS: los cinco tubos del organo, en MONTE y no en escalera.
