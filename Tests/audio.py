@@ -174,6 +174,57 @@ def main():
                            "APK 51, la primera con «no responde»"
                            % (arranque_["sonda"], arranque_["usage"], arranque_["i16"]))
 
+    #  EL PARCHE DE OBOE, APLICADO DE VERDAD SOBRE EL JUCE QUE EL CI CLAVA.
+    #
+    #  `ci/patch_juce_oboe.py` es lo que hace existir la guarda «el dispositivo
+    #  no lleva la cuenta» de `checkXRuns`: sin el, Oboe contesta
+    #  `ErrorUnimplemented` donde no hay contador -por radio, SIEMPRE-, JUCE lo
+    #  convierte en CERO y la app toma «no se sabe» por «no hay ni un chasquido».
+    #  Un parche que no se aplica se lee exactamente igual que uno que se aplica
+    #  y no sirve, asi que se aplica aqui, sobre una COPIA de la clona que hay en
+    #  la maquina, y se mira el resultado.
+    #
+    #  LIMITE DECLARADO, en vez de un OK sin haber mirado: la clona de JUCE es
+    #  del arbol de compilacion y esta en el .gitignore, asi que en una maquina
+    #  recien clonada no hay nada sobre lo que aplicarlo. Ahi esta regla dice
+    #  SIN COMPROBAR y no verde, y quien lo comprueba es el paso del CI, que
+    #  falla a gritos si un ancla se movio.
+    import glob, shutil, subprocess as sp, tempfile
+    clonas = sorted (glob.glob (os.path.join (
+        ROOT, "build*", "_deps", "juce-src", "modules", "juce_audio_devices",
+        "native", "juce_Oboe_android.cpp")))
+    if not clonas:
+        print ("parche de Oboe       SIN COMPROBAR: no hay clona de JUCE en este arbol")
+    else:
+        tmp = tempfile.mkdtemp (prefix="zati-oboe-")
+        try:
+            copia = os.path.join (tmp, "juce_Oboe_android.cpp")
+            shutil.copyfile (clonas[0], copia)
+            r = sp.run ([sys.executable, os.path.join (ROOT, "ci", "patch_juce_oboe.py"),
+                         copia], capture_output=True, text=True, timeout=120)
+            texto = open (copia, encoding="utf-8").read()
+            #  Las cuatro cosas que el parche tiene que dejar puestas, cada una
+            #  por lo que decide: las dos del carril rapido y las dos del
+            #  contador de chasquidos.
+            puestas = {
+                "usage del carril":  "zatiOboeUsage",
+                "entrada sin tocar": "zatiOboeInputPreset",
+                "contador a -1":     'does not count',
+                "duplex sin sumar":  "if (inputXRunCount < 0 && outputXRunCount < 0)",
+            }
+            faltan = [k for k, v in puestas.items() if v not in texto]
+            if r.returncode != 0:
+                fallos.append ("el parche de Oboe no se aplica sobre la clona de JUCE: %s"
+                               % r.stderr.strip().splitlines()[-1:] or "sin motivo")
+            elif faltan:
+                fallos.append ("el parche de Oboe dijo que si y no dejo: %s"
+                               % ", ".join (faltan))
+            else:
+                print ("parche de Oboe       aplicado, y las %d marcas puestas"
+                       % len (puestas))
+        finally:
+            shutil.rmtree (tmp, ignore_errors=True)
+
     print()
     if fallos:
         for f in fallos: print ("FALLA  " + f)

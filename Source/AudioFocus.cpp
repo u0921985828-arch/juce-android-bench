@@ -135,31 +135,54 @@ AudioFocus::~AudioFocus()
 //  la clase de dato que el fichero de preferencias tiene y el aparato no - lo
 //  mismo que una tarjeta desmontada que sigue en la ruta de exportacion. La
 //  llama el hilo de mensajes, no el de audio.
+//
+//  UN SOLO RECORRIDO PARA LAS DOS PREGUNTAS. Las dos le preguntan lo mismo al
+//  mismo `AudioManager` -que tipos de salida hay enchufados- y escrito dos
+//  veces serian dos listas de tipos que un dia dejan de decir lo mismo. Las
+//  dos tienen que distinguir «no hay» de «no se pudo preguntar», asi que la
+//  respuesta es de tres valores y cada una pone su propia prudencia.
+namespace
+{
+    enum class Hay { NoSePudo, No, Si };
+
+    template <typename Predicado>
+    Hay algunaSalida (Predicado esLaQueBusco)
+    {
+        auto* env = juce::getEnv();
+        if (env == nullptr) return Hay::NoSePudo;
+
+        juce::LocalRef<jobject> am (env->CallObjectMethod (juce::getAppContext().get(),
+                                                           juce::AndroidContext.getSystemService,
+                                                           juce::javaString ("audio").get()));
+        if (am.get() == nullptr) return Hay::NoSePudo;
+
+        constexpr jint kOutputs = 2;          // AudioManager.GET_DEVICES_OUTPUTS
+        juce::LocalRef<jobjectArray> devs ((jobjectArray) env->CallObjectMethod (
+            am.get(), juce::ZatiAudioManager.getDevices, kOutputs));
+        if (devs.get() == nullptr) return Hay::NoSePudo;
+
+        const int n = env->GetArrayLength (devs.get());
+        for (int i = 0; i < n; ++i)
+        {
+            juce::LocalRef<jobject> d (env->GetObjectArrayElement (devs.get(), i));
+            if (d.get() == nullptr) continue;
+
+            if (esLaQueBusco ((int) env->CallIntMethod (d.get(), juce::ZatiAudioDeviceInfo.getType)))
+                return Hay::Si;
+        }
+
+        return Hay::No;
+    }
+}
+
 bool RutaAudio::porAltavoz()
 {
-    auto* env = juce::getEnv();
-    if (env == nullptr) return true;      // sin JNI, lo prudente es el altavoz
-
-    juce::LocalRef<jobject> am (env->CallObjectMethod (juce::getAppContext().get(),
-                                                       juce::AndroidContext.getSystemService,
-                                                       juce::javaString ("audio").get()));
-    if (am.get() == nullptr) return true;
-
-    constexpr jint kOutputs = 2;          // AudioManager.GET_DEVICES_OUTPUTS
-    juce::LocalRef<jobjectArray> devs ((jobjectArray) env->CallObjectMethod (
-        am.get(), juce::ZatiAudioManager.getDevices, kOutputs));
-    if (devs.get() == nullptr) return true;
-
     //  Los tipos de AudioDeviceInfo que son escucha PERSONAL. Lo que no este
     //  en esta lista -el altavoz, el HDMI, el auricular de llamada- va al aire
     //  o no es una salida de monitorizacion.
-    const int n = env->GetArrayLength (devs.get());
-    for (int i = 0; i < n; ++i)
+    const auto hay = algunaSalida ([] (int tipo)
     {
-        juce::LocalRef<jobject> d (env->GetObjectArrayElement (devs.get(), i));
-        if (d.get() == nullptr) continue;
-
-        switch ((int) env->CallIntMethod (d.get(), juce::ZatiAudioDeviceInfo.getType))
+        switch (tipo)
         {
             case 3:    // TYPE_WIRED_HEADSET
             case 4:    // TYPE_WIRED_HEADPHONES
@@ -169,13 +192,50 @@ bool RutaAudio::porAltavoz()
             case 22:   // TYPE_USB_HEADSET
             case 23:   // TYPE_HEARING_AID
             case 26:   // TYPE_BLE_HEADSET
-                return false;
+                return true;
             default:
-                break;
+                return false;
         }
-    }
+    });
 
-    return true;
+    //  Sin poder preguntar, lo prudente es el altavoz: la guarda del monitor
+    //  existe para no montar un acople, y equivocarse hacia el lado de no
+    //  monitorizar cuesta una linea de aviso, al contrario cuesta un pitido.
+    return hay != Hay::Si;
+}
+
+//  Y LA MISMA PREGUNTA PARA EL BLOQUE DE AUDIO.
+//
+//  El Bluetooth no es una ruta mas lenta: es otra clase de ruta. El enlace mete
+//  entre 100 y 250 ms que no los quita ningun ajuste, y ademas se le cae el
+//  dato -interferencia de WiFi, un barrido, el telefono apretando el codec- de
+//  una forma que un bloque corto no absorbe. Pedir el bloque MINIMO ahi es
+//  pedir cortes a cambio de unos milisegundos que no se oyen al lado de los
+//  doscientos del enlace. Ver MainComponent::sueloDeRuta.
+//
+//  Los tipos BLE que NO son cascos -altavoz y difusion- entran igual: lo que
+//  decide no es si es escucha personal, es si el sonido va por radio.
+bool RutaAudio::porBluetooth()
+{
+    const auto hay = algunaSalida ([] (int tipo)
+    {
+        switch (tipo)
+        {
+            case 7:    // TYPE_BLUETOOTH_SCO
+            case 8:    // TYPE_BLUETOOTH_A2DP
+            case 26:   // TYPE_BLE_HEADSET
+            case 27:   // TYPE_BLE_SPEAKER
+            case 30:   // TYPE_BLE_BROADCAST
+                return true;
+            default:
+                return false;
+        }
+    });
+
+    //  Y aqui la prudencia es la contraria: si no se pudo preguntar, no se
+    //  engorda el bloque. Un bloque de mas a espaldas de alguien que eligio
+    //  esta app por la latencia es lo que no se puede hacer sin saberlo.
+    return hay == Hay::Si;
 }
 
 bool AudioFocus::request()
@@ -218,6 +278,15 @@ bool RutaAudio::porAltavoz()
 {
     return juce::SystemStats::getEnvironmentVariable ("ZATI_RUTA", {})
              .trim().equalsIgnoreCase ("altavoz");
+}
+
+//  Igual que la de arriba: `ZATI_RUTA=bluetooth` es lo que hace que el suelo de
+//  bloque por Bluetooth se pueda medir en un escritorio. Sin esto seria una
+//  regla que solo existe en el telefono, o sea ninguna.
+bool RutaAudio::porBluetooth()
+{
+    return juce::SystemStats::getEnvironmentVariable ("ZATI_RUTA", {})
+             .trim().equalsIgnoreCase ("bluetooth");
 }
 
 #endif

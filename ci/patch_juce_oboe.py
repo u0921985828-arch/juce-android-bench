@@ -64,6 +64,82 @@ FLOAT_PATCH = """    // Zati: skip the float attempt when the probe found that o
     session = std::make_unique<OboeSessionImpl<float>> (owner,"""
 
 
+#  EL CONTADOR DE CHASQUIDOS, CUANDO EL APARATO NO LO LLEVA.
+#
+#  `getXRunCount` es el unico sentido que la app tiene para saber si el telefono
+#  llega con el bloque que le ha pedido: cuenta los under-runs y, si crecen,
+#  sube el bloque. Oboe contesta `ErrorUnimplemented` en los caminos que no lo
+#  llevan -el legado de OpenSL, y AAudio fuera del MMAP, que es SIEMPRE el caso
+#  por Bluetooth- y JUCE se come ese error y devuelve CERO.
+#
+#  Cero es tambien lo que devuelve un aparato que cuenta y no tiene ni un
+#  chasquido, asi que la ley de la app no podia distinguir «todo limpio» de «no
+#  hay quien lo diga», y tomaba lo segundo por lo primero: 45 s de supuesta
+#  limpieza y BAJA el bloque, reabriendo el flujo -un corte de sonido- hasta
+#  dejarlo en el minimo, que es justo donde cruje. Sin poder volver a subirlo
+#  nunca, porque para subir hace falta el contador.
+#
+#  `MainComponent::checkXRuns` ya tiene la guarda escrita -«if (now < 0) return;
+#  el dispositivo no lleva la cuenta»- y era codigo MUERTO, porque JUCE no
+#  devuelve negativos. Esto es lo que la hace existir.
+#
+#  Y el duplex suma entrada y salida: un aparato que cuenta la salida y no la
+#  entrada -lo normal- seguiria contestando por la salida. Solo cuando ninguna
+#  de las dos sabe, la respuesta es «no se sabe».
+XRUN_ANCHOR = """        int getXRunCount() const
+        {
+            if (stream != nullptr)
+            {
+                auto count = stream->getXRunCount();
+
+                if (count)
+                    return count.value();
+
+                JUCE_OBOE_LOG ("Failed to get Xrun count: " + getOboeString (count.error()));
+            }
+
+            return 0;
+        }"""
+XRUN_PATCH = """        int getXRunCount() const
+        {
+            if (stream != nullptr)
+            {
+                auto count = stream->getXRunCount();
+
+                if (count)
+                    return count.value();
+
+                JUCE_OBOE_LOG ("Failed to get Xrun count: " + getOboeString (count.error()));
+            }
+
+            // Zati: -1 is "this device does not count", which is not the same
+            // answer as "no under-runs yet". See Source/MainComponent.cpp,
+            // checkXRuns.
+            return -1;
+        }"""
+
+XRUN_SUM_ANCHOR = """        int getXRunCount() const
+        {
+            int inputXRunCount  = jmax (0, inputStream  != nullptr ? inputStream->getXRunCount() : 0);
+            int outputXRunCount = jmax (0, outputStream != nullptr ? outputStream->getXRunCount() : 0);
+
+            return inputXRunCount + outputXRunCount;
+        }"""
+XRUN_SUM_PATCH = """        int getXRunCount() const
+        {
+            // Zati: a stream that cannot count says -1 (see above). It must not
+            // be summed as a zero, and it must not hide the other direction's
+            // count either - only when NEITHER can answer is the answer -1.
+            const int inputXRunCount  = inputStream  != nullptr ? inputStream->getXRunCount()  : -1;
+            const int outputXRunCount = outputStream != nullptr ? outputStream->getXRunCount() : -1;
+
+            if (inputXRunCount < 0 && outputXRunCount < 0)
+                return -1;
+
+            return jmax (0, inputXRunCount) + jmax (0, outputXRunCount);
+        }"""
+
+
 def main() -> int:
     if not SRC.is_file():
         print(f"patch_juce_oboe: {SRC} not found", file=sys.stderr)
@@ -71,12 +147,14 @@ def main() -> int:
 
     text = SRC.read_text(encoding="utf-8")
 
-    if "zatiOboeUsage" in text:
+    if "zatiOboeUsage" in text and "does not count" in text:
         print("patch_juce_oboe: already patched")
         return 0
 
     for name, anchor in (("performance mode", USAGE_ANCHOR),
-                         ("float session", FLOAT_ANCHOR)):
+                         ("float session", FLOAT_ANCHOR),
+                         ("xrun count", XRUN_ANCHOR),
+                         ("xrun sum", XRUN_SUM_ANCHOR)):
         if text.count(anchor) != 1:
             print(f"patch_juce_oboe: {name} anchor matched "
                   f"{text.count(anchor)} times, expected 1 - JUCE moved, "
@@ -93,6 +171,8 @@ def main() -> int:
     text = text.replace(marker, marker + DECL, 1)
     text = text.replace(USAGE_ANCHOR, USAGE_PATCH, 1)
     text = text.replace(FLOAT_ANCHOR, FLOAT_PATCH, 1)
+    text = text.replace(XRUN_ANCHOR, XRUN_PATCH, 1)
+    text = text.replace(XRUN_SUM_ANCHOR, XRUN_SUM_PATCH, 1)
 
     SRC.write_text(text, encoding="utf-8")
     print(f"patch_juce_oboe: patched {SRC}")

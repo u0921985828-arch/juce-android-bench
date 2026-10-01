@@ -1490,6 +1490,36 @@ private:
     //  telefono justo, que es exactamente el caso para el que existe todo esto.
     int    burstSuelo   = 1;
     double burstBajoMs  = -1.0;   // ms desde la ultima bajada; < 0 = ninguna
+
+    //  Y EL BLOQUE NO ES UNO SOLO PARA TODAS LAS RUTAS.
+    //
+    //  Toda la ley de arriba -pedir el burst minimo y corregir por chasquidos-
+    //  esta escrita para una ruta que el telefono sirve el mismo: el altavoz,
+    //  el cable, el USB. Por Bluetooth no vale ni la peticion ni la correccion:
+    //
+    //    * El enlace mete entre 100 y 250 ms que no los quita ningun ajuste de
+    //      esta app. Los 5 ms que se ahorran pidiendo el burst minimo no se
+    //      oyen ahi; el corte que ese burst no absorbe, si.
+    //    * Y la correccion no llega: el contador de chasquidos del aparato solo
+    //      existe en el carril MMAP, que por radio no se concede NUNCA. Ver
+    //      checkXRuns y ci/patch_juce_oboe.py: la respuesta es «no se sabe», y
+    //      lo que no se sabe no se corrige.
+    //
+    //  Asi que por radio el suelo del bloque son DOS burst a proposito, que es
+    //  lo que recomienda Oboe para un flujo que tiene que aguantar, y lo que se
+    //  aprende por radio se guarda APARTE: un numero compartido significaria
+    //  que los cascos Bluetooth de ayer le cuestan latencia al altavoz de hoy,
+    //  y al contrario.
+    //
+    //  La ruta se pregunta al abrir y no en cada tick -es una llamada JNI y el
+    //  tick son 60 ms-, y abrir es exactamente cuando puede haber cambiado: un
+    //  cambio de ruta reabre el dispositivo. Ver useLowestLatency.
+    bool rutaBt      = false;
+    int  burstMultBt = 0;     // 0 = aun sin leer; luego kBurstsBt..kMaxBursts
+    static constexpr int kBurstsBt = 2;
+
+    int  sueloDeRuta() const noexcept { return rutaBt ? kBurstsBt : 1; }
+    int& multDeRuta()        noexcept { return rutaBt ? burstMultBt : burstMult; }
     //  ZATI_XRUN / ZATI_XRUN_ESCALA — ver checkXRuns.
     juce::String xrunGuion;
     double       xrunEscala  = 1.0;
@@ -1692,8 +1722,10 @@ private:
     double esperaRevivirMs = kReviveMinMs;
 
     void checkXRuns (double dtMs);
-    static juce::File burstPreferenceFile();
-    static int loadBurstPreference();     // one native burst, not JUCE's 40 ms default
+    //  Sin argumento, la ruta DIRECTA -altavoz, cable, USB-, que es la que
+    //  llevaba el fichero de siempre. Ver rutaBt.
+    static juce::File burstPreferenceFile (bool bluetooth = false);
+    static int loadBurstPreference (bool bluetooth = false);  // one native burst, not JUCE's 40 ms default
 
     //  What AAudio granted a bare exclusive request at startup, before any
     //  device of ours existed. This is the only honest answer to "are we on
