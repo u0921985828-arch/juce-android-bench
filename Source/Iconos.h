@@ -1559,20 +1559,38 @@ namespace Iconos
             //  4..19 contra 3..20, alto 20 los dos, tinta 0.3416 contra 0.3572
             //  — o sea el mismo objeto en dos estados, que es lo que es.
             //
-            //  Se probo ademas la version canonica de una sola pata -la derecha
-            //  anclada y el extremo libre colgando a la izquierda- y salio
-            //  PEOR: `momentaneo se sale de su caja`, con el trazo en -0.4. Se
-            //  descarto por eso y no por gusto.
+            //  Y ABIERTO ES UNA PATA ANCLADA Y LA OTRA LEVANTADA, que es como
+            //  se abre un candado de verdad: el arco gira sobre su pasador y la
+            //  pata libre SALE del cuerpo. Lo que habia era un arco que arrancaba
+            //  de la izquierda del cuerpo y se iba volando hacia la derecha, con
+            //  las dos patas en el aire: eso no es un candado abierto, es un asa
+            //  suelta encima de una caja. Llego del telefono —«el candado abierto
+            //  no es realista»— y es verdad.
+            //
+            //  El comentario que habia aqui decia que la version canonica —la
+            //  pata derecha anclada y el extremo libre a la izquierda— se probo
+            //  y salia `momentaneo se sale de su caja`, con el trazo en -0.4.
+            //  Eso ya no es cierto y por eso se reescribe: ese -0.4 eran los
+            //  PUNTOS DE CONTROL del arco y no el trazo, y desde `cajaPintada`
+            //  la caja se mide por donde pasa la tinta. La version buena estaba
+            //  descartada por una medida que medía otra cosa.
+            //
+            //  La pata anclada baja DENTRO del cuerpo —de 10.0 para abajo la
+            //  tapa el relleno, que es lo que hace un pasador— y la libre no
+            //  cuelga: se queda ARRIBA, a 4.4, porque un arco que se abre gira
+            //  sobre el pasador y el extremo se LEVANTA. Primero se dejo
+            //  colgando a 8.0, dos pixeles por encima del canto, y medido salio
+            //  peor que lo que habia: 0.1314 contra `fijo` —era su mismo arco
+            //  simetrico con una pata un poco mas corta, y dos pixeles de hueco
+            //  no se ven a los trece a los que la tapa se dibuja—. Levantado es
+            //  un gancho y no un arco, que es lo unico que separa esta tapa de
+            //  `fijo`, y el hueco pasa a ser de seis pixeles.
             case Id::momentaneo:
                 R.addRoundedRectangle (2.8f, 10.0f, 18.4f, 12.0f, 1.9f);
                 t.lleno = 0.88f;
-                L.startNewSubPath (7.6f, 10.0f);
-                L.lineTo (7.6f, 6.6f);
-                //  Y EL ARCO SE ABRE MAS QUE ANTES: con el cuerpo igualado por
-                //  los dos —que es lo que pide un mando en dos estados— el arco
-                //  es lo UNICO que los separa, y la pareja bajo de 0.1460 a
-                //  0.1377 al ensanchar el cuerpo. Se paga donde toca.
-                L.cubicTo (7.6f, 1.2f, 19.0f, 1.0f, 21.4f, 6.8f);
+                L.startNewSubPath (16.4f, 11.4f);
+                L.lineTo (16.4f, 6.2f);
+                L.cubicTo (16.4f, 0.8f, 6.4f, 0.6f, 3.8f, 4.8f);
                 break;
 
             //  MIDI: la clavija de cinco patillas, que es como se reconoce sin
