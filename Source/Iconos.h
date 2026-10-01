@@ -273,6 +273,31 @@ namespace Iconos
     //  el mismo ajuste optico que hace una tipografia con el punto y la O.
     struct Trazo { juce::Path linea, relleno; float lleno = 1.0f; };
 
+    //  EL GROSOR DE LINEA, UNO PARA TODOS.
+    //
+    //  Lo que se pinta de TRAZO ya tenia uno solo por construccion: `dibuja`
+    //  estira el camino y despues lo engorda con `grosorPara`, asi que dos
+    //  iconos de linea en la misma fila salen con el mismo pelo quiera o no
+    //  quiera quien los dibujo. Pero una banda escrita a mano en el RELLENO
+    //  -el rail de `midi`, las cuerdas de `insCello`, los tubos de `insTubo`,
+    //  las tres unidades de `rack`- lleva el ancho que su autor tecleo, y
+    //  tecleados habia VEINTICINCO anchos distintos entre 0.7 y 5.0 repartidos
+    //  por treinta y tres iconos. Medido sobre el raster: la banda mas comun
+    //  era de 2 px en veintiocho iconos, de 3 en ochenta, de 4 en veintitres y
+    //  de 5 o 6 en nueve. Eso es lo que se ve en una fila de la cara: unos
+    //  iconos de pelo fino y otros de rotulador, y el ojo lo lee como si los
+    //  gordos estuvieran en negrita.
+    //
+    //  `kBanda` es ese ancho, el MISMO que `grosorPara` le da a la rejilla de
+    //  24 -que es donde se dibuja todo-, y de aqui sale toda banda que sea una
+    //  LINEA. Lo que es una FORMA no sale de aqui y no tiene por que: el
+    //  cuadrado de `stop`, las secciones de `cancion`, las cunas de `trm` o las
+    //  teclas negras de `piano` no son lineas y un grosor de linea no les dice
+    //  nada. La cuenta se escribe aqui a mano porque `grosorPara` esta
+    //  declarada mil lineas mas abajo; es el mismo apano que ya hacia
+    //  `marcaTrazo`, y lo vigila `Tests/iconos.py`.
+    inline constexpr float kBanda = 24.0f * 0.072f;      //  1.728
+
     namespace detalle
     {
         //  Una flecha: la punta es un triangulo RELLENO y no dos trazos en
@@ -291,6 +316,26 @@ namespace Iconos
         {
             p.startNewSubPath (x1, y1);
             p.lineTo (x2, y2);
+        }
+
+        //  UNA LINEA EN EL CAMINO QUE SE RELLENA, del grosor de la casa.
+        //
+        //  Hay bandas que tienen que ser macizas y no de contorno -una cuerda,
+        //  un rail, un tubo, el aro de una campana- y esas no las puede dar
+        //  `linea`, que va al camino que se traza. Lo que no puede pasar es que
+        //  cada una se escriba con su ancho: `bandaH` y `bandaV` las dan con
+        //  `kBanda` y con las puntas redondas, que es como las deja
+        //  `PathStrokeType::rounded`, asi que una banda rellena y una linea
+        //  trazada salen indistinguibles. Se centran en su EJE -`yc` o `xc`- y
+        //  no en una esquina, que es como se piensa una linea.
+        inline void bandaH (juce::Path& p, float x, float yc, float largo)
+        {
+            p.addRoundedRectangle (x, yc - kBanda * 0.5f, largo, kBanda, kBanda * 0.5f);
+        }
+
+        inline void bandaV (juce::Path& p, float xc, float y, float largo)
+        {
+            p.addRoundedRectangle (xc - kBanda * 0.5f, y, kBanda, largo, kBanda * 0.5f);
         }
 
         //  La carpeta, que la usan tres iconos y se dibujaba tres veces.
@@ -682,6 +727,17 @@ namespace Iconos
                     const float x = 2.6f + (float) i * 3.76f;
                     linea (L, x, 13.6f, x, 20.8f);
                 }
+                //  Y LAS NEGRAS SE QUEDAN EN 2.7, QUE NO SON LINEAS. Se
+                //  probaron a `kBanda` -1.73- con el argumento de que en un
+                //  teclado de verdad una negra mide poco mas de la mitad de una
+                //  blanca, y salio MEDIDO que no: la pareja `pads`/`piano` cayo
+                //  de 0.4028 a 0.3595 a los diecisiete pixeles a los que se
+                //  comparan, porque un marco con tabiques finos desenfocado es
+                //  la rejilla de `pads`. Una tecla negra es una TECLA, no una
+                //  linea, y por eso no sale de `kBanda`: lo que da peso a este
+                //  icono y lo separa de una rejilla es justamente que las
+                //  negras sean macizas. Es el mismo reparto que deja fuera el
+                //  cuadrado de `stop` o las cunas de `trm`.
                 R.addRectangle ( 5.01f, 3.2f, 2.7f, 10.4f);
                 R.addRectangle ( 8.77f, 3.2f, 2.7f, 10.4f);
                 R.addRectangle (16.29f, 3.2f, 2.7f, 10.4f);
@@ -763,14 +819,21 @@ namespace Iconos
             //  tres marcos: el filo de fuera y dos tabiques dicen lo mismo con
             //  la mitad de la tinta, y el punto de cada unidad se queda porque
             //  es lo que dice que ahi hay un aparato y no un cajon.
+            //  Y LAS TRES UNIDADES SON LINEAS, DE `kBanda`. Eran bandas de
+            //  3.4 px en una rejilla de 24 -el doble de lo que mide una linea
+            //  de esta cara, y el icono entero es banda: medido, la banda mas
+            //  comun de `rack` era de 4 px en el 81% de su tinta, el peor de
+            //  los 140-. Un armario son tres estantes y un estante es una
+            //  linea. Se va con el 0.94 de macizo, que era el descuento optico
+            //  que se le hacia por pesar de mas: sin bandas gordas no hay nada
+            //  que descontar.
             case Id::rack:
                 for (int i = 0; i < 3; ++i)
                 {
                     const float y = 2.6f + (float) i * 7.0f;
-                    R.addRoundedRectangle (2.5f, y, 19.0f, 3.4f, 1.0f);
+                    bandaH (R, 2.5f, y + 1.7f, 19.0f);
                     L.addEllipse (16.6f, y + 0.5f, 2.4f, 2.4f);
                 }
-                t.lleno = 0.94f;
                 break;
 
             //  CHOP: la muestra con sus MARCAS DE CORTE.
@@ -821,12 +884,19 @@ namespace Iconos
             //  SONIDO: una onda de verdad, con sus altibajos. Con la envolvente
             //  cayendo desde el ataque era una CUNA, y una cuna es el
             //  triangulo de `play`: 0.31 medidos entre las dos.
+            //  Y OCHO BARRAS Y NO ONCE, para que quepan al grosor de la casa.
+            //  Iban a 1.5 px de ancho, por debajo de `kBanda`, porque con once
+            //  a 1.9 de paso no cabia nada mas gordo: a 1.73 se tocarian y la
+            //  onda saldria un bloque. Ocho a 2.6 de paso dejan el mismo ancho
+            //  de dibujo -de 2 a 22- con el pelo de la casa y el hueco entre
+            //  barras medio pixel mas, que a los trece a los que esto se
+            //  dibuja es lo que decide si se leen barras o una mancha.
             case Id::sonido:
             {
-                const float h[11] = { 2.0f, 6.5f, 3.0f, 9.0f, 4.5f, 7.5f,
-                                      2.5f, 8.0f, 3.5f, 5.0f, 1.8f };
-                for (int i = 0; i < 11; ++i)
-                    R.addRectangle (2.0f + (float) i * 1.9f, 12.0f - h[i], 1.5f, h[i] * 2.0f);
+                const float h[8] = { 2.0f, 6.5f, 3.0f, 9.0f,
+                                     4.5f, 7.5f, 2.5f, 5.0f };
+                for (int i = 0; i < 8; ++i)
+                    bandaV (R, 2.9f + (float) i * 2.6f, 12.0f - h[i], h[i] * 2.0f);
                 break;
             }
 
@@ -835,7 +905,7 @@ namespace Iconos
                 L.lineTo (4.0f, 21.5f); L.lineTo (8.0f, 21.5f);
                 L.startNewSubPath (16.0f, 2.5f); L.lineTo (20.0f, 2.5f);
                 L.lineTo (20.0f, 21.5f); L.lineTo (16.0f, 21.5f);
-                R.addRectangle (10.6f, 7.0f, 2.8f, 10.0f);
+                bandaV (R, 12.0f, 7.0f, 10.0f);
                 break;
 
             //  RECORTAR no puede ser el dibujo de la pestana RECORTE: las dos
@@ -904,14 +974,26 @@ namespace Iconos
                 L.lineTo (18.5f, 3.4f); L.lineTo (22.0f, 3.4f);
                 break;
 
-            //  DLY: el golpe y sus ecos. El primero LLENO y los otros huecos,
-            //  que es lo que separa el original de lo que devuelve la linea.
+            //  DLY: el golpe y sus ecos, que BAJAN. El primero es el mas alto y
+            //  los tres de detras van cayendo, que es lo que una linea de
+            //  retardo hace con lo que entra.
+            //
+            //  EL LLENO Y LOS HUECOS ERAN FICCION. Decia aqui "el primero LLENO
+            //  y los otros huecos, que es lo que separa el original de lo que
+            //  devuelve la linea" y no se pintaba asi: un rectangulo TRAZADO de
+            //  3.0 px de ancho tiene las dos paredes de `kBanda` -1.73 cada
+            //  una- asi que se solapan y el hueco no existe. Lo que salia eran
+            //  tres barras MACIZAS de 4.7 px al lado de una de 3.0, o sea los
+            //  ecos mas GORDOS que el golpe: justo lo contrario de lo que el
+            //  comentario prometia, y de paso tres grosores en un icono de
+            //  cuatro trazos. Las cuatro son bandas de `kBanda` y lo que las
+            //  separa es el ALTO, que es lo que ya se leia de verdad.
             case Id::dly:
                 linea (L, 1.5f, 21.0f, 22.5f, 21.0f);
-                R.addRectangle (2.5f, 4.0f, 3.0f, 17.0f);
-                L.addRectangle (8.0f, 8.5f, 3.0f, 12.5f);
-                L.addRectangle (13.0f, 12.5f, 3.0f, 8.5f);
-                L.addRectangle (18.0f, 16.0f, 3.0f, 5.0f);
+                bandaV (R,  4.0f,  4.0f, 17.0f);
+                bandaV (R,  9.5f,  8.5f, 12.5f);
+                bandaV (R, 14.5f, 12.5f,  8.5f);
+                bandaV (R, 20.0f, 16.0f,  5.0f);
                 break;
 
             //  BIT: la escalera. Un reductor de bits convierte una rampa en
@@ -926,15 +1008,30 @@ namespace Iconos
             //  corta las esquinas es lo que entro: los dos a la vez.
             case Id::bit:
             {
+                //  Y LOS CUATRO PELDANOS SE REPARTEN MAS ALTO. Iban de 20.0 a
+                //  6.5 -13.5 px de salto- y con la banda de 3.4 lo pintado
+                //  llegaba a 16.9 de alto, o sea el 0.70 justo del marco. Con
+                //  la banda a `kBanda` lo pintado baja a 15.2 y el marco se
+                //  queda en 0.67: no es que el dibujo este peor, es que el
+                //  grosor ya no le estaba haciendo de relleno. Los peldanos
+                //  pasan a 21.2 .. 4.7 -16.5 de salto- y el alto pintado sube a
+                //  18.2, que son 0.76 del marco. La diagonal los sigue, que es
+                //  la recta contra la que la escalera se lee.
                 juce::Path escalera;
-                escalera.startNewSubPath (2.0f, 20.0f);
-                escalera.lineTo (7.0f, 20.0f);  escalera.lineTo (7.0f, 15.5f);
-                escalera.lineTo (12.0f, 15.5f); escalera.lineTo (12.0f, 11.0f);
-                escalera.lineTo (17.0f, 11.0f); escalera.lineTo (17.0f, 6.5f);
-                escalera.lineTo (22.0f, 6.5f);
-                juce::PathStrokeType (3.4f, juce::PathStrokeType::mitered, juce::PathStrokeType::butt)
+                escalera.startNewSubPath (2.0f, 21.2f);
+                escalera.lineTo (7.0f, 21.2f);  escalera.lineTo (7.0f, 15.7f);
+                escalera.lineTo (12.0f, 15.7f); escalera.lineTo (12.0f, 10.2f);
+                escalera.lineTo (17.0f, 10.2f); escalera.lineTo (17.0f, 4.7f);
+                escalera.lineTo (22.0f, 4.7f);
+                //  LA ESCALERA, CON EL PELO DE LA CASA. Llevaba 3.4 -el doble
+                //  de `kBanda`- y la recta de debajo va con el pelo normal: dos
+                //  grosores en el mismo icono, que es el caso que no admite
+                //  discusion. Las esquinas siguen en escuadra y las puntas a
+                //  ras, que eso es el remate de una escalera y no su grosor.
+                juce::PathStrokeType (kBanda, juce::PathStrokeType::mitered,
+                                              juce::PathStrokeType::butt)
                     .createStrokedPath (R, escalera);
-                linea (L, 2.0f, 20.0f, 22.0f, 6.5f);
+                linea (L, 2.0f, 21.2f, 22.0f, 4.7f);
                 break;
             }
 
@@ -968,11 +1065,20 @@ namespace Iconos
                 //  quedaria por debajo de lo que habia— se separan los dos
                 //  renglones hasta donde los puntos de control caben en la
                 //  rejilla: 5.6 arriba y 18.2 abajo.
-                onda (R, 0.0f, 5.6f);                        // la original, como banda
-                R.lineTo (21.0f, 9.0f);
-                R.cubicTo (18.0f, 12.5f, 16.0f, 5.5f, 13.0f, 9.0f);
-                R.cubicTo (9.0f, 14.0f, 6.0f, 4.0f, 2.0f, 9.0f);
-                R.closeSubPath();
+                //  LA BANDA SE ENGORDA CON `kBanda` Y NO A OJO. Era la onda de
+                //  arriba cerrada contra una copia 3.4 px mas abajo: el doble
+                //  del pelo con el que se dibuja la de abajo, en el mismo
+                //  icono, y encima de grosor DESIGUAL -separar dos ondas en
+                //  vertical deja la banda fina donde la onda sube y gorda donde
+                //  va plana-. Engordar el camino da las dos cosas: un grosor y
+                //  el mismo que el resto.
+                {
+                    juce::Path o;
+                    onda (o, 0.0f, 5.6f);                    // la original, como banda
+                    juce::PathStrokeType (kBanda, juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded)
+                        .createStrokedPath (R, o);
+                }
                 onda (L, 1.0f, 18.2f);                       // y la copia, desfasada
                 break;
             }
@@ -1024,7 +1130,7 @@ namespace Iconos
             //  0.120 de tinta y a 17 px eran dos uves grises. Siguen siendo
             //  dos, anchas y separadas, que es lo que lo aparta de `fla`.
             case Id::pha:
-                R.addRectangle (2.0f, 5.0f, 20.0f, 3.2f);
+                bandaH (R, 2.0f, 6.6f, 20.0f);
                 R.startNewSubPath (4.0f, 8.0f);  R.lineTo (7.5f, 20.0f);  R.lineTo (11.0f, 8.0f);  R.closeSubPath();
                 R.startNewSubPath (13.0f, 8.0f); R.lineTo (16.5f, 20.0f); R.lineTo (20.0f, 8.0f); R.closeSubPath();
                 break;
@@ -1245,21 +1351,33 @@ namespace Iconos
                 L.quadraticTo (16.0f, 16.0f, 22.0f, 5.0f);
                 break;
 
-            //  REP: EL TROZO QUE SE REPITE. El primero relleno -lo que se
-            //  grabo- y los dos de detras a trazo -lo que se devuelve-, que es
-            //  la misma regla que separa el golpe de sus ecos en `dly`. Y son
-            //  BLOQUES y no picos, porque lo que se repite es un trozo entero
-            //  de audio y no un golpe.
+            //  REP: EL TROZO QUE SE REPITE. Son BLOQUES y no picos, porque lo
+            //  que se repite es un trozo entero de audio y no un golpe, y eso
+            //  es lo que lo aparta de `dly`, que son cuatro lineas.
+            //
             //  LAS TRES BARRAS, DE ARRIBA ABAJO Y EN BAJADA: con 10 px de alto
             //  en 18 de ancho la caja se quedaba en 0.58 del marco por el lado
             //  corto, y las tres iguales y altas se fueron a 0.3975 de `pads`
             //  —tres barras parejas, desenfocadas, son una rejilla—. En bajada
             //  dicen ademas lo que un repetidor hace: la primera es la que
             //  entro y las otras dos son copias que se van.
+            //
+            //  Y LOS BLOQUES SON MAS ANCHOS PARA QUE EL HUECO EXISTA. El
+            //  primero relleno -lo que se grabo- y los dos de detras a trazo
+            //  -lo que se devuelve-, que es la misma regla que separa el golpe
+            //  de sus ecos en `dly`; lo que pasa es que no se pintaba. Con 4.3
+            //  px de ancho, un rectangulo TRAZADO tiene las dos paredes de
+            //  `kBanda` -1.73 cada una- y entre ellas queda una ranura de 0.84:
+            //  los dos de detras salian practicamente macizos con una raya, o
+            //  sea el mismo bloque que el primero. A 5.0 de ancho la ranura es
+            //  de 1.54 y el hueco se ve, que es lo que el dibujo llevaba doce
+            //  versiones prometiendo. Se probo tambien dejar los tres rellenos:
+            //  la tinta se iba a 0.4900 contra un tope de 0.55, o sea a un dedo
+            //  de ser una mancha, y se perdia la unica cosa que `rep` dice.
             case Id::rep:
-                R.addRectangle ( 3.0f,  3.6f, 4.3f, 16.8f);
-                L.addRectangle ( 9.85f, 7.0f, 4.3f, 13.4f);
-                L.addRectangle (16.7f, 10.4f, 4.3f, 10.0f);
+                R.addRectangle ( 3.0f,  3.6f, 5.0f, 16.8f);
+                L.addRectangle ( 9.6f,  7.0f, 5.0f, 13.4f);
+                L.addRectangle (16.2f, 10.4f, 5.0f, 10.0f);
                 break;
 
             case Id::amb:
@@ -1463,8 +1581,14 @@ namespace Iconos
             case Id::cadena:
             {
                 juce::Path a, b;
+                //  Y LA PARED DEL ESLABON ES DE `kBanda`: estaba a 2.4, que es
+                //  medio pelo mas de lo que mide una linea de esta cara. El hueco
+                //  es el de fuera METIDO ese pelo, asi que la pared sale del mismo
+                //  sitio que todo lo demas y no de un numero tecleado.
                 a.addRoundedRectangle (0.0f, 6.5f, 13.0f, 8.0f, 4.0f);
-                a.addRoundedRectangle (2.4f, 8.9f, 8.2f, 3.2f, 1.6f);
+                a.addRoundedRectangle (kBanda, 6.5f + kBanda,
+                                       13.0f - 2.0f * kBanda, 8.0f - 2.0f * kBanda,
+                                       4.0f - kBanda);
                 a.setUsingNonZeroWinding (false);
                 b = a;
                 a.applyTransform (juce::AffineTransform::translation (2.0f, -1.0f));
@@ -1499,9 +1623,9 @@ namespace Iconos
             //  sobre un paso: el marco es justamente eso.
             case Id::patron:
                 L.addRoundedRectangle (1.5f, 4.5f, 21.0f, 15.0f, 1.8f);
-                R.addRectangle (4.5f, 8.0f, 2.6f, 8.0f);
-                R.addRectangle (10.7f, 8.0f, 2.6f, 8.0f);
-                R.addRectangle (16.9f, 8.0f, 2.6f, 8.0f);
+                bandaV (R,  5.8f, 8.0f, 8.0f);
+                bandaV (R, 12.0f, 8.0f, 8.0f);
+                bandaV (R, 18.2f, 8.0f, 8.0f);
                 break;
 
             //  PAD: uno solo, con el dedo encima.
@@ -1597,7 +1721,7 @@ namespace Iconos
             //  leer nada.
             case Id::midi:
                 L.addEllipse (2.0f, 2.0f, 20.0f, 20.0f);
-                R.addRectangle (8.5f, 3.4f, 7.0f, 2.6f);
+                bandaH (R, 8.5f, 4.7f, 7.0f);
                 for (int i = 0; i < 5; ++i)
                 {
                     const float a = juce::MathConstants<float>::pi * (0.15f + 0.175f * (float) i);
@@ -1698,7 +1822,7 @@ namespace Iconos
                            2.0f + (float) (i + 1) * 1.15f, z[i + 1]);
                 linea (L, 11.8f, 2.5f, 11.8f, 21.5f);
                 linea (L, 13.5f, 12.0f, 21.5f, 12.0f);
-                R.addRectangle (15.5f, 6.5f, 1.6f, 11.0f);
+                bandaV (R, 16.3f, 6.5f, 11.0f);
                 break;
             }
 
@@ -1870,19 +1994,26 @@ namespace Iconos
                 R.addEllipse (19.2f, 4.4f, 2.8f, 2.8f);
                 linea (L, 16.4f, 10.2f, 19.4f, 10.2f);
                 R.addEllipse (19.2f, 8.8f, 2.8f, 2.8f);
-                R.addRectangle (7.2f, 11.6f, 9.6f, 1.4f);                  // la cejuela
+                bandaH (R, 7.2f, 12.3f, 9.6f);                             // la cejuela
                 for (int i = 0; i < 4; ++i)                                // y las cuatro cuerdas
                     linea (L, 9.0f + (float) i * 2.0f, 13.0f,
                               9.0f + (float) i * 2.0f, 22.0f);
                 break;
 
-            //  SUBS: tres barras que ENGORDAN hacia abajo. No es una onda: es
+            //  SUBS: tres barras que crecen hacia abajo. No es una onda: es
             //  "esto vive abajo", que es lo unico que un sub es.
+            //
+            //  Y CRECEN DE LARGO Y NO DE GORDO. Engordaban: 1.8, 3.0 y 4.6 px
+            //  de alto, o sea tres grosores de linea distintos en un icono de
+            //  tres trazos, y el de abajo casi el triple del pelo con el que
+            //  esta dibujada la cara entera. Lo que dice "esto vive abajo" es
+            //  que las barras se ENSANCHAN -10, 14 y 18 de largo, que ya las
+            //  tenia-, no que se engorden; asi el dibujo dice lo mismo con un
+            //  solo grosor.
             case Id::insSub:
-                R.addRoundedRectangle (7.0f,  4.5f, 10.0f, 1.8f, 0.9f);
-                R.addRoundedRectangle (5.0f, 10.0f, 14.0f, 3.0f, 1.2f);
-                R.addRoundedRectangle (3.0f, 16.5f, 18.0f, 4.6f, 1.6f);
-                t.lleno = 0.90f;
+                bandaH (R, 7.0f,  5.4f, 10.0f);
+                bandaH (R, 5.0f, 11.5f, 14.0f);
+                bandaH (R, 3.0f, 18.8f, 18.0f);
                 break;
 
             //  PIANO ELEC: cuatro teclas blancas y tres negras. Es el dibujo
@@ -1902,11 +2033,11 @@ namespace Iconos
             //  el mango van macizos y el martillo mas grande y con su palo:
             //  lo que golpea y lo que suena, los dos con peso.
             case Id::insEp:
-                R.addRoundedRectangle (7.0f, 3.0f, 2.6f, 10.5f, 1.0f);      // las dos puas
-                R.addRoundedRectangle (14.4f, 3.0f, 2.6f, 10.5f, 1.0f);
+                bandaV (R,  8.3f, 3.0f, 10.5f);                           // las dos puas
+                bandaV (R, 15.7f, 3.0f, 10.5f);
                 L.startNewSubPath (8.3f, 13.0f);                          // y la horquilla
                 L.quadraticTo (12.0f, 18.0f, 15.7f, 13.0f);
-                R.addRoundedRectangle (10.7f, 16.0f, 2.6f, 6.0f, 1.0f);   // el mango
+                bandaV (R, 12.0f, 16.0f, 6.0f);                           // el mango
                 R.addEllipse (1.5f, 5.0f, 5.0f, 5.0f);                    // el martillo
                 linea (L, 4.0f, 10.0f, 4.0f, 20.0f);                      // y su palo
                 break;
@@ -1932,10 +2063,19 @@ namespace Iconos
             case Id::insOrgano:
                 L.addRoundedRectangle (4.5f, 3.0f, 15.0f, 5.4f, 0.9f);     // el manual de arriba
                 for (int i = 0; i < 3; ++i)
-                    R.addRectangle (7.5f + (float) i * 4.2f, 3.0f, 2.0f, 3.0f);   // sus teclas negras
-                R.addRoundedRectangle (2.0f, 10.5f, 20.0f, 4.8f, 0.9f);    // el de abajo, macizo
-                for (int i = 0; i < 5; ++i)                                 // y la pedalera
-                    R.addRoundedRectangle (3.4f + (float) i * 4.2f, 17.5f, 2.2f, 4.5f, 0.7f);
+                    bandaV (R, 8.5f + (float) i * 4.2f, 3.0f, 3.0f);       // sus teclas negras
+                //  EL DE ABAJO, DE CONTORNO Y NO MACIZO. Era una banda de 4.8 px
+                //  en una rejilla de 24: la banda mas gorda de los 140 iconos
+                //  junto con las de `rep` y `insSub`, casi tres veces el pelo con
+                //  el que esta dibujado el manual de arriba, y en la misma cara.
+                //  Un organo tiene dos manuales IGUALES -eso es lo que lo hace un
+                //  organo y no un piano- asi que el de abajo se dibuja como el de
+                //  arriba y la diferencia entre los dos deja de ser el grosor.
+                L.addRoundedRectangle (2.0f, 10.3f, 20.0f, 5.4f, 0.9f);    // el de abajo
+                for (int i = 0; i < 4; ++i)
+                    bandaV (R, 6.2f + (float) i * 4.2f, 10.3f, 3.0f);      // y sus teclas
+                for (int i = 0; i < 5; ++i)                                 // la pedalera
+                    bandaV (R, 4.5f + (float) i * 4.2f, 17.6f, 4.5f);
                 break;
 
             //  CUERDAS: LA VOLUTA, o sea la cabeza tallada de un instrumento de
@@ -1964,8 +2104,8 @@ namespace Iconos
                     const float y = 7.6f  + r * std::sin (a - 1.1f);
                     if (i == 0) espiral.startNewSubPath (x, y); else espiral.lineTo (x, y);
                 }
-                juce::PathStrokeType (1.75f, juce::PathStrokeType::curved,
-                                             juce::PathStrokeType::rounded)
+                juce::PathStrokeType (kBanda, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded)
                     .createStrokedPath (R, espiral);
                 R.addRoundedRectangle (9.7f, 12.8f, 4.6f, 6.8f, 1.0f);     // el clavijero
                 //  CUATRO clavijas, dos por lado y a distinta altura, que son
@@ -2020,20 +2160,20 @@ namespace Iconos
             //  distinto tamano, una detras de otra, no se parecen a nada mas.
             case Id::insCampana:
                 L.addEllipse (6.6f, 5.4f, 3.4f, 2.8f);                     // el ojo de la grande
-                R.addRectangle (7.9f, 7.8f, 1.8f, 1.4f);
+                bandaV (R, 8.8f, 7.8f, 1.4f);
                 R.startNewSubPath (3.0f, 18.0f);                           // y su cuerpo
                 R.cubicTo (3.3f, 12.2f, 5.6f, 9.2f, 8.8f, 9.2f);
                 R.cubicTo (12.0f, 9.2f, 14.3f, 12.2f, 14.6f, 18.0f);
                 R.closeSubPath();
-                R.addRoundedRectangle (1.8f, 18.4f, 14.0f, 2.3f, 1.0f);    // el aro de la boca
+                bandaH (R, 1.8f, 19.55f, 14.0f);                           // el aro de la boca
                 R.addEllipse (7.4f, 21.0f, 2.4f, 2.4f);                    // y el badajo
                 L.addEllipse (16.4f, 1.4f, 2.8f, 2.4f);                    // la chica, detras
-                R.addRectangle (17.5f, 3.4f, 1.4f, 1.2f);
+                bandaV (R, 18.2f, 3.4f, 1.2f);
                 R.startNewSubPath (13.6f, 12.6f);
                 R.cubicTo (13.8f, 8.2f, 15.6f, 5.8f, 17.9f, 5.8f);
                 R.cubicTo (20.2f, 5.8f, 22.0f, 8.2f, 22.2f, 12.6f);
                 R.closeSubPath();
-                R.addRoundedRectangle (12.8f, 12.9f, 10.2f, 1.9f, 0.8f);
+                bandaH (R, 12.8f, 13.85f, 10.2f);
                 break;
 
             //  METALES: la TROMPETA entera y no "un cono y una rayita" - la
@@ -2047,17 +2187,17 @@ namespace Iconos
             //  la mitad del ancho y el tudel se acorta.
             case Id::insMetales:
                 R.addRoundedRectangle (1.0f, 10.3f, 2.6f, 3.4f, 0.9f);     // la boquilla
-                R.addRectangle (3.4f, 11.2f, 9.4f, 2.4f);                  // el tudel
+                bandaH (R, 3.4f, 12.4f, 9.4f);                             // el tudel
                 for (int i = 0; i < 3; ++i)                                // los tres pistones
                 {
                     const float x = 4.9f + (float) i * 2.6f;
-                    R.addRoundedRectangle (x, 9.4f, 1.8f, 6.6f, 0.7f);
+                    bandaV (R, x + 0.9f, 9.4f, 6.6f);
                     linea (L, x + 0.9f, 9.4f, x + 0.9f, 7.2f);
                 }
                 R.startNewSubPath (12.6f, 10.2f);                          // la campana
                 R.lineTo (20.8f, 3.6f); R.lineTo (20.8f, 21.2f);
                 R.lineTo (12.6f, 14.6f); R.closeSubPath();
-                R.addRectangle (20.8f, 3.6f, 1.6f, 17.6f);                 // y su aro
+                bandaV (R, 21.6f, 3.6f, 17.6f);                            // y su aro
                 break;
 
             //  LEADS: una CUADRADA. Se gana la excepcion porque un lead ES eso:
@@ -2115,11 +2255,11 @@ namespace Iconos
                 L.cubicTo (3.4f, 14.1f, 5.1f, 10.6f, 12.0f, 9.4f);
                 L.closeSubPath();
                 R.addEllipse (9.7f, 13.4f, 4.6f, 4.6f);                    // la boca
-                R.addRoundedRectangle (9.2f, 19.4f, 5.6f, 1.6f, 0.6f);     // el puente
+                bandaH (R, 9.2f, 20.2f, 5.6f);                             // el puente
                 for (int i = 0; i < 3; ++i)                                // las cuerdas
                     linea (L, 11.0f + (float) i * 1.0f, 19.4f,
                               11.0f + (float) i * 1.0f, 12.0f);
-                R.addRectangle (10.9f, 4.6f, 2.2f, 5.0f);                  // el mastil, largo
+                bandaV (R, 12.0f, 4.6f, 5.0f);                             // el mastil, largo
                 R.addRoundedRectangle (9.6f, 2.4f, 4.8f, 2.6f, 0.9f);      // la pala
                 for (int i = 0; i < 3; ++i)                                // y sus seis clavijas
                 {
@@ -2131,8 +2271,8 @@ namespace Iconos
 
             //  MAZOS: la baqueta encima de las laminas.
             case Id::insMazo:
-                R.addRoundedRectangle (3.0f, 16.0f, 18.0f, 1.9f, 0.9f);
-                R.addRoundedRectangle (4.5f, 19.0f, 15.0f, 1.9f, 0.9f);
+                bandaH (R, 3.0f, 16.95f, 18.0f);
+                bandaH (R, 4.5f, 19.95f, 15.0f);
                 linea (L, 8.0f, 12.5f, 17.0f, 4.0f);
                 R.addEllipse (4.4f, 9.6f, 5.4f, 5.4f);
                 break;
@@ -2229,7 +2369,7 @@ namespace Iconos
                 L.lineTo (10.5f, 4.5f);  L.lineTo (10.5f, 20.5f);
                 L.lineTo (16.0f, 4.5f);  L.lineTo (16.0f, 20.5f);
                 L.lineTo (21.5f, 4.5f);  L.lineTo (21.5f, 20.5f);
-                R.addRoundedRectangle (2.0f, 4.0f, 1.8f, 16.5f, 0.9f);
+                bandaV (R, 2.9f, 4.0f, 16.5f);
                 break;
 
             //  PIANOS: el de cola VISTO DESDE ARRIBA -el ala y el teclado- y no
@@ -2241,7 +2381,7 @@ namespace Iconos
                 L.cubicTo (8.0f, 2.0f, 17.0f, 2.5f, 21.0f, 9.5f);
                 L.lineTo (21.0f, 21.0f);
                 L.closeSubPath();
-                R.addRoundedRectangle (5.0f, 16.8f, 14.0f, 3.2f, 0.8f);
+                bandaH (R, 5.0f, 18.4f, 14.0f);
                 break;
 
             //  ACORDEON: las dos cajas y el FUELLE en medio. El zigzag es todo
@@ -2298,11 +2438,11 @@ namespace Iconos
                 L.cubicTo (5.6f, 21.3f, 5.6f, 14.3f, 10.6f, 12.8f);
                 L.cubicTo (7.5f, 10.9f, 7.5f, 6.9f, 12.0f, 5.2f);
                 L.closeSubPath();
-                R.addRoundedRectangle ( 9.3f, 13.4f, 1.1f, 4.4f, 0.55f);   // las dos efes
-                R.addRoundedRectangle (13.6f, 13.4f, 1.1f, 4.4f, 0.55f);
-                R.addRectangle (10.1f, 18.2f, 3.8f, 1.1f);                 // el puente
-                R.addRectangle (11.2f, 2.6f, 1.6f, 2.8f);                  // el mastil
-                R.addRoundedRectangle (10.5f, 1.0f, 3.0f, 1.9f, 0.7f);     // y su cabeza
+                bandaV (R,  9.85f, 13.4f, 4.4f);                           // las dos efes
+                bandaV (R, 14.15f, 13.4f, 4.4f);
+                bandaH (R, 10.1f, 18.75f, 3.8f);                           // el puente
+                bandaV (R, 12.0f, 2.6f, 2.8f);                             // el mastil
+                bandaH (R, 10.5f, 1.95f, 3.0f);                            // y su cabeza
                 //  EL ARCO: la vara y la crin, que son dos y no una.
                 linea (L, 1.6f, 18.4f, 21.6f, 5.6f);
                 linea (L, 2.4f, 19.8f, 22.4f, 7.0f);
@@ -2315,7 +2455,7 @@ namespace Iconos
             //  conico y con campana es otro dibujo, y ademas es como se
             //  sostiene un oboe.
             case Id::insCana:
-                R.addRoundedRectangle (11.0f, 0.8f, 2.0f, 2.8f, 0.6f);     // la cana
+                bandaV (R, 12.0f, 0.8f, 2.8f);                             // la cana
                 R.startNewSubPath (10.4f, 3.6f);                           // el cuerpo, conico
                 R.lineTo (13.6f, 3.6f); R.lineTo (14.4f, 16.0f);
                 R.lineTo (9.6f, 16.0f); R.closeSubPath();
@@ -2337,13 +2477,18 @@ namespace Iconos
             //  Rellenos y simetricos: CLAVES es un peine de barras de altura
             //  creciente dibujado a linea, y desenfocada una escalera de tubos
             //  seria el mismo icono.
+            //
+            //  Y SIN EL 0.90 DE MACIZO: los tubos iban a 2.8 px de ancho, mas
+            //  de vez y media una linea de esta cara, y ese 0.90 era el
+            //  descuento optico que se le hace a una mancha para que no pese el
+            //  triple que un dibujo de trazo. Con los cinco a `kBanda` ya no hay
+            //  mancha que descontar y el descuento solo lo dejaria pequeno.
             case Id::insTubo:
-                R.addRoundedRectangle ( 2.4f, 11.5f, 2.8f,  9.0f, 1.4f);
-                R.addRoundedRectangle ( 6.6f,  7.5f, 2.8f, 13.0f, 1.4f);
-                R.addRoundedRectangle (10.8f,  3.5f, 2.8f, 17.0f, 1.4f);
-                R.addRoundedRectangle (15.0f,  7.5f, 2.8f, 13.0f, 1.4f);
-                R.addRoundedRectangle (19.2f, 11.5f, 2.8f,  9.0f, 1.4f);
-                t.lleno = 0.90f;
+                bandaV (R,  3.8f, 11.5f,  9.0f);
+                bandaV (R,  8.0f,  7.5f, 13.0f);
+                bandaV (R, 12.2f,  3.5f, 17.0f);
+                bandaV (R, 16.4f,  7.5f, 13.0f);
+                bandaV (R, 20.6f, 11.5f,  9.0f);
                 break;
 
             case Id::ninguno:
@@ -2413,11 +2558,13 @@ namespace Iconos
         z.lineTo (18.5f, 18.5f);
 
         juce::Path t;
-        //  El mismo grosor que los otros ochenta y seis a esta caja: ver
-        //  `grosorPara`, que esta declarada mas abajo y por eso se escribe la
-        //  cuenta aqui - 24 * 0.086, o sea 2.06, y por dos porque la Z de la
-        //  marca es de trazo GORDO, como el nombre en la cabecera.
-        juce::PathStrokeType (24.0f * 0.086f * 2.0f,
+        //  EL DOBLE DEL GROSOR DE LA CASA, que es lo que hace que la Z de la
+        //  marca sea de trazo GORDO como el nombre en la cabecera. Decia "el
+        //  mismo grosor que los otros ochenta y seis" y llevaba 24 * 0.086:
+        //  ese 0.086 era el de `grosorPara` de antes, y cuando `grosorPara`
+        //  bajo a 0.072 este numero se quedo donde estaba. Ahora sale de
+        //  `kBanda` y no se puede volver a quedar atras.
+        juce::PathStrokeType (kBanda * 2.0f,
                               juce::PathStrokeType::curved,
                               juce::PathStrokeType::rounded).createStrokedPath (t, z);
         return t;
@@ -2821,9 +2968,18 @@ namespace Cifras
 
     //  El grosor, derivado del alto como el de los iconos: un trazo fijo se ve
     //  gordo en la chapa de un pad y se pierde en un readout de 22 px.
+    //
+    //  Y DERIVADO CON LA MISMA CUENTA, que es lo que "como el de los iconos"
+    //  tenia que querer decir. Era 0.115 del alto y un icono es 0.072 de su
+    //  lado: un numero al lado de un icono del mismo tamano salia un SESENTA
+    //  por ciento mas gordo, y numeros e iconos se ponen juntos en la misma
+    //  fila por toda la cara -el readout de un mando, la cifra de un compas,
+    //  el numero de un pad-. Medido en el raster de 24: la banda mas comun de
+    //  una cifra era de 3 o 4 px y la de un icono de 2 o 3. Ahora las dos
+    //  cuentas son la misma y el suelo tambien es el de `grosorPara`.
     inline float grosor (float alto) noexcept
     {
-        return juce::jlimit (1.1f, 3.4f, alto * 0.115f);
+        return juce::jlimit (1.05f, 3.4f, alto * 0.072f);
     }
 
     //  DIBUJA `s` EN `r`, con el ancho que la FUENTE le habria dado.
