@@ -9713,6 +9713,8 @@ void MainComponent::auditRevive()
     //      pasa este hilo DENTRO de cada llamada y las aperturas de cada gesto.
     int msXrun = -1, buferXrun = 0, msGrabar = -1, abreGrabar = -1, buferGrabar = 0,
         msParar = -1, abreParar = -1, msMedir = -1, abreMedir = -1, msChip = -1, buferChip = 0;
+    int filasAbierto = -1, filasCerrado = -1, filasVuelta = -1,
+        medirRefresca = -1, filasTrasMedir = -1;
     {
         auto reloj = [] { return juce::Time::getMillisecondCounterHiRes(); };
         auto bloqueAhora = [this]
@@ -9797,6 +9799,59 @@ void MainComponent::auditRevive()
         recogeApertura();
     }
 
+    //  4d. LAS DOS FILAS DE AJUSTES / AUDIO NO SE QUEDAN VACIAS AL REABRIR.
+    //      La captura del telefono: pulsas MEDIR y bajo BUFER y bajo RELOJ no
+    //      queda una sola ficha, los dos rotulos solos. `refreshAudioOptions`
+    //      vaciaba las dos filas ANTES de mirar si habia dispositivo y se
+    //      salia sin volver a llenarlas, y `finishMeasure` lo llamaba justo
+    //      detras de pedirle al hilo que abre la vuelta a salida sola: el
+    //      refresco corria con el audio a medio cerrar. Se mide lo uno y lo
+    //      otro, que son dos fallos y no uno.
+    {
+        //  Con el dispositivo abierto: cuantas fichas hay.
+        esperaAbridor (15000);
+        recogeApertura();
+        if (deviceManager.getCurrentAudioDevice() == nullptr)
+        {
+            pideAbrirSalida();
+            esperaAbridor (15000);
+            recogeApertura();
+        }
+        refreshAudioOptions();
+        filasAbierto = bufButtons.size() + rateButtons.size();
+
+        //  1. Un refresco con el audio cerrado, que es el hueco de cualquier
+        //     reapertura. Las fichas que habia se quedan: no se sabe nada
+        //     nuevo. Antes se vaciaban las dos filas y ahi se quedaba.
+        deviceManager.closeAudioDevice();
+        refreshAudioOptions();
+        filasCerrado = bufButtons.size() + rateButtons.size();
+
+        //  Y al volver el dispositivo se rehacen.
+        pideAbrirSalida();
+        esperaAbridor (15000);
+        recogeApertura();
+        refreshAudioOptions();
+        filasVuelta = bufButtons.size() + rateButtons.size();
+
+        //  2. Y QUE EL REFRESCO DE MEDIR VAYA DETRAS DE LA APERTURA. Aqui no
+        //     hay audio que oiga el clic, asi que el sondeo no se arma nunca
+        //     -`probing` se queda en falso- y `finishMeasure` entra por su
+        //     camino con solo decirle que se estaba midiendo. Lo que se mira
+        //     es que deje el refresco DETRAS del encargo (`trasEncargo`) y no
+        //     delante: `esperaAbridor` remata los encargos, asi que se lee
+        //     antes de esperar a nada.
+        bancoOpenLentoMs = 300;
+        measuring = true;
+        finishMeasure();
+        medirRefresca = trasEncargo != nullptr ? 1 : 0;
+        esperaAbridor (15000);
+        recogeApertura();
+        filasTrasMedir = bufButtons.size() + rateButtons.size();
+        measuring = false;
+        bancoOpenLentoMs = 0;
+    }
+
     //  5. UN PAD QUE TARDA TRES SEGUNDOS EN LEERSE, que es el «ATASCO 1081 ms
     //     en pads/cargar» de la captura del telefono: FUSE, MediaProvider o un
     //     instrumento de cinco octavas. Solo el pad 0 se lee -el resto sale de
@@ -9871,6 +9926,11 @@ void MainComponent::auditRevive()
               << ",\"abre_medir\":" << abreMedir
               << ",\"ms_chip\":" << msChip
               << ",\"bufer_chip\":" << buferChip
+              << ",\"filas_abierto\":" << filasAbierto
+              << ",\"filas_cerrado\":" << filasCerrado
+              << ",\"filas_vuelta\":" << filasVuelta
+              << ",\"medir_refresca\":" << medirRefresca
+              << ",\"filas_tras_medir\":" << filasTrasMedir
               << ",\"peor_paso_pads\":" << juce::roundToInt (peorPaso)
               << ",\"pads_acaban\":" << (padsAcaban ? 1 : 0)
               << ",\"salida_hay\":" << (parte.hay ? 1 : 0)

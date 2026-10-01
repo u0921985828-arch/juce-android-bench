@@ -18044,9 +18044,6 @@ void MainComponent::finishMeasure()
         measuredRate = sr;
     }
 
-    //  Back to output-only: one opening, on the opening thread (Tribunal
-    //  2026-09, 4.3). Everything below reads what was measured, not the device.
-    pideEncargoAudio ([this] { abreCon (0); });
     measureButton.setEnabled (true);
 
     //  Sound travels about 34 cm per millisecond, so holding the phone at
@@ -18082,7 +18079,16 @@ void MainComponent::finishMeasure()
                          juce::String (outMs, 1), juce::String (inMs, 1),
                          measuredInMs > 0.0f ? juce::String() : " " + T ("(por resta)"))
                         + ". " + T ("Tocando solo sales %1 ms", Lang::ltr (juce::String (outMs, 1)));
-    refreshAudioOptions();
+
+    //  Y AL FINAL LA VUELTA A SALIDA SOLA: una apertura, en el hilo que abre
+    //  (Tribunal 2026-09, 4.3), con el refresco de las filas DETRAS de ella.
+    //  Pedida antes de todo lo de arriba y refrescando a continuacion -que es
+    //  lo que habia- el refresco corria con el dispositivo a medio cerrar:
+    //  `dispositivo()` daba nullptr y las filas de BUFER y de RELOJ se
+    //  quedaban vacias bajo sus rotulos. Todo lo de arriba lee lo medido y no
+    //  el dispositivo, asi que la peticion puede esperar a aqui.
+    pideEncargoAudio ([this] { abreCon (0); }, [this] { refreshAudioOptions(); });
+    setSheet.repaint();
 }
 
 
@@ -18149,11 +18155,23 @@ void MainComponent::applyMidiChoice()
 
 void MainComponent::refreshAudioOptions()
 {
+    //  PRIMERO SE MIRA SI HAY DISPOSITIVO Y DESPUES SE VACIA, que al reves era
+    //  la captura del telefono: pulsas MEDIR y bajo BUFER y RELOJ no queda una
+    //  sola ficha. Este refresco se llama tambien con el audio cerrado -entre
+    //  el cierre y la apertura de una reapertura- y vaciaba las dos filas para
+    //  salirse en la linea siguiente sin volver a llenarlas. Dos rotulos con
+    //  nada debajo no dicen «estoy reabriendo», dicen «este cacharro no tiene
+    //  ni un tamano de bufer», y asi se quedaban hasta que tocabas otra cosa.
+    //
+    //  Sin dispositivo no se sabe nada nuevo: se dejan las fichas que habia -el
+    //  bufer y el reloj que la persona eligio siguen siendo los suyos- y se
+    //  rehacen cuando el dispositivo vuelve. Quien reabre pone el refresco
+    //  DETRAS de la apertura, en el `despues` de `pideEncargoAudio`.
+    auto* dev = dispositivo();
+    if (dev == nullptr) return;
+
     bufButtons.clear();
     rateButtons.clear();
-
-    auto* dev = dispositivo();
-    if (dev == nullptr) { resized(); return; }
 
     const int    curBuf  = dev->getCurrentBufferSizeSamples();
     const double curRate = dev->getCurrentSampleRate();
