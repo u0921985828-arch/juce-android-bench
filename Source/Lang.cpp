@@ -597,6 +597,14 @@ namespace
           "PIANO writes by pitch; drag along the row to lengthen the note",
           "“钢琴”按音高书写；沿该行拖动可延长音符",
           "صفحة البيانو تكتب بالنغمة؛ اسحب على الصف لإطالة النوتة" },
+        { "Arrastra por la regla del piano para coger un tramo entero; un toque deja el cursor donde pega", "",
+          "drag along the piano ruler to grab a whole span; a tap sets the cursor where paste lands",
+          "沿钢琴卷帘标尺拖动可整段选取；轻触放置粘贴光标",
+          "اسحب على مسطرة البيانو لتحديد مقطع كامل؛ ونقرة تضع المؤشر حيث يُلصق" },
+        { "Pellizca el piano para ver de medio compas a cuatro", "",
+          "pinch the piano to see from half a bar to four",
+          "双指捏合钢琴卷帘，可从半小节看到四小节",
+          "اقرص البيانو لترى من نصف مازورة إلى أربع" },
         { "INSTRUMENTOS pone un sintetizador en el pad que elijas", "",
           "INSTRUMENTS puts a synth on whichever pad you pick",
           "“乐器”会把一台合成器装进你选定的音垫",
@@ -1391,12 +1399,18 @@ namespace
           "عند اختيار خطوة تظهر مقابضها أسفلها: النغمة والقوة والتكرار والمرشح والأقفال الأربعة." },
 
         { "La misma musica por tono en vez de por pasos. Varias notas en una "
-          "columna son un acorde, y arrastrando se estira lo que dura cada una.", "",
+          "columna son un acorde, y arrastrando se estira lo que dura cada una. "
+          "La regla de arriba coge un tramo entero y un toque en ella marca donde "
+          "pega; pellizca para ver de medio compas a cuatro.", "",
           "The same music by pitch instead of by step. Several notes in one column "
-          "make a chord, and dragging stretches how long each one lasts.",
-          "以音高而非步进来书写同一段音乐。同一列的多个音符构成和弦，拖动可延长每个音符的时值。",
+          "make a chord, and dragging stretches how long each one lasts. The ruler "
+          "on top grabs a whole span and a tap on it marks where paste lands; pinch "
+          "to see from half a bar to four.",
+          "以音高而非步进来书写同一段音乐。同一列的多个音符构成和弦，拖动可延长每个音符的时值。"
+          "顶部标尺可整段选取，轻触标尺可标记粘贴位置；双指捏合可从半小节看到四小节。",
           "الموسيقى نفسها بالنغمة بدل الخطوة. عدة نوتات في عمود واحد تكوّن وترًا، "
-          "والسحب يمدّ مدة كل نوتة." },
+          "والسحب يمدّ مدة كل نوتة. المسطرة في الأعلى تحدد مقطعًا كاملًا ونقرة عليها "
+          "تعلّم موضع اللصق؛ اقرص لترى من نصف مازورة إلى أربع." },
 
         { "Aqui vive lo que le pasa al patron entero: cadena, desplazar, doblar, "
           "humanizar, copiar y pegar, swing y rejilla.", "",
@@ -1646,6 +1660,7 @@ namespace
         { "1/2 COMPAS",     "",         "1/2 BAR",    "半小节",      "نصف مازورة" },
         { "1 COMPAS",       "",         "1 BAR",      "1 小节",      "مازورة" },
         { "2 COMPASES",     "",         "2 BARS",     "2 小节",      "مازورتان" },
+        { "4 COMPASES",     "",         "4 BARS",     "4 小节",      "4 مازورات" },
         { "%1 notas copiadas", "",      "%1 notes copied", "已复制 %1 个音符",
           "\xd8\xaa\xd9\x85 \xd9\x86\xd8\xb3\xd8\xae %1 \xd9\x86\xd9\x88\xd8\xaa\xd8\xa9" },
         { "1 nota copiada", "",         "1 note copied",   "已复制 1 个音符",

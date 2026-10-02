@@ -548,6 +548,25 @@ private:
     //  celda decidiendo, como todo lo demas.
     int pianoCols = StepGrid::kBarSteps;
     juce::TextButton pianoZoomBtn { "1 COMPAS" };
+    //  LA ESCALERA DEL ZOOM, de medio compas a cuatro, y cada peldano solo
+    //  donde la celda del paso no baja de su suelo. La tapa la recorre en
+    //  ciclo; el pellizco va un peldano arriba o abajo. Ver pianoZoomPaso.
+    static constexpr int kPianoEscala[4] = { 8, StepGrid::kBarSteps, 32, 64 };
+    bool pianoCabenCols (int cols) const;
+    void pianoZoomPaso (int dir);   // +1 abre, -1 cierra, 0 ciclo de la tapa
+
+    //  EL TRAMO DE LA REGLA Y EL CURSOR DE PEGADO, EN CASILLAS DEL PATRON.
+    //
+    //  Absolutos y no columnas de la ventana, por lo mismo que `seqPrimerCelda`
+    //  cuenta casillas: un tramo que se eligio en el compas 2 sigue siendo del
+    //  compas 2 despues de mover la barra o de cambiar el zoom. -1 es nada.
+    //  `pianoSel` va en la misma moneda desde esta tanda: iba en columnas de
+    //  la ventana y mover la barra con una seleccion puesta copiaba OTRAS
+    //  notas, las que ahora cayeran en esas columnas.
+    int  pianoTramo0 = -1, pianoTramo1 = -1;
+    int  pianoCursor = -1;
+    void pianoTramo (int col0, int col1);
+    void pianoCursorEn (int col);
     void paintPianoSheetContent (juce::Graphics& g);
 
     Sheet padSheet, seqSheet, browseSheet, setSheet, mixSheet, songSheet,

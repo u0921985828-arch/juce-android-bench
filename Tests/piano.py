@@ -452,6 +452,84 @@ else:
           "fillRect " + ("si" if "fillRect" in cuerpo else "NO")
           + ", drawRect " + ("si" if "drawRect" in cuerpo else "no"))
 
+#  --- LA REGLA DE TIEMPO, EL CURSOR Y EL PELLIZCO -----------------------------
+#
+#  Llego del telefono produciendo: «que se pudiese hacer zoom en el piano roll
+#  para que pueda copiar cierta parte seleccionada de la secuencia. Igual se
+#  podia hacer la seleccion en base a la linea de tiempo, como se hace en FL».
+#  Hasta esta tanda seleccionar era armar SEL y barrer la rejilla fila a fila,
+#  y lo que estuviera en otra octava se quedaba fuera; pegar caia siempre en
+#  la primera columna que se viera; y el zoom era una tapa de tres pasos.
+#
+#  Todo por el GESTO: `gesto` en la banda de la regla con DIBUJAR armado -la
+#  regla vale con cualquier herramienta y no puede escribir- y `toque` con dos
+#  indices para el pellizco, que es como llegan los dedos en Android.
+#
+#  Tres notas en el paso 3 a -20, 0 y +20 con una octava a la vista (-12..0):
+#  DOS no se ven y el tramo las coge igual. Y una cuarta en el paso 9, fuera
+#  del tramo. Roto a proposito -quitando el `onTramo`- la banda no sale:
+#  medido, `sel` 0, `tramo` [-1, -1] y `pasos` sigue en 2.
+d = una ("regla")
+if d is None:
+    mide ("la regla del piano", False, "no salio: el binario no tiene regla")
+else:
+    mide ("un tramo de la regla coge las tres notas del paso 3",
+          d["sel"] == 3, "seleccionadas %d" % d["sel"])
+    mide ("y dos de ellas estaban fuera de la octava que se ve",
+          d["fuera"] == 2, "fuera de la vista %d" % d["fuera"])
+    mide ("y no coge el paso 9, que queda fuera del tramo",
+          d["paso9"] == 0, "paso 9 seleccionado %d" % d["paso9"])
+    mide ("y el tramo es el que se arrastro, de la 2 a la 5",
+          d["tramo"] == [2, 5], "tramo %s" % (d["tramo"],))
+    mide ("y arrastrar por la regla no escribe ninguna nota",
+          d["pasos"] == 2, "pasos con nota %d (habia 2)" % d["pasos"])
+    mide ("y vale con DIBUJAR armado, sin pasar por SEL",
+          d["herramienta"] == 0 and d["cursor"] == -1,
+          "herramienta %d, cursor %d" % (d["herramienta"], d["cursor"]))
+
+#  EL CURSOR: un toque sin arrastre en la columna 8, y PEGAR cae ahi con las
+#  tres notas, las vistas y las que no. El cursor se queda: pegar dos veces
+#  pega dos veces en el mismo sitio. Con el `onTramo` quitado no hay nada que
+#  pegar y, medido, `paso8` vale 0 con `notas8` vacio aunque el cursor si
+#  quede en 8.
+d = una ("cursor")
+if d is None:
+    mide ("el cursor de la regla", False, "no salio")
+else:
+    mide ("un toque en la regla deja el cursor en la columna 8",
+          d["cursor"] == 8, "cursor %d" % d["cursor"])
+    mide ("y no toca la seleccion",
+          d["sel_tras_toque"] == 3, "seleccionadas %d" % d["sel_tras_toque"])
+    mide ("y PEGAR cae en el cursor con las tres notas",
+          d["paso8"] == 1 and sorted (d["notas8"]) == [-20, 0, 20],
+          "paso 8 %d, notas %s" % (d["paso8"], d["notas8"]))
+    mide ("y el cursor se queda donde estaba",
+          d["cursor_tras_pegar"] == 8, "cursor %d" % d["cursor_tras_pegar"])
+
+#  EL PELLIZCO. El primer dedo cae en una celda vacia con DIBUJAR armado y
+#  escribe una nota como un toque de verdad -eso es lo correcto: nadie sabe
+#  aun que viene otro dedo-; el segundo convierte el gesto en pellizco y esa
+#  nota se deshace. Separar abre -menos columnas-, juntar cierra. Y el dedo
+#  que queda al levantar el otro no escribe. Roto a proposito -sin el
+#  `onDeshaceToque`- medido: `nota_dos_dedos` vale 1 y `pasos_tras` tambien;
+#  abre 8, cierra 16 y cierra2 16 salen igual, que el zoom no depende de el.
+d = una ("pellizco")
+if d is None:
+    mide ("el pellizco del piano", False, "no salio")
+else:
+    mide ("el primer dedo escribe como un toque",
+          d["nota_un_dedo"] == 1, "nota con un dedo %d" % d["nota_un_dedo"])
+    mide ("y el segundo deshace esa nota",
+          d["nota_dos_dedos"] == 0 and d["dedos"] == 2,
+          "nota con dos dedos %d, dedos %d" % (d["nota_dos_dedos"], d["dedos"]))
+    mide ("separar abre: menos columnas",
+          d["abre"] < d["antes"], "de %d a %d columnas" % (d["antes"], d["abre"]))
+    mide ("y juntar cierra: las de antes",
+          d["cierra"] == d["antes"], "de %d a %d columnas" % (d["abre"], d["cierra"]))
+    mide ("y al soltar no queda nota ni dedo",
+          d["pasos_tras"] == 0 and d["dedos_tras"] == 0,
+          "pasos con nota %d, dedos %d" % (d["pasos_tras"], d["dedos_tras"]))
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)

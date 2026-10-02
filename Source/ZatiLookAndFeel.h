@@ -1512,6 +1512,75 @@ public:
                            float sliderPos, float minPos, float maxPos,
                            juce::Slider::SliderStyle style, juce::Slider& s) override
     {
+        //  EL FADER DE LA MESA ES UNA BARRA A TODA LA FILA, CON SU CIFRA DENTRO.
+        //
+        //  Era el carril de JUCE: cuatro pixeles de pista y un pomo redondo de
+        //  once en una celda de cuarenta y dos de alto, y la cifra en una
+        //  casilla aparte de 46 px que la maqueta tiraba en cuanto la fila
+        //  apretaba —en un movil de 412 la pagina de PADS no ensenaba NINGUN
+        //  decibelio. Llego del telefono tal cual: «el fader tampoco es muy
+        //  especifico con los decibelios que tocas, ni tactil». Las dos cosas
+        //  son la misma: la celda ya medía 42 px de dedo, pero lo que se VEIA
+        //  tocable eran cuatro, y lo que se leia era nada.
+        //
+        //  La barra se pinta del alto entero de la celda —lo que se toca es lo
+        //  que se ve—, se llena de la izquierda al valor con el color del zati,
+        //  y la cifra va DENTRO, a la derecha, en el mono de la casa: no cuesta
+        //  ni un pixel de recorrido y no hay casilla que tirar. El color de la
+        //  letra lo decide `bestOn` contra lo que tenga debajo, que a -60 es la
+        //  ranura vacia y a +6 es el relleno.
+        if ((bool) s.getProperties().getWithDefault ("fader", false))
+        {
+            const auto cell = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+            const float rad = Metrics::radioChip;
+            const auto relleno = s.findColour (juce::Slider::trackColourId).withAlpha (0.85f);
+            const auto ranura  = ZatiColours::groove (0.55f);
+            const float pos = juce::jlimit (cell.getX(), cell.getRight(), sliderPos);
+
+            g.setColour (ranura);
+            g.fillRoundedRectangle (cell, rad);
+            if (pos > cell.getX() + 1.0f)
+            {
+                g.setColour (relleno);
+                g.fillRoundedRectangle (cell.withRight (pos), rad);
+            }
+            //  El borde del valor, una linea de tinta: es el pomo, y con la
+            //  barra llena hasta el es lo unico que hace falta para verlo.
+            g.setColour (ZatiColours::ink);
+            g.fillRect (pos - 1.0f, cell.getY(), 2.0f, cell.getHeight());
+            g.setColour (ZatiColours::ink.withAlpha (0.25f));
+            g.drawRoundedRectangle (cell.reduced (0.5f), rad, 1.0f);
+
+            if (h >= Metrics::fMeta + 4 && w >= 48)
+            {
+                const auto txt = s.getTextFromValue (s.getValue());
+                const auto fuente = ZatiColours::monoFont ((float) Metrics::fMeta, true);
+                g.setFont (fuente);
+                const float anchoTxt = juce::GlyphArrangement::getStringWidth (fuente, txt) + 12.0f;
+                //  A UN LADO DEL POMO, NUNCA ENCIMA. La cifra vive a la derecha,
+                //  en la ranura vacia; cuando el valor sube hasta ahi -a 0 dB el
+                //  pomo esta a tres cuartos- se pasa a la izquierda del pomo,
+                //  dentro del relleno. Medido en 412x915 con la cifra siempre a
+                //  la derecha: el pomo cruzaba el «0.0» de los dieciseis
+                //  faders. El color lo decide `bestOn` contra lo que tenga
+                //  debajo en cada lado.
+                const bool cabeDerecha = cell.getRight() - pos >= anchoTxt;
+                const bool cabeIzquierda = pos - cell.getX() >= anchoTxt;
+                const bool aLaDerecha = cabeDerecha || ! cabeIzquierda;
+                const auto fondo = aLaDerecha
+                                     ? ZatiColours::chassisTop
+                                     : relleno.withAlpha (1.0f).interpolatedWith (ZatiColours::chassisTop, 0.15f);
+                const auto caja = aLaDerecha
+                                    ? juce::Rectangle<float> (pos + 4.0f, cell.getY(),
+                                                              juce::jmax (0.0f, cell.getRight() - 6.0f - (pos + 4.0f)), cell.getHeight())
+                                    : juce::Rectangle<float> (cell.getX() + 6.0f, cell.getY(),
+                                                              juce::jmax (0.0f, pos - 4.0f - (cell.getX() + 6.0f)), cell.getHeight());
+                g.setColour (ZatiColours::bestOn (fondo, ZatiColours::ink, juce::Colours::white));
+                g.drawText (txt, caja, juce::Justification::centredRight, false);
+            }
+            return;
+        }
+
         if (! (bool) s.getProperties().getWithDefault ("pan", false))
         {
             juce::LookAndFeel_V4::drawLinearSlider (g, x, y, w, h, sliderPos, minPos, maxPos, style, s);

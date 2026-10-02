@@ -1225,7 +1225,9 @@ namespace ZatiTour
           "repeticion, filtro y los cuatro bloqueos.",
 
           "La misma musica por tono en vez de por pasos. Varias notas en una "
-          "columna son un acorde, y arrastrando se estira lo que dura cada una.",
+          "columna son un acorde, y arrastrando se estira lo que dura cada una. "
+          "La regla de arriba coge un tramo entero y un toque en ella marca donde "
+          "pega; pellizca para ver de medio compas a cuatro.",
 
           "Aqui vive lo que le pasa al patron entero: cadena, desplazar, doblar, "
           "humanizar, copiar y pegar, swing y rejilla.",

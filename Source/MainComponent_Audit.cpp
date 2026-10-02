@@ -1,4 +1,5 @@
 #include "MainComponentInterno.h"
+#include <map>
 
 // ==========================================================================
 //  LO QUE EL BANCO ABRE, APRIETA Y MIDE.
@@ -764,11 +765,13 @@ void MainComponent::auditArrange()
             { pattern[0][(size_t) st][(size_t) p] = false; engine.setStep (0, st, p, false); }
         refreshPiano();
 
+        //  Donde esta la celda lo dice la rejilla: con la regla encima, la
+        //  cuenta de `celdaAltoPx * fila` apuntaba a la fila de al lado.
         auto tecla = [this] (int col, int fila)
         {
-            return juce::Point<float> ((float) pianoGrid.canalIzq()
-                                         + pianoGrid.celdaAnchoPx() * ((float) col + 0.5f),
-                                       pianoGrid.celdaAltoPx() * ((float) fila + 0.5f));
+            float x = 0.0f, y = 0.0f;
+            pianoGrid.centroDe (col, fila, x, y);
+            return juce::Point<float> (x, y);
         };
 
         undoStack.clear(); redoStack.clear();
@@ -2818,11 +2821,12 @@ void MainComponent::auditInstr()
         const int pianoPad = selectedPad;
 
         const int filas = juce::jmax (1, pianoGrid.getFilas());
-        const float altoFila = (float) pianoGrid.getHeight() / (float) filas;
-        const float anchoCol = (float) (pianoGrid.getWidth() - PianoRoll::kGutter)
-                                 / (float) StepGrid::kBarSteps;
-        pianoGrid.gesto ((float) PianoRoll::kGutter + ((float) col + 0.5f) * anchoCol,
-                         ((float) (filas / 2) + 0.5f) * altoFila, false);
+        //  Donde esta la celda lo dice la rejilla -`centroDe`- y no una
+        //  division repetida aqui: con la regla encima, `getHeight() / filas`
+        //  apuntaba a la fila de al lado.
+        float gx = 0.0f, gy = 0.0f;
+        pianoGrid.centroDe (col, filas / 2, gx, gy);
+        pianoGrid.gesto (gx, gy, false);
         pianoGrid.suelta();
 
         const int puesto  = pattern[(size_t) b][(size_t) col][(size_t) quien] ? 1 : 0;
@@ -4558,14 +4562,8 @@ void MainComponent::auditPiano()
     //  El punto de una celda, en coordenadas de la rejilla. La canaleta del
     //  teclado se salta a proposito: ahi el gesto suena y no escribe.
     const int filas = pianoGrid.getFilas();
-    const float altoFila = (float) pianoGrid.getHeight() / (float) juce::jmax (1, filas);
-    const float anchoCol = (float) (pianoGrid.getWidth() - PianoRoll::kGutter)
-                             / (float) StepGrid::kBarSteps;
-    auto punto = [&] (int col, int fila, float& x, float& y)
-    {
-        x = (float) PianoRoll::kGutter + ((float) col + 0.5f) * anchoCol;
-        y = ((float) fila + 0.5f) * altoFila;
-    };
+    //  La geometria la da la rejilla: ver PianoRoll::centroDe.
+    auto punto = [&] (int col, int fila, float& x, float& y) { pianoGrid.centroDe (col, fila, x, y); };
 
     auto notasEnPaso = [this] (int st)
     {
@@ -5000,6 +4998,140 @@ void MainComponent::auditPiano()
         const auto en2 = lineasCon (2);
         std::cout << "{\"piano\":\"cuadricula\",\"ventana0\":" << en0
                   << ",\"ventana2\":" << en2 << "}" << std::endl;
+    }
+
+    // ------------------------------------------------------------------
+    //  LA REGLA DE TIEMPO: UN TRAMO COGE TODO LO QUE HAY EN ESAS COLUMNAS, UN
+    //  TOQUE DEJA EL CURSOR Y PEGAR CAE AHI. Y EL PELLIZCO ABRE Y CIERRA.
+    //
+    //  Llego del telefono produciendo: «que se pudiese hacer zoom en el piano
+    //  roll para que pueda copiar cierta parte seleccionada de la secuencia.
+    //  Igual se podia hacer la seleccion en base a la linea de tiempo, como se
+    //  hace en FL». Todo por el GESTO en pixeles -`gesto` en la banda de la
+    //  regla y `toque` con dos indices para el pellizco- que es donde vive.
+    //
+    //  Tres notas en el paso 3 a -20, 0 y +20: con la vista en una octava
+    //  (-12..0) dos de ellas NO SE VEN, y el tramo las tiene que coger igual,
+    //  porque un compas es un compas y no la octava que se mira. Una cuarta en
+    //  el paso 9, fuera del tramo, que si entra la cifra lo dice. Y con la
+    //  herramienta en DIBUJAR, no en SEL: la regla funciona con cualquiera, y
+    //  arrastrar por ella no puede escribir una nota.
+    {
+        engine.clearPattern (0);
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int q = 0; q < kNumPads; ++q) pattern[0][(size_t) st][(size_t) q] = false;
+        engine.setPatternLength (0, 16);
+        selectPad (0);
+        pianoCols = StepGrid::kBarSteps;
+        seqPrimerCelda = 0;
+        pianoBase = -12;
+        pianoVaciaSel();
+        pianoCursor = -1;
+        pianoPortapapeles.clear();
+        pianoGrid.setHerramienta (PianoRoll::dibujar);
+        showSeqPage (seqPagePiano);
+        resized();
+        refreshPiano();
+
+        for (int semi : { -20, 0, 20 }) pianoEscribe (3, semi, true, 4);
+        pianoEscribe (9, 0, true, 4);
+        refreshPiano();
+
+        float rx0 = 0.0f, ry0 = 0.0f, rx1 = 0.0f, ry1 = 0.0f;
+        pianoGrid.puntoRegla (2, rx0, ry0);
+        pianoGrid.puntoRegla (5, rx1, ry1);
+        pianoGrid.gesto (rx0, ry0, false);
+        pianoGrid.gesto ((rx0 + rx1) * 0.5f, ry0, true);
+        pianoGrid.gesto (rx1, ry1, true);
+        pianoGrid.suelta();
+
+        int fuera = 0;
+        const int filasV = pianoGrid.getFilas();
+        for (const auto& n : pianoSel)
+            if (n.semi < pianoBase || n.semi > pianoBase + filasV - 1) ++fuera;
+        const int paso9 = pianoEnSel (9, 0) ? 1 : 0;
+        int pasosPuestosRegla = 0;
+        for (int st = 0; st < 16; ++st) if (pattern[0][(size_t) st][0]) ++pasosPuestosRegla;
+
+        std::cout << "{\"piano\":\"regla\",\"sel\":" << (int) pianoSel.size()
+                  << ",\"fuera\":" << fuera << ",\"paso9\":" << paso9
+                  << ",\"tramo\":[" << pianoTramo0 << "," << pianoTramo1 << "]"
+                  << ",\"pasos\":" << pasosPuestosRegla
+                  << ",\"cursor\":" << pianoGrid.getCursor()
+                  << ",\"herramienta\":" << pianoGrid.getHerramienta() << "}" << std::endl;
+
+        //  EL CURSOR: un toque sin arrastre en la columna 8, y PEGAR cae ahi
+        //  con las tres notas, las vistas y las que no.
+        float cx8 = 0.0f, cy8 = 0.0f;
+        pianoGrid.puntoRegla (8, cx8, cy8);
+        pianoGrid.gesto (cx8, cy8, false);
+        pianoGrid.suelta();
+        const int cursorTrasToque = pianoCursor;
+        const int selTrasToque = (int) pianoSel.size();
+        pianoCopiaSel();
+        pianoPegaSel();
+        const juce::String notas8 = notasDe (8, 0);
+        const int paso8 = pattern[0][8][0] ? 1 : 0;
+
+        std::cout << "{\"piano\":\"cursor\",\"cursor\":" << cursorTrasToque
+                  << ",\"sel_tras_toque\":" << selTrasToque
+                  << ",\"paso8\":" << paso8 << ",\"notas8\":" << notas8
+                  << ",\"cursor_tras_pegar\":" << pianoCursor << "}" << std::endl;
+
+        //  EL PELLIZCO. El primer dedo cae en una celda VACIA con DIBUJAR
+        //  armado, o sea escribe una nota como un toque de verdad; el segundo
+        //  convierte el gesto en pellizco y esa nota se tiene que deshacer.
+        //  Abrir -separar- da menos columnas; cerrar devuelve las de antes.
+        //  Y el dedo que queda al levantar el otro NO escribe.
+        engine.clearPattern (0);
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int q = 0; q < kNumPads; ++q) pattern[0][(size_t) st][(size_t) q] = false;
+        pianoVaciaSel();
+        pianoCursor = -1;
+        pianoCols = StepGrid::kBarSteps;
+        refreshPiano(); resized();
+        const int antes = pianoGrid.numPasos();
+
+        //  El primer dedo en el CENTRO de la columna 6 y el segundo dos
+        //  columnas mas alla; las distancias van en celdas de ANTES del zoom,
+        //  que es lo que el dedo recorre: abrir multiplica por dos y medio,
+        //  cerrar divide por dos, y la segunda cerrada baja a una celda.
+        //  Y SE DESPEJA EL RATON DE LAS PRUEBAS DE ANTES: `auditArr` deja un
+        //  mouseDown sin su mouseUp, o sea un dedo apoyado que aqui contaria.
+        pianoGrid.toque (0, 0.0f, 0.0f, 2);
+        float px = 0.0f, py = 0.0f;
+        pianoGrid.centroDe (6, pianoGrid.getFilas() / 2, px, py);
+        const float cw = pianoGrid.celdaAnchoPx();
+        pianoGrid.toque (0, px, py, 0);
+        const int notaConUnDedo = pattern[0][6][0] ? 1 : 0;
+        pianoGrid.toque (1, px + 2.0f * cw, py, 0);
+        const int notaConDos = pattern[0][6][0] ? 1 : 0;
+        const int dedos = pianoGrid.dedos();
+        pianoGrid.toque (1, px + 5.0f * cw, py, 1);      // x2.5: abre
+        const int abre = pianoGrid.numPasos();
+        pianoGrid.toque (1, px + 2.5f * cw, py, 1);      // /2: cierra
+        const int cierra = pianoGrid.numPasos();
+        pianoGrid.toque (1, px + 1.0f * cw, py, 1);      // /2.5: cierra otra vez si cabe
+        const int cierra2 = pianoGrid.numPasos();
+        pianoGrid.toque (1, px + 1.0f * cw, py, 2);
+        pianoGrid.toque (0, px + 3.0f * cw, py, 1);      // el que queda arrastra: nada
+        pianoGrid.toque (0, px + 3.0f * cw, py, 2);
+        int pasosTrasPellizco = 0;
+        for (int st = 0; st < 16; ++st) if (pattern[0][(size_t) st][0]) ++pasosTrasPellizco;
+
+        std::cout << "{\"piano\":\"pellizco\",\"antes\":" << antes
+                  << ",\"nota_un_dedo\":" << notaConUnDedo
+                  << ",\"nota_dos_dedos\":" << notaConDos
+                  << ",\"dedos\":" << dedos
+                  << ",\"abre\":" << abre << ",\"cierra\":" << cierra
+                  << ",\"cierra2\":" << cierra2
+                  << ",\"pasos_tras\":" << pasosTrasPellizco
+                  << ",\"dedos_tras\":" << pianoGrid.dedos() << "}" << std::endl;
+
+        pianoCols = StepGrid::kBarSteps;
+        pianoCursor = -1;
+        pianoVaciaSel();
+        refreshPiano(); resized();
     }
 }
 
@@ -5813,7 +5945,67 @@ void MainComponent::auditCanales()
             ++bancoVivas;
     abreCanalPicker (false);
 
+    //  8. EL FADER DE LA MESA SE VE ENTERO Y DICE SUS DECIBELIOS.
+    //
+    //  Llego del telefono: «el fader tampoco es muy especifico con los
+    //  decibelios que tocas, ni tactil». Se mide PINTANDO el fader del pad 0
+    //  solo -su foto, sin la ficha- y contando: a 0 dB, que parte de su celda
+    //  tiene tinta -el carril de JUCE eran cuatro pixeles de pista en
+    //  cuarenta y dos, o sea un octavo-; a -60 dB, cuantos pixeles de la mitad
+    //  derecha NO son del color de fondo, que es donde va la cifra y donde
+    //  antes no habia nada en un movil de 412 porque la maqueta tiraba la
+    //  casilla. Y cuantos faders de la mesa conservan una casilla de texto
+    //  aparte, que tiene que ser ninguno: la cifra va dentro.
+    //
+    //  Roto a proposito -quitando la marca "fader" del slider- la tinta cae a
+    //  0.13 y la letra a 0.00, con la misma maqueta.
+    showMixPage (mixPagePads);
+    openSheet (mixSheet, mixButton);
+    resized();
+    double faderTinta = 0.0, faderLetra = 0.0;
+    int faderAlto = 0, faderAncho = 0, faderCajas = 0;
+    if (auto* f = mixFaders[0])
+    {
+        const double antes = f->getValue();
+        auto cuenta = [&] (double db, bool derecha) -> double
+        {
+            f->setValue (db, juce::dontSendNotification);
+            const auto img = f->createComponentSnapshot (f->getLocalBounds(), true, 1.0f);
+            const int w = img.getWidth(), h = img.getHeight();
+            if (w <= 0 || h <= 0) return 0.0;
+            const int x0 = derecha ? (w * 60) / 100 : 0;
+            //  El color que mas se repite en la zona es el fondo; lo demas es
+            //  letra o borde.
+            std::map<juce::uint32, int> cuentas;
+            int total = 0, conTinta = 0;
+            for (int y = 0; y < h; ++y)
+                for (int x = x0; x < w; ++x)
+                {
+                    const auto c = img.getPixelAt (x, y);
+                    ++total;
+                    if (c.getAlpha() > 0) ++conTinta;
+                    ++cuentas[c.getARGB()];
+                }
+            if (! derecha) return total > 0 ? (double) conTinta / (double) total : 0.0;
+            int moda = 0;
+            for (const auto& kv : cuentas) moda = juce::jmax (moda, kv.second);
+            return total > 0 ? (double) (total - moda) / (double) total : 0.0;
+        };
+        faderAlto  = f->getHeight();
+        faderAncho = f->getWidth();
+        faderTinta = cuenta (0.0, false);
+        faderLetra = cuenta (-60.0, true);
+        f->setValue (antes, juce::dontSendNotification);
+    }
+    for (auto* f : mixFaders) if (f != nullptr && f->getTextBoxPosition() != juce::Slider::NoTextBox) ++faderCajas;
+    for (auto* f : canFaders) if (f != nullptr && f->getTextBoxPosition() != juce::Slider::NoTextBox) ++faderCajas;
+    if (masterFader.getTextBoxPosition() != juce::Slider::NoTextBox) ++faderCajas;
+
     std::cout << "{\"canales\":" << kNumCanales
+              << ",\"fader_alto\":" << faderAlto << ",\"fader_ancho\":" << faderAncho
+              << ",\"fader_tinta\":" << juce::String (faderTinta, 3)
+              << ",\"fader_letra\":" << juce::String (faderLetra, 3)
+              << ",\"fader_cajas\":" << faderCajas
               << ",\"bancos\":" << kNumCanalBancos
               << ",\"banco_primera\":" << primeraVisible
               << ",\"banco_celda\":\"" << celdaCanal.getWidth() << "x" << celdaCanal.getHeight() << "\""

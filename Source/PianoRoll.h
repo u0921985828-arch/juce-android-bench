@@ -6,6 +6,7 @@
 #include <array>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 // ============================================================================
@@ -44,7 +45,49 @@ public:
     int celdasAlto()  const override { return filas; }
     int canalIzq()    const override { return kGutter; }
     float celdaAnchoPx() const override { return (float) juce::jmax (0, getWidth() - kGutter) / (float) juce::jmax (1, nPasos); }
-    float celdaAltoPx()  const override { return (float) getHeight() / (float) juce::jmax (1, filas); }
+    float celdaAltoPx()  const override { return (float) altoRejilla() / (float) juce::jmax (1, filas); }
+
+    //  LA REGLA DE TIEMPO, encima de la rejilla y del ancho de las columnas.
+    //
+    //  Llego del telefono produciendo: «igual se podia hacer la seleccion en
+    //  base a la linea de tiempo, como se hace en FL». Hasta hoy seleccionar
+    //  era la quinta herramienta y una banda elastica por (paso, semi): coger
+    //  DOS COMPASES ENTEROS con todas sus notas exigia armar SEL y barrer la
+    //  rejilla de arriba a abajo sin dejarse una fila, y lo que estuviera en
+    //  otra octava se quedaba fuera. Un tramo de la regla es «de aqui a aqui,
+    //  todo», que es lo que se copia cuando se copia una frase.
+    //
+    //  Y el mismo sitio sirve para decir DONDE se pega: un toque sin arrastre
+    //  deja el cursor, y PEGAR cae ahi y no en la primera columna que se vea.
+    //  Dos gestos en la misma banda y ninguno pisa la rejilla: la regla no
+    //  escribe notas y la rejilla no mueve el cursor.
+    //
+    //  Mide lo que la columna del teclado, por lo mismo: es la otra cabecera
+    //  de la misma tabla, y la esquina donde se cruzan sale cuadrada. Y SE
+    //  DESCUENTA del alto en una sola cuenta -`altoRejilla`- que es de donde
+    //  sale el alto de la fila: la ficha que reparte el alto, el banco que mide
+    //  la celda y el dedo que apunta tienen que leer el mismo numero.
+    static constexpr int kRegla = Metrics::canalPiano;
+    int altoRejilla() const noexcept { return juce::jmax (1, getHeight() - kRegla); }
+
+    //  LA GEOMETRIA, EN UN SITIO. El banco apuntaba a una celda repitiendo la
+    //  division -`getHeight() / filas`- en tres ficheros; con la regla puesta
+    //  esa cuenta se queda vieja en los tres a la vez y la prueba apunta a la
+    //  fila de al lado sin que nadie lo diga.
+    float xDeColumna (int col) const noexcept { return (float) kGutter + celdaAnchoPx() * (float) col; }
+    float yDeFila (int fila)   const noexcept { return (float) kRegla + celdaAltoPx() * (float) fila; }
+    void  centroDe (int col, int fila, float& x, float& y) const noexcept
+    {
+        x = xDeColumna (col) + celdaAnchoPx() * 0.5f;
+        y = yDeFila (fila)   + celdaAltoPx()  * 0.5f;
+    }
+    //  Y UN PUNTO DE LA REGLA, para el banco: el centro de la columna, a media
+    //  altura de la banda.
+    void  puntoRegla (int col, float& x, float& y) const noexcept
+    {
+        x = xDeColumna (col) + celdaAnchoPx() * 0.5f;
+        y = (float) kRegla * 0.5f;
+    }
 
     //  UNA OCTAVA Y SU RAIZ, trece filas. Eran veinticinco -dos octavas- y esa
     //  cuenta se hizo por el rango del motor y no por el dedo: veinticinco
@@ -212,6 +255,39 @@ public:
     //  volver a seleccionar.
     std::function<bool (int paso, int semi)> estaSel;
 
+    //  LOS GESTOS DE LA REGLA, en columnas de la ventana como todo lo demas:
+    //  arrastrar da un tramo -las dos columnas, en el orden del dedo- y tocar
+    //  sin arrastrar deja el cursor. Que el tramo seleccione TODAS las notas
+    //  de esas columnas, esten o no en la octava que se ve, lo decide quien
+    //  tiene los datos; aqui no se sabe que hay escrito.
+    std::function<void (int col0, int col1)> onTramo;
+    std::function<void (int col)> onCursor;
+    //  EL PELLIZCO: +1 abre -menos columnas, celdas mas anchas- y -1 cierra.
+    //  Cuantas columnas son «una mas» lo decide el anfitrion, que es quien
+    //  sabe cuantas caben por el suelo de la celda; esto solo cuenta dedos.
+    std::function<void (int dir)> onZoom;
+    //  El segundo dedo llega DESPUES del primero, y el primero ya ha tocado la
+    //  rejilla como un toque de verdad: con el lapiz armado ha escrito una
+    //  nota. Un pellizco que deja una nota detras es un pellizco que ensucia,
+    //  asi que al empezar se avisa y el anfitrion deshace ese toque -y solo
+    //  ese: el decide, que es quien tiene la pila.
+    std::function<void()> onDeshaceToque;
+
+    //  Lo que se dibuja en la regla, puesto por quien lo guarda. -1 es nada.
+    //  Un tramo que empieza antes de la ventana llega con c0 negativo y se
+    //  recorta al pintar; «ninguno» es c1 < c0, que es como lo manda quien lo
+    //  guarda (0, -1).
+    void ponTramo (int c0, int c1)
+    {
+        const bool hay = c1 >= c0;
+        const int a = hay ? c0 : -1, b = hay ? c1 : -1;
+        if (a == tramo0 && b == tramo1) return;
+        tramo0 = a; tramo1 = b;
+        repaint();
+    }
+    void ponCursor (int c) { if (c == cursor) return; cursor = c; repaint(); }
+    int  getCursor() const noexcept { return cursor; }
+
     //  `notas` trae kMaxNotas semitonos por paso; -128 es "ninguna". `pasos`
     //  es cuantas columnas se dibujan, `base` el semitono de la fila de abajo.
     //
@@ -324,9 +400,14 @@ public:
         if (datos == nullptr) return;
 
         auto r = getLocalBounds();
-        const float altoFila = (float) r.getHeight() / (float) filas;
+        const float altoFila = (float) altoRejilla() / (float) filas;
         const float anchoCol = (float) (r.getWidth() - kGutter) / (float) nPasos;
         const auto tinta = Zati::colour (color);
+        //  La rejilla empieza debajo de la regla; `r` sigue siendo el todo
+        //  porque el cabezal y el cursor cruzan las dos bandas.
+        const float yRej = (float) r.getY() + (float) kRegla;
+
+        pintaRegla (g, r, anchoCol);
 
         for (int f = 0; f < filas; ++f)
         {
@@ -334,7 +415,7 @@ public:
             //  como un pentagrama, con lo alto arriba. Dibujarlo al reves es
             //  lo primero que hace que nadie entienda la pantalla.
             const int semi = semiBase + (filas - 1 - f);
-            const float y  = (float) r.getY() + altoFila * (float) f;
+            const float y  = yRej + altoFila * (float) f;
             const bool negra = esNegra (semi);
 
             //  EL TECLADO. Negras negras y blancas blancas, que es lo unico
@@ -481,7 +562,27 @@ public:
             for (int c = 1; c < nPasos; ++c)
                 if (((primerPaso + c) % 4) == 0)
                     g.fillRect ((float) r.getX() + (float) kGutter + anchoCol * (float) c - 0.5f,
-                                (float) r.getY(), 1.0f, (float) r.getHeight());
+                                yRej, 1.0f, (float) altoRejilla());
+        }
+
+        //  EL TRAMO SOBRE LA REJILLA, un velo del color del cabezal: dice
+        //  «estas columnas» por encima de notas y huecos, que es lo que un
+        //  tramo de tiempo es. La regla lo lleva mas denso, ver pintaRegla.
+        if (tramo1 >= tramo0 && tramo1 >= 0 && tramo0 < nPasos)
+        {
+            const int a = juce::jmax (tramo0, 0), b = juce::jmin (tramo1, nPasos - 1);
+            g.setColour (ZatiColours::playhead.withAlpha (0.10f));
+            g.fillRect ((float) r.getX() + (float) kGutter + anchoCol * (float) a, yRej,
+                        anchoCol * (float) (b - a + 1), (float) altoRejilla());
+        }
+
+        //  Y EL CURSOR DE PEGADO, una linea del acento en el borde izquierdo
+        //  de su columna, de la regla al suelo: ahi cae lo que se pegue.
+        if (cursor >= 0 && cursor < nPasos)
+        {
+            const float xc = (float) r.getX() + (float) kGutter + anchoCol * (float) cursor;
+            g.setColour (ZatiColours::accent.withAlpha (0.9f));
+            g.fillRect (xc - 1.0f, (float) r.getY(), 2.0f, (float) r.getHeight());
         }
 
         //  El cabezal, encima de todo y en su color.
@@ -509,14 +610,96 @@ public:
         {
             auto marco = r.toFloat().reduced (0.75f);
             marco.setLeft (marco.getX() + (float) kGutter);
+            marco.setTop (marco.getY() + (float) kRegla);
             g.setColour (ZatiColours::accent.withAlpha (0.9f));
             g.drawRect (marco, Metrics::filo);
         }
     }
 
-    void mouseDown (const juce::MouseEvent& e) override { gesto ((float) e.x, (float) e.y, false); }
-    void mouseDrag (const juce::MouseEvent& e) override { gesto ((float) e.x, (float) e.y, true); }
-    void mouseUp   (const juce::MouseEvent&)   override { suelta(); }
+    //  CADA DEDO LLEGA COMO UN RATON DISTINTO. JUCE en Android no entrega
+    //  `mouseMagnify`: cada dedo es un MouseInputSource con su indice y sus
+    //  propios mouseDown/mouseDrag/mouseUp. Es el mismo reparto que
+    //  `WaveformDisplay` lleva desde que la onda se pellizca, y por lo mismo
+    //  pasa por `toque`: un gesto que no se puede llamar es un gesto que no se
+    //  mide, y el banco pellizca con dos indices y sin pantalla tactil.
+    void mouseDown (const juce::MouseEvent& e) override { toque (e.source.getIndex(), (float) e.x, (float) e.y, 0); }
+    void mouseDrag (const juce::MouseEvent& e) override { toque (e.source.getIndex(), (float) e.x, (float) e.y, 1); }
+    void mouseUp   (const juce::MouseEvent& e) override { toque (e.source.getIndex(), (float) e.x, (float) e.y, 2); }
+
+    //  UN DEDO, TRES FASES: 0 baja, 1 se mueve, 2 se levanta.
+    //
+    //  Con UN dedo esto es `gesto` y `suelta` de siempre, sin cambiar una coma
+    //  de lo que hace. El SEGUNDO dedo convierte el gesto en pellizco: lo que
+    //  el primero hubiera empezado se cancela -y si ya habia escrito, se avisa
+    //  para deshacerlo-, y desde ahi solo se mira la distancia entre los dos.
+    //  Al levantar uno el pellizco acaba, y el dedo que queda NO vuelve a
+    //  escribir: un dedo que se queda en la pantalla tras abrir no esta
+    //  poniendo una nota, esta terminando de abrir.
+    //
+    //  El umbral es una RAZON y no pixeles -una vez y media- porque un paso del
+    //  zoom es el doble o la mitad de columnas; pedir el doble exacto deja el
+    //  gesto corto en un movil, y pedir cualquier cosa lo dispara al apoyar.
+    //  Al saltar se vuelve a medir desde ahi, para que un pellizco largo de
+    //  cuatro columnas pueda llegar a sesenta y cuatro.
+    void toque (int id, float x, float y, int fase)
+    {
+        if (fase == 0)
+        {
+            dedoBaja (id, x, y);
+            if (dedos() >= 2)
+            {
+                if (! pellizco)
+                {
+                    pellizco = true;
+                    spanBase = juce::jmax (8.0f, span());
+                    if (escribio && onDeshaceToque) onDeshaceToque();
+                    //  Y sin dejar cursor: un pellizco que empieza en la
+                    //  regla no es un toque en la regla.
+                    enRegla = false;
+                    suelta();
+                    escribio = false;
+                }
+                return;
+            }
+            if (ignoraResto) return;
+            escribio = false;
+            gesto (x, y, false);
+            return;
+        }
+
+        if (fase == 1)
+        {
+            dedoMueve (id, x, y);
+            if (pellizco)
+            {
+                if (dedos() < 2) return;
+                const float razon = span() / juce::jmax (8.0f, spanBase);
+                if (razon >= 1.5f)        { if (onZoom) onZoom (+1); spanBase = span(); }
+                else if (razon <= 1.0f / 1.5f) { if (onZoom) onZoom (-1); spanBase = span(); }
+                return;
+            }
+            if (ignoraResto) return;
+            gesto (x, y, true);
+            return;
+        }
+
+        dedoSube (id);
+        if (pellizco)
+        {
+            if (dedos() < 2) { pellizco = false; ignoraResto = dedos() > 0; }
+            return;
+        }
+        if (ignoraResto) { if (dedos() == 0) ignoraResto = false; return; }
+        suelta();
+    }
+    //  Cuantos dedos hay apoyados. Lo lee el banco para probar que el
+    //  pellizco empieza con dos y acaba con menos.
+    int dedos() const noexcept
+    {
+        int n = 0;
+        for (const auto& t : toques) if (t.abajo) ++n;
+        return n;
+    }
 
     //  EL GESTO, en pixeles y sin MouseEvent, para que el banco pueda medirlo.
     //
@@ -529,9 +712,29 @@ public:
     {
         if (datos == nullptr) return;
         auto r = getLocalBounds();
-        const float altoFila = (float) r.getHeight() / (float) filas;
-        const int fila = juce::jlimit (0, filas - 1, (int) ((y - (float) r.getY()) / altoFila));
+        const float altoFila = (float) altoRejilla() / (float) filas;
+        const int fila = juce::jlimit (0, filas - 1,
+                                       (int) ((y - (float) r.getY() - (float) kRegla) / altoFila));
         const int semi = semiBase + (filas - 1 - fila);
+
+        //  LA REGLA, ANTES QUE NADA Y CON CUALQUIER HERRAMIENTA. Un arrastre
+        //  que empieza en la regla es un tramo aunque el dedo baje a la
+        //  rejilla, y uno que empieza en la rejilla no se vuelve tramo por
+        //  subir: el gesto es de donde se apoya el dedo. Tocar el teclado de la
+        //  esquina no es nada.
+        if (! arrastrando) enRegla = (y < (float) (r.getY() + kRegla));
+        if (enRegla)
+        {
+            if (x < (float) (r.getX() + kGutter) && ! arrastrando) { enRegla = false; return; }
+            const float anchoR = (float) (r.getWidth() - kGutter) / (float) nPasos;
+            const int col = juce::jlimit (0, nPasos - 1,
+                                          (int) ((x - (float) r.getX() - (float) kGutter) / anchoR));
+            if (! arrastrando) { reglaIni = col; reglaMovio = false; return; }
+            if (col == reglaIni && ! reglaMovio) return;
+            reglaMovio = true;
+            if (onTramo) onTramo (reglaIni, col);
+            return;
+        }
 
         //  EL TECLADO SUENA, no escribe. Buscar la nota antes de ponerla es la
         //  mitad de escribir una melodia, y sin esto habria que escribirla,
@@ -609,7 +812,7 @@ public:
             const int clave2 = fila * 1000 + paso;
             if (arrastrando && clave2 == ultima) return;
             ultima = clave2;
-            if (onBorrar) onBorrar (paso, semi);
+            if (onBorrar) { escribio = true; onBorrar (paso, semi); }
             return;
         }
 
@@ -634,6 +837,7 @@ public:
                     if (aqui) { ini = c; break; }
                 }
                 const int cu = juce::jlimit (1, 63, (int) ((dentro - (float) ini) * 4.0f) + 1);
+                escribio = true;
                 onCortar (ini, cu);
             }
             return;
@@ -653,6 +857,7 @@ public:
             if (cu != ultimoLargo)
             {
                 ultimoLargo = cu;
+                escribio = true;
                 onLargo (pasoIni, semi, cu);
             }
             return;
@@ -663,16 +868,104 @@ public:
         const int clave = fila * 1000 + paso;
         if (arrastrando && clave == ultima) return;
         ultima = clave;
+        escribio = true;
         onCelda (paso, semi, arrastrando);
     }
 
-    void suelta() { ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; moviendo = false; dPaso = dSemi = 0; }
+    void suelta()
+    {
+        //  El toque en la regla se resuelve al SOLTAR: hasta entonces no se
+        //  sabe si iba a ser un tramo. Un dedo que no se movio es el cursor.
+        if (enRegla && ! reglaMovio && reglaIni >= 0 && onCursor) onCursor (reglaIni);
+        enRegla = false; reglaIni = -1; reglaMovio = false;
+        ultima = -1; filaIni = pasoIni = -1; ultimoLargo = -1; moviendo = false; dPaso = dSemi = 0;
+    }
 
 private:
     //  El arrastre de la seleccion: donde empezo y cuanto lleva movido.
     int  semiIni = 0;
     bool moviendo = false;
     int  dPaso = 0, dSemi = 0;
+
+    //  La regla: donde empezo el dedo y si se movio. Ver gesto / suelta.
+    bool enRegla = false, reglaMovio = false;
+    int  reglaIni = -1;
+    //  Lo que se dibuja en la regla, en columnas de la ventana. Ver ponTramo.
+    int  tramo0 = -1, tramo1 = -1, cursor = -1;
+
+    //  Los dedos. Dos bastan: el tercero no hace nada en ningun sitio de la app.
+    struct Toque { int id = -1; float x = 0.0f, y = 0.0f; bool abajo = false; };
+    std::array<Toque, 2> toques {};
+    bool  pellizco = false, ignoraResto = false, escribio = false;
+    float spanBase = 0.0f;
+    void dedoBaja (int id, float x, float y)
+    {
+        for (auto& t : toques) if (t.abajo && t.id == id) { t.x = x; t.y = y; return; }
+        for (auto& t : toques) if (! t.abajo) { t = { id, x, y, true }; return; }
+    }
+    void dedoMueve (int id, float x, float y)
+    {
+        for (auto& t : toques) if (t.abajo && t.id == id) { t.x = x; t.y = y; return; }
+    }
+    void dedoSube (int id)
+    {
+        for (auto& t : toques) if (t.abajo && t.id == id) { t.abajo = false; t.id = -1; return; }
+    }
+    float span() const noexcept
+    {
+        const float dx = toques[0].x - toques[1].x, dy = toques[0].y - toques[1].y;
+        return std::sqrt (dx * dx + dy * dy);
+    }
+
+    //  LA REGLA PINTADA: el pulso rotulado «compas.pulso» cada cuatro
+    //  columnas, el compas solo cuando las cuatro no dan sitio al rotulo, el
+    //  tramo denso y el cabezal cruzandola. Los numeros son del PATRON -salen
+    //  de `primerPaso`-, por lo mismo que el tinte del pulso: una regla que
+    //  empieza en 1 en cada ventana no es una regla.
+    void pintaRegla (juce::Graphics& g, juce::Rectangle<int> r, float anchoCol)
+    {
+        auto banda = juce::Rectangle<float> ((float) r.getX(), (float) r.getY(),
+                                             (float) r.getWidth(), (float) kRegla);
+        g.setColour (ZatiColours::groove (0.40f));
+        g.fillRect (banda);
+        //  La esquina del teclado, del color de una tecla blanca: es la
+        //  cabecera de las dos cabeceras.
+        g.setColour (ZatiColours::markOn (ZatiColours::chassisTop, 0.10f));
+        g.fillRect (banda.withWidth ((float) kGutter).reduced (1.0f, 1.0f));
+
+        if (tramo1 >= tramo0 && tramo1 >= 0 && tramo0 < nPasos)
+        {
+            const int a = juce::jmax (tramo0, 0), b = juce::jmin (tramo1, nPasos - 1);
+            g.setColour (ZatiColours::playhead.withAlpha (0.35f));
+            g.fillRect ((float) r.getX() + (float) kGutter + anchoCol * (float) a, banda.getY(),
+                        anchoCol * (float) (b - a + 1), banda.getHeight());
+        }
+
+        g.setFont (ZatiColours::monoFont (Metrics::fTiny, true));
+        const float anchoPulso = anchoCol * 4.0f;
+        //  «1.3» son tres signos a cuerpo pequeno: unos 22 px. Donde el pulso
+        //  no los da, se rotula solo el compas, que es una cifra.
+        const bool cabePulso = anchoPulso >= (float) Metrics::fTiny * 2.2f;
+        for (int c = 0; c < nPasos; ++c)
+        {
+            const int paso = primerPaso + c;
+            if (paso % 4 != 0) continue;
+            const float x = (float) r.getX() + (float) kGutter + anchoCol * (float) c;
+            const bool compas = (paso % 16) == 0;
+            g.setColour (ZatiColours::inkDim.withAlpha (compas ? 0.9f : 0.5f));
+            g.fillRect (x - 0.5f, banda.getBottom() - (compas ? 8.0f : 4.0f), 1.0f, compas ? 8.0f : 4.0f);
+            if (! compas && ! cabePulso) continue;
+            const juce::String txt = compas && ! cabePulso
+                                       ? juce::String (paso / 16 + 1)
+                                       : juce::String (paso / 16 + 1) + "." + juce::String ((paso % 16) / 4 + 1);
+            g.setColour (compas ? ZatiColours::ink : ZatiColours::inkDim);
+            g.drawText (txt, juce::Rectangle<float> (x + 2.0f, banda.getY(),
+                                                     juce::jmax (anchoPulso - 3.0f, 10.0f), banda.getHeight() - 3.0f),
+                        juce::Justification::centredLeft, false);
+        }
+        g.setColour (ZatiColours::groove (0.55f));
+        g.fillRect (banda.getX(), banda.getBottom() - 1.0f, banda.getWidth(), 1.0f);
+    }
 
     const signed char* datos = nullptr;
     //  Un largo por PASO, en cuartos: las notas de un acorde comparten casilla

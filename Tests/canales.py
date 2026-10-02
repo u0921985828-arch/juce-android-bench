@@ -465,6 +465,42 @@ def main():
         malas.append ("la celda de la rejilla de canales mide %s y el dedo pide 40"
                       % r["banco_celda"])
 
+    #  8. EL FADER DE LA MESA SE VE ENTERO Y DICE SUS DECIBELIOS.
+    #
+    #     Llego del telefono: «el fader tampoco es muy especifico con los
+    #     decibelios que tocas, ni tactil». Era el carril de JUCE: cuatro
+    #     pixeles de pista en una celda de cuarenta y dos, y la cifra en una
+    #     casilla aparte que la maqueta tiraba en un movil de 412 -la pagina
+    #     de PADS no ensenaba NINGUN decibelio-. La app PINTA el fader del pad
+    #     0 solo y cuenta: a 0 dB que parte de la celda tiene tinta, y a -60 dB
+    #     que parte de la mitad derecha no es fondo, que es la cifra. Y cuantos
+    #     faders conservan casilla aparte, que tiene que ser ninguno.
+    #
+    #     El binario de antes no volcaba estas claves (-1 en las tres, cuatro
+    #     FALLA). Medido despues, 110x40 px: tinta 0.78, letra 0.40, casillas
+    #     0. Roto a proposito -quitando la marca "fader" y dejando el carril
+    #     de JUCE sin casilla-: tinta 0.137 y letra 0.119, que es la pista de
+    #     cuatro pixeles cruzando la mitad derecha; por eso la letra pide 0.2
+    #     y no un «algo»: con 0.03 el carril pelado pasaba.
+    tinta  = r.get ("fader_tinta", -1.0)
+    letra  = r.get ("fader_letra", -1.0)
+    cajas  = r.get ("fader_cajas", -1)
+    alto   = r.get ("fader_alto", 0)
+    ancho  = r.get ("fader_ancho", 0)
+    print ("fader    %dx%d px: tinta a 0 dB %.2f, letra a -60 dB %.2f, casillas aparte %d"
+           % (ancho, alto, tinta, letra, cajas))
+    if tinta < 0.6:
+        malas.append ("el fader del pad 0 a 0 dB solo pinta el %.0f%% de su celda: "
+                      "sigue siendo un carril de cuatro pixeles" % (tinta * 100.0))
+    if letra < 0.2:
+        malas.append ("el fader del pad 0 a -60 dB no lleva cifra dentro (%.3f de la "
+                      "mitad derecha no es fondo)" % letra)
+    if cajas != 0:
+        malas.append ("%d faders de la mesa conservan una casilla de texto aparte: "
+                      "la cifra va dentro de la barra" % cajas)
+    if alto < 36:
+        malas.append ("el fader del pad 0 mide %d px de alto y el dedo pide 36" % alto)
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

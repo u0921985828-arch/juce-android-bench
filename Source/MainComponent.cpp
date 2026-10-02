@@ -3325,14 +3325,18 @@ MainComponent::MainComponent()
         f->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         f->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         f->setColour (juce::Slider::trackColourId, Zati::colour (i));
-        f->setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, Metrics::readout);
+        //  LA CIFRA VA DENTRO DE LA BARRA, no en una casilla al lado: ver el
+        //  ramal "fader" de ZatiLookAndFeel::drawLinearSlider. La casilla de
+        //  46 px era lo primero que la maqueta tiraba en un movil, y una mesa
+        //  sin decibelios es una mesa en la que se sube «un poco».
+        f->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        f->getProperties().set ("fader", true);
         //  A tap must not become a value. Snapping to the touch point turns a
         //  brushed finger into a channel slammed to zero; relative dragging
         //  means you take hold of the level and move it from where it was.
         f->setSliderSnapsToMousePosition (false);
-        //  Sin unidad: la casilla mide 46 px y "-60.0 dB" no cabe. El signo si
-        //  va, que es lo que distingue subir de bajar.
-        f->textFromValueFunction = [] (double v) { return gainText (v, false); };
+        //  Con unidad, que ahora cabe: la barra mide lo que la fila.
+        f->textFromValueFunction = [] (double v) { return gainText (v, true); };
         f->onValueChange = [this, i, f]
         {
             const float g = gainFromDb (f->getValue());
@@ -3429,9 +3433,10 @@ MainComponent::MainComponent()
         f->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
         f->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         f->setColour (juce::Slider::trackColourId, Zati::colour (c));
-        f->setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, Metrics::readout);
+        f->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        f->getProperties().set ("fader", true);
         f->setSliderSnapsToMousePosition (false);
-        f->textFromValueFunction = [] (double v) { return gainText (v, false); };
+        f->textFromValueFunction = [] (double v) { return gainText (v, true); };
         f->onValueChange = [this, c, f] { engine.setCanalGain (c, gainFromDb (f->getValue())); };
         mixRows.addAndMakeVisible (f);
         canFaders.add (f);
@@ -3671,7 +3676,9 @@ MainComponent::MainComponent()
     //  el golpe. Para sonar mas alto esta el volumen del telefono, que no
     //  distorsiona.
     masterFader.setSliderStyle (juce::Slider::LinearHorizontal);
-    masterFader.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, Metrics::readout);
+    masterFader.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    masterFader.getProperties().set ("fader", true);
+    masterFader.setColour (juce::Slider::trackColourId, ZatiColours::accent);
     masterFader.setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
     masterFader.setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
     masterFader.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
@@ -4230,7 +4237,20 @@ MainComponent::MainComponent()
         //  la mitad de escribir una melodia.
         //  LA SELECCION: la banda, el arrastre del bloque y el vaciado. El
         //  componente reporta el gesto y aqui se resuelve contra los datos.
-        pianoGrid.estaSel    = [this] (int paso, int semi) { return pianoEnSel (paso, semi); };
+        pianoGrid.estaSel    = [this] (int paso, int semi) { return pianoEnSel (seqPrimerCelda + paso, semi); };
+        //  LA REGLA: el tramo selecciona TODO lo que hay en esas columnas -las
+        //  dos octavas, no solo la que se ve- y el toque deja el cursor donde
+        //  PEGAR va a caer. Y EL PELLIZCO, con su deshacer: el primer dedo ya
+        //  toco la rejilla como un toque de verdad y pudo dejar una nota.
+        pianoGrid.onTramo    = [this] (int c0, int c1) { pianoTramo (c0, c1); };
+        pianoGrid.onCursor   = [this] (int c) { pianoCursorEn (c); };
+        pianoGrid.onZoom     = [this] (int dir) { pianoZoomPaso (dir); };
+        pianoGrid.onDeshaceToque = [this]
+        {
+            //  Solo si lo ultimo apuntado es ESE toque: deshacer otra cosa por
+            //  haber pellizcado seria peor que la nota de mas.
+            if (! undoStack.empty() && undoStack.back().label == T ("NOTA")) performUndo();
+        };
         pianoGrid.onBanda    = [this] (int p0, int s0, int p1, int s1) { pianoBanda (p0, s0, p1, s1); };
         pianoGrid.onMueveSel = [this] (int dp, int ds) { pianoMueveSel (dp, ds); };
         pianoGrid.onVaciaSel = [this] { pianoVaciaSel(); moviendoSel = false; resized(); };
@@ -4378,13 +4398,10 @@ MainComponent::MainComponent()
             //  412x915: con 32 columnas la celda del paso queda en **10 px**,
             //  por debajo del suelo de 12 - o sea dos compases que se ven y no
             //  se pueden escribir. Donde no caben, el ciclo salta a 8.
-            const int util = pianoGrid.getWidth() - PianoRoll::kGutter;
-            const bool caben32 = util >= 32 * Metrics::celdaPaso;
-            pianoCols = (pianoCols == 8) ? StepGrid::kBarSteps
-                      : (pianoCols == StepGrid::kBarSteps && caben32) ? 32 : 8;
-            pianoVaciaSel();
-            refreshPiano (true);
-            resized();
+            //  Y HASTA 64 desde que la regla selecciona por tiempo: cuatro
+            //  compases a la vista son lo que hace falta para coger una frase
+            //  entera de un arrastre. Mismo suelo, un peldano mas.
+            pianoZoomPaso (0);
         };
         seqSheet.addAndMakeVisible (pianoZoomBtn);
 
@@ -10907,7 +10924,8 @@ void MainComponent::retranslateUi()
     //  El rotulo dice CUANTO se ve, no un verbo: es la misma gramatica que
     //  pianoVerBtn y que la tapa de vista de la cancion.
     pianoZoomBtn   .setButtonText (pianoCols == 8  ? T ("1/2 COMPAS")
-                                 : pianoCols == 32 ? T ("2 COMPASES") : T ("1 COMPAS"));
+                                 : pianoCols == 32 ? T ("2 COMPASES")
+                                 : pianoCols == 64 ? T ("4 COMPASES") : T ("1 COMPAS"));
     pianoClearBtn  .setButtonText (T ("VACIAR"));
     //  El rotulo de esta dice el ESTADO, asi que no es una clave fija: la elige
     //  cuantas filas hay puestas. Sin esta linea, cambiar de idioma dejaba
@@ -15395,6 +15413,9 @@ void MainComponent::pianoBanda (int paso0, int semi0, int paso1, int semi1)
     const int len  = engine.getPatternLength (b);
 
     pianoSel.clear();
+    //  Una banda nueva es una seleccion nueva: el tramo de la regla que
+    //  hubiera deja de decir la verdad. `pianoTramo` lo vuelve a poner.
+    pianoTramo0 = pianoTramo1 = -1;
     for (int c = pa; c <= pb; ++c)
     {
         const int st = pasoDeColumna (c);
@@ -15403,7 +15424,7 @@ void MainComponent::pianoBanda (int paso0, int semi0, int paso1, int semi1)
 
         auto mira = [&] (int v)
         {
-            if (v != -128 && v >= sa && v <= sb) pianoSel.push_back ({ c, v });
+            if (v != -128 && v >= sa && v <= sb) pianoSel.push_back ({ seqPrimerCelda + c, v });
         };
         mira (engine.getStepNote (b, st, p));
         for (int e = 0; e < AudioEngine::kExtraNotes; ++e)
@@ -15414,9 +15435,70 @@ void MainComponent::pianoBanda (int paso0, int semi0, int paso1, int semi1)
 
 void MainComponent::pianoVaciaSel()
 {
-    if (pianoSel.empty()) return;
+    if (pianoSel.empty() && pianoTramo0 < 0) return;
     pianoSel.clear();
+    pianoTramo0 = pianoTramo1 = -1;
     refreshPiano (false);
+}
+
+//  EL TRAMO DE LA REGLA: de la columna c0 a la c1, TODAS las notas. Se
+//  resuelve con la banda de siempre y el tono abierto de -24 a +24, que es
+//  todo lo que setStepNote admite: lo que no se ve tambien va, porque un
+//  compas es un compas y no la octava que se mira.
+void MainComponent::pianoTramo (int col0, int col1)
+{
+    pianoBanda (col0, -24, col1, 24);
+    pianoTramo0 = seqPrimerCelda + juce::jmin (col0, col1);
+    pianoTramo1 = seqPrimerCelda + juce::jmax (col0, col1);
+    refreshPiano (false);
+    resized();      // la tira de acciones aparece o se va con la seleccion
+}
+
+//  EL CURSOR: donde PEGAR va a caer. Un toque en la regla sin arrastre. No
+//  toca la seleccion -en FL tampoco- que es lo que permite copiar, tocar la
+//  regla mas alla y pegar sin volver a elegir nada.
+void MainComponent::pianoCursorEn (int col)
+{
+    pianoCursor = seqPrimerCelda + juce::jmax (0, col);
+    refreshPiano (false);
+}
+
+bool MainComponent::pianoCabenCols (int cols) const
+{
+    if (cols <= kPianoEscala[0]) return true;
+    return pianoGrid.getWidth() - PianoRoll::kGutter >= cols * Metrics::celdaPaso;
+}
+
+//  UN PELDANO DE LA ESCALERA DEL ZOOM. +1 abre -menos columnas, celda mas
+//  ancha-, -1 cierra, y 0 es el ciclo de la tapa. Donde no cabe el peldano se
+//  salta al siguiente que quepa; si no hay ninguno, no pasa nada.
+//
+//  Y LA SELECCION SE REHACE DESDE EL TRAMO si lo hay: las casillas del
+//  patron son las mismas con cualquier zoom, asi que «abre dos compases,
+//  coge el segundo, cierra para verlo grande» deja cogido el mismo compas.
+//  Sin tramo se vacia, como hacia la tapa: una banda a mano era de la
+//  ventana que se veia.
+void MainComponent::pianoZoomPaso (int dir)
+{
+    int i = 1;
+    for (int k = 0; k < 4; ++k) if (kPianoEscala[k] == pianoCols) i = k;
+    int nuevo = pianoCols;
+    if (dir > 0)      { for (int k = i - 1; k >= 0; --k) if (pianoCabenCols (kPianoEscala[k])) { nuevo = kPianoEscala[k]; break; } }
+    else if (dir < 0) { for (int k = i + 1; k < 4;  ++k) if (pianoCabenCols (kPianoEscala[k])) { nuevo = kPianoEscala[k]; break; } }
+    else              { for (int k = 1; k <= 4; ++k) { const int c = kPianoEscala[(i + k) % 4]; if (pianoCabenCols (c)) { nuevo = c; break; } } }
+    if (nuevo == pianoCols) return;
+
+    const int t0 = pianoTramo0, t1 = pianoTramo1;
+    pianoCols = nuevo;
+    pianoVaciaSel();
+    refreshPiano (true);
+    resized();
+    if (t0 >= 0 && t1 >= t0)
+    {
+        //  La ventana ya esta acotada al zoom nuevo; el tramo vuelve en
+        //  columnas de esa ventana.
+        pianoTramo (t0 - seqPrimerCelda, t1 - seqPrimerCelda);
+    }
 }
 
 //  MOVER EL BLOQUE. Se QUITAN TODAS PRIMERO y se ponen despues, que es el orden
@@ -15438,7 +15520,7 @@ void MainComponent::pianoMueveSel (int dPaso, int dSemi)
     for (const auto& n : pianoSel)
     {
         const int np = n.paso + dPaso, ns = n.semi + dSemi;
-        if (np < 0 || pasoDeColumna (np) >= len) return;
+        if (np < 0 || pasoDeCelda (np) >= len) return;
         if (ns < -24 || ns > 24) return;
     }
 
@@ -15448,16 +15530,18 @@ void MainComponent::pianoMueveSel (int dPaso, int dSemi)
     std::vector<int> largos;
     largos.reserve (pianoSel.size());
     for (const auto& n : pianoSel)
-        largos.push_back (engine.getStepLen (b, pasoDeColumna (n.paso), juce::jmax (0, selectedPad)));
+        largos.push_back (engine.getStepLen (b, pasoDeCelda (n.paso), juce::jmax (0, selectedPad)));
 
-    for (const auto& n : pianoSel) pianoEscribe (pasoDeColumna (n.paso), n.semi, false, 0);
+    for (const auto& n : pianoSel) pianoEscribe (pasoDeCelda (n.paso), n.semi, false, 0);
 
     for (size_t i = 0; i < pianoSel.size(); ++i)
     {
         pianoSel[i].paso += dPaso;
         pianoSel[i].semi += dSemi;
-        pianoEscribe (pasoDeColumna (pianoSel[i].paso), pianoSel[i].semi, true, largos[i]);
+        pianoEscribe (pasoDeCelda (pianoSel[i].paso), pianoSel[i].semi, true, largos[i]);
     }
+    //  Un bloque movido ya no es el tramo que se eligio en la regla.
+    pianoTramo0 = pianoTramo1 = -1;
     refreshPiano (false);
 }
 
@@ -15475,7 +15559,7 @@ void MainComponent::pianoCopiaSel()
     pianoPortapapeles.clear();
     for (const auto& n : pianoSel)
         pianoPortapapeles.push_back ({ n.paso - p0, n.semi,
-                                       engine.getStepLen (b, pasoDeColumna (n.paso), p) });
+                                       engine.getStepLen (b, pasoDeCelda (n.paso), p) });
 
     status.setText (pianoPortapapeles.size() == 1
                         ? T ("1 nota copiada")
@@ -15496,13 +15580,19 @@ void MainComponent::pianoPegaSel()
 
     pushUndo (T ("PEGAR"));
     pianoSel.clear();
+    pianoTramo0 = pianoTramo1 = -1;
+    //  DONDE SE TOCO LA REGLA, y si no se toco, en la primera columna que se
+    //  ve, que es lo que hacia siempre. El cursor se queda: pegar dos veces
+    //  pega dos veces en el mismo sitio, que es lo que hace cualquier DAW.
+    const int desde = pianoCursor >= 0 ? pianoCursor : seqPrimerCelda;
     for (const auto& n : pianoPortapapeles)
     {
-        const int st = pasoDeColumna (n.dPaso);
+        const int celda = desde + n.dPaso;
+        const int st = pasoDeCelda (celda);
         if (st < 0 || st >= len) continue;
         if (n.semi < -24 || n.semi > 24) continue;
         pianoEscribe (st, n.semi, true, n.cuartos);
-        pianoSel.push_back ({ n.dPaso, n.semi });
+        pianoSel.push_back ({ celda, n.semi });
     }
     refreshPiano (false);
 }
@@ -15517,7 +15607,7 @@ void MainComponent::pianoBorraSel()
 {
     if (pianoSel.empty()) return;
     pushUndo (T ("BORRAR"));
-    for (const auto& n : pianoSel) pianoEscribe (pasoDeColumna (n.paso), n.semi, false, 0);
+    for (const auto& n : pianoSel) pianoEscribe (pasoDeCelda (n.paso), n.semi, false, 0);
 
     status.setText (pianoSel.size() == 1
                         ? T ("1 nota borrada")
@@ -15525,6 +15615,7 @@ void MainComponent::pianoBorraSel()
                              Lang::ltr (juce::String ((int) pianoSel.size()))),
                     juce::dontSendNotification);
     pianoSel.clear();
+    pianoTramo0 = pianoTramo1 = -1;
     moviendoSel = false;
     refreshPiano (false);
     resized();      // la tira se va con la seleccion
@@ -15710,6 +15801,13 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
                          padZati[(size_t) p],
                          ps >= 0 ? engine.getStepPhase() : 0.0f,
                          pianoLargos, seqPrimerCelda);
+    //  La regla, en columnas de ESTA ventana: lo que caiga fuera se recorta
+    //  al pintar. El cursor se acota al patron, que un cursor en una casilla
+    //  que ya no existe pegaria en el vacio.
+    if (pianoCursor >= celdas) pianoCursor = -1;
+    pianoGrid.ponTramo (pianoTramo0 >= 0 ? pianoTramo0 - seqPrimerCelda : 0,
+                        pianoTramo0 >= 0 ? pianoTramo1 - seqPrimerCelda : -1);
+    pianoGrid.ponCursor (pianoCursor >= 0 ? pianoCursor - seqPrimerCelda : -1);
 
     //  LAS DOS BARRAS. La horizontal es la MISMA que la de la rejilla —una
     //  ventana, un dueño— y solo cambia cuantas columnas caben; la vertical es

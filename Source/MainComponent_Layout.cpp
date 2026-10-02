@@ -5395,9 +5395,8 @@ void MainComponent::resized()
             //  Y el numero cae si no cabe, con el mismo criterio que los
             //  canales: un fader que no se puede apuntar es peor que un fader
             //  sin cifra.
-            const bool cabeCifra = fila.getWidth() - Metrics::gap - 52 >= 70;
-            masterFader.setTextBoxStyle (cabeCifra ? juce::Slider::TextBoxRight : juce::Slider::NoTextBox,
-                                         false, 52, Metrics::readout);
+            //  La cifra va dentro de la barra, asi que no hay casilla que
+            //  tirar ni condicion que la tire: ver el ramal "fader".
             masterFader.setBounds (fila.reduced (Metrics::aireTapa, Metrics::centraDedo));
             inner.removeFromBottom (Metrics::xs);
         }
@@ -5472,11 +5471,7 @@ void MainComponent::resized()
                 canSolos[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
 
-                auto faderCell = row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa);
-                const bool tight = faderCell.getWidth() - Metrics::gap - 46 < 70;
-                canFaders[c]->setTextBoxStyle (tight ? juce::Slider::NoTextBox : juce::Slider::TextBoxRight,
-                                               false, 46, Metrics::readout);
-                canFaders[c]->setBounds (faderCell);
+                canFaders[c]->setBounds (row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
             }
         }
         else
@@ -5528,8 +5523,13 @@ void MainComponent::resized()
             //  fila y en 412x915 la cuenta salia por dos pixeles -94 contra el
             //  suelo de 96- o sea que el ancho no aparecia en NINGUNA pantalla.
             //  El reparto de uno solo se queda en su tercio, que es el medido.
-            const int panW    = juce::jlimit (Metrics::hit + 4, 78, row.getWidth() / 3);
-            const int dosW    = juce::jlimit (Metrics::hit + 4, 78, row.getWidth() / 4);
+            //  Y MAS CORTOS DESDE QUE EL FADER ES UNA BARRA: un pan se lee por
+            //  donde cae su marca contra el centro y 56 px le bastan; cada
+            //  pixel que no se lleva el pan es recorrido del fader, que es lo
+            //  que se toca en cada mezcla. Medido en 412x915 con `canales.py`:
+            //  el fader del pad 0 mide 110x40 px con los dos puestos.
+            const int panW    = juce::jlimit (Metrics::hit + 4, 64, row.getWidth() / 3);
+            const int dosW    = juce::jlimit (Metrics::hit + 4, 56, row.getWidth() / 4);
             const bool roomAncho = row.getWidth() - 2 * dosW >= 96;
             const bool room = roomAncho || (row.getWidth() - panW >= 96);
             const int celda = roomAncho ? dosW : panW;
@@ -5561,11 +5561,11 @@ void MainComponent::resized()
             //  Where it does not fit, the number goes and the fader stays: the
             //  exact figure is one tap away in the PADS sheet, and a mixer is
             //  read by the shape of its faders, not by sixteen decimals.
-            auto faderCell = row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa);
-            const bool tight = faderCell.getWidth() - Metrics::gap - 46 < 70;
-            mixFaders[i]->setTextBoxStyle (tight ? juce::Slider::NoTextBox : juce::Slider::TextBoxRight,
-                                           false, 46, Metrics::readout);
-            mixFaders[i]->setBounds (faderCell);
+            //  La cifra vive dentro de la barra —ver el ramal "fader" del
+            //  LookAndFeel— asi que ya no hay casilla que tirar cuando la fila
+            //  aprieta: el fader se lleva lo que queda, entero, en todas las
+            //  pantallas.
+            mixFaders[i]->setBounds (row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
         }
     }
 
@@ -6138,11 +6138,16 @@ void MainComponent::resized()
             //  a catorce pixeles por fila. Se pide lo que se va a colocar:
             //  once filas de dieciseis en 640x360, nueve en 412x480 y seis con
             //  la tira de seleccion puesta.
-            pianoGrid.acota (paraLienzo / PianoRoll::kAltoMin);
+            //  Y LA REGLA SE DESCUENTA ANTES DE REPARTIR: es una banda fija
+            //  encima de las filas, asi que pedir el lienzo entero para filas
+            //  y poner la regla encima es la cuenta de «pedir con una y
+            //  colocar con otra» una vez mas.
+            const int paraFilas = juce::jmax (0, paraLienzo - PianoRoll::kRegla);
+            pianoGrid.acota (paraFilas / PianoRoll::kAltoMin);
             const int filasPiano = juce::jmax (1, pianoGrid.getFilas());
             const int porFila = juce::jlimit (PianoRoll::kAltoMin, PianoRoll::kAltoObjetivo,
-                                              paraLienzo / filasPiano);
-            wanted = sinLienzo + filasPiano * porFila;
+                                              paraFilas / filasPiano);
+            wanted = sinLienzo + PianoRoll::kRegla + filasPiano * porFila;
         }
 
         auto inner = sheetFromBottom (seqSheet, wanted);
@@ -6502,7 +6507,7 @@ void MainComponent::resized()
                 const int alto = inner.getHeight() - filasT * Metrics::hit
                                - juce::jmax (0, filasT - 1) * Metrics::halfGap
                                - (filasT > 0 ? Metrics::sm : 0);
-                const bool cabe = alto / PianoRoll::kFilasMax >= kSueloNota;
+                const bool cabe = (alto - PianoRoll::kRegla) / PianoRoll::kFilasMax >= kSueloNota;
                 pianoVerBtn.setVisible (cabe);
                 if (! cabe)
                 {
@@ -6826,7 +6831,7 @@ void MainComponent::resized()
             const int costeBarras = BarraVista::kGrueso + Metrics::halfGap;
             const bool hayBarraH = engine.getPatternLength (selectedPattern) > pianoCols
                                 && inner.getHeight() > Metrics::hit * 3
-                                && (inner.getHeight() - costeBarras) / pianoGrid.getFilas()
+                                && (inner.getHeight() - costeBarras - PianoRoll::kRegla) / pianoGrid.getFilas()
                                        >= Metrics::celdaNota;
             seqBarra.setVisible (hayBarraH);
             if (hayBarraH)
@@ -6842,7 +6847,11 @@ void MainComponent::resized()
             pianoBarra.setVisible (pianoHayBarraVert);
             if (pianoHayBarraVert)
             {
-                pianoBarra.setBounds (Lang::takeEnd (inner, BarraVista::kGrueso));
+                //  Debajo de la regla: la barra recorre el tono y la regla es
+                //  tiempo. Una barra que empieza en la regla se lee como si
+                //  la regla tambien se desplazara con ella.
+                pianoBarra.setBounds (Lang::takeEnd (inner, BarraVista::kGrueso)
+                                          .withTrimmedTop (PianoRoll::kRegla));
             }
             else
             {
