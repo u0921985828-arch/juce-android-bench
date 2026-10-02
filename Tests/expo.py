@@ -1281,6 +1281,67 @@ def judge_anatomia(rows, size, lang, sheet, piezas):
 #  rectangulo y tiene que llenarlo. Lo dice la APP -el maquetado apunta el que
 #  se dio y la union de lo que puso- y no un script adivinando que filas son
 #  hermanas.
+#  CADA TEXTO LLEVA SU MARCO DE AIRE.
+#
+#  Del telefono, con la foto de EXPORTAR en la que la segunda linea de la ayuda
+#  pisaba el filo del panel de las carpetas: «el error es que el texto no tiene
+#  un marco, con lo cual la seccion de los cuatro botones no entiende que tiene
+#  que respetar ese aire. Habria que revisarlo, que cada texto tenga su marco de
+#  aire». TAPADO caza un rotulo DEBAJO de una tapa, con dos pixeles de
+#  tolerancia; lo que no cazaba nadie es un rotulo a CERO de una tapa o de un
+#  panel, que no esta tapado y se lee igual de mal: pegado a una caja es parte
+#  de la caja. El marco es `Metrics::xs`, que `Tests/maqueta.md` llama «el aire
+#  de fila»: lo minimo que separa dos cosas para que se lean como dos.
+#
+#  Se mira por la VERTICAL y contra lo que se cruza por la horizontal, como
+#  mide_aire, y contra el filo DIBUJADO de la tapa -con el descuento `aire` que
+#  la app publica-, que es el que el ojo ve. Un rotulo DENTRO de un panel no
+#  esta pegado a el: es suyo. Un rotulo que se solapa con una tapa es de TAPADO,
+#  pero TAPADO perdona dos pixeles de solape, asi que PEGADO empieza en MENOS
+#  dos: entre las dos reglas no puede quedar un hueco por el que pase un texto.
+#
+#  Medido. La primera corrida saco la ruta del proyecto a cero de la caja del
+#  nombre y RELOJ a dos del panel de CUENTA. Y el binario roto a proposito -el
+#  `sm` de EXPORTAR quitado- dejo la ayuda a 2 px DENTRO del panel de las
+#  carpetas, justo lo que TAPADO perdona: con la regla pidiendo cero o mas no
+#  salio ninguna, y por eso el arranque esta en -2. Con el aire puesto, ninguna.
+AIRE_TEXTO = 4
+PEGADO_DESDE = -2
+
+
+def judge_pegado(rows, size, lang, sheet):
+    out = []
+    rot = [r for r in rows if r.get("rotulo") and r.get("w", 0) > 0 and r.get("h", 0) > 0]
+    if not rot:
+        return out
+    cajas = []
+    for r in rows:
+        if r.get("path") and r.get("hit") and r.get("w", 0) > 0 and r.get("h", 0) > 0:
+            ar = r.get("aire", 0)
+            cajas.append((r.get("capa", 0), r["x"], r["y"] + ar, r["x"] + r["w"],
+                          r["y"] + r["h"] - ar, r.get("text") or r["path"].rsplit("/", 1)[-1]))
+        elif r.get("panel") and r.get("w", 0) > 0 and r.get("h", 0) > 0:
+            cajas.append((r.get("capa", 0), r["x"], r["y"], r["x"] + r["w"],
+                          r["y"] + r["h"], "panel " + (r.get("nombre") or "")))
+    for r in rot:
+        rx0, ry0, rx1, ry1 = r["x"], r["y"], r["x"] + r["w"], r["y"] + r["h"]
+        for capa, cx0, cy0, cx1, cy1, quien in cajas:
+            if capa != r.get("capa", 0):
+                continue
+            if min(rx1, cx1) - max(rx0, cx0) <= 0:
+                continue
+            #  Dentro de la caja no es pegado: es suyo.
+            if ry0 >= cy0 and ry1 <= cy1:
+                continue
+            hueco = max(cy0 - ry1, ry0 - cy1)
+            if PEGADO_DESDE <= hueco < AIRE_TEXTO:
+                out.append(("PEGADO", f"{size}/{lang}/{sheet or 'face'}",
+                            f'"{r["rotulo"]}" a {hueco} px de "{quien}" (pide {AIRE_TEXTO})',
+                            AIRE_TEXTO - hueco))
+                break
+    return out
+
+
 def judge_fila(rows, size, lang, sheet):
     out = []
     for r in rows:
@@ -1571,6 +1632,7 @@ def _corre_y_juzga(combo, casa):
                                            + judge_celda(rows, size, lang, sheet)
                                            + judge_fila(rows, size, lang, sheet)
                                            + judge_cabecera(rows, size, lang, sheet)
+                                           + judge_pegado(rows, size, lang, sheet)
                                            + chips,
             (rows if lang in ("es", "en") else []), (puestos, pintados),
             mide_aire(rows, quien, sheet, size), quien, chipsVistos,   # (visto, crudo)
@@ -1867,7 +1929,7 @@ def main():
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
                          "CHIPS", "ANATOMIA", "TARJETA", "SOBRA", "PEQUENO", "APRETADO",
-                         "CRASH") if juzgado.get(k)]
+                         "PEGADO", "CRASH") if juzgado.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

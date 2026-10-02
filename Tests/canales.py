@@ -482,16 +482,29 @@ def main():
     #     de JUCE sin casilla-: tinta 0.137 y letra 0.119, que es la pista de
     #     cuatro pixeles cruzando la mitad derecha; por eso la letra pide 0.2
     #     y no un «algo»: con 0.03 el carril pelado pasaba.
+    #
+    #     Y LA BARRA ES MAS FINA QUE SU CELDA, del telefono tras verla a toda
+    #     la fila: «las barras mas finas no?». La app mide la BANDA pintada
+    #     -filas de pixeles con tinta- y cuenta tinta y cifra dentro de ella.
+    #     La celda sigue en 40 (lo que se toca); la banda tiene que ser por lo
+    #     menos 12 px mas baja que la celda (se ve fina) y de 16 para arriba
+    #     (cuatro carriles de JUCE: se ve). Roto a proposito -grosorFader a la
+    #     celda entera- la banda vale 40 y esta regla FALLA; la de la tinta
+    #     no, que una barra gorda tambien esta llena.
     tinta  = r.get ("fader_tinta", -1.0)
     letra  = r.get ("fader_letra", -1.0)
     cajas  = r.get ("fader_cajas", -1)
     alto   = r.get ("fader_alto", 0)
     ancho  = r.get ("fader_ancho", 0)
-    print ("fader    %dx%d px: tinta a 0 dB %.2f, letra a -60 dB %.2f, casillas aparte %d"
-           % (ancho, alto, tinta, letra, cajas))
+    banda  = r.get ("fader_banda", -1)
+    print ("fader    %dx%d px, banda de %d: tinta a 0 dB %.2f, letra a -60 dB %.2f, casillas aparte %d"
+           % (ancho, alto, banda, tinta, letra, cajas))
     if tinta < 0.6:
-        malas.append ("el fader del pad 0 a 0 dB solo pinta el %.0f%% de su celda: "
+        malas.append ("el fader del pad 0 a 0 dB solo pinta el %.0f%% de su banda: "
                       "sigue siendo un carril de cuatro pixeles" % (tinta * 100.0))
+    if banda < 16 or banda > alto - 12:
+        malas.append ("la banda del fader del pad 0 mide %d px en una celda de %d: tiene que "
+                      "verse fina (hasta %d) y verse (desde 16)" % (banda, alto, alto - 12))
     if letra < 0.2:
         malas.append ("el fader del pad 0 a -60 dB no lleva cifra dentro (%.3f de la "
                       "mitad derecha no es fondo)" % letra)
@@ -500,6 +513,81 @@ def main():
                       "la cifra va dentro de la barra" % cajas)
     if alto < 36:
         malas.append ("el fader del pad 0 mide %d px de alto y el dedo pide 36" % alto)
+
+    #  10. CADA FADER LLEVA DENTRO SU AGUJA, Y LA AGUJA DICE LO QUE SUENA.
+    #
+    #     Del telefono, con las barras ya gordas: «que se vea el relleno menos,
+    #     con menos opacidad y que se vea constante el vumetro en cada canal,
+    #     como pega». La app abre la mesa, dispara el pad 0, bombea audio por
+    #     el aparato del banco y mide: el pico que el motor dice del pad 0 y
+    #     del pad 1 -que no ha sonado y tiene que dar CERO, o la mesa estaria
+    #     ensenando el mismo nivel en las dieciseis barras-, a cuantos pixeles
+    #     de su barra queda la aguja del pad 0, y que parte de esos pixeles
+    #     cambia de color al pintarla: el fader a -60 dB con la aguja puesta
+    #     contra el mismo fader con la aguja a cero.
+    #
+    #     Roto a proposito -sin dibujar la aguja en el ramal "fader"- la tinta
+    #     cae a 0.000 con el pico y la aguja intactos: la regla de la tinta es
+    #     la que ve el dibujo, las otras dos ven el motor y la cuenta.
+    vuPad0 = r.get ("vu_pad0", -1.0)
+    vuPad1 = r.get ("vu_pad1", -1.0)
+    vuAguja = r.get ("vu_aguja", -1)
+    vuTinta = r.get ("vu_tinta", -1.0)
+    print ("aguja    pad 0 a %.3f y pad 1 a %.3f: aguja de %d px, tinta %.3f"
+           % (vuPad0, vuPad1, vuAguja, vuTinta))
+    if vuPad0 < 0.05:
+        malas.append ("el pad 0 suena y el motor dice un pico de %.3f para la mesa" % vuPad0)
+    if vuPad1 != 0.0:
+        malas.append ("el pad 1 no ha sonado y el motor le da un pico de %.3f" % vuPad1)
+    if vuAguja < 8:
+        malas.append ("la aguja del fader del pad 0 queda a %d px: no se ve" % vuAguja)
+    if vuTinta < 0.5:
+        malas.append ("la aguja del fader del pad 0 solo cambia el %.0f%% de sus pixeles: "
+                      "no se dibuja" % (vuTinta * 100.0))
+
+    #  9. LA BARRA DE LA MESA ES DE LA CASA, Y NO SE COBRA DE LAS FILAS.
+    #
+    #     Del telefono, dos veces. Primero «que no se coma espacio a la
+    #     derecha»: el Viewport se restaba los ocho pixeles de su barra del
+    #     ancho de las filas. Luego, con la de JUCE a cuatro en el margen: «la
+    #     barra que aparece en el mixer no deberia ser la de JUCE, deberia ser
+    #     hecha en la app, como alguna barra mas que aparece por ahi». Ahora
+    #     es `BarraVista`, la del piano y la cancion, en vertical y contando
+    #     desde arriba: un dedo de ancho al final de las filas, a `halfGap` de
+    #     la S de cada fila, y acaba donde acaba la cruz del titulo.
+    #
+    #     Se miden cinco cosas: que la de JUCE mida CERO, que la de la casa
+    #     este (hay dieciseis filas en una tarjeta de trece) y mida un dedo,
+    #     el hueco entre la S y la barra, el borde contra la cruz, y que la
+    #     barra MUEVA: un toque en su pie pasa una pagina de filas y uno en la
+    #     cabeza vuelve a la primera, por el mismo `mouseDown` que el dedo.
+    #     Medido en 412x915: JUCE 0, barra 40, hueco 4, borde 0, salta 13
+    #     filas, vuelve a 0. Roto a proposito -la barra contando desde abajo
+    #     como el piano- el toque en el pie no mueve nada: salta 0.
+    vista = r.get ("mesa_vista", -1)
+    filas = r.get ("mesa_filas", -2)
+    barra = r.get ("mesa_barra", -1)
+    borde = r.get ("mesa_borde", -1)
+    barraApp = r.get ("mesa_barra_app", -1)
+    hueco = r.get ("mesa_hueco", -1)
+    salta = r.get ("mesa_salta", -1)
+    vuelve = r.get ("mesa_vuelve", -1)
+    print ("mesa     el Viewport ensena %d px y las filas miden %d; barra de JUCE %d px, barra de la "
+           "casa %d px a %d de la S; acaba a %d px de la cruz; un toque en el pie salta %d filas y "
+           "uno en la cabeza vuelve a %d" % (vista, filas, barra, barraApp, hueco, borde, salta, vuelve))
+    if barra != 0:
+        malas.append ("la mesa sigue ensenando la barra de JUCE, de %d px" % barra)
+    if barraApp < 36:
+        malas.append ("la barra de la casa de la mesa mide %d px: tiene que estar (hay dieciseis "
+                      "filas) y medir un dedo" % barraApp)
+    if not 1 <= hueco <= 8:
+        malas.append ("la S de la primera fila queda a %d px de la barra: pide aire, y no mas de sm" % hueco)
+    if borde != 0:
+        malas.append ("la barra acaba %d px antes que la cruz del titulo" % borde)
+    if salta < 1:
+        malas.append ("un toque en el pie de la barra no mueve la mesa (salta %d filas)" % salta)
+    if vuelve != 0:
+        malas.append ("un toque en la cabeza de la barra no vuelve a la primera fila (queda en %d px)" % vuelve)
 
     print()
     if malas:

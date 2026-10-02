@@ -1039,6 +1039,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  el dedo y el bucle lo consulta sesenta y cuatro veces.
     const int miraCan = canalMirado.load (std::memory_order_relaxed);
     float picoCan = 0.0f;
+    //  Y si la MESA esta a la vista, los sesenta y cuatro: ver `miraMesa`.
+    const bool miraMesa = mesaMirada.load (std::memory_order_relaxed);
+    float picoPad[kNumPads];
+    for (auto& x : picoPad) x = 0.0f;
 
     for (int p = 0; p < kNumPads; ++p)
     {
@@ -1087,7 +1091,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  Y si es el canal que la cara esta MIRANDO, el pad se aparta aunque
         //  no mande a nadie: no se puede medir lo que ya se sumo con otros
         //  quince. Ver `miraCanal` — son los pads de UN canal, no los 64.
-        const bool medido = (canal == miraCan);
+        const bool medido = (canal == miraCan) || miraMesa;
         canGain[p] = smCan;
         canPan[p]  = en ? canalPan[(size_t) canal].load (std::memory_order_relaxed)   : 0.0f;
         canAnc[p]  = en ? canalAncho[(size_t) canal].load (std::memory_order_relaxed) : 1.0f;
@@ -1135,7 +1139,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             }
             dryGain[p]  = smCan;
             canalDePad[p] = canal;
-            padSplit[p] = filtered || canalHot || std::abs (smCan - 1.0f) > 0.0005f;
+            //  Y MEDIDO TAMBIEN AQUI: un pad sin canal -como nacen los
+            //  sesenta y cuatro- va derecho al master, y con la mesa a la
+            //  vista su barra tiene que decir lo que pone igual que las demas.
+            //  Sin `medido` tomaba el camino corto y su vumetro se quedaba en
+            //  el suelo con el pad sonando.
+            padSplit[p] = filtered || canalHot || std::abs (smCan - 1.0f) > 0.0005f || medido;
             smSendHot[(size_t) p] = hot;
             continue;
         }
@@ -1301,7 +1310,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  suena SOLO -para eso existe padScratch- y por el fader del canal
             //  ya ha pasado. Un barrido por pad medido y por bloque, y solo de
             //  los pads de UN canal. Ver `miraCanal`.
-            if (miraCan >= 0 && (int) padCanal[(size_t) p].load (std::memory_order_relaxed) == miraCan)
+            //  Y EL DE CADA PAD si la mesa mira, con el mismo barrido: se
+            //  hace UNA vez y sirve a los dos. Ver `miraMesa`.
+            const bool delCanal = miraCan >= 0
+                               && (int) padCanal[(size_t) p].load (std::memory_order_relaxed) == miraCan;
+            if (delCanal || miraMesa)
             {
                 float mn = 0.0f, mx = 0.0f;
                 for (int ch = 0; ch < busChans; ++ch)
@@ -1311,8 +1324,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     mn = juce::jmin (mn, r.getStart());
                     mx = juce::jmax (mx, r.getEnd());
                 }
-                picoCan = juce::jmax (picoCan,
-                                      juce::jmax (std::abs (mn), std::abs (mx)) * canGain[p]);
+                const float pico = juce::jmax (std::abs (mn), std::abs (mx)) * canGain[p];
+                if (delCanal) picoCan = juce::jmax (picoCan, pico);
+                if (miraMesa) picoPad[p] = juce::jmax (picoPad[p], pico);
             }
 
             if (dryGain[p] > 0.0005f)
@@ -4339,6 +4353,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             prev = canalPico.load (std::memory_order_relaxed);
             if (picoCan > prev) canalPico.store (picoCan, std::memory_order_relaxed);
         }
+        //  Y los de la mesa, pad a pad y solo los que han sonado: un pad en
+        //  silencio no escribe nada, y la aguja de la cara ya sabe caer sola.
+        if (miraMesa)
+            for (int p = 0; p < kNumPads; ++p)
+                if (picoPad[p] > 0.0f)
+                {
+                    prev = padPico[(size_t) p].load (std::memory_order_relaxed);
+                    if (picoPad[p] > prev) padPico[(size_t) p].store (picoPad[p], std::memory_order_relaxed);
+                }
     }
 }
 

@@ -88,6 +88,19 @@ def main():
     if [f["n"] for f in lista] != sorted(f["n"] for f in lista):
         fallos.append("FALLA  ordenados por nombre no salen en el orden de los pads")
 
+    # 5. Y EN LA CARPETA QUE SE ELIGE. Del telefono: «elegir la carpeta en la
+    #    que se alojan los proyectos guardados y kits y demas». auditKit apunta
+    #    BANCO_KITS antes de guardar; el kit tiene que caer ahi y, olvidada la
+    #    eleccion, kits() tiene que volver a Kits/. El binario de antes no
+    #    vuelca las dos claves; roto a proposito -kits() sin pasar por la
+    #    preferencia- `elegida` vale 0 y `vuelve` 1.
+    if d.get("elegida", -1) != 1:
+        fallos.append(f'FALLA  con la carpeta de kits elegida el kit cayo en {d["carpeta"]}, '
+                      f'no en BANCO_KITS (elegida={d.get("elegida", "sin clave")})')
+    if d.get("vuelve", -1) != 1:
+        fallos.append(f'FALLA  olvidada la eleccion, la carpeta de kits no vuelve a Kits/ '
+                      f'(vuelve={d.get("vuelve", "sin clave")})')
+
     # 3. Ninguno vacio.
     for f in lista:
         if f["bytes"] < MIN_BYTES:

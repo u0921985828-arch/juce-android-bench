@@ -48,6 +48,18 @@ public:
     }
     bool esVertical() const noexcept { return vertical; }
 
+    //  Y HACIA DONDE CRECE. El piano cuenta desde ABAJO -la nota 0 es la
+    //  grave, y la grave esta abajo- y la mesa cuenta desde ARRIBA: la fila 0
+    //  es la primera de la lista. Una barra vertical que solo supiera contar
+    //  desde abajo pondria el pulgar de la mesa en el pie con la lista en la
+    //  cabeza. Por defecto, como siempre fue: desde abajo.
+    void ponHaciaAbajo (bool si) noexcept
+    {
+        if (si == haciaAbajo) return;
+        haciaAbajo = si;
+        repaint();
+    }
+
     //  El estado entero de una vez: sin esto habria tres llamadas y un instante
     //  en el que `primero` esta acotado contra un `total` que ya no es el suyo.
     void ponRango (int primeroNuevo, int visiblesNuevo, int totalNuevo)
@@ -123,7 +135,7 @@ public:
         if (cabezal >= 0 && cabezal < total)
         {
             const float t = (float) cabezal / (float) total;
-            const float x = vertical ? pista.getY() + pista.getHeight() * (1.0f - t)
+            const float x = vertical ? pista.getY() + pista.getHeight() * (haciaAbajo ? t : 1.0f - t)
                                      : pista.getX() + pista.getWidth() * t;
             g.setColour (ZatiColours::playhead.withAlpha (0.85f));
             if (vertical) g.fillRect (r.getX() + 2.0f, x - 1.0f, r.getWidth() - 4.0f, 2.0f);
@@ -198,7 +210,7 @@ public:
         //  un pixel son varios pasos y un roce se lleva la vista al otro lado
         //  de la cancion.
         agarrePx = -1.0f;
-        const bool adelante = vertical ? (pos < ini) : (pos > fin);
+        const bool adelante = (vertical && ! haciaAbajo) ? (pos < ini) : (pos > fin);
         mueve (primero + (adelante ? visibles : -visibles));
     }
 
@@ -216,7 +228,7 @@ public:
         //  dedo son dos de recorrido.
         const float porPx = (float) (total - visibles) / libre;
         const float d = (pos - agarrePx) * porPx;
-        mueve (agarrePri + (int) std::lround (vertical ? -d : d));
+        mueve (agarrePri + (int) std::lround ((vertical && ! haciaAbajo) ? -d : d));
     }
 
     void mouseUp (const juce::MouseEvent&) override { agarrePx = -1.0f; }
@@ -243,12 +255,13 @@ private:
                                        largo * (float) visibles / (float) total);
         const int   rec = juce::jmax (1, total - visibles);
         const float t = (float) primero / (float) rec;
-        const float x = (largo - lp) * (vertical ? (1.0f - t) : t);
+        const float x = (largo - lp) * ((vertical && ! haciaAbajo) ? (1.0f - t) : t);
         return vertical ? juce::Rectangle<float> (r.getX(), r.getY() + x, r.getWidth(), lp).reduced (2.0f, 0.0f)
                         : juce::Rectangle<float> (r.getX() + x, r.getY(), lp, r.getHeight()).reduced (0.0f, 2.0f);
     }
 
     bool  vertical = false;
+    bool  haciaAbajo = false;
     int   primero = 0, visibles = 1, total = 1, cabezal = -1;
     float agarrePx = -1.0f;
     int   agarrePri = 0;

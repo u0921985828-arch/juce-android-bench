@@ -2302,6 +2302,27 @@ public:
     //  arriba: la balistica es de la cara y el motor solo dice el pico.
     float readCanalPico() noexcept { return canalPico.exchange (0.0f, std::memory_order_relaxed); }
 
+    //  Y LOS SESENTA Y CUATRO A LA VEZ, PARA LA MESA.
+    //
+    //  Del telefono, con las barras ya gordas: «que se vea constante el
+    //  vumetro en cada canal, como pega». La mesa ensena los dieciseis pads de
+    //  una pagina -o los canales- y cada fader lleva dentro su nivel, asi que
+    //  aqui si hay que medir TODOS: no es la cuenta de `miraCanal`, que mide
+    //  uno porque la cara ensena uno. El precio es el de siempre, que los pads
+    //  tomen el camino LARGO -`padScratch`- mientras la mesa esta a la vista,
+    //  y se paga solo entonces: con la mesa cerrada la cara apaga esto como
+    //  apaga `miraCanal`. Medido en Tests/Cpu.cpp contra la fila de al lado.
+    //
+    //  Max |muestra| de cada pad desde la ultima lectura, ya por el fader de
+    //  su canal: lo que el pad PONE en el master, que es lo que la barra dice.
+    void miraMesa (bool on) noexcept { mesaMirada.store (on, std::memory_order_relaxed); }
+    bool getMesaMirada() const noexcept { return mesaMirada.load (std::memory_order_relaxed); }
+    float readPadPico (int p) noexcept
+    {
+        return (p >= 0 && p < kNumPads) ? padPico[(size_t) p].exchange (0.0f, std::memory_order_relaxed)
+                                        : 0.0f;
+    }
+
     // --- Offline bounce (message thread) --------------------------------
     //  An export does NOT render through this engine. It builds a SECOND
     //  engine, copies the whole machine into it and drives that one from a
@@ -3967,6 +3988,9 @@ private:
     //  Ver `miraCanal`: cual se mide y cuanto ha dado desde que se leyo.
     std::atomic<int>   canalMirado { -1 };
     std::atomic<float> canalPico   { 0.0f };
+    //  Ver `miraMesa`: si la mesa esta a la vista, y el pico de cada pad.
+    std::atomic<bool>  mesaMirada  { false };
+    std::array<std::atomic<float>, (size_t) kNumPads> padPico {};
     //  Bit i puesto = el pad i manda a algun efecto. Ver refrescaSendMask.
     std::atomic<std::uint64_t> padSendMask { 0 };
     static_assert (kNumPads <= 64, "padSendMask es de 64 bits");

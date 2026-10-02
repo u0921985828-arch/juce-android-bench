@@ -838,7 +838,7 @@ namespace
         { "PROYECTOS", {
             "GUARDAR mete el proyecto con sus muestras en la biblioteca",
             "ABRIR y NUEVO avisan antes de tirar lo que no esta guardado",
-            "GUARDAR KIT guarda solo los sonidos, para llevarlos a otro proyecto",
+            "GUARDAR KIT guarda solo los sonidos en la carpeta KITS, para otro proyecto",
             "BORRAR quita un proyecto de la lista",
             "COMPARTIR, en EXPORTAR, manda el ultimo rebote a otra app",
             nullptr }, 19, 19 },

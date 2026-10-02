@@ -428,6 +428,12 @@ int main()
         fila ("16 pads, sin mirar ningun canal", corre (e, buf, 2000));
         e.miraCanal (0);
         fila ("16 pads, los 16 en el canal MIRADO", corre (e, buf, 2000));
+        //  Y con la MESA a la vista, que mide los sesenta y cuatro: el mismo
+        //  camino largo para los dieciseis que suenan y un barrido por pad.
+        //  Ver AudioEngine::miraMesa. Se paga solo con la mesa abierta.
+        e.miraCanal (-1);
+        e.miraMesa (true);
+        fila ("16 pads, con la MESA a la vista", corre (e, buf, 2000));
     }
 
     std::printf ("\n-- el transporte ----------------------------------------------------\n");

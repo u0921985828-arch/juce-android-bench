@@ -1162,8 +1162,10 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     //  `resized()` avanzaba `Metrics::hit`: diez pixeles de desfase entre las
     //  dos pasadas sobre el MISMO rectangulo, y el bloque pintado empezaba
     //  arriba de donde la ficha le habia reservado sitio. Con el renglon
-    //  entero, los 96 px que el maquetado reserva son exactamente los 96 que
-    //  este pintor dibuja.
+    //  entero, los px que el maquetado reserva son exactamente los que este
+    //  pintor dibuja: `kExportBloque`, sumado de sus partes en el .h -el 96
+    //  escrito a mano se quedo corto en seis cuando la ayuda paso a dos
+    //  lineas, y la segunda pisaba el panel de las carpetas-.
     pintaTitulo (g, antesDe (centraEnRenglon (inner.removeFromTop (Metrics::hit)
                                                    .withHeight (Metrics::bandaTitulo)),
                              exportCloseButton), T ("EXPORTAR"));
@@ -1178,7 +1180,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
 
     auto line = [&g, &inner] (const juce::String& k, const juce::String& v, juce::Colour vc)
     {
-        auto r = inner.removeFromTop (17);
+        auto r = inner.removeFromTop (kExportLinea);
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.08f));
         g.drawText (k, Lang::takeStart (r, 76), Lang::start());
@@ -1247,15 +1249,22 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
         g.setColour (exportOk ? ZatiColours::accent : ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
         g.drawFittedText (exportOk ? T ("listo: %1", exportStatus) : exportStatus,
-                          inner.removeFromTop (24), Lang::start (juce::Justification::top), 2);
+                          inner.removeFromTop (kExportAyuda), Lang::start (juce::Justification::top), 2);
     }
     else
     {
         g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
-        g.drawFittedText (T ("MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
-                             "por pad, para mezclar fuera."),
-                          inner.removeFromTop (26), Lang::start (juce::Justification::top), 2);
+        //  Y APUNTADA, para que `expo.py` la vea: TAPADO mira cada rotulo
+        //  apuntado contra las tapas de su capa, y este texto a pelo con
+        //  `drawFittedText` era invisible para el banco -que es como seis
+        //  pixeles de solape con la fila REBOTE/PROYECTOS llegaron a una foto
+        //  sin que ninguna de las reglas dijera nada-.
+        const auto ayuda = T ("MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
+                              "por pad, para mezclar fuera.");
+        auto caja = inner.removeFromTop (kExportAyuda);
+        apunta (g, caja, ayuda, "ayuda", 0.0f, 2, 1.0f);
+        g.drawFittedText (ayuda, caja, Lang::start (juce::Justification::top), 2);
     }
 }
 

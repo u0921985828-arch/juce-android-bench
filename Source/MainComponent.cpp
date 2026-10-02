@@ -1747,12 +1747,14 @@ MainComponent::MainComponent()
         //  de donde cae lo que sale. Se intentaron en AJUSTES · PROYECTOS dos
         //  veces y las dos salieron medidas y mal (MARCO 186, TAPADO 25 en un
         //  caso; TRUNC 4, SQUEEZE 6 en el otro).
-        const std::pair<juce::TextButton*, ProjectStore::Carpeta> dosCarpetas[2] =
+        //  Y LA TERCERA, LOS KITS, por el mismo gesto y la misma ficha.
+        const std::pair<juce::TextButton*, ProjectStore::Carpeta> tresCarpetas[3] =
         {
             { &projDirBtn,    ProjectStore::Carpeta::proyectos },
-            { &samplesDirBtn, ProjectStore::Carpeta::samples   }
+            { &samplesDirBtn, ProjectStore::Carpeta::samples   },
+            { &kitsDirBtn,    ProjectStore::Carpeta::kits      }
         };
-        for (const auto& par : dosCarpetas)
+        for (const auto& par : tresCarpetas)
         {
             auto* b = par.first;
             const auto que = par.second;
@@ -3614,9 +3616,19 @@ MainComponent::MainComponent()
     }
 
     mixScroll.setViewedComponent (&mixRows, false);
-    mixScroll.setScrollBarsShown (true, false);
-    mixScroll.setScrollBarThickness (8);
+    //  SIN LA BARRA DE JUCE. Estuvo a ocho pixeles cobrados de las filas,
+    //  luego a cuatro en el margen como un indicio, y del telefono llego que
+    //  no es un tema de la app: «deberia ser hecha en la app, como alguna
+    //  barra mas que aparece por ahi». La lista se sigue arrastrando por las
+    //  filas -eso lo hace el Viewport- y quien dice donde esta y la mueve a
+    //  pagina es `mixBarra`, la barra de la casa. Ver sincronizaMixBarra.
+    mixScroll.setScrollBarsShown (false, false);
     mixSheet.addAndMakeVisible (mixScroll);
+    mixBarra.ponEje (true);
+    mixBarra.ponHaciaAbajo (true);
+    mixBarra.onMueve = [this] (int primero) { mixScroll.setViewPosition (0, primero * mixFilaAlto); };
+    mixScroll.onVista = [this] { sincronizaMixBarra(); };
+    mixSheet.addAndMakeVisible (mixBarra);
 
     //  THE MIXER PAGES BY BANK, and it has to now. It listed one strip per pad
     //  and the machine went from sixteen pads to sixty-four: sixty-four strips
@@ -5014,6 +5026,7 @@ void MainComponent::ponIconos()
         { &exportDirBtn, Iconos::Id::carpeta },
         { &projDirBtn, Iconos::Id::carpeta },
         { &samplesDirBtn, Iconos::Id::carpeta },
+        { &kitsDirBtn, Iconos::Id::carpeta },
 
         //  El navegador. Cinco tapas en una fila, cinco dibujos distintos: si
         //  tres de ellas llevaran la misma carpeta, el dibujo no diria nada
@@ -10954,10 +10967,14 @@ void MainComponent::retranslateUi()
 
     browseLoadButton  .setButtonText (T ("CARGAR"));
     browseUseDirBtn   .setButtonText (T ("USAR ESTA CARPETA"));
-    exportDirBtn      .setButtonText (T ("CAMBIAR"));
+    //  REBOTE y no CAMBIAR: en el panel de las cuatro carpetas cada tapa
+    //  dice QUE carpeta es; «cambiar» era de cuando estaba sola al lado de la
+    //  linea del destino.
+    exportDirBtn      .setButtonText (T ("REBOTE"));
     canalNingunoBtn   .setButtonText (T ("SIN CANAL"));
     projDirBtn        .setButtonText (T ("PROYECTOS"));
     samplesDirBtn     .setButtonText (T ("SONIDOS"));
+    kitsDirBtn        .setButtonText (T ("KITS"));
     browseKitButton   .setButtonText (T ("CARGAR KIT"));
     //  EXTRAS Y NO "INSTRUMENTOS": es la puerta del CONTENIDO -los 384 de
     //  SINTES, los 64 de fabrica y los packs que haya en el disco-, y al lado
@@ -12013,6 +12030,15 @@ void MainComponent::usarCarpetaDeExport()
         case ProjectStore::Carpeta::samples:
             openSheet (exportSheet, setButton);
             status.setText (T ("Los sonidos salen de %1", elegida.getFileName()),
+                            juce::dontSendNotification);
+            break;
+
+        case ProjectStore::Carpeta::kits:
+            //  Y SE CREA AL ELEGIRLA, como hace MIS KITS al llegar: una tapa
+            //  que apunta a una carpeta que no existe lleva a ninguna parte.
+            ProjectStore::ensureDirectory (ProjectStore::kits());
+            openSheet (exportSheet, setButton);
+            status.setText (T ("Los kits viven en %1", elegida.getFileName()),
                             juce::dontSendNotification);
             break;
     }
@@ -20852,6 +20878,91 @@ void MainComponent::watchAudioDevice()
         pideEncargoAudio ([this] { deviceManager.restartLastAudioDevice(); keepChosenRate(); });
 }
 
+//  LA BARRA DE LA MESA DICE DONDE ESTA LA VISTA, en filas: la primera que se
+//  ve, cuantas caben y cuantas hay. Se llama al maquetar y cada vez que el
+//  Viewport se mueve -la lista se arrastra por las filas-; la barra solo mueve
+//  el Viewport desde `onMueve`, asi que no hay bucle: `ponRango` no avisa.
+void MainComponent::sincronizaMixBarra()
+{
+    const int alto = juce::jmax (1, mixFilaAlto);
+    const int total = juce::jmax (1, mixRows.getHeight() / alto);
+    const int caben = juce::jmax (1, mixScroll.getMaximumVisibleHeight() / alto);
+    const int primera = (mixScroll.getViewPositionY() + alto / 2) / alto;
+    mixBarra.ponRango (primera, caben, total);
+}
+
+//  LAS AGUJAS DE LA MESA.
+//
+//  Del telefono, con las barras ya gordas: «ya que son faders gordos, que se vea
+//  el relleno menos, con menos opacidad y que se vea constante el vumetro en
+//  cada canal, como pega». El fader de cada pad lleva dentro su nivel -ver el
+//  ramal "fader" de ZatiLookAndFeel- y esto es lo que se lo da.
+//
+//  Se le dice al motor si mirar o no AQUI y en cada tick, como `miraCanal`: con
+//  la mesa cerrada el motor no mide nada y los pads vuelven al camino corto. Con
+//  la mesa abierta se lee el pico de cada pad, cae con la MISMA constante de
+//  tiempo que la aguja del master -una aguja es una constante de tiempo y no un
+//  factor por cuadro- y se convierte a pixeles de SU barra pasando por la misma
+//  escala del fader: un pad que pega a -9 dB pone su aguja donde esta el pomo
+//  de -9 dB. El canal es el mayor de sus pads, que es la cuenta que
+//  `readCanalPico` ya hacia para la cara; el master es la aguja del cristal.
+//
+//  Y SOLO SE REPINTA LA BARRA QUE SE HA MOVIDO UN PIXEL, y solo su banda:
+//  `Tests/cpu.py` mide ventanas por cuadro con la maquina sonando y la mesa
+//  abierta, y dieciseis faders enteros a sesenta por segundo son 0.19 ventanas
+//  por cuadro contra un tope de 0.05. Una aguja quieta no pide cuadro.
+void MainComponent::mideMesa (double dtMs, bool vista)
+{
+    engine.miraMesa (vista);
+    const float caida = (float) std::exp (-dtMs / kTauAgujaMs);
+    bool hayNivel = false;
+    for (int p = 0; p < kNumPads; ++p)
+    {
+        const float pico = vista ? engine.readPadPico (p) : 0.0f;
+        float& v = vuPad[(size_t) p];
+        v = juce::jmax (pico, v * caida);
+        if (v < 0.004f) v = 0.0f;
+        if (v > 0.0f) hayNivel = true;
+    }
+
+    //  La aguja en pixeles de la barra de ese fader, por su propia escala.
+    auto agujaDe = [] (juce::Slider& f, float nivel) -> int
+    {
+        if (nivel <= 0.0f || f.getWidth() <= 0) return 0;
+        const double prop = f.valueToProportionOfLength (juce::jlimit (f.getMinimum(), f.getMaximum(),
+                                                                        (double) dbFromGain (nivel)));
+        return (int) std::lround (juce::jlimit (0.0, 1.0, prop) * (double) f.getWidth());
+    };
+    //  Y la pone en el slider y repinta SOLO si cambio, y solo su banda.
+    auto pon = [] (juce::Slider& f, int& guardado, int px)
+    {
+        if (px == guardado) return;
+        guardado = px;
+        f.getProperties().set ("aguja", px);
+        if (! f.isShowing()) return;
+        const auto banda = f.getLocalBounds().withSizeKeepingCentre (
+                               f.getWidth(), juce::jmin (f.getHeight(), Metrics::grosorFader));
+        f.repaint (banda);
+    };
+
+    for (int p = 0; p < kNumPads; ++p)
+        if (auto* f = mixFaders[p])
+            pon (*f, mesaPx[(size_t) p], agujaDe (*f, vuPad[(size_t) p]));
+
+    for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+        if (auto* f = canFaders[c])
+        {
+            float nivel = 0.0f;
+            if (hayNivel)
+                for (int p = 0; p < kNumPads; ++p)
+                    if (vuPad[(size_t) p] > nivel && engine.getPadCanal (p) == c)
+                        nivel = vuPad[(size_t) p];
+            pon (*f, mesaCanalPx[(size_t) c], agujaDe (*f, nivel));
+        }
+
+    pon (masterFader, mesaMasterPx, agujaDe (masterFader, vista ? juce::jmax (vuL, vuR) : 0.0f));
+}
+
 //  EL APARATO DE SONIDO DEL BANCO. Ver la nota de `bancoSonando`.
 void MainComponent::bombeaAudioDePrueba()
 {
@@ -21770,6 +21881,11 @@ void MainComponent::pintaCuadro (double dtMs)
         vuCanal = juce::jmax (pc, vuCanal * caidaCan);
         if (vuCanal < 0.004f) vuCanal = 0.0f;
         if (animar) cristal.setCanal (canalVisto, vuCanal);
+
+        //  Y LAS AGUJAS DE LA MESA, si la mesa esta a la vista. La guardia
+        //  es la de `animar` con otra ficha: aqui lo que se ve es la mesa y
+        //  no la cara, y lo que no se quiere ver moverse tampoco se mueve.
+        mideMesa (dtMs, ! mixSheet.sheetBounds.isEmpty() && movimiento);
     }
 
     if (recordingActive)

@@ -1990,7 +1990,7 @@ void MainComponent::resized()
         //  error de diseno en pad settings». Son 2 x panelAireY porque el panel
         //  crece por arriba y por abajo. Ver Tests/paneles.py, regla AJENO.
         const int wantH = (padPage == padPageSound) ? 116 + altoContenidoPadSonido (anchoFila3)
-                        : (padPage == padPageTrim)  ? 436 + secH + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
+                        : (padPage == padPageTrim)  ? 436 + secH + Metrics::xs + 2 * (ZatiLookAndFeel::kTrimRow + Metrics::xs)
                                                     //  Y la fila de la muestra puede ser DOS desde que
                                                     //  esta RECORTAR: la misma pregunta que la coloca.
                                                     + (padMuestraWraps (sheetInnerW)
@@ -2531,6 +2531,12 @@ void MainComponent::resized()
         //  muestra que se esta mirando.
         const int gRecorte = abre();
         padSectionArea[0] = inner.removeFromTop (secH);   // pintado: RECORTE
+        //  Y SU AIRE: el rotulo acababa JUSTO donde empieza la regla de INICIO,
+        //  que en LTR no se nota porque el rotulo va a la izquierda y la regla
+        //  empieza a kTrimLabel, pero en arabe el rotulo va a la derecha, sobre
+        //  la regla, a cero pixeles de ella. Regla PEGADO de Tests/expo.py,
+        //  medido en 360x640/ar. Contado en wantH.
+        inner.removeFromTop (Metrics::xs);
         padSectionArea[1] = {};
         padSectionArea[2] = {};
 
@@ -2901,7 +2907,7 @@ void MainComponent::resized()
             ? Ficha::cromoDesnudo (tabsH, false)
                 + altoAudioInfo() + Metrics::xs
                 + Metrics::bandaSubtitulo + Metrics::hit + Metrics::sm
-                + (Metrics::hit + Metrics::xs) * kFilasChipsAudio + Metrics::sm
+                + (Metrics::hit + Metrics::xs) * kFilasChipsAudio + (Metrics::sm - Metrics::xs) + Metrics::sm
             : onAsp
               ? Ficha::cromoDesnudo (tabsH, false)
                   + (Metrics::hit + Metrics::xs) * 3 + filasExtra + Metrics::sm
@@ -2914,7 +2920,7 @@ void MainComponent::resized()
                   + Metrics::bandaSubtitulo
                   + kNumGestures * gestRowH + gestPieH + Metrics::sm
               : Ficha::cromoDesnudo (tabsH, true)
-                  + Metrics::hit + Metrics::bandaSubtitulo + Metrics::sm
+                  + Metrics::hit + Metrics::xs + Metrics::bandaSubtitulo + Metrics::sm
                   + Metrics::btn * 2 + Metrics::xs * 2 + Metrics::sm + listH + Metrics::sm;
 
         auto inner = sheetFromBottom (setSheet, wanted);
@@ -3154,6 +3160,7 @@ void MainComponent::resized()
                 //  que los chips: si no se restan aqui, el recuadro se queda
                 //  con su altura entera y la fila de PRUEBAS se cae por abajo.
                 const int chipsNecesarios = kFilasChipsAudio * (Metrics::hit + Metrics::xs)
+                                          + (Metrics::sm - Metrics::xs)
                                           + Metrics::xs + 14 + Metrics::hit + Metrics::sm;
                 audioInfoArea = inner.removeFromTop (
                                     juce::jlimit (0, altoAudioInfo(), inner.getHeight() - Metrics::xs - chipsNecesarios));
@@ -3209,6 +3216,15 @@ void MainComponent::resized()
             //  Tres chips, no cuatro: son SIN, 1 y 2 - `armaCuentaAtras` admite
             //  hasta ocho compases y ofrecer ocho seria ofrecer siete que nadie
             //  usa. El clic no tiene chip porque su tapa ya existe en CANCION.
+            //  LA FRONTERA ENTRE DOS GRUPOS ES `sm`, no el aire de fila. Las
+            //  cinco filas iban a `xs` todas, y el panel de CUENTA/MONITOR/
+            //  TOMAS crece `panelAireY` hacia arriba: el rotulo RELOJ quedaba
+            //  a DOS pixeles de un panel que no es el suyo, que es lo que
+            //  `PEGADO` canta en expo.py desde esta tanda -«que cada texto
+            //  tenga su marco de aire»-. Con aparato, ademas, los dos paneles
+            //  quedaban a cero, que es justo lo que Tests/maqueta.md dice de
+            //  una frontera a `xs`. Contado en `wanted` y en `chipsNecesarios`.
+            columnaChips.removeFromTop (Metrics::sm - Metrics::xs);
             cuentaRowArea = chipRow (cuentaButtons, Metrics::canalonSeccion, false);
             //  Y EL MONITOR, dos chips en la misma columna: es la otra mitad de
             //  «como se prepara una toma», y como la cuenta es una preferencia
@@ -3348,6 +3364,11 @@ void MainComponent::resized()
                 //  mesa y las de la cadena.
                 projNameBox.setBounds (r.reduced (Metrics::aireTapa, 0));
             }
+            //  Y LA RUTA CON SU MARCO DE AIRE: iba pegada a la caja del
+            //  nombre -cero pixeles- y un texto a cero de una caja se lee como
+            //  parte de la caja. Es la regla PEGADO de expo.py. Contado en
+            //  `wanted`.
+            inner.removeFromTop (Metrics::xs);
             projPathRowArea = inner.removeFromTop (Metrics::bandaSubtitulo);
             //  El nombre del proyecto y la ruta donde vive son UNA cosa; las
             //  tapas de abajo, otra. Sin panel, la caja de escribir se leia como
@@ -3406,10 +3427,11 @@ void MainComponent::resized()
         //  Y LA CABECERA PEDIDA ES LA QUE SE COLOCA: pedia 32 y dos lineas mas
         //  abajo coloca `Metrics::hit`, o sea ocho pixeles que la tarjeta no
         //  sabia que iba a ocupar.
-        //  Con las DOS filas de carpetas contadas, que es la leccion que esta
-        //  misma ficha ya lleva escrita dos veces aqui arriba: pedir sin una
-        //  fila y colocarla igual es como una fila se queda con altura cero.
-        auto inner = sheetFromBottom (exportSheet, Metrics::hit + 96 + Metrics::hit + Metrics::sm
+        //  Con las DOS filas de carpetas contadas -cuatro tapas a dos por
+        //  fila-, que es la leccion que esta misma ficha ya lleva escrita dos
+        //  veces aqui arriba: pedir sin una fila y colocarla igual es como una
+        //  fila se queda con altura cero.
+        auto inner = sheetFromBottom (exportSheet, Metrics::hit + kExportBloque + Metrics::sm
                                                      + (Metrics::hit + Metrics::sm) * 2
                                                      + Metrics::btn * 2 + Metrics::sm * 2
                                                      + Metrics::hit + Metrics::sm);
@@ -3418,64 +3440,43 @@ void MainComponent::resized()
         auto titleRow = inner.removeFromTop (Metrics::hit);
         exportCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
-        inner.removeFromTop (96);   // painted: source, length, destination, status
+        inner.removeFromTop (kExportBloque);   // pintado: fuente, duracion, pistas, destino y la ayuda
+        //  Y SU MARCO DE AIRE, que el texto pintado no tenia. Del telefono,
+        //  con la foto de la ayuda pisando el panel de las carpetas: «el error
+        //  es que el texto no tiene un marco, con lo cual la seccion de los
+        //  cuatro botones no entiende que tiene que respetar ese aire; que
+        //  cada texto tenga su marco de aire». El bloque pintado acababa
+        //  JUSTO donde empezaba el panel -cero pixeles- y un rotulo pegado a
+        //  una caja se lee como parte de la caja. Es la regla PEGADO de
+        //  `Tests/expo.py`, que desde esta tanda la pide para todos.
+        inner.removeFromTop (Metrics::sm);
 
-        //  CAMBIAR va arriba del todo de lo tocable, pegado a la linea pintada
-        //  que dice el destino: una tapa que cambia un dato tiene que estar al
-        //  lado del dato, no en la fila de las acciones finales - donde se leeria
-        //  como una tercera forma de exportar.
+        //  LAS CUATRO CARPETAS, A DOS POR FILA Y A TODO EL ANCHO.
+        //
+        //  Estaban en cuatro filas de UNA tapa a un tercio del ancho, pegadas
+        //  a la derecha: la de CAMBIAR se puso asi para quedar al lado de la
+        //  linea pintada del destino, y las tres que llegaron despues copiaron
+        //  el reparto. El resultado, visto en la foto desde el telefono: «los
+        //  cuatro botones a la derecha y el hueco a la izquierda, ¿por que?».
+        //  No habia por que: era una maqueta de una tapa repetida cuatro
+        //  veces. Ahora son un panel de dos filas de dos, a todo el ancho de
+        //  la ficha y con la sangria de panel que ya llevan las dos filas de
+        //  abajo, y la tapa del rebote se llama REBOTE y no CAMBIAR, que al
+        //  lado de PROYECTOS, SONIDOS y KITS tiene que decir QUE carpeta es.
+        //  Dos filas en vez de cuatro: la ficha pide 96 px menos.
         {
-            auto fila = inner.removeFromTop (Metrics::hit);
-            juce::TextButton* db[1] = { &exportDirBtn };
-            layoutModuleBar (Lang::takeEnd (fila, juce::jmin (fila.getWidth(),
-                                                              juce::jmax (110, fila.getWidth() / 3))),
-                             db, 0, 1);
-            //  Y LAS OTRAS DOS CARPETAS, EN ESTA FICHA Y NO EN PROYECTOS.
-            //
-            //  Empezaron en AJUSTES · PROYECTOS, que es donde se ve la ruta y
-            //  parecia su sitio, y salieron medidas y mal las DOS veces: en fila
-            //  propia costaban cuarenta pixeles que la ficha no tiene en
-            //  360x640 -`MARCO 186`, `TAPADO 25`, `CABECERA 3`- y metidas en la
-            //  fila de EXPORTAR y KIT dejaban cuatro rotulos repartidos por el
-            //  texto donde caben dos: `TRUNC 4` y `SQUEEZE 6`. *Cambiar un
-            //  apreton por un corte no es un arreglo*, y aqui las dos opciones
-            //  eran eso.
-            //
-            //  Aqui si caben, y ademas es donde ya vive la pregunta: esta ficha
-            //  lleva desde su primera tanda decidiendo DONDE cae lo que sale, y
-            //  las tres son la misma -donde se abre, donde se guarda, donde se
-            //  rebota-. Tres filas de una tapa, una por carpeta, con el mismo
-            //  reparto que la de arriba.
-            //  LAS DOS CARPETAS YA NO SE APAGAN, y eso es una vuelta atras
-            //  medida. Aqui habia una escalera: en 915x412 la tarjeta da 370 px
-            //  para los 432 que esta ficha pide, y como lo que falta se lo come
-            //  LO ULTIMO que se maqueta -EN VIVO salio una vez a **809x6** en
-            //  los cuatro idiomas- se apagaban las dos tapas de carpeta, que es
-            //  lo de menos uso.
-            //
-            //  Cedia la funcion equivocada por la razon correcta: girar el
-            //  telefono te quitaba DOS cosas que de pie si estan, y la queja
-            //  que abrio esta tanda es exactamente esa. Ahora la ficha se
-            //  desplaza -ver el `hazDesplazable` de su constructor- asi que el
-            //  cuerpo mide los 432 que pidio y no hay nada que recortar: las
-            //  dos filas se colocan SIEMPRE y lo que no cabe en la tarjeta se
-            //  alcanza arrastrando.
-            for (auto* b : { &projDirBtn, &samplesDirBtn })
-            {
+            inner.reduce (Metrics::panelSangria, 0);
+            juce::TextButton* c1[2] = { &exportDirBtn, &projDirBtn };
+            juce::TextButton* c2[2] = { &samplesDirBtn, &kitsDirBtn };
+            for (auto* b : { &exportDirBtn, &projDirBtn, &samplesDirBtn, &kitsDirBtn })
                 b->setVisible (true);
-                inner.removeFromTop (Metrics::sm);
-                auto f2 = inner.removeFromTop (Metrics::hit);
-                juce::TextButton* uno[1] = { b };
-                layoutModuleBar (Lang::takeEnd (f2, juce::jmin (f2.getWidth(),
-                                                                juce::jmax (110, f2.getWidth() / 3))),
-                                 uno, 0, 1);
-            }
-            //  Y EL DESTINO NO LLEVA PANEL, que es la misma decision que la
-            //  pagina de ASPECTO y la pagina SONIDO de EL PAD: es UNA tapa, y
-            //  un panel alrededor de un solo control no agrupa nada — con el
-            //  de abajo ya hay UNA frontera y se ve. (El primer intento
-            //  ademas envolvia el hueco: `Lang::takeEnd` MUTA la fila, asi que
-            //  lo que quedaba era el lado por el que no hay nada.)
+            auto f1 = inner.removeFromTop (Metrics::hit);
+            layoutModuleBar (f1, c1, 0, 2);
+            inner.removeFromTop (Metrics::sm);
+            auto f2 = inner.removeFromTop (Metrics::hit);
+            layoutModuleBar (f2, c2, 0, 2);
+            exportGrupos.add (f1.getUnion (f2));
+            inner.expand (Metrics::panelSangria, 0);
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -5434,12 +5435,41 @@ void MainComponent::resized()
             const int sobra = inner.getHeight() % rowH;
             if (sobra > 0) inner.removeFromBottom (sobra);
         }
+        //  LA BARRA DE LA CASA, al final de las filas y solo si hay mas filas
+        //  que sitio: la misma pareja barra + halfGap que lleva el piano, del
+        //  grueso de un dedo porque se arrastra. Del telefono: «la barra que
+        //  aparece en el mixer no deberia ser la de JUCE, deberia ser hecha
+        //  en la app, como alguna barra mas que aparece por ahi». Las filas
+        //  miden lo que queda de `inner`, y la S de cada fila acaba a
+        //  `halfGap` de la barra, que acaba donde la cruz del titulo.
+        //
+        //  Y SOLO SI LA FILA SE LA PUEDE PAGAR. Medido en 280x653 con expo.py:
+        //  con la barra puesta el fader del pad quedaba en 31 px de ancho -el
+        //  nombre a su suelo de 58, M y S a 40 y la barra con su aire 44- y
+        //  un fader de 31 no se puede apuntar: la misma escalera que tira el
+        //  pan y el ancho antes que el fader. Donde al fader no le queda un
+        //  dedo con la barra puesta, la barra se queda fuera y la mesa se
+        //  sigue arrastrando por las filas, que es como se arrastraba antes.
+        //  La cuenta es la de la fila de un pad de mas abajo, en el mismo
+        //  orden: nombre, S, M, sus dos halfGap y el aire del fader.
+        const int anchoColConBarra = (inner.getWidth() - BarraVista::kGrueso - Metrics::halfGap) / columnas;
+        const int faderConBarra    = anchoColConBarra - anchoNombreCanal (anchoColConBarra)
+                                   - 2 * Metrics::hit - 2 * Metrics::halfGap - 2 * Metrics::aireTapa;
+        const bool hayBarra = contentH > inner.getHeight() && faderConBarra >= Metrics::hit;
+        mixBarra.setVisible (hayBarra);
+        if (hayBarra)
+        {
+            mixBarra.setBounds (Lang::takeEnd (inner, BarraVista::kGrueso));
+            Lang::takeEnd (inner, Metrics::halfGap);
+        }
+        else
+        {
+            mixBarra.setBounds ({});
+        }
         mixScroll.setBounds (inner);
-
-        //  Leave the bar its width only when there IS a bar, or every row is
-        //  eight pixels short on the screens that did not need one.
-        const int barW = contentH > inner.getHeight() ? mixScroll.getScrollBarThickness() : 0;
-        mixRows.setSize (juce::jmax (80, inner.getWidth() - barW), contentH);
+        mixRows.setSize (juce::jmax (80, inner.getWidth()), contentH);
+        mixFilaAlto = rowH;
+        sincronizaMixBarra();
 
         auto rows = mixRows.getLocalBounds();
         const int anchoCol = rows.getWidth() / columnas;

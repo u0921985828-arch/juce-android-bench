@@ -420,8 +420,12 @@ public:
                     //  la pantalla del sistema: en el banco no hay pantalla, y
                     //  una captura del escritorio traeria el marco de la
                     //  ventana y el fondo del gestor.
+                    //  Y CON ZATI_SPIN DELANTE, LA FOTO SE SACA AL FINAL del
+                    //  giro y no antes: es la unica forma de fotografiar lo
+                    //  que solo existe con la maquina sonando -las agujas de
+                    //  la mesa-, que con la foto a la entrada salen a cero.
                     const auto shot = UiAudit::env ("ZATI_SHOT");
-                    if (shot.isNotEmpty())
+                    if (shot.isNotEmpty() && UiAudit::env ("ZATI_SPIN").isEmpty())
                     {
                         //  Y LA TINTA ANTES DE LA FOTO cuando se piden los
                         //  contornos. La lamina pinta en rojo la banda vacia
@@ -884,6 +888,12 @@ public:
                                                      [this, t0, ventana, c2]
                         {
                             const double ms = 1000.0 * (double) (std::clock() - t0) / (double) CLOCKS_PER_SEC;
+                            //  La foto del final del giro, si la piden: ver arriba.
+                            if (const auto foto = UiAudit::env ("ZATI_SHOT"); foto.isNotEmpty())
+                            {
+                                const double esc = UiAudit::env ("ZATI_SHOT_SCALE").getDoubleValue();
+                                UiAudit::snapshot (*c2, foto, esc > 0.05 ? (float) esc : 1.0f);
+                            }
                             std::cout << "{\"spin\":1,\"cpu_ms\":" << ms
                                       << ",\"fondos\":" << UiAudit::fondosPintados
                                       << ",\"pixeles\":" << UiAudit::pixelesPintados

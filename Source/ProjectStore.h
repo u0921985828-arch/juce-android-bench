@@ -184,7 +184,11 @@ public:
     //  bajas entran por la MISMA puerta, que es CARGAR KIT ordenando por
     //  nombre. Un formato propio habria sido una segunda forma de hacer lo
     //  mismo, y ademas la unica que no sabria leer nadie mas.
-    static juce::File kits()       { return sub ("Kits"); }
+    //  Y SE PUEDE ELEGIR, como la de proyectos: del telefono, «poder elegir
+    //  la carpeta en la que se alojan los diferentes proyectos guardados y
+    //  kits y demas, que no sea automatico». Es la cuarta del mecanismo de
+    //  abajo -`Carpeta::kits`- y por eso cuesta tres lineas y no una regla.
+    static juce::File kits()       { return carpeta (Carpeta::kits); }
     //  EL CONTENIDO DESCARGABLE, en la biblioteca y con la misma forma que un
     //  kit: una carpeta de carpetas de audios numerados. Ver Instrumentos.h -
     //  se eligio asi para que un pack se pueda montar a mano, mirar desde el
@@ -215,7 +219,9 @@ public:
     //  defecto de siempre sin tocar el ancla. Un fichero por carpeta y no uno
     //  con tres lineas, que asi borrar una eleccion no puede llevarse las otras
     //  dos por delante.
-    enum class Carpeta { proyectos, samples, exports };
+    //  Y LA CUARTA SON LOS KITS, por lo mismo: GUARDAR KIT escribe ahi y MIS
+    //  KITS lleva ahi, asi que es una carpeta y no dos.
+    enum class Carpeta { proyectos, samples, exports, kits };
 
     static const char* nombreDe (Carpeta q) noexcept
     {
@@ -223,6 +229,7 @@ public:
         {
             case Carpeta::proyectos: return "Projects";
             case Carpeta::samples:   return "Samples";
+            case Carpeta::kits:      return "Kits";
             case Carpeta::exports:   break;
         }
         return "Exports";
@@ -232,6 +239,7 @@ public:
     {
         const char* f = q == Carpeta::proyectos ? "zati-proyectos.txt"
                       : q == Carpeta::samples   ? "zati-samples.txt"
+                      : q == Carpeta::kits      ? "zati-kits.txt"
                                                 : "zati-exportar.txt";
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                    .getChildFile (f);

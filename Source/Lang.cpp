@@ -980,10 +980,10 @@ namespace
           "REC, in the audio view, records what plays on top of the arrangement",
           "音频视图中的录音会把正在播放的内容录到编排上",
           "تسجيل، في عرض الصوت، يسجل ما يعزف فوق الترتيب" },
-        { "GUARDAR KIT guarda solo los sonidos, para llevarlos a otro proyecto", "",
-          "SAVE KIT saves just the sounds, to take them to another project",
-          "保存套件只保存声音，便于带到其他项目",
-          "حفظ الطقم يحفظ الأصوات فقط، لنقلها إلى مشروع آخر" },
+        { "GUARDAR KIT guarda solo los sonidos en la carpeta KITS, para otro proyecto", "",
+          "SAVE KIT saves just the sounds into the KITS folder, for another project",
+          "保存套件只把声音保存到「套件」文件夹，便于用于其他项目",
+          "حفظ الطقم يحفظ الأصوات فقط في مجلد الأطقم، لمشروع آخر" },
         { "GUARDAR mete el proyecto con sus muestras en la biblioteca", "",
           "SAVE puts the project, samples included, in the library",
           "保存会把项目连同采样放进资料库",
@@ -1469,6 +1469,14 @@ namespace
           "Samples come from %1",
           "音色来自 %1", "الأصوات من %1" },
         { "SONIDOS", "",  "SAMPLES", "音色", "أصوات" },
+        //  La cuarta carpeta, de la misma tanda que pidio «kits y demas».
+        { "KITS", "",  "KITS", "套件", "أطقم" },
+        //  La tapa de la carpeta del rebote, en el panel de las cuatro: dice
+        //  que carpeta es, como sus tres hermanas.
+        { "REBOTE", "",  "BOUNCE", "导出", "التصدير" },
+        { "Los kits viven en %1", "",
+          "Kits live in %1",
+          "套件保存在 %1", "الأطقم في %1" },
         { "SIN CANAL", "",  "NO CHANNEL", "无通道", "بلا قناة" },
 
         //  EL TOUR DE BIENVENIDA. ATRAS y EMPEZAR llevan clave propia porque

@@ -268,10 +268,23 @@ def main():
         #  cuesta cada superficie; lo que se juzga de esta es la columna QUIETA,
         #  que es donde un visor que se repintara para siempre lo diria.
         cara = (f in ("", "eq", "plato"))
+        #  Y LA MESA, desde que cada fader lleva su aguja: «que se vea constante
+        #  el vumetro en cada canal». Dieciseis agujas que se mueven con la
+        #  maquina sonando SE VEN, igual que el cristal de la cara, y lo que se
+        #  repinta es la banda de 22 px de cada fader cuya aguja se movio un
+        #  pixel; pero el cuadro las junta en un recorte -getClipBounds es la
+        #  caja de las dieciseis- y sale la columna entera. Se lee CONTRA LA
+        #  CARA, que es el techo de lo que se ve: una mesa que repintara mas
+        #  que la cara con su cristal y sus destellos lo diria aqui.
+        #  Medido: 0.000 antes de la aguja, 0.434 (mix) y 0.472 (mixc) con ella,
+        #  contra 0.706 de la cara; quieta sigue en 0.01.
+        mesa = (f in ("mix", "mixc"))
         if f == "": caraLate = equi        # el techo con el que se lee lo de abajo
-        mal  = (not cara) and equi > TOPE_SONANDO
+        tope = caraLate if mesa else TOPE_SONANDO
+        mal  = (not cara) and equi > tope
         print ("%-8s %8.3f %8d %9.0f%s" % (f or "(cara)", equi, cuad, r.get ("cpu_ms", 0.0),
                                         "   (se ve: no se juzga)" if cara else
+                                        "   (se ve: las agujas, contra la cara)" if (mesa and not mal) else
                                         ("   <-- pinta lo que no se ve" if mal else "")))
         if mal:
             malas.append ((f or "(cara)") + " sonando")

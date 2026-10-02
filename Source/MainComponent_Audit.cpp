@@ -2892,9 +2892,19 @@ void MainComponent::auditKit (const juce::String& nombre)
     padStart01[(size_t) base] = 0.25f;
     padEnd01[(size_t) base]   = 0.75f;
 
+    //  Y EN UNA CARPETA ELEGIDA, que es lo nuevo: se apunta una dentro de la
+    //  biblioteca y se comprueba que el kit cae AHI y no en Kits/, y que al
+    //  olvidar la eleccion `kits()` vuelve a la de siempre. Ver Tests/kit.py.
+    const auto kitsPorDefecto = ProjectStore::porDefecto (ProjectStore::Carpeta::kits);
+    const auto mia = ProjectStore::home().getChildFile ("BANCO_KITS");
+    const bool elegidaAcepta = ProjectStore::setCarpeta (ProjectStore::Carpeta::kits, mia);
+
     guardarKit (nombre);
 
     const auto dir = ProjectStore::kits().getChildFile (juce::File::createLegalFileName (nombre));
+    const bool elegida = elegidaAcepta && dir.isAChildOf (mia) && dir.isDirectory();
+    ProjectStore::olvidaCarpeta (ProjectStore::Carpeta::kits);
+    const bool vuelve = (ProjectStore::kits() == kitsPorDefecto);
     auto files = dir.findChildFiles (juce::File::findFiles, false, "*.wav");
     files.sort();
 
@@ -2927,7 +2937,8 @@ void MainComponent::auditKit (const juce::String& nombre)
     }
 
     std::cout << "{\"kit\":\"" << nombre << "\",\"carpeta\":\"" << dir.getFullPathName()
-              << "\",\"ficheros\":" << files.size() << ",\"lista\":[";
+              << "\",\"elegida\":" << (elegida ? 1 : 0) << ",\"vuelve\":" << (vuelve ? 1 : 0)
+              << ",\"ficheros\":" << files.size() << ",\"lista\":[";
     for (int i = 0; i < files.size(); ++i)
     {
         //  Nombre y TAMANO: un WAV de cabecera sola existe, se lista y no suena.
@@ -5962,8 +5973,13 @@ void MainComponent::auditCanales()
     showMixPage (mixPagePads);
     openSheet (mixSheet, mixButton);
     resized();
+    //  Y LA BARRA ES MAS FINA QUE SU CELDA, desde que del telefono llego «las
+    //  barras mas finas no?»: se mide la BANDA -las filas de pixeles con algo
+    //  pintado- y la tinta y la cifra se cuentan DENTRO de la banda, que es
+    //  donde estan. Contadas contra la celda entera, una barra fina y bien
+    //  llena daria la misma cifra que un carril gordo y vacio.
     double faderTinta = 0.0, faderLetra = 0.0;
-    int faderAlto = 0, faderAncho = 0, faderCajas = 0;
+    int faderAlto = 0, faderAncho = 0, faderCajas = 0, faderBanda = 0;
     if (auto* f = mixFaders[0])
     {
         const double antes = f->getValue();
@@ -5974,11 +5990,18 @@ void MainComponent::auditCanales()
             const int w = img.getWidth(), h = img.getHeight();
             if (w <= 0 || h <= 0) return 0.0;
             const int x0 = derecha ? (w * 60) / 100 : 0;
+            //  La banda: de la primera fila con tinta a la ultima.
+            int y0 = h, y1 = -1;
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x)
+                    if (img.getPixelAt (x, y).getAlpha() > 0) { y0 = juce::jmin (y0, y); y1 = juce::jmax (y1, y); break; }
+            if (y1 < y0) return 0.0;
+            if (! derecha) faderBanda = y1 - y0 + 1;
             //  El color que mas se repite en la zona es el fondo; lo demas es
             //  letra o borde.
             std::map<juce::uint32, int> cuentas;
             int total = 0, conTinta = 0;
-            for (int y = 0; y < h; ++y)
+            for (int y = y0; y <= y1; ++y)
                 for (int x = x0; x < w; ++x)
                 {
                     const auto c = img.getPixelAt (x, y);
@@ -6001,11 +6024,107 @@ void MainComponent::auditCanales()
     for (auto* f : canFaders) if (f != nullptr && f->getTextBoxPosition() != juce::Slider::NoTextBox) ++faderCajas;
     if (masterFader.getTextBoxPosition() != juce::Slider::NoTextBox) ++faderCajas;
 
+    //  10. LA AGUJA DEL FADER, por el camino de verdad.
+    //
+    //  Se dispara el pad 0, se bombea audio por el aparato del banco -el
+    //  mismo que usa `ZATI_SONANDO`- con la mesa mirada, y la aguja se mide
+    //  en tres sitios: lo que el motor dice del pad 0 y del pad 1 (que no ha
+    //  sonado: cero), los pixeles a los que `mideMesa` deja la aguja del
+    //  fader 0, y cuantos de esos pixeles CAMBIAN al pintarla -el fader a
+    //  -60 dB con la aguja contra el mismo fader sin ella-. Ver canales.py.
+    float vuPad0 = 0.0f, vuPad1 = 0.0f;
+    int vuAguja = 0;
+    double vuTinta = 0.0;
+    if (auto* f = mixFaders[0])
+    {
+        engine.miraMesa (true);
+        engine.postNoteOn (0, 0.9f);
+        for (int i = 0; i < 8; ++i) bombeaAudioDePrueba();
+        mideMesa (16.0, true);
+        vuPad0 = vuPad[0];
+        vuPad1 = vuPad[1];
+        vuAguja = mesaPx[0];
+
+        const double antes = f->getValue();
+        f->setValue (-60.0, juce::dontSendNotification);
+        const auto con = f->createComponentSnapshot (f->getLocalBounds(), true, 1.0f);
+        f->getProperties().set ("aguja", 0);
+        const auto sin = f->createComponentSnapshot (f->getLocalBounds(), true, 1.0f);
+        f->setValue (antes, juce::dontSendNotification);
+        const int w = juce::jmin (con.getWidth(), sin.getWidth()), h = juce::jmin (con.getHeight(), sin.getHeight());
+        //  Se cuenta en las FILAS donde algo cambia -la aguja es la mitad del
+        //  grosor de la barra, asi que fuera de ellas no cambia nada ni tiene
+        //  que cambiar- y de la x 2 a la aguja menos 2, que es lo que se
+        //  pinta: dentro de esas filas tiene que cambiar casi todo.
+        const int x1 = juce::jmin (w, vuAguja - 2);
+        int filasAguja = 0, enAguja = 0;
+        for (int y = 0; y < h; ++y)
+        {
+            int cambian = 0;
+            for (int x = 2; x < x1; ++x)
+                if (con.getPixelAt (x, y) != sin.getPixelAt (x, y)) ++cambian;
+            if (cambian == 0) continue;
+            ++filasAguja;
+            enAguja += cambian;
+        }
+        const int celdas = filasAguja * juce::jmax (0, x1 - 2);
+        vuTinta = celdas > 0 ? (double) enAguja / (double) celdas : 0.0;
+
+        //  Y se deja todo como estaba: mesa sin mirar y las agujas caidas
+        //  -diez segundos de balistica en una llamada-, por el mismo camino.
+        mideMesa (10000.0, false);
+    }
+
+    //  Y LAS FILAS SE LLEVAN TODO EL ANCHO VISIBLE: la barra del Viewport
+    //  cae en el margen y no se cobra de las filas. `mesa_vista` es lo que el
+    //  Viewport ensena, `mesa_filas` lo que miden las filas; si la barra se
+    //  restara de ellas, serian distintos en toda pantalla con barra -y esta
+    //  la tiene: dieciseis filas en una tarjeta de catorce-.
+    //  Y lo que lo prueba de verdad es el BORDE: la cruz del titulo y la S
+    //  de la primera fila se maquetan contra el mismo `inner`, asi que sus
+    //  bordes derechos coinciden si las filas miden lo que mide la ficha. Con
+    //  la barra cobrada de las filas, la S se queda a un grosor de barra de la
+    //  cruz. Medido en pantalla y no en coordenadas de cada padre: la S vive
+    //  dentro del Viewport y la cruz fuera. (`mesa_vista` y `mesa_filas` solos
+    //  no lo distinguen: la maqueta de antes tambien los igualaba, restando
+    //  la barra de los dos.)
+    const int mesaVista = mixScroll.getMaximumVisibleWidth();
+    const int mesaFilas = mixRows.getWidth();
+    //  La de JUCE tiene que medir CERO: la barra de la mesa es `mixBarra`,
+    //  la de la casa, y se mide aparte -ancho, hueco hasta la S de la fila y
+    //  borde contra la cruz-. Y SE TOCA: un toque en el pie de la barra pasa
+    //  una pagina de filas y uno en la cabeza vuelve a la primera, por el
+    //  mismo `mouseDown` que el dedo. Ver canales.py, regla 9.
+    const int mesaBarra = mixScroll.getVerticalScrollBar().isVisible() ? mixScroll.getScrollBarThickness() : 0;
+    const int mesaBarraApp = mixBarra.isVisible() ? mixBarra.getWidth() : 0;
+    const int mesaHueco = (mixBarra.isVisible() && mixSolos[0] != nullptr)
+                            ? mixBarra.getScreenX() - mixSolos[0]->getScreenBounds().getRight()
+                            : -1;
+    const int mesaBorde = mixBarra.isVisible()
+                            ? mixCloseButton.getScreenBounds().getRight() - mixBarra.getScreenBounds().getRight()
+                            : (mixSolos[0] != nullptr
+                                 ? mixCloseButton.getScreenBounds().getRight() - mixSolos[0]->getScreenBounds().getRight()
+                                 : -1);
+    mixScroll.setViewPosition (0, 0);
+    tocaBarra (mixBarra, 0.05f);                      // el pie: una pagina adelante
+    const int mesaSalta = mixScroll.getViewPositionY() / juce::jmax (1, mixFilaAlto);
+    tocaBarra (mixBarra, 0.95f);                      // la cabeza: vuelve
+    const int mesaVuelve = mixScroll.getViewPositionY();
+
     std::cout << "{\"canales\":" << kNumCanales
               << ",\"fader_alto\":" << faderAlto << ",\"fader_ancho\":" << faderAncho
+              << ",\"fader_banda\":" << faderBanda
+              << ",\"mesa_vista\":" << mesaVista << ",\"mesa_filas\":" << mesaFilas
+              << ",\"mesa_barra\":" << mesaBarra << ",\"mesa_borde\":" << mesaBorde
+              << ",\"mesa_barra_app\":" << mesaBarraApp << ",\"mesa_hueco\":" << mesaHueco
+              << ",\"mesa_salta\":" << mesaSalta << ",\"mesa_vuelve\":" << mesaVuelve
               << ",\"fader_tinta\":" << juce::String (faderTinta, 3)
               << ",\"fader_letra\":" << juce::String (faderLetra, 3)
               << ",\"fader_cajas\":" << faderCajas
+              << ",\"vu_pad0\":" << juce::String (vuPad0, 3)
+              << ",\"vu_pad1\":" << juce::String (vuPad1, 3)
+              << ",\"vu_aguja\":" << vuAguja
+              << ",\"vu_tinta\":" << juce::String (vuTinta, 3)
               << ",\"bancos\":" << kNumCanalBancos
               << ",\"banco_primera\":" << primeraVisible
               << ",\"banco_celda\":\"" << celdaCanal.getWidth() << "x" << celdaCanal.getHeight() << "\""

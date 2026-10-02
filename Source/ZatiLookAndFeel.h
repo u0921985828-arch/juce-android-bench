@@ -551,6 +551,20 @@ namespace Metrics
     static constexpr int readout = 22;   // the box a number lives in
     static constexpr int stepKey = 40;   // the - and + of a stepper
 
+    //  EL GROSOR DEL FADER DE LA MESA, que no es el de su celda.
+    //
+    //  La celda sigue midiendo `hit` -lo que se toca-, pero la barra que se
+    //  PINTA dentro va a este grosor, centrada: del telefono, con la barra a
+    //  toda la fila, «las barras mas finas no?». Veintidos y no un numero
+    //  suelto: es `readout`, el alto que ya tiene toda cifra de la app, y la
+    //  barra lleva la cifra dentro. Asi un fader y un numero de la fila de al
+    //  lado miden lo mismo de alto.
+    static constexpr int grosorFader = readout;
+    //  Y DENTRO DE LA BARRA, LA AGUJA: el vumetro del fader, mas fino que
+    //  la barra para que se lea como otra cosa -lo que PEGA, no lo que esta
+    //  puesto-. La mitad del grosor, centrada.
+    static constexpr int grosorAguja = grosorFader / 2;
+
     //  AIR BETWEEN ELEMENTS.
     //
     //  Two things that touch read as one thing. A number sitting flush against
@@ -1503,6 +1517,32 @@ public:
         return layout;
     }
 
+    //  LA BARRA LATERAL DE UNA LISTA QUE SE DESPLAZA ARRASTRANDO.
+    //
+    //  En un movil nadie agarra la barra: la lista se mueve con el dedo encima
+    //  de las filas y la barra solo DICE donde se esta. Asi que es un indicio
+    //  y no un mando: una ranura tenue y un pulgar de tinta, sin flechas, del
+    //  grosor que le pida el Viewport -el manual y las fichas que se
+    //  desplazan-. La de JUCE pintaba un pulgar gris con borde. La MESA ya no
+    //  pasa por aqui: su barra es `BarraVista`, la de la casa, que se agarra
+    //  -del telefono: «deberia ser hecha en la app, como alguna barra mas que
+    //  aparece por ahi»-.
+    void drawScrollbar (juce::Graphics& g, juce::ScrollBar& bar, int x, int y, int w, int h,
+                        bool vertical, int thumbStart, int thumbSize,
+                        bool /*mouseOver*/, bool /*mouseDown*/) override
+    {
+        juce::ignoreUnused (bar);
+        const auto pista = juce::Rectangle<int> (x, y, w, h).toFloat();
+        const float rad = juce::jmin (pista.getWidth(), pista.getHeight()) * 0.5f;
+        g.setColour (ZatiColours::groove (0.30f));
+        g.fillRoundedRectangle (pista, rad);
+        if (thumbSize <= 0) return;
+        const auto pulgar = vertical ? pista.withY ((float) thumbStart).withHeight ((float) thumbSize)
+                                     : pista.withX ((float) thumbStart).withWidth ((float) thumbSize);
+        g.setColour (ZatiColours::inkDim.withAlpha (0.85f));
+        g.fillRoundedRectangle (pulgar, rad);
+    }
+
     //  A pan control is not a level: its rest position is the middle, not the
     //  left end, so a bar that fills from the left says the wrong thing about
     //  every value it shows. Sliders marked "pan" fill OUT FROM CENTRE and
@@ -1531,11 +1571,29 @@ public:
         //  ranura vacia y a +6 es el relleno.
         if ((bool) s.getProperties().getWithDefault ("fader", false))
         {
-            const auto cell = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+            //  La barra, centrada en la celda y de `grosorFader`: lo que se
+            //  toca sigue siendo la celda entera -el Slider no cambia de
+            //  limites- y lo que se ve es una barra fina con la cifra dentro.
+            //  Del telefono, tras verla a toda la fila: «las barras mas finas
+            //  no?». En una celda mas baja que el grosor, la celda manda.
+            const auto cell = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h)
+                                  .withSizeKeepingCentre ((float) w, (float) juce::jmin (h, Metrics::grosorFader));
             const float rad = Metrics::radioChip;
-            const auto relleno = s.findColour (juce::Slider::trackColourId).withAlpha (0.85f);
+            //  EL RELLENO A MEDIA OPACIDAD Y LA AGUJA ENCIMA. Del telefono:
+            //  «que se vea el relleno menos, con menos opacidad y que se vea
+            //  constante el vumetro en cada canal, como pega». El relleno dice
+            //  donde esta puesto el fader y la aguja lo que el pad pone de
+            //  verdad, en el mismo color y por la misma escala -ver
+            //  MainComponent::mideMesa-, asi que una aguja que llega al pomo
+            //  es un pad que pega a lo que el fader marca. Dos opacidades
+            //  para que se lean como dos cosas: la aguja, mas fina y mas
+            //  densa, se ve sobre el relleno y sobre la ranura vacia.
+            const auto color   = s.findColour (juce::Slider::trackColourId);
+            const auto relleno = color.withAlpha (0.38f);
+            const auto aguja   = color.withAlpha (0.90f);
             const auto ranura  = ZatiColours::groove (0.55f);
             const float pos = juce::jlimit (cell.getX(), cell.getRight(), sliderPos);
+            const int agujaPx = (int) s.getProperties().getWithDefault ("aguja", 0);
 
             g.setColour (ranura);
             g.fillRoundedRectangle (cell, rad);
@@ -1544,12 +1602,20 @@ public:
                 g.setColour (relleno);
                 g.fillRoundedRectangle (cell.withRight (pos), rad);
             }
+            if (agujaPx > 1)
+            {
+                const auto banda = cell.withSizeKeepingCentre (cell.getWidth(), (float) Metrics::grosorAguja);
+                g.setColour (aguja);
+                g.fillRoundedRectangle (banda.withRight (juce::jmin (cell.getRight(),
+                                                                     (float) x + (float) agujaPx)),
+                                        rad * 0.5f);
+            }
             //  El borde del valor, una linea de tinta: es el pomo, y con la
             //  barra llena hasta el es lo unico que hace falta para verlo.
             g.setColour (ZatiColours::ink);
             g.fillRect (pos - 1.0f, cell.getY(), 2.0f, cell.getHeight());
             g.setColour (ZatiColours::ink.withAlpha (0.25f));
-            g.drawRoundedRectangle (cell.reduced (0.5f), rad, 1.0f);
+            g.drawRoundedRectangle (cell.reduced (0.5f), rad, Metrics::filo);
 
             if (h >= Metrics::fMeta + 4 && w >= 48)
             {
@@ -1567,9 +1633,13 @@ public:
                 const bool cabeDerecha = cell.getRight() - pos >= anchoTxt;
                 const bool cabeIzquierda = pos - cell.getX() >= anchoTxt;
                 const bool aLaDerecha = cabeDerecha || ! cabeIzquierda;
+                //  Y el fondo contra el que se elige la letra es el que HAY:
+                //  el relleno ya no es opaco, asi que a la izquierda del pomo
+                //  lo que se ve es el chasis con el color del pad por encima a
+                //  su opacidad, no el color del pad.
                 const auto fondo = aLaDerecha
                                      ? ZatiColours::chassisTop
-                                     : relleno.withAlpha (1.0f).interpolatedWith (ZatiColours::chassisTop, 0.15f);
+                                     : ZatiColours::chassisTop.overlaidWith (relleno);
                 const auto caja = aLaDerecha
                                     ? juce::Rectangle<float> (pos + 4.0f, cell.getY(),
                                                               juce::jmax (0.0f, cell.getRight() - 6.0f - (pos + 4.0f)), cell.getHeight())

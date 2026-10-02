@@ -1437,7 +1437,7 @@ private:
     juce::TextButton browseUseDirBtn { "USAR ESTA CARPETA" };
     //  Y la unica accion del modo MIDI: traerse el fichero senalado.
     juce::TextButton browseMidiBtn { "IMPORTAR" };
-    juce::TextButton exportDirBtn { "CAMBIAR" };
+    juce::TextButton exportDirBtn { "REBOTE" };
     //  LAS DOS CARPETAS QUE SE PIDIERON DESPUES, y la que las tres comparten.
     //
     //  «Molaria poder elegir cual es la carpeta predeterminada para apertura y
@@ -1448,6 +1448,10 @@ private:
     //  `openBrowseForFolder` y `ProjectStore::Carpeta`.
     juce::TextButton projDirBtn    { "PROYECTOS" };
     juce::TextButton samplesDirBtn { "SONIDOS" };
+    //  Y LA DE LOS KITS, del mismo mensaje que las de arriba vuelto a pedir:
+    //  «elegir la carpeta en la que se alojan los proyectos guardados y kits
+    //  y demas». Cuarta tapa del mismo gesto, ver `ProjectStore::Carpeta`.
+    juce::TextButton kitsDirBtn    { "KITS" };
     //  Cual de las tres se esta eligiendo. El navegador es uno solo, asi que
     //  sin esto «usar esta carpeta» tendria que adivinar de donde vino — que es
     //  como estaba y por eso el destino estaba escrito dentro de la funcion.
@@ -3246,7 +3250,23 @@ private:
         void paint (juce::Graphics& g) override { if (paintRows) paintRows (g); }
     };
     MixRows        mixRows;
-    juce::Viewport mixScroll;
+    //  El Viewport avisa cuando la vista se mueve -la lista se arrastra por
+    //  las filas- para que la barra de la casa diga donde esta. Ver mixBarra.
+    struct MixScroll : public juce::Viewport
+    {
+        std::function<void()> onVista;
+        void visibleAreaChanged (const juce::Rectangle<int>&) override { if (onVista) onVista(); }
+    };
+    MixScroll mixScroll;
+    //  LA BARRA DE LA MESA ES DE LA CASA, no la de JUCE. Del telefono: «la
+    //  barra que aparece en el mixer no deberia ser la de JUCE, deberia ser
+    //  hecha en la app, como alguna barra mas que aparece por ahi». Es la
+    //  misma `BarraVista` del piano, la rejilla y la cancion -un control con
+    //  pulgar de tapa, que entra en las reglas del banco- en vertical y
+    //  contando desde arriba, en filas. Ver sincronizaMixBarra.
+    BarraVista mixBarra;
+    int  mixFilaAlto = 1;
+    void sincronizaMixBarra();
     void paintMixRows (juce::Graphics& g);
     //  DONDE EMPIEZA LA FILA DE CADA CANAL. El chip de color y el nombre se
     //  pintan a mano, y estaban clavados en x=4 - que es cierto con una sola
@@ -4095,6 +4115,17 @@ private:
     //  La carpeta de destino, resuelta al ABRIR la ficha y no en cada
     //  repintado: preguntarla escribe en disco. Ver paintExportSheetContent.
     juce::File destinoCache;
+    //  EL BLOQUE PINTADO DE EXPORTAR, SUMADO DE SUS PARTES Y NO ESCRITO A MANO.
+    //
+    //  El maquetado reservaba «96» y el pintor dibujaba cuatro renglones de
+    //  17, un `sm` de aire y dos lineas de ayuda de 26: 102. Los seis pixeles
+    //  que faltaban se los comia el panel de las carpetas, y se veia en la
+    //  foto: la segunda linea de la ayuda pisando el filo del panel. Dos
+    //  numeros para una misma medida es la figura de siempre; ahora hay uno,
+    //  y los dos lados lo leen de aqui.
+    static constexpr int kExportLinea  = 17;                       // un renglon fuente/duracion/pistas/destino
+    static constexpr int kExportAyuda  = 26;                       // dos lineas de fMeta, la ayuda o el veredicto
+    static constexpr int kExportBloque = kExportLinea * 4 + Metrics::sm + kExportAyuda;
     //  Y la raiz de proyectos, por lo mismo: `ProjectStore::root()` hace
     //  `createDirectory()`, o sea un syscall por repintado de PROYECTOS.
     juce::File raizCache;
@@ -4637,6 +4668,15 @@ private:
     //  Y el del canal del pad elegido, que vive en la misma banda del cristal.
     //  Ver SpectrumDisplay::setCanal y AudioEngine::miraCanal.
     float vuCanal = 0.0f;
+    //  Y UNO POR PAD PARA LA MESA, con la misma balistica: la aguja de cada
+    //  fader. `mesaPx` es donde quedo pintada -en pixeles de su barra- y es lo
+    //  que decide si hace falta repintar: una aguja que no se ha movido un
+    //  pixel no pide cuadro. Ver mideMesa y AudioEngine::miraMesa.
+    std::array<float, kNumPads> vuPad {};
+    std::array<int, kNumPads>   mesaPx {};
+    std::array<int, AudioEngine::kNumCanales> mesaCanalPx {};
+    int mesaMasterPx = 0;
+    void mideMesa (double dtMs, bool vista);
     bool  vuHeld = false;           // solo el banco: ZATI_VU congela la tira
 
     int  selectedPad   = -1;
