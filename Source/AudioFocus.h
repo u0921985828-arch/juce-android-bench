@@ -73,6 +73,16 @@ namespace RutaAudio
     //  true cuando NO hay ninguna salida de escucha personal enchufada, o sea
     //  cuando lo que suene va a ir al aire.
     bool porAltavoz();
+
+    //  true cuando el sonido sale por RADIO: A2DP, SCO o cualquiera de los BLE.
+    //
+    //  No es la misma pregunta que la de arriba -unos cascos Bluetooth son
+    //  escucha personal Y son radio- y no se usa para lo mismo: esta decide el
+    //  BLOQUE de audio. El enlace mete entre 100 y 250 ms que no los quita
+    //  ningun ajuste, asi que los milisegundos de un bloque mas largo no se
+    //  oyen; lo que si se oye es el corte que un bloque minimo no absorbe.
+    //  Ver MainComponent::sueloDeRuta.
+    bool porBluetooth();
 }
 
 class AudioFocus

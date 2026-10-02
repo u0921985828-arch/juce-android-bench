@@ -17519,11 +17519,31 @@ void MainComponent::useLowestLatency()
     //  se portan distinto segun lo que este haciendo el sistema al lado. Asi
     //  que ese numero es solo el PUNTO DE PARTIDA, y quien manda es el contador
     //  de under-runs. Ver checkXRuns.
-    if (burstMult <= 0)
-        burstMult = juce::jlimit (1, kMaxBursts,
-                                  juce::jmax (loadBurstPreference(),
-                                              DeviceTier::profile().bufferBursts));
-    burst *= burstMult;
+    //  LA RUTA PRIMERO, que es la que pone el suelo. Se pregunta aqui -una
+    //  llamada JNI por apertura- y no en el tick de los chasquidos, que corre
+    //  cada 60 ms. Un cambio de ruta reabre el dispositivo y pasa por aqui, asi
+    //  que la respuesta nunca es mas vieja que la ruta.
+    const bool btAhora = RutaAudio::porBluetooth();
+    if (btAhora != rutaBt)
+    {
+        rutaBt = btAhora;
+        //  Lo aprendido era de la ruta de antes: el nivel descartado, los
+        //  chasquidos vistos y el tramo limpio no dicen nada de esta. El
+        //  multiplicador si se queda, porque cada ruta tiene el suyo.
+        burstSuelo   = 1;
+        burstBajoMs  = -1.0;
+        xrunsSeen    = 0;
+        xrunLimpioMs = 0.0;
+    }
+
+    const int suelo = sueloDeRuta();
+    int&      mult  = multDeRuta();
+
+    if (mult <= 0)
+        mult = juce::jmax (loadBurstPreference (rutaBt),
+                           DeviceTier::profile().bufferBursts);
+    mult = juce::jlimit (suelo, kMaxBursts, mult);
+    burst *= mult;
 
     //  Only among the sizes the driver actually offers.
     if (! sizes.contains (burst))
@@ -17809,14 +17829,18 @@ double MainComponent::siguienteEsperaRevivir (double antesMs, double costeMs) no
                          juce::jmax (antesMs * 2.0, costeMs * kReviveFactor));
 }
 
-juce::File MainComponent::burstPreferenceFile()
+juce::File MainComponent::burstPreferenceFile (bool bluetooth)
 {
-    return ProjectStore::home().getChildFile ("buffer.txt");
+    //  Dos ficheros y no uno con dos numeros: lo que se guarda es UN entero, y
+    //  un formato con dos campos es un formato que hay que leer, validar y
+    //  migrar desde el que ya existe en los telefonos que tienen la app puesta.
+    return ProjectStore::home().getChildFile (bluetooth ? "buffer-bt.txt"
+                                                        : "buffer.txt");
 }
 
-int MainComponent::loadBurstPreference()
+int MainComponent::loadBurstPreference (bool bluetooth)
 {
-    const auto f = burstPreferenceFile();
+    const auto f = burstPreferenceFile (bluetooth);
     return f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : 0;
 }
 
@@ -17856,13 +17880,15 @@ void MainComponent::checkXRuns (double dtMs)
         //  Sin aparato de sonido `useLowestLatency` sale por la puerta y deja
         //  el multiplicador en cero, que no es un nivel sino «aun sin leer».
         //  Se siembra igual que alli, del disco y de la gama.
-        if (burstMult <= 0)
-            burstMult = juce::jlimit (1, kMaxBursts,
-                                      juce::jmax (loadBurstPreference(),
-                                                  DeviceTier::profile().bufferBursts));
+        rutaBt = RutaAudio::porBluetooth();
+        if (multDeRuta() <= 0)
+            multDeRuta() = juce::jlimit (sueloDeRuta(), kMaxBursts,
+                                         juce::jmax (loadBurstPreference (rutaBt),
+                                                     DeviceTier::profile().bufferBursts));
         std::cout << "{\"buffer\":1,\"ms\":" << (int) xrunRelojMs
-                  << ",\"mult\":" << burstMult
-                  << ",\"suelo\":" << burstSuelo
+                  << ",\"mult\":" << multDeRuta()
+                  << ",\"suelo\":" << juce::jmax (burstSuelo, sueloDeRuta())
+                  << ",\"bt\":" << (rutaBt ? 1 : 0)
                   << ",\"vistos\":" << xrunsSeen
                   << ",\"limpio_ms\":" << (int) xrunLimpioMs << "}" << std::endl;
     }
@@ -17876,22 +17902,49 @@ void MainComponent::checkXRuns (double dtMs)
         xrunRelojMs += dtMs;
         //  Se acumula lo que toque hasta este instante, que es lo que un
         //  contador del dispositivo devuelve: un TOTAL y no un incremento.
+        //
+        //  Y UN NUMERO NEGATIVO ES «ESTE APARATO NO LLEVA LA CUENTA», que es la
+        //  otra respuesta que un dispositivo de verdad da y que hasta ahora no
+        //  se podia inyectar: el Bluetooth nunca va por el carril MMAP y ahi no
+        //  hay contador. No se suma -un total con un negativo dentro no es
+        //  ninguna respuesta-: manda, porque una sola lectura de «no se sabe»
+        //  invalida la cuenta entera.
         auto trozos = juce::StringArray::fromTokens (xrunGuion, ",", "");
-        int total = 0;
+        int  total = 0;
+        bool sinContador = false;
         for (auto& t : trozos)
         {
             const int c = t.indexOfChar (':');
             if (c < 0) continue;
-            if (t.substring (0, c).getDoubleValue() <= xrunRelojMs)
-                total += t.substring (c + 1).getIntValue();
+            if (t.substring (0, c).getDoubleValue() > xrunRelojMs) continue;
+
+            const int cuantos = t.substring (c + 1).getIntValue();
+            if (cuantos < 0) sinContador = true;
+            else             total += cuantos;
         }
-        now = total;
+        now = sinContador ? -1 : total;
     }
     else
     {
         now = dev->getXRunCount();
     }
-    if (now < 0) return;                     // el dispositivo no lleva la cuenta
+    //  EL APARATO QUE NO CUENTA, QUE NO ES EL APARATO LIMPIO.
+    //
+    //  Esta linea llevaba desde el primer dia sin poder ejecutarse: Oboe
+    //  contesta `ErrorUnimplemented` donde no hay contador -el legado de
+    //  OpenSL, y AAudio fuera del carril MMAP, que por Bluetooth es SIEMPRE- y
+    //  JUCE se comia el error y devolvia CERO. Cero es tambien lo que da un
+    //  aparato que cuenta y va limpio, asi que la ley de abajo tomaba «no hay
+    //  quien lo diga» por «no hay ni un chasquido»: sumaba tramo limpio, y a
+    //  los cuarenta y cinco segundos BAJABA el bloque -reabriendo el flujo, que
+    //  es un corte de sonido- hasta dejarlo en el minimo. En el minimo es donde
+    //  cruje, y de ahi no podia volver a subir, porque para subir hace falta el
+    //  contador que no hay. Exactamente los tirones y los crispeos.
+    //
+    //  `ci/patch_juce_oboe.py` hace que el error llegue como -1. Esto es lo que
+    //  entonces hace: nada. Un bloque que no se puede corregir se deja donde lo
+    //  puso `useLowestLatency`, que por radio es el suelo de la ruta.
+    if (now < 0) return;
 
     if (xrunGraceMs > 0.0) { xrunGraceMs -= dtMs; lastXRuns = now; return; }
     if (lastXRuns < 0) { lastXRuns = now; return; }
@@ -17917,10 +17970,12 @@ void MainComponent::checkXRuns (double dtMs)
         }
 
         //  Y AQUI SE BAJA. Ver kXRunBajaMs: el buffer subia y no volvia nunca.
-        if (burstMult > burstSuelo && xrunLimpioMs >= kXRunBajaMs)
+        if (multDeRuta() > juce::jmax (burstSuelo, sueloDeRuta())
+            && xrunLimpioMs >= kXRunBajaMs)
         {
-            --burstMult;
-            ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (burstMult));
+            --multDeRuta();
+            ProjectStore::escribeTexto (burstPreferenceFile (rutaBt),
+                                        juce::String (multDeRuta()));
             xrunLimpioMs = 0.0;
             burstBajoMs  = 0.0;
             //  Por el hilo que abre: ver pideEncargoAudio (Tribunal 2026-09, 4.1).
@@ -17942,17 +17997,18 @@ void MainComponent::checkXRuns (double dtMs)
 
     xrunLimpioMs = 0.0;
     xrunsSeen += nuevos;
-    if (xrunsSeen < 4 || burstMult >= kMaxBursts) return;
+    if (xrunsSeen < 4 || multDeRuta() >= kMaxBursts) return;
 
     //  Y SI ACABAMOS DE BAJAR, ese nivel queda descartado. Sin esto la app se
     //  pasaria la sesion entera subiendo y bajando en el telefono justo, con un
     //  corte de sonido en cada viaje.
     if (burstBajoMs >= 0.0 && burstBajoMs < kXRunBajaMs)
-        burstSuelo = juce::jlimit (1, kMaxBursts, burstMult + 1);
+        burstSuelo = juce::jlimit (1, kMaxBursts, multDeRuta() + 1);
     burstBajoMs = -1.0;
 
-    ++burstMult;
-    ProjectStore::escribeTexto (burstPreferenceFile(), juce::String (burstMult));
+    ++multDeRuta();
+    ProjectStore::escribeTexto (burstPreferenceFile (rutaBt),
+                                juce::String (multDeRuta()));
     xrunsSeen = 0;
 
     //  SUBIR EL BUFER ES REABRIR, y reabrir no es de este hilo. Esto llamaba a
@@ -18044,9 +18100,6 @@ void MainComponent::finishMeasure()
         measuredRate = sr;
     }
 
-    //  Back to output-only: one opening, on the opening thread (Tribunal
-    //  2026-09, 4.3). Everything below reads what was measured, not the device.
-    pideEncargoAudio ([this] { abreCon (0); });
     measureButton.setEnabled (true);
 
     //  Sound travels about 34 cm per millisecond, so holding the phone at
@@ -18082,7 +18135,16 @@ void MainComponent::finishMeasure()
                          juce::String (outMs, 1), juce::String (inMs, 1),
                          measuredInMs > 0.0f ? juce::String() : " " + T ("(por resta)"))
                         + ". " + T ("Tocando solo sales %1 ms", Lang::ltr (juce::String (outMs, 1)));
-    refreshAudioOptions();
+
+    //  Y AL FINAL LA VUELTA A SALIDA SOLA: una apertura, en el hilo que abre
+    //  (Tribunal 2026-09, 4.3), con el refresco de las filas DETRAS de ella.
+    //  Pedida antes de todo lo de arriba y refrescando a continuacion -que es
+    //  lo que habia- el refresco corria con el dispositivo a medio cerrar:
+    //  `dispositivo()` daba nullptr y las filas de BUFER y de RELOJ se
+    //  quedaban vacias bajo sus rotulos. Todo lo de arriba lee lo medido y no
+    //  el dispositivo, asi que la peticion puede esperar a aqui.
+    pideEncargoAudio ([this] { abreCon (0); }, [this] { refreshAudioOptions(); });
+    setSheet.repaint();
 }
 
 
@@ -18149,11 +18211,23 @@ void MainComponent::applyMidiChoice()
 
 void MainComponent::refreshAudioOptions()
 {
+    //  PRIMERO SE MIRA SI HAY DISPOSITIVO Y DESPUES SE VACIA, que al reves era
+    //  la captura del telefono: pulsas MEDIR y bajo BUFER y RELOJ no queda una
+    //  sola ficha. Este refresco se llama tambien con el audio cerrado -entre
+    //  el cierre y la apertura de una reapertura- y vaciaba las dos filas para
+    //  salirse en la linea siguiente sin volver a llenarlas. Dos rotulos con
+    //  nada debajo no dicen «estoy reabriendo», dicen «este cacharro no tiene
+    //  ni un tamano de bufer», y asi se quedaban hasta que tocabas otra cosa.
+    //
+    //  Sin dispositivo no se sabe nada nuevo: se dejan las fichas que habia -el
+    //  bufer y el reloj que la persona eligio siguen siendo los suyos- y se
+    //  rehacen cuando el dispositivo vuelve. Quien reabre pone el refresco
+    //  DETRAS de la apertura, en el `despues` de `pideEncargoAudio`.
+    auto* dev = dispositivo();
+    if (dev == nullptr) return;
+
     bufButtons.clear();
     rateButtons.clear();
-
-    auto* dev = dispositivo();
-    if (dev == nullptr) { resized(); return; }
 
     const int    curBuf  = dev->getCurrentBufferSizeSamples();
     const double curRate = dev->getCurrentSampleRate();
@@ -20656,7 +20730,20 @@ void MainComponent::watchAudioDevice()
     {
         ++engineResyncs;
         //  Por el hilo que abre, como todo lo que reabre (Tribunal 2026-09, 4.1).
-        pideEncargoAudio ([this] { deviceManager.restartLastAudioDevice(); keepChosenRate(); });
+        //
+        //  Y CON `useLowestLatency` DETRAS, que es la mitad que faltaba. Este
+        //  camino es el del CAMBIO DE RUTA -lo dice el comentario de arriba- y
+        //  `restartLastAudioDevice` reabre con el bloque de la ruta de ANTES:
+        //  enchufar unos cascos Bluetooth dejaba el flujo de radio con el bloque
+        //  minimo del altavoz, que es el que no absorbe los cortes del enlace.
+        //  Se queda en su primera linea cuando el bloque ya es el que toca, asi
+        //  que en un reinicio que no cambia de ruta no cuesta ninguna apertura.
+        pideEncargoAudio ([this]
+        {
+            deviceManager.restartLastAudioDevice();
+            keepChosenRate();
+            useLowestLatency();
+        });
         return;                       // prepareToPlay will land on its own
     }
 

@@ -475,6 +475,40 @@ def regla_abrir_el_dispositivo (malas):
     if r.get ("bufer_chip") != 384:
         malas.append ("chip de AUDIO: el bufer quedo en %d y no en 384" % r.get ("bufer_chip", 0))
 
+    #  6e. LAS DOS FILAS DE AJUSTES / AUDIO NO SE QUEDAN VACIAS AL REABRIR. La
+    #  captura del telefono: pulsas MEDIR y bajo BUFER y bajo RELOJ no queda una
+    #  sola ficha. `refreshAudioOptions` vaciaba las dos filas antes de mirar si
+    #  habia dispositivo y se salia sin volver a llenarlas, y `finishMeasure` lo
+    #  llamaba justo detras de pedir la reapertura al hilo que abre, sin
+    #  esperarla. Son dos fallos: el refresco con el audio cerrado y el orden.
+    #
+    #  Y si el banco no ha medido ni una ficha con el audio ABIERTO no esta
+    #  midiendo nada: la cadena de control antes del veredicto.
+    filas_ab = r.get ("filas_abierto", -1)
+    filas_ce = r.get ("filas_cerrado", -1)
+    filas_vu = r.get ("filas_vuelta", -1)
+    refresca = r.get ("medir_refresca", -1)
+    filas_md = r.get ("filas_tras_medir", -1)
+    print ("  fichas de BUFER+RELOJ: %d con el audio abierto, %d con el cerrado, "
+           "%d al volver, %d tras MEDIR; MEDIR refresca detras de la apertura: %s"
+           % (filas_ab, filas_ce, filas_vu, filas_md,
+              "si" if refresca == 1 else "NO"))
+    if filas_ab < 1:
+        malas.append ("audio: 0 fichas de BUFER y RELOJ con el dispositivo ABIERTO - "
+                      "esta prueba no mide nada")
+    elif filas_ce != filas_ab:
+        malas.append ("audio: un refresco con el dispositivo cerrado deja %d fichas de las "
+                      "%d que habia - los rotulos BUFER y RELOJ se quedan solos" % (filas_ce, filas_ab))
+    if filas_ab >= 1 and filas_vu != filas_ab:
+        malas.append ("audio: al volver el dispositivo las filas quedan en %d fichas y no en %d"
+                      % (filas_vu, filas_ab))
+    if refresca != 1:
+        malas.append ("MEDIR: el refresco de las filas no va detras de la reapertura - "
+                      "corre con el audio cerrado")
+    if filas_ab >= 1 and filas_md != filas_ab:
+        malas.append ("MEDIR: tras medir quedan %d fichas de BUFER y RELOJ y no %d"
+                      % (filas_md, filas_ab))
+
     #  7. UN PAD QUE TARDA TRES SEGUNDOS EN LEERSE. La ultima linea de la caja
     #  negra del telefono antes del cartel era «ATASCO 1081 ms en pads/cargar»:
     #  la vuelta mas larga de stepPadJob tiene que ser nada, porque leer va en
