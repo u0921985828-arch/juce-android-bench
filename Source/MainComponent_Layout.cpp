@@ -2878,8 +2878,11 @@ void MainComponent::resized()
         //  como se llega a una fila de altura cero.
         const int topeCarta = altoTarjeta (full) - 2 * Metrics::margenFichaY;
         const bool dosColumnasSet = setInnerW >= 560 && estAltoAudio > topeCarta;
+        //  Menos el canalon del rotulo Y SU AIRE, que es lo que `chipRow` quita
+        //  de verdad: preguntar con cuatro pixeles de mas es decir que cabe
+        //  donde no cabe.
         const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW)
-                            - Metrics::canalonSeccion;
+                            - Metrics::canalonSeccion - Metrics::xs;
         auto chipsCaben = [this, anchoChip] (juce::OwnedArray<juce::TextButton>& btns)
         {
             juce::TextButton* arr[8] {};
@@ -3183,6 +3186,15 @@ void MainComponent::resized()
                 auto row = columnaChips.removeFromTop (Metrics::hit);
                 auto r = row;
                 Lang::takeStart (r, labelW);
+                //  Y EL AIRE DEL ROTULO, detras de su canalon. El canalon mide
+                //  lo que pide MOVIMIENTO -58, ver Metrics::canalonSeccion- y
+                //  el chip empezaba en el 58, o sea a CERO del rotulo cuando
+                //  este lo llena: PEGADO en expo.py, cinco veces en tres
+                //  pantallas. Cada texto lleva su marco de aire -`UiAudit::
+                //  rotulo`-, y el chip empieza detras de el. Lo paga el chip,
+                //  cuatro pixeles, y lo descuenta `anchoChip`, que es quien
+                //  decide si la fila se parte.
+                Lang::takeStart (r, Metrics::xs);
 
                 //  CERO TAPAS ES UN CASO REAL: resized() corre desde el
                 //  constructor -por retranslateUi- y ahi estas listas todavia
@@ -3204,6 +3216,7 @@ void MainComponent::resized()
                     auto row2 = columnaChips.removeFromTop (Metrics::hit);
                     auto r2 = row2;
                     Lang::takeStart (r2, labelW);
+                    Lang::takeStart (r2, Metrics::xs);
                     layoutModuleBar (r2, arr + mitad, 0, n - mitad);
                     row = row.getUnion (row2);
                 }
@@ -3302,6 +3315,9 @@ void MainComponent::resized()
                 auto row = columnaChips.removeFromTop (Metrics::hit);
                 auto r = row;
                 Lang::takeStart (r, labelW);
+                //  El aire del rotulo detras del canalon: ver la misma fila
+                //  en la pagina de AUDIO.
+                Lang::takeStart (r, Metrics::xs);
                 //  Cero tapas es un caso real: resized() corre desde el
                 //  constructor y estas listas estan vacias. Ver el mismo
                 //  guardia en la pagina de AUDIO.
@@ -3319,6 +3335,7 @@ void MainComponent::resized()
                     auto row2 = columnaChips.removeFromTop (Metrics::hit);
                     auto r2 = row2;
                     Lang::takeStart (r2, labelW);
+                    Lang::takeStart (r2, Metrics::xs);
                     layoutModuleBar (r2, arr + mitad, 0, n - mitad);
                     row = row.getUnion (row2);
                 }
@@ -4283,7 +4300,12 @@ void MainComponent::resized()
                                                             fila.getWidth() - pideNombre
                                                                 - Metrics::sm));
                 ponPreset (caja.withSizeKeepingCentre (caja.getWidth(), filaP));
-                fila.removeFromRight (Metrics::sm);
+                //  El `sm` va en el lado del PRESET, que es el final de la fila
+                //  y en arabe esta a la izquierda. Era `removeFromRight`, o sea
+                //  el lado bueno solo en LTR: en 800x1280 y arabe el nombre de
+                //  la familia quedaba a CERO de la flecha +, y lo vio PEGADO en
+                //  expo.py con el marco de aire de cuatro lados.
+                Lang::takeEnd (fila, Metrics::sm);
                 vstNombreArea = fila;
                 vstPanelCab = banda.reduced (Metrics::md, 0);
                 vstPanelPre = {};

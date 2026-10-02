@@ -1293,20 +1293,55 @@ def judge_anatomia(rows, size, lang, sheet, piezas):
 #  de la caja. El marco es `Metrics::xs`, que `Tests/maqueta.md` llama «el aire
 #  de fila»: lo minimo que separa dos cosas para que se lean como dos.
 #
-#  Se mira por la VERTICAL y contra lo que se cruza por la horizontal, como
-#  mide_aire, y contra el filo DIBUJADO de la tapa -con el descuento `aire` que
-#  la app publica-, que es el que el ojo ve. Un rotulo DENTRO de un panel no
-#  esta pegado a el: es suyo. Un rotulo que se solapa con una tapa es de TAPADO,
-#  pero TAPADO perdona dos pixeles de solape, asi que PEGADO empieza en MENOS
-#  dos: entre las dos reglas no puede quedar un hueco por el que pase un texto.
+#  Se mira POR LOS CUATRO LADOS: el marco de aire de un rotulo es un contorno
+#  transparente que le pertenece entero -arriba, abajo y a los lados- y en el
+#  que no entra nada: ni una tapa, ni un panel, ni OTRO texto. Del telefono:
+#  «que cada texto tenga su marco de aire, su contorno transparente; que ocupe
+#  un espacio, que no se pueda poner cualquier cosa encima». El aire lo dice
+#  LA APP, rotulo por rotulo (`aire`, que `apunta` pone a `Metrics::xs`), y
+#  este numero es solo el suelo para un volcado que no lo diga. Contra el
+#  filo DIBUJADO de la tapa -con el descuento `aire` que la app publica-, que
+#  es el que el ojo ve. Un rotulo DENTRO de un panel no esta pegado a el: es
+#  suyo. Un rotulo que se solapa con una tapa es de TAPADO, pero TAPADO
+#  perdona dos pixeles de solape, asi que PEGADO empieza en MENOS dos: entre
+#  las dos reglas no puede quedar un hueco por el que pase un texto.
 #
 #  Medido. La primera corrida saco la ruta del proyecto a cero de la caja del
 #  nombre y RELOJ a dos del panel de CUENTA. Y el binario roto a proposito -el
 #  `sm` de EXPORTAR quitado- dejo la ayuda a 2 px DENTRO del panel de las
 #  carpetas, justo lo que TAPADO perdona: con la regla pidiendo cero o mas no
 #  salio ninguna, y por eso el arranque esta en -2. Con el aire puesto, ninguna.
+#  Lo que saco la version de cuatro lados, con el binario de la tanda
+#  anterior, va en el commit de esta: 470 en tres pantallas, y 465 de ellos
+#  eran RENGLONES de un mismo bloque -el titulo de una ficha con su
+#  subtitulo debajo, las filas de GESTOS, los parrafos del manual- a cero
+#  unos de otros, que es lo que mide un interlineado: la caja de un renglon
+#  es el alto de su letra y el siguiente empieza donde acaba. Eso no es
+#  «cualquier cosa encima», es el bloque. Asi que entre DOS TEXTOS la regla
+#  mira los que van uno AL LADO del otro -la caja del vecino en la misma
+#  fila- y los que se pisan; un renglon encima de otro, con la caja del de
+#  arriba acabando donde empieza la del de abajo, es tipografia y no pegado.
+#  Y el CRISTAL del preset no es sujeto: su caja apuntada es el cristal
+#  entero -el texto elide dentro- y el cristal ya es un contorno dibujado;
+#  el aire del cristal a sus flechas es de celdas, no de texto.
+#  Quitados esos dos, quedaron CINCO, todos de un rotulo de seccion a cero
+#  de su primer chip -MOVIMIENTO y SI, el MONITOR y las TOMAS en arabe-:
+#  `chipRow` daba al rotulo su canalon de 58 y el chip empezaba en el 58.
 AIRE_TEXTO = 4
 PEGADO_DESDE = -2
+
+
+def _hueco(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1):
+    """La distancia entre dos cajas por el eje en que estan separadas, o un
+    solape (negativo) si se cruzan por los dos ejes; None si no se cruzan por
+    ninguno, que entonces no son vecinas."""
+    dx = max(bx0 - ax1, ax0 - bx1)
+    dy = max(by0 - ay1, ay0 - by1)
+    if dx > 0 and dy > 0:
+        return None
+    if dx <= 0 and dy <= 0:
+        return max(dx, dy)
+    return max(dx, dy)
 
 
 def judge_pegado(rows, size, lang, sheet):
@@ -1319,25 +1354,45 @@ def judge_pegado(rows, size, lang, sheet):
         if r.get("path") and r.get("hit") and r.get("w", 0) > 0 and r.get("h", 0) > 0:
             ar = r.get("aire", 0)
             cajas.append((r.get("capa", 0), r["x"], r["y"] + ar, r["x"] + r["w"],
-                          r["y"] + r["h"] - ar, r.get("text") or r["path"].rsplit("/", 1)[-1]))
+                          r["y"] + r["h"] - ar, r.get("text") or r["path"].rsplit("/", 1)[-1], False))
         elif r.get("panel") and r.get("w", 0) > 0 and r.get("h", 0) > 0:
             cajas.append((r.get("capa", 0), r["x"], r["y"], r["x"] + r["w"],
-                          r["y"] + r["h"], "panel " + (r.get("nombre") or "")))
+                          r["y"] + r["h"], "panel " + (r.get("nombre") or ""), True))
     for r in rot:
+        cajas.append((r.get("capa", 0), r["x"], r["y"], r["x"] + r["w"], r["y"] + r["h"],
+                      'rotulo "%s"' % r["rotulo"], None))
+    for i, r in enumerate(rot):
+        #  El cristal del preset: su caja ES el cristal. Ver arriba.
+        if r.get("tipo") == "cristal":
+            continue
         rx0, ry0, rx1, ry1 = r["x"], r["y"], r["x"] + r["w"], r["y"] + r["h"]
-        for capa, cx0, cy0, cx1, cy1, quien in cajas:
+        aire = max(int(r.get("aire", 0) or 0), AIRE_TEXTO)
+        for j, (capa, cx0, cy0, cx1, cy1, quien, panel) in enumerate(cajas):
             if capa != r.get("capa", 0):
                 continue
-            if min(rx1, cx1) - max(rx0, cx0) <= 0:
+            #  La propia caja del rotulo esta en la lista, detras de las tapas.
+            if (cx0, cy0, cx1, cy1) == (rx0, ry0, rx1, ry1):
                 continue
-            #  Dentro de la caja no es pegado: es suyo.
-            if ry0 >= cy0 and ry1 <= cy1:
+            #  Dentro de un panel no es pegado: es suyo.
+            if panel and rx0 >= cx0 and ry0 >= cy0 and rx1 <= cx1 and ry1 <= cy1:
                 continue
-            hueco = max(cy0 - ry1, ry0 - cy1)
-            if PEGADO_DESDE <= hueco < AIRE_TEXTO:
+            hueco = _hueco(rx0, ry0, rx1, ry1, cx0, cy0, cx1, cy1)
+            if hueco is None:
+                continue
+            #  Dos renglones, uno encima del otro y sin pisarse: interlineado.
+            #  `panel is None` es «la caja es otro rotulo»; sin cruce en y el
+            #  de abajo empieza donde acaba el de arriba, aunque sea en
+            #  diagonal: en la tabla de GESTOS el QUE de una fila acaba a
+            #  tres pixeles en x del COMO de la siguiente, y eso no es un
+            #  texto al lado de otro, es la fila de abajo. Entre dos textos
+            #  la regla mira los que comparten renglon -se cruzan en y- y los
+            #  que se pisan.
+            if panel is None and hueco >= 0 and (cy0 >= ry1 or ry0 >= cy1):
+                continue
+            if PEGADO_DESDE <= hueco < aire:
                 out.append(("PEGADO", f"{size}/{lang}/{sheet or 'face'}",
-                            f'"{r["rotulo"]}" a {hueco} px de "{quien}" (pide {AIRE_TEXTO})',
-                            AIRE_TEXTO - hueco))
+                            f'"{r["rotulo"]}" a {hueco} px de "{quien}" (pide {aire})',
+                            aire - hueco))
                 break
     return out
 

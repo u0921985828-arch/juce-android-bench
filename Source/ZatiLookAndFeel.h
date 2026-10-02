@@ -555,11 +555,14 @@ namespace Metrics
     //
     //  La celda sigue midiendo `hit` -lo que se toca-, pero la barra que se
     //  PINTA dentro va a este grosor, centrada: del telefono, con la barra a
-    //  toda la fila, «las barras mas finas no?». Veintidos y no un numero
-    //  suelto: es `readout`, el alto que ya tiene toda cifra de la app, y la
-    //  barra lleva la cifra dentro. Asi un fader y un numero de la fila de al
-    //  lado miden lo mismo de alto.
-    static constexpr int grosorFader = readout;
+    //  toda la fila, «las barras mas finas no?». Fue `readout` (22) con la
+    //  cifra dentro, y del telefono otra vez: «no tan altos los faders, son
+    //  muy gruesos; nada mas grueso de lo normativo ergonomico visual». Lo
+    //  que se toca es la celda; lo que se ve es una pista de `md` (12), que
+    //  es la escala de una mesa -una pista de doce con la aguja de seis
+    //  dentro-, y la cifra va centrada en la celda, por encima de la pista,
+    //  porque ya no cabe dentro. Ver Tests/canales.py, regla del fader.
+    static constexpr int grosorFader = md;
     //  Y DENTRO DE LA BARRA, LA AGUJA: el vumetro del fader, mas fino que
     //  la barra para que se lea como otra cosa -lo que PEGA, no lo que esta
     //  puesto-. La mitad del grosor, centrada.
@@ -1640,11 +1643,15 @@ public:
                 const auto fondo = aLaDerecha
                                      ? ZatiColours::chassisTop
                                      : ZatiColours::chassisTop.overlaidWith (relleno);
+                //  Y LA CAJA DE LA CIFRA ES LA CELDA, no la pista: con la
+                //  pista de `md` la letra de `fMeta` ya no cabe dentro, asi
+                //  que va centrada en la fila, por encima de la pista, con
+                //  la misma linea media. Ver Metrics::grosorFader.
                 const auto caja = aLaDerecha
-                                    ? juce::Rectangle<float> (pos + 4.0f, cell.getY(),
-                                                              juce::jmax (0.0f, cell.getRight() - 6.0f - (pos + 4.0f)), cell.getHeight())
-                                    : juce::Rectangle<float> (cell.getX() + 6.0f, cell.getY(),
-                                                              juce::jmax (0.0f, pos - 4.0f - (cell.getX() + 6.0f)), cell.getHeight());
+                                    ? juce::Rectangle<float> (pos + 4.0f, (float) y,
+                                                              juce::jmax (0.0f, cell.getRight() - 6.0f - (pos + 4.0f)), (float) h)
+                                    : juce::Rectangle<float> (cell.getX() + 6.0f, (float) y,
+                                                              juce::jmax (0.0f, pos - 4.0f - (cell.getX() + 6.0f)), (float) h);
                 g.setColour (ZatiColours::bestOn (fondo, ZatiColours::ink, juce::Colours::white));
                 g.drawText (txt, caja, juce::Justification::centredRight, false);
             }

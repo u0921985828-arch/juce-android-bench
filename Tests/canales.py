@@ -491,6 +491,18 @@ def main():
     #     (cuatro carriles de JUCE: se ve). Roto a proposito -grosorFader a la
     #     celda entera- la banda vale 40 y esta regla FALLA; la de la tinta
     #     no, que una barra gorda tambien esta llena.
+    #
+    #     Y MAS FINA TODAVIA, del telefono tras verla de 22: «no tan altos los
+    #     faders, son muy gruesos; nada mas grueso de lo normativo». La barra
+    #     pasa a `Metrics::md` (12) con la aguja de 6, y la cifra ya no cabe
+    #     DENTRO de la barra: va centrada en la celda, encima de la barra,
+    #     como en cualquier mesa. La banda se mide por las filas con tinta, y
+    #     la cifra a 0 dB cae a la izquierda del pomo, asi que con la letra
+    #     por medio la banda puede leer uno o dos pixeles mas que la barra:
+    #     el techo es la MITAD de la celda (fina) y el suelo 10 (se ve: dos
+    #     carriles de JUCE y medio, y la aguja de 6 dentro con un pixel de
+    #     margen por lado). Medido con la barra de 22: banda 22; con la de
+    #     12: la cifra de abajo.
     tinta  = r.get ("fader_tinta", -1.0)
     letra  = r.get ("fader_letra", -1.0)
     cajas  = r.get ("fader_cajas", -1)
@@ -502,9 +514,9 @@ def main():
     if tinta < 0.6:
         malas.append ("el fader del pad 0 a 0 dB solo pinta el %.0f%% de su banda: "
                       "sigue siendo un carril de cuatro pixeles" % (tinta * 100.0))
-    if banda < 16 or banda > alto - 12:
+    if banda < 10 or banda > alto // 2:
         malas.append ("la banda del fader del pad 0 mide %d px en una celda de %d: tiene que "
-                      "verse fina (hasta %d) y verse (desde 16)" % (banda, alto, alto - 12))
+                      "verse fina (hasta %d) y verse (desde 10)" % (banda, alto, alto // 2))
     if letra < 0.2:
         malas.append ("el fader del pad 0 a -60 dB no lleva cifra dentro (%.3f de la "
                       "mitad derecha no es fondo)" % letra)

@@ -8474,7 +8474,8 @@ juce::Rectangle<int> MainComponent::apunta (juce::Graphics& g, juce::Rectangle<i
                      //  es la mitad del tamano real de un rotulo. Quien no dice
                      //  el suyo aprieta lo que dice `minimo`, y si `minimo` es
                      //  cero -«no juzgues el ancho»- no aprieta nada.
-                     apreton >= 0.0f ? apreton : (minimo > 0.0f ? minimo : 1.0f));
+                     apreton >= 0.0f ? apreton : (minimo > 0.0f ? minimo : 1.0f),
+                     Metrics::xs);   //  su marco de aire: ver UiAudit::rotulo
     return real;
 }
 

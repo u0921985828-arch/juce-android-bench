@@ -1342,6 +1342,13 @@ void MainComponent::paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> a
                                        (int) juce::GlyphArrangement::getStringWidth (g.getCurrentFont(),
                                                                                      T (rows[i].how)) + 10);
         auto howCell = Lang::takeStart (text, howW);
+        //  Y EL AIRE ENTRE LAS DOS COLUMNAS. Los diez pixeles de `howW` son
+        //  del COMO cuando cabe en una linea; cuando el tope de tres quintos
+        //  lo parte en dos, la celda se llena hasta el filo y el QUE empezaba
+        //  a CERO: «MANTEN UNA RANURA DEL RACK» en 344x882, tres filas en
+        //  280x653. Cada texto lleva su marco de aire -ver UiAudit::rotulo-
+        //  y el QUE empieza detras del marco del COMO.
+        Lang::takeStart (text, Metrics::xs);
         //  Y APUNTADOS, que es lo que faltaba para que existieran.
         //
         //  Estas dieciseis cadenas se PINTAN, asi que ninguna de las once

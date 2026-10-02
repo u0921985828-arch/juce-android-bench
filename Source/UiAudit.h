@@ -209,7 +209,7 @@ namespace UiAudit
     //  otra cosa no se puede juzgar, que es el argumento de `pide` contra
     //  `usado` una vuelta mas adentro.
     struct Rotulo { int x, y, w, h; juce::String texto, tipo; int capa; int pide;
-                    float cuerpoLetra; int lineas; float apreton; };
+                    float cuerpoLetra; int lineas; float apreton; int aire; };
     inline std::vector<Rotulo> rotulos;
 
     //  EN QUE CAPA SE ESTA PINTANDO.
@@ -236,13 +236,20 @@ namespace UiAudit
     //  por que llevar la cuenta de lo que dibuja.
     inline bool midiendo = false;
 
+    //  Y CADA ROTULO LLEVA SU MARCO DE AIRE, `aire`: el contorno transparente
+    //  que le pertenece y en el que no puede entrar nada -ni una tapa, ni un
+    //  panel, ni otro texto-. Del telefono: «que cada texto tenga su marco de
+    //  aire, su contorno transparente; que ocupe un espacio, que no se pueda
+    //  poner cualquier cosa encima». Lo dice la app, en pixeles, y lo mide
+    //  Tests/expo.py (regla PEGADO) por los cuatro lados.
     inline void rotulo (juce::Rectangle<int> r, const juce::String& t, const char* tipo,
-                        int pide = 0, float cuerpo = 0.0f, int lineas = 1, float apreton = 1.0f)
+                        int pide = 0, float cuerpo = 0.0f, int lineas = 1, float apreton = 1.0f,
+                        int aire = 0)
     {
         if (! midiendo || t.isEmpty()) return;
         r += origenPintado;
         rotulos.push_back ({ r.getX(), r.getY(), r.getWidth(), r.getHeight(), t, tipo, capaActual,
-                             pide, cuerpo, lineas, apreton });
+                             pide, cuerpo, lineas, apreton, aire });
     }
 
     //  CUANTOS TOQUES DESDE LA CARA, QUE ES LA CIFRA QUE DEFINE «INTUITIVO» Y
@@ -1636,7 +1643,8 @@ namespace UiAudit
                       << ",\"pide\":" << r.pide
                       << ",\"cuerpoLetra\":" << juce::String (r.cuerpoLetra, 2)
                       << ",\"apreton\":" << juce::String (r.apreton, 2)
-                      << ",\"lineas\":" << r.lineas << "}" << std::endl;
+                      << ",\"lineas\":" << r.lineas
+                      << ",\"aire\":" << r.aire << "}" << std::endl;
 
         for (const auto& a : aperturas)
             std::cout << "{\"apertura\":\"" << a.ficha.toRawUTF8() << "\""
