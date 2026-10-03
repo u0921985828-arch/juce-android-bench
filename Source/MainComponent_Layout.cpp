@@ -5548,9 +5548,37 @@ void MainComponent::resized()
             //  already there: the halfGap between them is what separates M from
             //  S, so taking it out of the key as well paid for the same gap
             //  twice and left both under the floor on every screen measured.
-            mixSolos[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
+            //  Y LOS DOS BOTONES CEDEN ANTES QUE EL PAN. Del telefono, con la
+            //  mesa a 400 dp de ancho y sin pan: «haz los botones menos
+            //  anchos, tiene que entrar todo en una fila». El pan entra
+            //  cuando lo que queda tras S y M llega a `kFilaConPan` -el suelo
+            //  del fader mas el tercio que el pan se lleva de esa cuenta,
+            //  ver abajo-; donde le faltan unos pixeles, S y M se estrechan
+            //  LO JUSTO, nunca por debajo de `hit - sm` (32), y solo si con
+            //  eso el pan entra de verdad: estrecharlos para que el pan siga
+            //  fuera seria pagar sin cobrar. El numero sale de la cuenta del
+            //  pan de abajo: el pan se lleva un tercio del resto -47 de 143-
+            //  y al fader le tienen que quedar 96 con su aire; con 142 el pan
+            //  se lleva 47 y al fader le quedan 95. La primera version decia
+            //  144 y en 412 estrechaba M a 39 para nada: ahi el resto es 143
+            //  y el pan ya entraba. Medido: 412 no se toca (40); 400 baja a
+            //  35, 393 -la del banco- a 33 y 392 a 32, y en los tres el pan
+            //  entra (44, 43, 44) y el fader en 92 de bordes (96 de fila);
+            //  384 se queda en 40 y sin pan, porque ni a 32 le llega. En
+            //  393x851 S y M quedan por debajo del dedo: son los 256 TOUCH
+            //  mas de expo.py, el precio pedido. Tests/canales.py, regla de
+            //  la fila con pan.
+            constexpr int kFilaConPan = 96 + 47;
+            int anchoMS = Metrics::hit;
+            {
+                const int resto = row.getWidth() - 2 * Metrics::hit - 2 * Metrics::halfGap;
+                const int falta = kFilaConPan - resto;
+                if (falta > 0 && Metrics::hit - (falta + 1) / 2 >= Metrics::hit - Metrics::sm)
+                    anchoMS = Metrics::hit - (falta + 1) / 2;
+            }
+            mixSolos[i]->setBounds (row.removeFromRight (anchoMS).reduced (0, Metrics::aireTapaDensa));
             row.removeFromRight (Metrics::halfGap);
-            mixMutes[i]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
+            mixMutes[i]->setBounds (row.removeFromRight (anchoMS).reduced (0, Metrics::aireTapaDensa));
             row.removeFromRight (Metrics::halfGap);
             //  ...and the pan is a target too, so it gets a floor rather than a
             //  share: a third of the row came to twenty-six pixels of travel on

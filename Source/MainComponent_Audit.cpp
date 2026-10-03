@@ -5979,7 +5979,7 @@ void MainComponent::auditCanales()
     //  donde estan. Contadas contra la celda entera, una barra fina y bien
     //  llena daria la misma cifra que un carril gordo y vacio.
     double faderTinta = 0.0, faderLetra = 0.0;
-    int faderAlto = 0, faderAncho = 0, faderCajas = 0, faderBanda = 0;
+    int faderAlto = 0, faderAncho = 0, faderCajas = 0, faderBanda = 0, mesaPan = 0, mesaMS = 0;
     if (auto* f = mixFaders[0])
     {
         const double antes = f->getValue();
@@ -6016,6 +6016,10 @@ void MainComponent::auditCanales()
         };
         faderAlto  = f->getHeight();
         faderAncho = f->getWidth();
+        //  La fila del pad 0 con su pan y sus dos botones: lo que mide el
+        //  pan si esta (cero si la escalera lo tiro) y lo que mide M.
+        mesaPan = mixPans[0]->isVisible() ? mixPans[0]->getWidth() : 0;
+        mesaMS  = mixMutes[0]->getWidth();
         faderTinta = cuenta (0.0, false);
         faderLetra = cuenta (-60.0, true);
         f->setValue (antes, juce::dontSendNotification);
@@ -6114,6 +6118,7 @@ void MainComponent::auditCanales()
     std::cout << "{\"canales\":" << kNumCanales
               << ",\"fader_alto\":" << faderAlto << ",\"fader_ancho\":" << faderAncho
               << ",\"fader_banda\":" << faderBanda
+              << ",\"mesa_pan\":" << mesaPan << ",\"mesa_ms\":" << mesaMS
               << ",\"mesa_vista\":" << mesaVista << ",\"mesa_filas\":" << mesaFilas
               << ",\"mesa_barra\":" << mesaBarra << ",\"mesa_borde\":" << mesaBorde
               << ",\"mesa_barra_app\":" << mesaBarraApp << ",\"mesa_hueco\":" << mesaHueco

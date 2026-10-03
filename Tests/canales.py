@@ -601,6 +601,43 @@ def main():
     if vuelve != 0:
         malas.append ("un toque en la cabeza de la barra no vuelve a la primera fila (queda en %d px)" % vuelve)
 
+    #  11. EN LA FILA DE UN PAD ENTRA TODO: pan, fader, M y S.
+    #
+    #     Del telefono, a 400 dp de ancho y con la foto delante: la fila
+    #     traia fader, M y S, y el pan no estaba -la escalera lo tira donde
+    #     al fader no le quedan 96 con el pan puesto- y «haz los botones
+    #     menos anchos, tiene que entrar todo en una fila». Ahora S y M ceden
+    #     antes que el pan: se estrechan lo justo, nunca por debajo de 32, y
+    #     solo si con eso el pan entra. Se mide en 400x900 -la pantalla de la
+    #     foto, que no es ninguna de las nueve de expo.py-: el pan esta y
+    #     mide un dedo, M mide al menos 32 y el fader conserva su suelo: 96
+    #     de fila, que son 92 de bordes con `aireTapa` a cada lado, los
+    #     mismos 92 que mide en 412x915. Y en 412x915, donde el pan ya
+    #     entraba, M sigue en 40: estrechar donde no hace falta es pagar sin
+    #     cobrar (la primera version de la escalera lo hacia: M a 39 en 412
+    #     por contar 144 donde la cuenta del pan dice 143).
+    #     Medido: 400x900 pan 44, M 35, fader 92; 412x915 M 40. Roto a
+    #     proposito -la escalera quitada, M y S en 40 siempre- el pan de
+    #     400x900 mide 0.
+    r400 = corre ({"ZATI_SIZE": "400x900"})
+    if r400 is None:
+        malas.append ("la app no publico la linea de canales en 400x900")
+    else:
+        print ("fila     en 400x900 el pan del pad 0 mide %d, M %d y el fader %d; en 412x915 M mide %d"
+               % (r400.get ("mesa_pan", -1), r400.get ("mesa_ms", -1), r400.get ("fader_ancho", -1),
+                  r.get ("mesa_ms", -1)))
+        if r400.get ("mesa_pan", 0) < 44:
+            malas.append ("en 400x900 el pan del pad 0 no esta en la fila (mide %d): los botones "
+                          "tienen que ceder antes que el pan" % r400.get ("mesa_pan", 0))
+        if r400.get ("mesa_ms", 0) < 32:
+            malas.append ("en 400x900 M mide %d: nunca por debajo de 32" % r400.get ("mesa_ms", 0))
+        if r400.get ("fader_ancho", 0) < 92:
+            malas.append ("en 400x900 el fader del pad 0 mide %d: el pan no se paga con el fader (suelo 92)"
+                          % r400.get ("fader_ancho", 0))
+        if r.get ("mesa_ms", 0) != 40:
+            malas.append ("en 412x915 M mide %d y el pan ya entraba con 40: estrechar donde no hace "
+                          "falta es pagar sin cobrar" % r.get ("mesa_ms", 0))
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)
