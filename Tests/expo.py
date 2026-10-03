@@ -365,6 +365,24 @@ def judge(rows, size, lang, sheet):
             if r["icoW"] != LADO or r["icoH"] != LADO:
                 findings.append(("SPRITE", tag,
                                  f'{r["icono"]} {r["icoW"]}x{r["icoH"]} y el lado es {LADO}', 0))
+        # 1c. LA BARRA DE JUCE NO SALE EN NINGUNA PANTALLA.
+        #
+        #     Del telefono, con la mesa: «la barra que aparece en el mixer no
+        #     deberia ser la de JUCE, deberia ser hecha en la app, como alguna
+        #     barra mas que aparece por ahi». La mesa paso a `BarraVista` y las
+        #     fichas que se desplazan y el manual se quedaron con la de JUCE
+        #     pintada por el LookAndFeel: dos barras para una misma cosa. El
+        #     volcado solo trae lo visible, y JUCE enciende su barra cuando el
+        #     contenido no cabe, asi que una `ScrollBar` con medida es una
+        #     barra de JUCE a la vista. Las de las listas de JUCE -el navegador
+        #     de ficheros, PROYECTOS- no son nuestras, como en CERO: cuelgan de
+        #     un `ListViewport`. Roto -el binario anterior-: 3 en una pasada
+        #     corta de cuatro corridas (set y manual en 360x640, manual en
+        #     412x915; pads cabe y no enciende barra), de 8x504, 8x390 y 8x665.
+        hoja = r["path"].split("/")[-1]
+        if (hoja.endswith("ScrollBarE") and r["w"] > 0 and r["h"] > 0
+                and "ListViewportE" not in r["path"]):
+            findings.append(("BARRA", tag, f'barra de JUCE a la vista: {r["path"].split("/")[-3:]} {r["w"]}x{r["h"]}', 0))
         # 2. Nothing may be laid out off the window.
         if r["w"] > 0 and r["h"] > 0 and not r.get("scrolled"):
             if r["x"] < -1 or r["y"] < -1 or r["x"] + r["w"] > W + 1 or r["y"] + r["h"] > H + 1:
@@ -1985,7 +2003,7 @@ def main():
                          "UNTRANSLATED", "CERO", "TAPADO", "SPRITE", "CORTADO", "PISADO",
                          "FILA", "CUADRADA", "ASOMA", "CABECERA", "MARCO", "CARA",
                          "CHIPS", "ANATOMIA", "TARJETA", "SOBRA", "PEQUENO", "APRETADO",
-                         "PEGADO", "CRASH") if juzgado.get(k)]
+                         "PEGADO", "BARRA", "CRASH") if juzgado.get(k)]
     if resto:
         duros.append("RESIDUO")
     print()

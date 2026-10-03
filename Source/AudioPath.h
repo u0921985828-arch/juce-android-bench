@@ -91,6 +91,7 @@ namespace AudioPath
             case Mmap::Never:  return T ("no soportado");
             case Mmap::Auto:   return T ("disponible");
             case Mmap::Always: return T ("forzado");
+            case Mmap::Unknown:
             default:           return T ("desconocido");
         }
     }

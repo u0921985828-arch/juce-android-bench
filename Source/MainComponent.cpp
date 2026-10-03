@@ -3479,11 +3479,16 @@ MainComponent::MainComponent()
         mixRows.addAndMakeVisible (f);
         canFaders.add (f);
 
+        //  Y SON SWITCHES, como la M y la S de la fila de un pad: la pagina de
+        //  CANALES se quedo con las tapas cuando la de PADS paso a corredera,
+        //  y del telefono llego la foto: «¿por que la pantalla de canales
+        //  sigue siendo asi?». Una ficha, una gramatica.
         auto* m = new juce::TextButton ("M");
         styleButton (*m, kStepOff);
         m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
         m->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
         m->setClickingTogglesState (true);
+        m->getProperties().set ("switch", true);
         m->onClick = [this, c, m] { engine.setCanalMute (c, m->getToggleState()); refreshMixStrip(); };
         mixRows.addAndMakeVisible (m);
         canMutes.add (m);
@@ -3507,6 +3512,7 @@ MainComponent::MainComponent()
         s->setColour (juce::TextButton::textColourOnId,
                       ZatiColours::textOn (ZatiColours::yellow));
         s->setClickingTogglesState (true);
+        s->getProperties().set ("switch", true);
         s->onClick = [this, c, s] { engine.setCanalSolo (c, s->getToggleState()); refreshMixStrip(); };
         mixRows.addAndMakeVisible (s);
         canSolos.add (s);
@@ -3557,9 +3563,21 @@ MainComponent::MainComponent()
     //  capa. Ver ManualBody y UiAudit::capaActual.
     manualBody.capa = (int) manualSheet.getProperties()["capa"];
     manualScroll.setViewedComponent (&manualBody, false);
-    manualScroll.setScrollBarsShown (true, false);
-    manualScroll.setScrollBarThickness (8);
+    //  SIN LA BARRA DE JUCE: la del manual es `manualBarra`, la de la casa,
+    //  en pixeles del cuerpo, como la de cada ficha que se desplaza. Ver
+    //  Sheet::barra.
+    manualScroll.setScrollBarsShown (false, false);
     manualSheet.addAndMakeVisible (manualScroll);
+    manualBarra.ponEje (true);
+    manualBarra.ponHaciaAbajo (true);
+    manualBarra.onMueve = [this] (int primero) { manualScroll.setViewPosition (0, primero); };
+    manualScroll.onVista = [this]
+    {
+        manualBarra.ponRango (manualScroll.getViewPositionY(),
+                              manualScroll.getMaximumVisibleHeight(), manualBody.getHeight());
+    };
+    manualSheet.addAndMakeVisible (manualBarra);
+    manualBarra.setVisible (false);
     manualSheet.setVisible (false);
     manualSheet.onDismiss = [this] { closeAllSheets(); };
     manualSheet.paintContent = [this] (juce::Graphics& g) { paintManualSheetContent (g); };
@@ -9852,8 +9870,8 @@ void MainComponent::pushFadesToWaveform()
         const float fi = (float) juce::jlimit (0.0, tope, (double) padFadeIn [(size_t) selectedPad]);
         const float fo = (float) juce::jlimit (0.0, tope, (double) padFadeOut[(size_t) selectedPad]);
 
-        if (fi != padFadeIn [(size_t) selectedPad]) { padFadeIn [(size_t) selectedPad] = fi; engine.setPadFadeIn  (selectedPad, fi); }
-        if (fo != padFadeOut[(size_t) selectedPad]) { padFadeOut[(size_t) selectedPad] = fo; engine.setPadFadeOut (selectedPad, fo); }
+        if (! juce::exactlyEqual (fi, padFadeIn [(size_t) selectedPad])) { padFadeIn [(size_t) selectedPad] = fi; engine.setPadFadeIn  (selectedPad, fi); }
+        if (! juce::exactlyEqual (fo, padFadeOut[(size_t) selectedPad])) { padFadeOut[(size_t) selectedPad] = fo; engine.setPadFadeOut (selectedPad, fo); }
 
         fadeInSlider.setValue  (fi, juce::dontSendNotification);
         fadeOutSlider.setValue (fo, juce::dontSendNotification);
@@ -12360,7 +12378,7 @@ juce::ValueTree MainComponent::captureState() const
         for (int c = 0; c < kNumCanales; ++c)
         {
             juce::StringArray r;
-            for (int s = 0; s < kNumRanuras; ++s) r.add (juce::String (slotFx[(size_t) c][(size_t) s]));
+            for (int ra = 0; ra < kNumRanuras; ++ra) r.add (juce::String (slotFx[(size_t) c][(size_t) ra]));
             filas.add (r.joinIntoString (","));
         }
         fx.setProperty ("slots", filas.joinIntoString (";"), nullptr);
@@ -12468,7 +12486,7 @@ juce::ValueTree MainComponent::captureState() const
     fx.setProperty ("xyLatch", xyLatch, nullptr);
     s.addChild (fx, -1, nullptr);
 
-    juce::ValueTree pads ("PADS");
+    juce::ValueTree padsVt ("PADS");
     for (int i = 0; i < kNumPads; ++i)
     {
         juce::ValueTree p ("PAD");
@@ -12571,9 +12589,9 @@ juce::ValueTree MainComponent::captureState() const
         //  neutro— es exactamente la respuesta que hace falta. Escribirlo con
         //  todo unos seria un campo que dice lo mismo siempre y que el dia que
         //  alguien lo lea al reves apaga los sesenta y cuatro pads.
-        pads.addChild (p, -1, nullptr);
+        padsVt.addChild (p, -1, nullptr);
     }
-    s.addChild (pads, -1, nullptr);
+    s.addChild (padsVt, -1, nullptr);
 
     juce::ValueTree banks ("BANKS");
     for (int b = 0; b < kNumPatterns; ++b)
@@ -12831,7 +12849,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             //  donde caen los pads de un proyecto sin canales: alli la maquina
             //  suena como sonaba, y los otros quince nacen vacios.
             for (auto& fila : slotFx) fila.fill (kSlotVacia);
-            for (int s = 0; s < kNumRanuras; ++s) slotFx[0][(size_t) s] = s;
+            for (int ra = 0; ra < kNumRanuras; ++ra) slotFx[0][(size_t) ra] = ra;
 
             if (fx.hasProperty ("slots"))
             {
@@ -12846,10 +12864,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 {
                     juce::StringArray r;
                     r.addTokens (filas[c], ",", "");
-                    for (int s = 0; s < kNumRanuras; ++s)
+                    for (int ra = 0; ra < kNumRanuras; ++ra)
                     {
-                        const int v = s < r.size() ? r[s].getIntValue() : kSlotVacia;
-                        slotFx[(size_t) c][(size_t) s] = juce::isPositiveAndBelow (v, kNumFx) ? v : kSlotVacia;
+                        const int v = ra < r.size() ? r[ra].getIntValue() : kSlotVacia;
+                        slotFx[(size_t) c][(size_t) ra] = juce::isPositiveAndBelow (v, kNumFx) ? v : kSlotVacia;
                     }
                 }
 
@@ -12861,14 +12879,14 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 //  quita: hay dieciseis instancias y un inserto puede estar en
                 //  todas.
                 for (int c = 0; c < kNumCanales; ++c)
-                    for (int s = 0; s < kNumRanuras; ++s)
+                    for (int ra = 0; ra < kNumRanuras; ++ra)
                     {
-                        const int v = slotFx[(size_t) c][(size_t) s];
+                        const int v = slotFx[(size_t) c][(size_t) ra];
                         if (v < 0) continue;
                         bool repe = false;
-                        for (int t = 0; t < s && ! repe; ++t)
+                        for (int t = 0; t < ra && ! repe; ++t)
                             repe = slotFx[(size_t) c][(size_t) t] == v;
-                        if (repe) slotFx[(size_t) c][(size_t) s] = kSlotVacia;
+                        if (repe) slotFx[(size_t) c][(size_t) ra] = kSlotVacia;
                     }
             }
 
@@ -13081,9 +13099,9 @@ void MainComponent::applyState (const juce::ValueTree& s)
     //  lo que vale en una maquina recien encendida.
     for (int i = 0; i < kNumPads; ++i) padPorDefecto (i);
 
-    if (auto pads = s.getChildWithName ("PADS"); pads.isValid())
+    if (auto padsVt = s.getChildWithName ("PADS"); padsVt.isValid())
     {
-        for (const auto& p : pads)
+        for (const auto& p : padsVt)
         {
             const int i = (int) p.getProperty ("i", -1);
             if (! juce::isPositiveAndBelow (i, kNumPads)) continue;
@@ -13571,10 +13589,10 @@ void MainComponent::applyState (const juce::ValueTree& s)
             const auto n = juce::StringArray::fromTokens (fila.trim(), " ", "");
             if (n.size() < 4) continue;
             const int paso = n[0].getIntValue();
-            const int fx   = n[1].getIntValue();
+            const int efe  = n[1].getIntValue();
             const int par  = n[2].getIntValue();
             if (paso < 0 || paso >= AudioEngine::kSongBars * engine.pasosPorCompas()) continue;
-            if (! juce::isPositiveAndBelow (fx, kNumFx) || ! juce::isPositiveAndBelow (par, kParamsPorFx)) continue;
+            if (! juce::isPositiveAndBelow (efe, kNumFx) || ! juce::isPositiveAndBelow (par, kParamsPorFx)) continue;
             if ((int) autoEventos.size() >= AudioEngine::kMaxAuto) break;
             //  EL CANAL VA AL FINAL y no en su sitio, que es lo que hace que un
             //  proyecto de la tanda anterior vuelva entero: alli la fila tenia
@@ -13583,8 +13601,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
             //  medio, los cuatro campos de un fichero de ayer se leerian
             //  corridos y el valor caeria en el canal.
             const int canal = n.size() >= 5 ? n[4].getIntValue() : 0;
-            autoEventos.push_back ({ paso, (juce::uint8) fx, (juce::uint8) par,
-                                     (juce::uint8) AudioEngine::canalDeParam (canal, fx),
+            autoEventos.push_back ({ paso, (juce::uint8) efe, (juce::uint8) par,
+                                     (juce::uint8) AudioEngine::canalDeParam (canal, efe),
                                      n[3].getFloatValue() });
         }
     }
@@ -13880,8 +13898,8 @@ juce::String MainComponent::lineaDeContinuidad (int anchoDisponible,
     //  abajo: cero E/S y cero estado nuevo que mantener al dia.
     if (llenos > 0)
     {
-        const auto pads = padsTexto (llenos, true);
-        if (cabe (linea + sep + pads)) linea += sep + pads;
+        const auto padsTxt = padsTexto (llenos, true);
+        if (cabe (linea + sep + padsTxt)) linea += sep + padsTxt;
     }
 
     //  De cuando es. Sin fecha valida no hay campo — «nunca se ha guardado» no
@@ -16760,7 +16778,7 @@ void MainComponent::ponMovimiento (bool on)
         cristal.setColumns (cero, cero, 0);
         cristal.setVu (0.0f, 0.0f);
         for (auto* b : fxButtons)
-            if (b != nullptr && (double) b->getProperties().getWithDefault ("pulse", 0.0) != 0.0)
+            if (b != nullptr && ! juce::exactlyEqual ((double) b->getProperties().getWithDefault ("pulse", 0.0), 0.0))
             {
                 b->getProperties().set ("pulse", 0.0);
                 b->repaint();
@@ -16953,7 +16971,6 @@ void MainComponent::aplicaZoomPasos (float z)
     seqZoomW = stepGrid.getZoomAncho();
     seqZoomBtn.setButtonText (Lang::ltr (seqZoomW > 1.5f ? "2:1"
                                        : seqZoomW < 0.9f ? "3:4" : "1:1"));
-    const int len = engine.getPatternLength (selectedPattern);
     seqPrimerCelda = juce::jlimit (0, juce::jmax (0, celdasDePatron (selectedPattern) - stepGrid.numCols()),
                                    seqPrimerCelda);
     refreshStepGrid();
@@ -18453,7 +18470,7 @@ void MainComponent::refreshAudioOptions()
     for (double r : rates)
     {
         if (rateButtons.size() >= 4) break;
-        auto* b = new juce::TextButton (juce::String (r / 1000.0, (r == (double) (int) (r / 1000.0) * 1000.0) ? 0 : 1) + "k");
+        auto* b = new juce::TextButton (juce::String (r / 1000.0, juce::exactlyEqual (r, (double) (int) (r / 1000.0) * 1000.0) ? 0 : 1) + "k");
         styleButton (*b, ZatiColours::key);
         litAccent (*b);
         b->setToggleState (std::abs (r - curRate) < 1.0, juce::dontSendNotification);
@@ -18967,10 +18984,14 @@ void MainComponent::plantaPacksDePrueba()
             std::unique_ptr<juce::FileOutputStream> out (f.createOutputStream());
             if (out == nullptr || ! out->openedOk()) continue;
             juce::WavAudioFormat wav;
-            std::unique_ptr<juce::AudioFormatWriter> w (
-                wav.createWriterFor (out.get(), 48000.0, 1, 16, {}, 0));
+            //  El flujo se cede en un unique_ptr: si el escritor nace se lo
+            //  queda, y si no, sigue aqui y se cierra solo al salir.
+            std::unique_ptr<juce::OutputStream> flujo (std::move (out));
+            auto w = wav.createWriterFor (flujo, juce::AudioFormatWriterOptions{}
+                                                      .withSampleRate (48000.0)
+                                                      .withNumChannels (1)
+                                                      .withBitsPerSample (16));
             if (w == nullptr) continue;
-            out.release();
             w->writeFromAudioSampleBuffer (pip, 0, pip.getNumSamples());
         }
     }
@@ -21036,9 +21057,9 @@ void MainComponent::bombeaAudioDePrueba()
     //  entregado en ese tiempo. Con menos, el osciloscopio avanzaria a camara
     //  lenta y la medida diria que la cara se repinta menos de lo que se
     //  repinta.
-    const int bloques = juce::jmax (1, (int) (kRate * (double) DeviceTier::profile().relojMs
+    const int nBloques = juce::jmax (1, (int) (kRate * (double) DeviceTier::profile().relojMs
                                               / 1000.0 / (double) kRafaga));
-    for (int i = 0; i < bloques; ++i)
+    for (int i = 0; i < nBloques; ++i)
     {
         bancoBloque.clear();
         engine.renderNextBlock (bancoBloque, 0, kRafaga);

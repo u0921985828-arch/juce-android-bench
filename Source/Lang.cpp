@@ -2350,6 +2350,7 @@ void Lang::set (Id newLanguage)
             case en: value = row.en; break;
             case zh: value = row.zh; break;
             case ar: value = row.ar; break;
+            case numLanguages:
             default: break;
         }
 

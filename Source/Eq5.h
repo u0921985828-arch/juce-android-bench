@@ -74,6 +74,7 @@ public:
             case estanteAlto: return "ESTANTE A";
             case pasoAlto:    return "PASO ALTO";
             case pasoBajo:    return "PASO BAJO";
+            case kNumTipos:
             default:          return "CAMPANA";
         }
     }
@@ -177,7 +178,7 @@ public:
     {
         if (! juce::isPositiveAndBelow (b, kBands)) return;
         const float nueva = juce::jlimit (kQMin, kQMax, v);
-        if (nueva != q[(size_t) b]) { q[(size_t) b] = nueva; sucio = true; }
+        if (! juce::exactlyEqual (nueva, q[(size_t) b])) { q[(size_t) b] = nueva; sucio = true; }
     }
     Tipo  tipoDe (int b) const noexcept
     {
@@ -220,7 +221,7 @@ public:
     void ponAncho (float a) noexcept
     {
         const float v = juce::jlimit (kAnchoMin, kAnchoMax, a);
-        if (v != ancho) { ancho = v; sucio = true; }
+        if (! juce::exactlyEqual (v, ancho)) { ancho = v; sucio = true; }
     }
     void ponSalida (float dB) noexcept
     {

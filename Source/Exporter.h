@@ -58,6 +58,27 @@
 //    fuera de tiempo real - asi que las dos pasadas dan exactamente lo mismo:
 //    el master salio con los mismos 1152104 bytes que antes, al byte.
 // ============================================================================
+//  Las opciones del escritor en la forma nueva de JUCE 8: la llamada de seis
+//  argumentos esta marcada como vieja y avisaba en cada compilacion. Los mismos
+//  numeros de siempre -dos canales, 16 bits en OGG y 24 en WAV, calidad 5 de
+//  10 en OGG-; el diccionario pasa de StringPairArray al mapa que pide la API.
+//  Y el flujo se cede en un unique_ptr: si el escritor nace se lo queda, y si
+//  no, sigue en manos de quien llama y se cierra solo al salir, que es lo que
+//  hacia el `release` de antes. Una funcion para los dos que escriben -el
+//  rebote offline y el que graba en vivo-, que son la misma regla.
+static inline juce::AudioFormatWriterOptions opcionesDeEscritor (double sampleRate, bool ogg,
+                                                                 const juce::StringPairArray& meta)
+{
+    auto o = juce::AudioFormatWriterOptions{}
+                 .withSampleRate (sampleRate)
+                 .withNumChannels (2)
+                 .withBitsPerSample (ogg ? 16 : 24)
+                 .withQualityOptionIndex (ogg ? 5 : 0);
+    for (const auto& k : meta.getAllKeys())
+        o = o.withMetadata (k, meta[k]);
+    return o;
+}
+
 class Exporter : public juce::Thread
 {
 public:
@@ -77,9 +98,8 @@ public:
               juce::String quien = {})
         : juce::Thread ("zati-export"),
           live (liveEngine), pads (std::move (samples)), padNames (std::move (names)),
-          dir (std::move (destDir)), base (std::move (baseName)),
-          stems (wantStems), sampleRate (sr > 0.0 ? sr : 44100.0), ogg (comprimido),
-          artista (std::move (quien))
+          dir (std::move (destDir)), base (std::move (baseName)), artista (std::move (quien)),
+          stems (wantStems), sampleRate (sr > 0.0 ? sr : 44100.0), ogg (comprimido)
     {
         //  Dos: la que mide el pico y la que escribe el master. Contarla es lo
         //  honesto - la barra la recorre igual que las demas.
@@ -237,12 +257,10 @@ private:
         if (ogg) fmt.reset (new juce::OggVorbisAudioFormat());
         else     fmt.reset (new juce::WavAudioFormat());
 
-        std::unique_ptr<juce::AudioFormatWriter> writer (
-            fmt->createWriterFor (stream.get(), sampleRate, 2, ogg ? 16 : 24,
-                                  metadatos (soloPad), ogg ? 5 : 0));
+        std::unique_ptr<juce::OutputStream> flujo (std::move (stream));
+        auto writer = fmt->createWriterFor (flujo, opcionesDeEscritor (sampleRate, ogg, metadatos (soloPad)));
         if (writer == nullptr)
             return false;
-        stream.release();   // the writer owns it now
 
         if (! renderPass (soloPad, totalLen, gain, writer.get(), nullptr, pasada))
         {
@@ -513,10 +531,9 @@ public:
             if (artista.isNotEmpty()) m.set (juce::WavAudioFormat::riffInfoArtist, artista);
         }
 
-        std::unique_ptr<juce::AudioFormatWriter> writer (
-            fmt->createWriterFor (stream.get(), sampleRate, 2, ogg ? 16 : 24, m, ogg ? 5 : 0));
+        std::unique_ptr<juce::OutputStream> flujo (std::move (stream));
+        auto writer = fmt->createWriterFor (flujo, opcionesDeEscritor (sampleRate, ogg, m));
         if (writer == nullptr) { roto = true; return; }
-        stream.release();
 
         juce::AudioBuffer<float> trozo (2, kTrozo);
 

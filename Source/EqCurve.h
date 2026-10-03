@@ -130,12 +130,12 @@ public:
         //  representa a su escala, asi que por debajo de eso el dibujo saldria
         //  identico: repintar es trabajo tirado.
         bool movio = false;
-        for (int i = 0; i < kBines && ! movio; ++i)
+        for (size_t i = 0; i < (size_t) kBines && ! movio; ++i)
             movio = std::abs (suavePre[i] - pintadoPre[i]) > 0.1f
                  || std::abs (suavePost[i] - pintadoPost[i]) > 0.1f;
         if (! movio) return;
 
-        for (int i = 0; i < kBines; ++i)
+        for (size_t i = 0; i < (size_t) kBines; ++i)
         {
             pintadoPre[i]  = suavePre[i];
             pintadoPost[i] = suavePost[i];

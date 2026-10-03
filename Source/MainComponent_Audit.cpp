@@ -767,10 +767,10 @@ void MainComponent::auditArrange()
 
         //  Donde esta la celda lo dice la rejilla: con la regla encima, la
         //  cuenta de `celdaAltoPx * fila` apuntaba a la fila de al lado.
-        auto tecla = [this] (int col, int fila)
+        auto tecla = [this] (int col, int fil)
         {
             float x = 0.0f, y = 0.0f;
-            pianoGrid.centroDe (col, fila, x, y);
+            pianoGrid.centroDe (col, fil, x, y);
             return juce::Point<float> (x, y);
         };
 
@@ -804,7 +804,7 @@ void MainComponent::auditArrange()
         const int   vistaAntes = vistaRejilla;
         const float pasoAntes  = engine.getStepBeats();
         const int   undoR      = (int) undoStack.size();
-        gridSlider.setValue (gridSlider.getValue() == 0.0 ? 1.0 : 0.0, juce::sendNotificationSync);
+        gridSlider.setValue (juce::exactlyEqual (gridSlider.getValue(), 0.0) ? 1.0 : 0.0, juce::sendNotificationSync);
         const int   vistaTras  = vistaRejilla;
         const int   entradasRej = (int) undoStack.size() - undoR;
         performUndo();
@@ -1020,7 +1020,7 @@ void MainComponent::auditArrange()
             for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
                 for (int st = 0; st < AudioEngine::kNumSteps; ++st)
                     for (int pd = 0; pd < kNumPads; ++pd)
-                    { pattern[b][(size_t) st][(size_t) pd] = false; engine.setStep (b, st, pd, false); }
+                    { pattern[(size_t) b][(size_t) st][(size_t) pd] = false; engine.setStep (b, st, pd, false); }
 
             engine.setPasoUnidades (rejillaU (2));           // 1/16
             for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
@@ -1088,7 +1088,7 @@ void MainComponent::auditArrange()
             for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
                 for (int st = 0; st < AudioEngine::kNumSteps; ++st)
                     for (int pd = 0; pd < kNumPads; ++pd)
-                    { pattern[b][(size_t) st][(size_t) pd] = false; engine.setStep (b, st, pd, false); }
+                    { pattern[(size_t) b][(size_t) st][(size_t) pd] = false; engine.setStep (b, st, pd, false); }
 
             engine.setPasoUnidades (rejillaU (2));           // 1/16
             for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
@@ -1279,7 +1279,7 @@ void MainComponent::auditArrange()
                     for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
                         for (int st = 0; st < AudioEngine::kNumSteps; ++st)
                             for (int pd = 0; pd < kNumPads; ++pd)
-                            { pattern[b][(size_t) st][(size_t) pd] = false; engine.setStep (b, st, pd, false); }
+                            { pattern[(size_t) b][(size_t) st][(size_t) pd] = false; engine.setStep (b, st, pd, false); }
 
                     engine.setPasoUnidades (rejillaU (i));
                     for (int b = 0; b < AudioEngine::kNumPatterns; ++b)
@@ -1490,7 +1490,7 @@ void MainComponent::auditArrange()
             engine.clearPattern (b);
             for (int st = 0; st < AudioEngine::kNumSteps; ++st)
                 for (int pd = 0; pd < kNumPads; ++pd)
-                    pattern[b][(size_t) st][(size_t) pd] = false;
+                    pattern[(size_t) b][(size_t) st][(size_t) pd] = false;
         }
         engine.setPasoUnidades (rejillaU (0));           // 1/8
         vistaRejilla = 0;
@@ -2354,7 +2354,7 @@ void MainComponent::auditInstr()
             int d = std::abs (a->buffer.getNumSamples() - b->buffer.getNumSamples());
             const auto* x = a->buffer.getReadPointer (0);
             const auto* y = b->buffer.getReadPointer (0);
-            for (int i = 0; i < n; ++i) if (x[i] != y[i]) ++d;
+            for (int i = 0; i < n; ++i) if (! juce::exactlyEqual (x[i], y[i])) ++d;
             return d;
         };
 
@@ -2730,7 +2730,7 @@ void MainComponent::auditInstr()
             int n = 0;
             for (int ch = 0; ch < 2; ++ch)
                 for (int i = 0; i < x.getNumSamples(); ++i)
-                    if (x.getReadPointer (ch)[i] != y.getReadPointer (ch)[i]) ++n;
+                    if (! juce::exactlyEqual (x.getReadPointer (ch)[i], y.getReadPointer (ch)[i])) ++n;
             return n;
         };
 
@@ -4314,6 +4314,44 @@ static void arrastraBarra (BarraVista& b, float t)
     auto u = evento (punto (t));  b.mouseUp (u);
 }
 
+//  UN DEDO QUE ARRASTRA, POR EL CAMINO DEL SISTEMA. Lo que se quiere medir es
+//  si el Viewport de la mesa se queda con el gesto que empieza sobre un mando
+//  -el pan, el fader- y eso no lo decide el mando sino un oyente que JUCE
+//  cuelga del Viewport (`DragToScrollListener`, privado): llamar a `mouseDrag`
+//  del knob a mano, como hacen los otros gestos de esta auditoria, no le llega.
+//  Asi que el toque entra por la ventana, `ComponentPeer::handleMouseEvent`,
+//  que es por donde entra el dedo de verdad.
+//
+//  Y COMO RATON, porque en Linux no hay dedo: `MouseInputSourceList::
+//  canUseTouch` devuelve falso y un toque de tipo `touch` no crea fuente ni
+//  llega a nada (medido: una sola fuente, raton, y nadie bajo ella). El
+//  Viewport solo arrastra con lo que no flota -`nonHover`, lo que distingue
+//  al movil del escritorio-, asi que quien mide pone el Viewport en `all`
+//  mientras dura el gesto y lo devuelve: lo que se juzga es el oyente del
+//  arrastre y su bandera, que es lo mismo en los dos modos.
+//
+//  Se apoya en `enSobre` -coordenadas de `sobre`-, se arrastra `dy` en
+//  `pasos` toques y se suelta. Se queda en lo que la pantalla de verdad
+//  tiene: un dedo sin tocar la ventana no arrastra nada.
+static void dedoArrastra (juce::Component& sobre, juce::Point<float> enSobre, int dy, int pasos)
+{
+    auto* peer = sobre.getPeer();
+    if (peer == nullptr) return;
+    const auto base = peer->globalToLocal (sobre.localPointToGlobal (enSobre));
+    auto toca = [&] (juce::Point<float> p, bool pulsado)
+    {
+        peer->handleMouseEvent (juce::MouseInputSource::InputSourceType::mouse, p,
+                                pulsado ? juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier)
+                                        : juce::ModifierKeys(),
+                                juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                juce::Time::currentTimeMillis(), {}, 0);
+    };
+    toca (base, true);
+    for (int i = 1; i <= pasos; ++i)
+        toca (base.translated (0.0f, (float) dy * (float) i / (float) juce::jmax (1, pasos)), true);
+    toca (base.translated (0.0f, (float) dy), false);
+}
+
 void MainComponent::auditPiano()
 {
     selectedPattern = 0;
@@ -4859,33 +4897,33 @@ void MainComponent::auditPiano()
 
         //  El pad de la esquina de abajo a la izquierda es el que mas asoma.
         int cual = -1;
-        juce::Point<int> punto;
+        juce::Point<int> centroPad;
         for (int i = 0; i < pads.size(); ++i)
             if (auto* b = pads[i]; b != nullptr && b->isVisible() && ! b->getBounds().isEmpty())
                 if (const auto c = b->getBounds().getCentre(); ! seqSheet.sheetBounds.contains (c))
-                { cual = i; punto = c; break; }
+                { cual = i; centroPad = c; break; }
 
-        int quedo = -1, sigueAbierta = -1, antes = -1;
+        int quedo = -1, sigueAbierta = -1, padAntes = -1;
         if (cual >= 0)
         {
             //  Y SE PARTE DE OTRO PAD, o la medida no dice nada: si el elegido
             //  ya era ese, "elegido == tocado" sale verde con el toque cayendo
             //  al vacio. Es la misma trampa que el testigo del compas.
             selectPad (cual == 0 ? 5 : 0);
-            antes = selectedPad;
+            padAntes = selectedPad;
 
             const auto ahora = juce::Time::getCurrentTime();
             juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(),
-                                 punto.toFloat(), juce::ModifierKeys(), 1.0f,
+                                 centroPad.toFloat(), juce::ModifierKeys(), 1.0f,
                                  0.0f, 0.0f, 0.0f, 0.0f,
                                  &seqSheet, &seqSheet, ahora,
-                                 punto.toFloat(), ahora, 1, false);
+                                 centroPad.toFloat(), ahora, 1, false);
             seqSheet.mouseDown (ev);
             quedo = selectedPad;
             sigueAbierta = seqSheet.isVisible() ? 1 : 0;
         }
         std::cout << "{\"piano\":\"detras\",\"pad\":" << cual
-                  << ",\"antes\":" << antes
+                  << ",\"antes\":" << padAntes
                   << ",\"elegido\":" << quedo
                   << ",\"abierta\":" << sigueAbierta << "}" << std::endl;
     }
@@ -5101,7 +5139,7 @@ void MainComponent::auditPiano()
         pianoCursor = -1;
         pianoCols = StepGrid::kBarSteps;
         refreshPiano(); resized();
-        const int antes = pianoGrid.numPasos();
+        const int pasosAntes = pianoGrid.numPasos();
 
         //  El primer dedo en el CENTRO de la columna 6 y el segundo dos
         //  columnas mas alla; las distancias van en celdas de ANTES del zoom,
@@ -5130,7 +5168,7 @@ void MainComponent::auditPiano()
         int pasosTrasPellizco = 0;
         for (int st = 0; st < 16; ++st) if (pattern[0][(size_t) st][0]) ++pasosTrasPellizco;
 
-        std::cout << "{\"piano\":\"pellizco\",\"antes\":" << antes
+        std::cout << "{\"piano\":\"pellizco\",\"antes\":" << pasosAntes
                   << ",\"nota_un_dedo\":" << notaConUnDedo
                   << ",\"nota_dos_dedos\":" << notaConDos
                   << ",\"dedos\":" << dedos
@@ -6258,6 +6296,7 @@ void MainComponent::auditCanales()
     //  Y A LO ALTO, que es la regla quince: las filas miden lo que la ficha
     //  ensena o menos -las dieciseis entran- y cada fila mide `mesa_fila`.
     const int mesaFila      = mixFilaAlto;
+    const int mesaSobra     = mixSobra;
     const int mesaVistaAlto = mixScroll.getMaximumVisibleHeight();
     const int mesaFilasAlto = mixRows.getHeight();
     //  La de JUCE tiene que medir CERO: la barra de la mesa es `mixBarra`,
@@ -6281,7 +6320,113 @@ void MainComponent::auditCanales()
     tocaBarra (mixBarra, 0.95f);                      // la cabeza: vuelve
     const int mesaVuelve = mixScroll.getViewPositionY();
 
+    //  19. EL GESTO SOBRE UN MANDO ES DEL MANDO, NO DE LA LISTA.
+    //
+    //  Del telefono: «es una jodienda para girar los knobs de paneo». Lo era
+    //  porque el Viewport arrastra sus filas con el mismo dedo que gira el
+    //  knob, y los mandos llevan desde entonces `setViewportIgnoreDragFlag`
+    //  -lo escrito-. Lo medido: un dedo que sube sesenta pixeles sobre el pan
+    //  del pad 0 deja la lista donde estaba (`mesa_arr_knob` 0) y mueve el
+    //  pan (`mesa_arr_pan`), y el MISMO dedo sobre el nombre de la fila, que
+    //  no es un mando, si arrastra la lista (`mesa_arr_nombre`) -eso es lo
+    //  que prueba que el gesto llega-. Donde las dieciseis entran no hay
+    //  nada que arrastrar y el nombre deja 0 tambien; la regla vive donde
+    //  hay barra, 360x640. Y `mesa_arr_dio` dice que bajo el dedo estaba el
+    //  knob y no otra cosa. Ver `dedoArrastra` y canales.py, regla 19.
+    int mesaArrKnob = -1, mesaArrNombre = -1, mesaArrDio = 0;
+    double mesaArrPan = 0.0;
+    //  El modo del Viewport se fuerza a `all` para que el raton de Linux
+    //  haga de dedo -ver dedoArrastra- y se devuelve al salir.
+    const auto modoArrastre = mixScroll.getScrollOnDragMode();
+    mixScroll.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::all);
+    {
+        mixScroll.setViewPosition (0, 0);
+        if (auto* p = mixPans[0]; p != nullptr && p->isShowing() && p->getWidth() > 0)
+        {
+            const auto centro = p->getLocalBounds().toFloat().getCentre();
+            auto* techo  = getTopLevelComponent();
+            auto* debajo = techo->getComponentAt (techo->getLocalPoint (p, centro.toInt()));
+            mesaArrDio = (debajo == p || (debajo != nullptr && p->isParentOf (debajo))) ? 1 : 0;
+            const double pan0 = p->getValue();
+            dedoArrastra (*p, centro, -60, 6);
+            mesaArrKnob = mixScroll.getViewPositionY();
+            mesaArrPan  = p->getValue() - pan0;
+            p->setValue (pan0, juce::sendNotification);
+            mixScroll.setViewPosition (0, 0);
+        }
+        if (auto* f = mixFaders[0]; f != nullptr && f->isShowing() && f->getX() > 0)
+        {
+            //  El nombre lo pinta `mixRows` a la izquierda del fader, sin bandera.
+            dedoArrastra (mixRows, { (float) f->getX() * 0.5f, (float) mixFilaAlto * 0.5f }, -60, 6);
+            mesaArrNombre = mixScroll.getViewPositionY();
+            mixScroll.setViewPosition (0, 0);
+        }
+    }
+    mixScroll.setScrollOnDragMode (modoArrastre);
+
+    //  18. LA PAGINA DE CANALES, con la misma gramatica que la de PADS.
+    //
+    //  Del telefono, con la foto de MEZCLA · CANALES en 412x915: «¿por que
+    //  la pantalla de canales sigue siendo asi?». Asi era: S y M tapas y no
+    //  switches, la M en el borde y la S a un pixel -al reves que en la fila
+    //  de un pad-, doce filas y una franja vacia de una fila antes del
+    //  MASTER, que es lo que el cajon tiraba por encajar filas plenas. Se
+    //  mide por el gesto de la ficha -el interruptor de vista- y se vuelve.
+    int mesaCFila = -1, mesaCVen = -1, mesaCSobra = -1, mesaCSw = 0, mesaCOrden = -1, mesaCHuecoSM = -1;
+    int mesaCVistaAlto = -1, mesaCFilasAlto = -1, mesaCBarraApp = -1;
+    int mesaCArrFader = -1, mesaCArrNombre = -1, mesaCArrDio = 0;
+    {
+        pulsaTapa (&mixVistaBtn);
+        mesaCFila      = mixFilaAlto;
+        mesaCSobra     = mixSobra;
+        mesaCVistaAlto = mixScroll.getMaximumVisibleHeight();
+        mesaCFilasAlto = mixRows.getHeight();
+        mesaCVen       = mesaCVistaAlto / juce::jmax (1, mesaCFila);
+        mesaCBarraApp  = mixBarra.isVisible() ? mixBarra.getWidth() : 0;
+        for (auto* b : { canMutes[0], canSolos[0] })
+            if (b != nullptr && b->isVisible() && (bool) b->getProperties().getWithDefault ("switch", false))
+                ++mesaCSw;
+        if (canMutes[0] != nullptr && canSolos[0] != nullptr)
+        {
+            mesaCOrden   = canSolos[0]->getRight() > canMutes[0]->getRight() ? 1 : 0;
+            mesaCHuecoSM = canSolos[0]->getX() - canMutes[0]->getRight();
+        }
+        //  Y EL MISMO GESTO QUE EN 19, aqui sobre el fader del canal 0, que es
+        //  el mando de esta pagina: la lista se queda y el fader lo recibe
+        //  -el dedo sube, un fader horizontal no se mueve, y eso no importa:
+        //  lo que se mide es que la lista NO se mueve-; y por el nombre si.
+        //  Esta pagina lleva barra en toda pantalla del movil, treinta y dos
+        //  filas de 44 no entran en ninguna.
+        mixScroll.setViewPosition (0, 0);
+        mixScroll.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::all);
+        if (auto* f = canFaders[0]; f != nullptr && f->isShowing() && f->getWidth() > 0)
+        {
+            const auto centro = f->getLocalBounds().toFloat().getCentre();
+            auto* techo  = getTopLevelComponent();
+            auto* debajo = techo->getComponentAt (techo->getLocalPoint (f, centro.toInt()));
+            mesaCArrDio = (debajo == f || (debajo != nullptr && f->isParentOf (debajo))) ? 1 : 0;
+            dedoArrastra (*f, centro, -60, 6);
+            mesaCArrFader = mixScroll.getViewPositionY();
+            mixScroll.setViewPosition (0, 0);
+            dedoArrastra (mixRows, { (float) f->getX() * 0.5f, (float) mixFilaAlto * 0.5f }, -60, 6);
+            mesaCArrNombre = mixScroll.getViewPositionY();
+            mixScroll.setViewPosition (0, 0);
+        }
+        mixScroll.setScrollOnDragMode (modoArrastre);
+        pulsaTapa (&mixVistaBtn);
+    }
+
     std::cout << "{\"canales\":" << kNumCanales
+              << ",\"mesa_c_fila\":" << mesaCFila << ",\"mesa_c_ven\":" << mesaCVen
+              << ",\"mesa_c_sobra\":" << mesaCSobra << ",\"mesa_c_sw\":" << mesaCSw
+              << ",\"mesa_c_orden\":" << mesaCOrden << ",\"mesa_c_hueco_sm\":" << mesaCHuecoSM
+              << ",\"mesa_c_vista_alto\":" << mesaCVistaAlto << ",\"mesa_c_filas_alto\":" << mesaCFilasAlto
+              << ",\"mesa_c_barra_app\":" << mesaCBarraApp
+              << ",\"mesa_c_arr_fader\":" << mesaCArrFader << ",\"mesa_c_arr_nombre\":" << mesaCArrNombre
+              << ",\"mesa_c_arr_dio\":" << mesaCArrDio
+              << ",\"mesa_arr_knob\":" << mesaArrKnob << ",\"mesa_arr_nombre\":" << mesaArrNombre
+              << ",\"mesa_arr_dio\":" << mesaArrDio
+              << ",\"mesa_arr_pan\":" << juce::String (mesaArrPan, 3)
               << ",\"fader_alto\":" << faderAlto << ",\"fader_ancho\":" << faderAncho
               << ",\"fader_banda\":" << faderBanda
               << ",\"mesa_pan\":" << mesaPan << ",\"mesa_ms\":" << mesaMS
@@ -6300,7 +6445,7 @@ void MainComponent::auditCanales()
               << ",\"mesa_st_antes\":" << juce::String (mesaStAntes, 2)
               << ",\"mesa_st_despues\":" << juce::String (mesaStDespues, 2)
               << ",\"mesa_st_vuelve\":" << juce::String (mesaStVuelve, 2)
-              << ",\"mesa_fila\":" << mesaFila
+              << ",\"mesa_fila\":" << mesaFila << ",\"mesa_sobra\":" << mesaSobra
               << ",\"mesa_vista_alto\":" << mesaVistaAlto << ",\"mesa_filas_alto\":" << mesaFilasAlto
               << ",\"mesa_vista\":" << mesaVista << ",\"mesa_filas\":" << mesaFilas
               << ",\"mesa_barra\":" << mesaBarra << ",\"mesa_borde\":" << mesaBorde
@@ -8001,7 +8146,7 @@ void MainComponent::auditPlato()
     auto cuenta = [] (const std::vector<float>& a, const std::vector<float>& b)
     {
         int n = 0;
-        for (size_t i = 0; i < a.size(); ++i) if (a[i] != b[i]) ++n;
+        for (size_t i = 0; i < a.size(); ++i) if (! juce::exactlyEqual (a[i], b[i])) ++n;
         return n;
     };
     const int canal = AudioEngine::canalDeParam (canalActual, f);
@@ -8011,7 +8156,7 @@ void MainComponent::auditPlato()
     auto v1 = foto();
     const float despues = engine.getFxParam (canal, f, 4);
     const int movidos = cuenta (v0, v1);
-    const int suyo = (despues != antes) ? 1 : 0;
+    const int suyo = (! juce::exactlyEqual (despues, antes)) ? 1 : 0;
     const int ajenos = movidos - suyo;
     const int mandoIgual = std::abs ((double) despues - macroCtrl2.getValue()) < 1.0e-3 ? 1 : 0;
     abreFichaMandos (1);             // la cierra: la segunda vez es cerrar
@@ -10365,9 +10510,9 @@ void MainComponent::auditRevive()
         padJob->folder = juce::File();
         padJob->clearMissing = false;
         for (int i = 1; i < kNumPads; ++i) padJob->source[(size_t) i] = 0;
-        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        const double tIni = juce::Time::getMillisecondCounterHiRes();
         while (padJob != nullptr
-               && juce::Time::getMillisecondCounterHiRes() - t0 < 20000.0)
+               && juce::Time::getMillisecondCounterHiRes() - tIni < 20000.0)
         {
             const double a = juce::Time::getMillisecondCounterHiRes();
             stepPadJob();

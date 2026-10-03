@@ -2412,8 +2412,8 @@ namespace Iconos
                 //  CUATRO TRASTES, perpendiculares al mastil.
                 for (int i = 0; i < 4; ++i)
                 {
-                    const float t = 0.26f + (float) i * 0.15f;
-                    const float cx = 7.65f + 11.8f * t, cy = 15.35f - 11.8f * t;
+                    const float u = 0.26f + (float) i * 0.15f;
+                    const float cx = 7.65f + 11.8f * u, cy = 15.35f - 11.8f * u;
                     linea (L, cx - 1.15f, cy - 1.15f, cx + 1.15f, cy + 1.15f);
                 }
                 //  Y LAS DOS CLAVIJAS del clavijero, con su boton.

@@ -381,6 +381,10 @@ namespace Sintes
                 //  por eso va a menos de un hercio -un fuelle no es un vibrato-.
                 case fCello:   return 4.8;
                 case fTubo:    return 0.8;
+                case fBajo:    case fSub:   case fEp:     case fPluck:    case fCampana:
+                case fMetales: case fGuitarra: case fMazo: case fClav:   case fArpa:
+                case fFm:      case fSync:  case fPiano:  case fAcordeon: case fSitar:
+                case fCana:
                 default:       return 0.0;
             }
         }
@@ -1137,14 +1141,14 @@ namespace Sintes
                         //  no solo saca mas parciales, los saca menos apagados.
                         //  Con 1/k fijo, doce armonicos contra siete median x1.10
                         //  - los de arriba pesan demasiado poco para notarse.
-                        const float amp = std::pow ((float) (k + 1), -1.0f + 0.45f * capaMix);
+                        const float ampK = std::pow ((float) (k + 1), -1.0f + 0.45f * capaMix);
                         //  EL FUNDAMENTAL CENTRADO Y LOS PARCIALES ABRIENDOSE
                         //  SEGUN SUBEN, alternando lado. Es lo que hace un arpa
                         //  de verdad: el tono viene de una cuerda y el brillo de
                         //  las que vibran por simpatia a los lados.
                         const double x = (k == 0) ? 0.0
                             : (((k & 1) != 0) ? 1.0 : -1.0) * juce::jmin (1.0, (double) k / 2.0);
-                        suma += ladoDe (canal, x) * amp * env (te, tau)
+                        suma += ladoDe (canal, x) * ampK * env (te, tau)
                                 * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }
                     f1.set (juce::jlimit (400.0, nyq, 3000.0 * (double) brillo), 1.0f);
@@ -1335,10 +1339,10 @@ namespace Sintes
                         //  Y el reparto de los parciales lo mueve la capa, como
                         //  en ARPAS: golpear fuerte saca parciales que golpear
                         //  flojo no saca.
-                        const float amp = std::pow ((float) (k + 1), -1.25f + 0.55f * capaMix);
+                        const float ampK = std::pow ((float) (k + 1), -1.25f + 0.55f * capaMix);
                         const double x = (k == 0) ? 0.0
                             : (((k & 1) != 0) ? 1.0 : -1.0) * juce::jmin (1.0, (double) k / 3.0);
-                        suma += ladoDe (canal, x * 0.6) * amp * dob * bat
+                        suma += ladoDe (canal, x * 0.6) * ampK * dob * bat
                                 * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }
                     //  LA TABLA ARMONICA: dos resonancias en HERCIOS FIJOS y no
@@ -1583,11 +1587,11 @@ namespace Sintes
                         const double fk = hz * mult * viento;
                         if (fk >= nyq) break;
                         arm[k] += fk / fs; if (arm[k] >= 1.0) arm[k] -= 1.0;
-                        const float amp = std::pow ((float) (2 * k + 1), -1.1f + 0.4f * capaMix);
+                        const float ampK = std::pow ((float) (2 * k + 1), -1.1f + 0.4f * capaMix);
                         //  Cada registro sale de un tubo distinto, o sea de un
                         //  sitio distinto del mueble. El fundamental centrado.
                         const double x = (k == 0) ? 0.0 : (((k & 1) != 0) ? 0.8 : -0.8);
-                        suma += ladoDe (canal, x) * amp
+                        suma += ladoDe (canal, x) * ampK
                                 * (float) std::sin (juce::MathConstants<double>::twoPi * arm[k]);
                     }
                     //  Y EL NAZARDO, que es la quinta de la octava de arriba y el
@@ -2083,7 +2087,7 @@ namespace Sintes
             auto agudosCon = [&] (int z, float k)
             {
                 const auto& Z = sb->zonas[(size_t) z];
-                double alta = 0.0, total = 0.0;
+                double alta = 0.0, todo = 0.0;
                 for (int ch = 0; ch < (est ? 2 : 1); ++ch)
                 {
                     const float* d = (ch == 0) ? dstL : dstR;
@@ -2093,11 +2097,11 @@ namespace Sintes
                         lp += aPolo * (d[i] - lp);
                         const float y = lp + k * (d[i] - lp);
                         const double e = (double) y - (double) prev;
-                        alta += e * e; total += (double) y * (double) y;
+                        alta += e * e; todo += (double) y * (double) y;
                         prev = y;
                     }
                 }
-                return total > 1.0e-12 ? std::sqrt (alta / total) : 0.0;
+                return todo > 1.0e-12 ? std::sqrt (alta / todo) : 0.0;
             };
 
             //  LA BISECCION Y LA PASADA, cada una escrita una vez: desde que
@@ -2370,8 +2374,8 @@ namespace Sintes
                     for (int i = 0; i < n; ++i)
                     {
                         const float t = (float) i / (float) (n - 1);
-                        const float g = 0.5f * (1.0f + std::cos (juce::MathConstants<float>::pi * t));
-                        d[Z.fin - n + i] *= g;
+                        const float gan = 0.5f * (1.0f + std::cos (juce::MathConstants<float>::pi * t));
+                        d[Z.fin - n + i] *= gan;
                     }
                 }
             }

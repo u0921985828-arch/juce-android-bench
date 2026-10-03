@@ -442,10 +442,10 @@ public:
                     if (semis != 0)
                     {
                         const float t = 0.5f - juce::jlimit (-1.0f, 1.0f, (float) semis / 12.0f) * 0.42f;
-                        const float y = cell.getY() + cell.getHeight() * t;
+                        const float yNota = cell.getY() + cell.getHeight() * t;
                         g.setColour (ZatiColours::bestOn (has ? frag : ZatiColours::ink,
                                                           ZatiColours::ink, juce::Colours::white));
-                        g.fillRect (cell.getX() + 1.5f, y - 1.0f, cell.getWidth() - 3.0f, 2.0f);
+                        g.fillRect (cell.getX() + 1.5f, yNota - 1.0f, cell.getWidth() - 3.0f, 2.0f);
                     }
                 }
                 else

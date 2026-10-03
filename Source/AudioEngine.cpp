@@ -1135,7 +1135,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 sm += kSend * (0.0f - sm);
                 const float g = (sm < 0.0005f) ? 0.0f : sm;
                 sendGain[p][f] = g * smCan;
-                if (sm != 0.0f) hot = true;
+                if (! juce::exactlyEqual (sm, 0.0f)) hot = true;
             }
             dryGain[p]  = smCan;
             canalDePad[p] = canal;
@@ -1179,7 +1179,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             const float g = (sm < 0.0005f && target < 0.0005f) ? 0.0f : sm;
             sendGain[p][f] = g * smCan;
             if (sendGain[p][f] > 0.0f) { any = true; busFed[(size_t) busDe (canal, f)] = true; }
-            if (sm != 0.0f) hot = true;      // aun no ha terminado de bajar
+            if (! juce::exactlyEqual (sm, 0.0f)) hot = true;      // aun no ha terminado de bajar
             //  Y EL SECO SE LO LLEVA LA CADENA ENTERA: lo que entra en el primer
             //  eslabon deja de ir por el camino seco, porque va a salir por el
             //  ultimo. Con un canal sin cadena, `dry` se queda en uno.
@@ -3805,7 +3805,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     const float preMs  = juce::jlimit (0.0f, 120.0f, P (kFxAmb, 1));
                     const float escala = ambEscala (tam);
                     const float porMs  = (float) systemSampleRate / 1000.0f;
-                    const float pre    = preMs * porMs;
+                    const float preMu  = preMs * porMs;
                     const float tope   = (float) (I.ambLine.getMaximumDelayInSamples() - 1);
 
                     float* w0 = fxBus[busIdx (kFxAmb)].getWritePointer (0, startSample);
@@ -3823,7 +3823,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             float suma = 0.0f;
                             for (int t = 0; t < kTomas; ++t)
                             {
-                                const float d = juce::jlimit (1.0f, tope, pre + ms[t] * escala * porMs);
+                                const float d = juce::jlimit (1.0f, tope, preMu + ms[t] * escala * porMs);
                                 suma += kAmbGan[t] * I.ambLine.popSample (ch, d, false);
                             }
                             w[i] = suma;
@@ -3946,13 +3946,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         if ((previo > 0.0f || smMonitor > 0.0f) && monitorInChans > 0)
         {
             const int salidas = juce::jmin (2, out.getNumChannels());
-            const int n       = juce::jmin (numSamples, monitorBuf.getNumSamples());
+            const int nMon    = juce::jmin (numSamples, monitorBuf.getNumSamples());
             for (int ch = 0; ch < salidas; ++ch)
             {
                 //  Un microfono de telefono da UN canal, y ese uno va a los
                 //  dos: repartirlo dejaria la voz pegada al oido izquierdo.
                 const int src = juce::jmin (ch, monitorInChans - 1);
-                out.addFromWithRamp (ch, startSample, monitorBuf.getReadPointer (src), n,
+                out.addFromWithRamp (ch, startSample, monitorBuf.getReadPointer (src), nMon,
                                      previo, smMonitor);
             }
         }
@@ -4074,8 +4074,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     {
         const int cap = recordBuffer.getNumSamples();
         int rp = recordPos.load (std::memory_order_relaxed);
-        const int n = juce::jmin (numSamples, cap - rp);
-        if (n > 0)
+        const int nRec = juce::jmin (numSamples, cap - rp);
+        if (nRec > 0)
         {
             //  A mono record buffer fed by a stereo master must print the
             //  AVERAGE of the two, not the left plus half the right: measured,
@@ -4084,17 +4084,17 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  clips a layer earlier every time round.
             if (recordBuffer.getNumChannels() == 1 && out.getNumChannels() > 1)
             {
-                recordBuffer.copyFrom (0, rp, out.getReadPointer (0, startSample), n, 0.5f);
-                recordBuffer.addFrom  (0, rp, out.getReadPointer (1, startSample), n, 0.5f);
+                recordBuffer.copyFrom (0, rp, out.getReadPointer (0, startSample), nRec, 0.5f);
+                recordBuffer.addFrom  (0, rp, out.getReadPointer (1, startSample), nRec, 0.5f);
             }
             else
             {
                 const int chans = juce::jmin (recordBuffer.getNumChannels(), out.getNumChannels());
                 for (int ch = 0; ch < chans; ++ch)
-                    recordBuffer.copyFrom (ch, rp, out.getReadPointer (ch, startSample), n);
+                    recordBuffer.copyFrom (ch, rp, out.getReadPointer (ch, startSample), nRec);
             }
 
-            rp += n;
+            rp += nRec;
             recordPos.store (rp, std::memory_order_relaxed);
         }
         if (rp >= cap)
@@ -5357,7 +5357,7 @@ SampleBuffer::Ptr AudioEngine::finishRecording() noexcept
             bool identical = true;
 
             for (int i = 0; i < len && identical; ++i)
-                identical = (l[i] == r[i]);
+                identical = juce::exactlyEqual (l[i], r[i]);
 
             if (identical) chans = 1;
         }

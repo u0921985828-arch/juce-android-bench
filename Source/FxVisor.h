@@ -722,10 +722,10 @@ namespace FxVisor
             case AudioEngine::kFxTrm:
             {
                 const float amp = juce::jlimit (0.0f, 1.0f, p1);
-                for (int i = 0; i < kPuntos; ++i)
+                for (int j = 0; j < kPuntos; ++j)
                 {
-                    const float t = (float) i / (float) (kPuntos - 1);
-                    pon (i, 0.5f + 0.45f * amp * Lfo::valorEn (t * kPeriodosMod));
+                    const float tj = (float) j / (float) (kPuntos - 1);
+                    pon (j, 0.5f + 0.45f * amp * Lfo::valorEn (tj * kPeriodosMod));
                 }
                 break;
             }
@@ -738,10 +738,10 @@ namespace FxVisor
             case AudioEngine::kFxFla:
             {
                 const float amp = std::abs (juce::jlimit (0.0f, 1.0f, p1) * 2.0f - 1.0f);
-                for (int i = 0; i < kPuntos; ++i)
+                for (int j = 0; j < kPuntos; ++j)
                 {
-                    const float t = (float) i / (float) (kPuntos - 1);
-                    pon (i, 0.5f + 0.45f * amp * Lfo::valorEn (t * kPeriodosMod));
+                    const float tj = (float) j / (float) (kPuntos - 1);
+                    pon (j, 0.5f + 0.45f * amp * Lfo::valorEn (tj * kPeriodosMod));
                 }
                 break;
             }

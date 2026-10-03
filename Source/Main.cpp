@@ -12,11 +12,17 @@
 //  Storage for the two Oboe dials declared in AudioPath.h. They live here so
 //  that the patched JUCE module finds them at link time on Android, and so
 //  that every other platform links a pair of harmless zeroes.
-extern "C" int zatiOboeUsage    = 0;
-extern "C" int zatiOboeForceI16 = 0;
-//  Y la de la ENTRADA: 9 es UNPROCESSED, que apaga el control automatico de
-//  ganancia, la supresion de ruido y el cancelador de eco. Ver AudioPath.h.
-extern "C" int zatiOboeInputPreset = 9;
+//  Dentro de un bloque y no uno a uno: `extern "C" int x = 0;` es una
+//  definicion disfrazada de declaracion y GCC lo avisa en cada compilacion.
+extern "C"
+{
+    int zatiOboeUsage    = 0;
+    int zatiOboeForceI16 = 0;
+    //  Y la de la ENTRADA: 9 es UNPROCESSED, que apaga el control automatico
+    //  de ganancia, la supresion de ruido y el cancelador de eco. Ver
+    //  AudioPath.h.
+    int zatiOboeInputPreset = 9;
+}
 
 // ============================================================================
 //  Application entry — standard JUCEApplication + a resizable DocumentWindow
@@ -627,9 +633,9 @@ public:
                     }
                     //  GUARDAR EL BANCO COMO KIT, y volcar lo que quedo en el
                     //  disco. Ver Tests/kit.py.
-                    else if (const auto k = UiAudit::env ("ZATI_KIT"); k.isNotEmpty())
+                    else if (const auto kit = UiAudit::env ("ZATI_KIT"); kit.isNotEmpty())
                     {
-                        c2->auditKit (k);
+                        c2->auditKit (kit);
                     }
                     else if (UiAudit::env ("ZATI_PIANO").isNotEmpty())
                     {

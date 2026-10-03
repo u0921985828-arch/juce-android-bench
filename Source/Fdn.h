@@ -95,7 +95,7 @@ public:
     {
         for (auto& b : line) b.clear();
         for (auto& b : dif)  b.clear();
-        for (auto& d : damp) d = { 0.0f, 0.0f };
+        for (auto& d : damp) d[0] = d[1] = 0.0f;
         for (auto& i : lineIdx) i = 0;
         for (auto& i : difIdx)  i = 0;
     }
@@ -256,11 +256,11 @@ private:
     double fs = 44100.0;
     int    chans = 2;
 
-    std::array<juce::AudioBuffer<float>, kLines> line;
-    std::array<juce::AudioBuffer<float>, kDiff>  dif;
-    std::array<int, kLines> lineLen {}, lineIdx {};
-    std::array<int, kDiff>  difLen {},  difIdx {};
-    std::array<std::array<float, 2>, kLines> damp {};
+    juce::AudioBuffer<float> line[kLines];
+    juce::AudioBuffer<float> dif[kDiff];
+    int lineLen[kLines] {}, lineIdx[kLines] {};
+    int difLen[kDiff] {},   difIdx[kDiff] {};
+    float damp[kLines][2] {};
 
     float fb    = 0.85f;
     float dampC = 0.4f;

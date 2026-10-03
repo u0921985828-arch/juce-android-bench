@@ -1332,14 +1332,20 @@ void MainComponent::resized()
         //  devuelve el mismo rectangulo de siempre y no cambia nada: el
         //  desplazamiento solo existe en las pantallas donde antes se caian
         //  filas enteras.
-        s.vista.setBounds (dentro);
         const int pedido = desiredH - 2 * Metrics::margenFichaY;
         const bool sobra = pedido > dentro.getHeight();
         //  La barra solo se lleva su ancho cuando la hay, o cada fila sale
-        //  ocho pixeles corta en las pantallas que no la necesitaban.
-        const int barW = sobra ? s.vista.getScrollBarThickness() : 0;
-        s.cuerpo.setSize (juce::jmax (40, dentro.getWidth() - barW),
-                          juce::jmax (dentro.getHeight(), pedido));
+        //  ocho pixeles corta en las pantallas que no la necesitaban. Y es
+        //  la de la casa, AL LADO de la vista y no dentro como la de JUCE: el
+        //  cuerpo mide lo mismo que medía -la tarjeta menos la barra-.
+        //  Ver Sheet::barra.
+        auto zonaVista = dentro;
+        s.barra.setVisible (sobra);
+        if (sobra) s.barra.setBounds (zonaVista.removeFromRight (Sheet::kBarra));
+        s.vista.setBounds (zonaVista);
+        s.cuerpo.setSize (juce::jmax (40, zonaVista.getWidth()),
+                          juce::jmax (zonaVista.getHeight(), pedido));
+        s.sincronizaBarra();
         return s.cuerpo.getLocalBounds();
     };
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver abrePadPicker.
@@ -2669,11 +2675,16 @@ void MainComponent::resized()
         guiaTodoBtn.setBounds (inner.removeFromTop (Metrics::hit).reduced (0, Metrics::margenTapa));
         inner.removeFromTop (Metrics::sm);
 
+        //  LA BARRA DE LA CASA al lado de la lista, con el grosor que tenia
+        //  la de JUCE y reservado SIEMPRE, como estaba: el manual no cabe en
+        //  ninguna pantalla. Ver Sheet::barra.
+        manualBarra.setBounds (inner.removeFromRight (Sheet::kBarra));
         manualScroll.setBounds (inner);
-        const int barW = manualScroll.getScrollBarThickness();
-        manualBody.setSize (juce::jmax (40, inner.getWidth() - barW),
+        manualBody.setSize (juce::jmax (40, inner.getWidth()),
                             juce::jmax (inner.getHeight(),
-                                        manualContentHeight (inner.getWidth() - barW)));
+                                        manualContentHeight (inner.getWidth())));
+        manualBarra.setVisible (manualBody.getHeight() > inner.getHeight());
+        manualBarra.ponRango (manualScroll.getViewPositionY(), inner.getHeight(), manualBody.getHeight());
 
         //  ENSENAMELO, en el renglon del titulo de cada capitulo. La y se
         //  camina IGUAL que en paintManualBody y manualContentHeight - la misma
@@ -4061,8 +4072,7 @@ void MainComponent::resized()
         //  columnas. La circularidad se corta por el lado conservador -se da la
         //  barra por puesta- y lo que cuesta esta medido: nueve pixeles, que no
         //  mueven la respuesta en ninguna de las siete pantallas.
-        const int anchoCuerpoM = anchoTarjetaInterior (full.getWidth())
-                                     - vstSheet.vista.getScrollBarThickness();
+        const int anchoCuerpoM = anchoTarjetaInterior (full.getWidth()) - Sheet::kBarra;
         const int zonaM = juce::jmax (1, anchoCuerpoM - Metrics::lg * 2);
         const int colsM = (zonaM / 4 >= Metrics::hit + Metrics::halfGap * 2) ? 4 : 2;
 
@@ -4167,7 +4177,7 @@ void MainComponent::resized()
         //  falta se aprieta. De los dos errores solo el segundo se ve.
         const int anchoTitulo = anchoTarjeta (full.getWidth())
                                   - 2 * Metrics::margenFichaX
-                                  - vstSheet.vista.getScrollBarThickness();
+                                  - Sheet::kBarra;
 
         //  Y LA GUARDA RESERVA EL TITULO, que es lo que le faltaba. Pedia sitio
         //  para las TAPAS -VOLVER, PAD y la cruz- y no para la palabra, asi que
@@ -4871,8 +4881,6 @@ void MainComponent::resized()
         //  herramientas. Cuarenta px, y la pagina queda en 350.
         songModosAqui = songUtilAqui
                      || (pideSong (0, filasModo, laneMin) <= topeCancion);
-        const int altoCol = colCon (songUtilAqui ? filasUtil : 0,
-                                    songModosAqui ? filasModo : 0);
         //  Y AQUI SE REPARTE LO QUE SOBRA. Se pide la ficha con el carril en
         //  su SUELO -que es lo que el resto de la maqueta necesita para caber-
         //  y lo que quede hasta el tope de la tarjeta se lo llevan los cuatro
@@ -4913,7 +4921,6 @@ void MainComponent::resized()
             const int reparto = (int) std::floor ((double) sobra / Playlist::kLanes);
             laneH = juce::jlimit (laneMin, laneMax, laneComodo + reparto);
         }
-        const int altoRej  = Playlist::kLanes * laneH;
         auto inner = sheetFromBottom (songSheet,
                                       pideSong (songUtilAqui ? filasUtil : 0,
                                                 songModosAqui ? filasModo : 0, laneH));
@@ -5472,26 +5479,38 @@ void MainComponent::resized()
         //  27 con la S y la M de 40x27: treinta y dos filas bajo el dedo que
         //  nadie pidio. Se queda como estaba, de 44 con su barra.
         const bool reparte = mixPage != mixPageCanales && inner.getHeight() / porCol >= Metrics::xl;
-        const int  rowH    = reparte ? juce::jmin (filaPlena, inner.getHeight() / porCol) : filaPlena;
-        const int contentH = porCol * rowH;
-        //  Y EL CAJON ENCAJA A UN NUMERO ENTERO DE FILAS.
+        int rowH = reparte ? juce::jmin (filaPlena, inner.getHeight() / porCol) : filaPlena;
+        //  Y DONDE HAY ARRASTRE, LAS FILAS QUE SE VEN SE REPARTEN EL CAJON.
         //
-        //  `inner` da el alto que sobre, que no tiene por que ser multiplo de
-        //  `rowH`, asi que en reposo la ultima fila salia PARTIDA POR LA MITAD:
-        //  la tira 14 en MEZCLA y la 15 en MEZCLA · CANALES. Un cajon con
-        //  arrastre puede acabar en cualquier sitio MIENTRAS SE ARRASTRA, pero
-        //  la posicion de reposo es la que se ve al abrir y la que sale en toda
-        //  foto, y ahi media fila se lee como un fallo de pintado y no como
-        //  «hay mas debajo».
+        //  El cajon encajaba a un numero entero de filas PLENAS y lo que
+        //  sobraba -hasta 43 px, casi una fila- se lo quedaba el aire de
+        //  abajo: la foto del telefono, MEZCLA · CANALES en 412x915, ensenaba
+        //  doce filas y una franja vacia de una fila entre la ultima y el
+        //  MASTER. «¿Por que la pantalla de canales sigue siendo asi?».
+        //  Encoger la fila para que entre una mas no vale -43 deja la S y la
+        //  M en 39, bajo el dedo-, asi que el sobrante se reparte entre las
+        //  filas enteras que caben: en esa foto, doce de 47 y seis pixeles
+        //  de resto en vez de cuarenta y dos. Con tope en `row + md`, que
+        //  solo toca cuando cabe UNA fila. Medido con canales.py, regla 18.
         //
-        //  Solo cuando HAY arrastre: sin el, recortar el alto seria regalar
-        //  pixeles por una fila que no existe. Y lo que sobra se lo queda el
-        //  aire de abajo, que es donde ya hay una frontera.
-        if (contentH > inner.getHeight())
+        //  Y lo que aun sobra -menos que filas a la vista- se lo queda el
+        //  aire de abajo, que es donde ya hay una frontera: en reposo la
+        //  ultima fila que se ve sale entera, no partida por la mitad, que es
+        //  lo que se ve al abrir y lo que sale en toda foto. Solo cuando HAY
+        //  arrastre: sin el, las filas ya miden lo que la tarjeta da.
+        //  Y SOLO SI CABE UNA FILA: antes de que la tarjeta tenga alto -el
+        //  primer `resized`- `inner` mide cero, y repartir cero entre una fila
+        //  da una fila de cero, y el resto de dividir por ella mataba la app
+        //  al arrancar (SIGFPE, medido con canales.py).
+        mixSobra = 0;
+        if (porCol * rowH > inner.getHeight() && inner.getHeight() >= rowH)
         {
-            const int sobra = inner.getHeight() % rowH;
-            if (sobra > 0) inner.removeFromBottom (sobra);
+            const int enteras = inner.getHeight() / rowH;
+            rowH = juce::jmin (filaPlena + Metrics::md, inner.getHeight() / enteras);
+            mixSobra = inner.getHeight() % rowH;
+            if (mixSobra > 0) inner.removeFromBottom (mixSobra);
         }
+        const int contentH = porCol * rowH;
         //  LA BARRA DE LA CASA, al final de las filas y solo si hay mas filas
         //  que sitio: la misma pareja barra + halfGap que lleva el piano, del
         //  grueso de un dedo porque se arrastra. Del telefono: «la barra que
@@ -5554,9 +5573,14 @@ void MainComponent::resized()
                 canRowX[(size_t) c] = row.getX();
                 row.removeFromLeft (anchoNombreCanal (columna.getWidth()));
 
-                canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
-                row.removeFromRight (Metrics::aireTapaDensa);
+                //  Y EN EL MISMO ORDEN Y CON EL MISMO HUECO que en la fila de
+                //  un pad: la S en el borde, la M a `halfGap` de ella. Estaba
+                //  al reves -la M en el borde y la S a un pixel- con el
+                //  parrafo de arriba diciendo que no; la foto del telefono lo
+                //  enseno. Tests/canales.py, regla 18.
                 canSolos[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
+                row.removeFromRight (Metrics::halfGap);
+                canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
 
                 canFaders[c]->setBounds (row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
@@ -5805,7 +5829,6 @@ void MainComponent::resized()
         pianoGrupos.clear();
 
         const int patLen   = engine.getPatternLength (selectedPattern);
-        const int bars     = juce::jmax (1, patLen / kStepCols);
 
         //  ASK FOR WHAT YOU WILL ACTUALLY GET. sheetFromBottom clamps the card
         //  at 78% of the window and says nothing; whatever the layout asked
@@ -6876,12 +6899,12 @@ void MainComponent::resized()
                 //  y ademas es lo unico que hace que quepan: esta fila ya sale
                 //  de nueve y se parte en dos en media pantalla. PEGAR ademas
                 //  pide portapapeles: pegar lo que no se ha copiado no es nada.
-                const bool haySel = ! pianoSel.empty();
-                const bool hayPeg = ! pianoPortapapeles.empty();
-                pianoCopiaBtn.setVisible (haySel);
-                pianoPegaBtn .setVisible (hayPeg);
-                if (! haySel) pianoCopiaBtn.setBounds ({});
-                if (! hayPeg) pianoPegaBtn .setBounds ({});
+                const bool conSel = ! pianoSel.empty();
+                const bool conPeg = ! pianoPortapapeles.empty();
+                pianoCopiaBtn.setVisible (conSel);
+                pianoPegaBtn .setVisible (conPeg);
+                if (! conSel) pianoCopiaBtn.setBounds ({});
+                if (! conPeg) pianoPegaBtn .setBounds ({});
 
                 juce::TextButton* pbTodas[12];
                 int nb = 0;

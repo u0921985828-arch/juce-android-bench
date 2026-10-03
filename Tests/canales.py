@@ -923,6 +923,90 @@ def main():
             malas.append ("en 360x640 la fila del pad 0 lleva %d switches y el pan mide %d: el ST se cae antes "
                           "que el pan, y el pan se queda" % (r360.get ("mesa_sw", -1), r360.get ("mesa_pan", 0)))
 
+    # 18. LA PAGINA DE CANALES, con la misma gramatica que la de PADS. Del
+    #     telefono, con la foto de MEZCLA · CANALES en 412x915: «¿por que la
+    #     pantalla de canales sigue siendo asi?». Asi era: S y M tapas, la M
+    #     en el borde y la S a un pixel -al reves que en la fila de un pad-,
+    #     y una franja vacia de una fila entre la ultima y el MASTER, lo que
+    #     el cajon tiraba por encajar filas plenas (hasta 43 px). Ahora: S y
+    #     M switches, la S en el borde y la M a `halfGap` (4), treinta y dos
+    #     filas que no bajan de 44 -con 43 la S y la M quedan en 39, bajo el
+    #     dedo- y se reparten el sobrante, asi que lo que queda al aire es
+    #     menos que filas a la vista. La app lo mide por el gesto -el
+    #     interruptor de vista- y vuelve. Medido en 412x915 y 393x851 por
+    #     la app; en 360x640, con la barra, la pagina de PADS hace lo mismo:
+    #     `mesa_sobra` menor que las filas que se ven. Roto -el binario de la
+    #     tanda anterior-: no publica la pagina de canales, FALLA.
+    for nombre, rr in (("412x915", r), ("393x851", r393)):
+        if rr is None: continue
+        fila, ven, sobra = rr.get ("mesa_c_fila", -1), rr.get ("mesa_c_ven", -1), rr.get ("mesa_c_sobra", -1)
+        sw, orden, hueco = rr.get ("mesa_c_sw", -1), rr.get ("mesa_c_orden", -1), rr.get ("mesa_c_hueco_sm", -1)
+        barraApp = rr.get ("mesa_c_barra_app", -1)
+        print ("canales  en %s la pagina de CANALES: filas de %d, %d a la vista y %d px al aire; %d switches, la S "
+               "%s y a %d de la M; barra de la casa %d"
+               % (nombre, fila, ven, sobra, sw, "en el borde" if orden == 1 else "DENTRO", hueco, barraApp))
+        if fila < 44:
+            malas.append ("en %s la fila de CANALES mide %d: nunca por debajo de 44, que con 43 la S y la M "
+                          "quedan bajo el dedo" % (nombre, fila))
+        if ven < 1 or sobra < 0 or sobra >= ven:
+            malas.append ("en %s la pagina de CANALES deja %d px al aire con %d filas a la vista: el sobrante se "
+                          "reparte entre las filas, no se tira" % (nombre, sobra, ven))
+        if sw != 2:
+            malas.append ("en %s la fila del canal 1 lleva %d switches y son dos: S y M" % (nombre, sw))
+        if orden != 1 or hueco != 4:
+            malas.append ("en %s la S del canal 1 %s y queda a %d de la M: en el borde y a 4, como en la fila de "
+                          "un pad" % (nombre, "esta en el borde" if orden == 1 else "esta DENTRO", hueco))
+        if barraApp < 36:
+            malas.append ("en %s la pagina de CANALES no lleva la barra de la casa (%d px) con treinta y dos "
+                          "filas que no entran" % (nombre, barraApp))
+    if r360 is not None:
+        fila, sobra = r360.get ("mesa_fila", -1), r360.get ("mesa_sobra", -1)
+        ven = r360.get ("mesa_vista_alto", 0) // max (1, fila)
+        print ("canales  en 360x640 la pagina de PADS, con la barra: filas de %d, %d a la vista y %d px al aire"
+               % (fila, ven, sobra))
+        if fila < 44 or ven < 1 or sobra < 0 or sobra >= ven:
+            malas.append ("en 360x640 la pagina de PADS deja %d px al aire con %d filas de %d a la vista"
+                          % (sobra, ven, fila))
+
+    # 19. EL GESTO SOBRE UN MANDO ES DEL MANDO, NO DE LA LISTA. Del telefono:
+    #     «es una jodienda para girar los knobs de paneo». Estaba escrito -los
+    #     mandos llevan `setViewportIgnoreDragFlag`- y sin medir. La app mete
+    #     un DEDO por la ventana (no un raton: el Viewport solo arrastra con lo
+    #     que no flota) que sube sesenta pixeles sobre el pan del pad 0 y luego
+    #     sobre el nombre de la fila, y publica cuanto se movio la lista en
+    #     cada caso y cuanto el pan. Lo que vale: sobre el knob la lista se
+    #     queda a 0 y el pan se mueve; sobre el nombre la lista se mueve -eso
+    #     prueba que el dedo llega-. Donde hay barra: 360x640 en PADS, y
+    #     CANALES en 412x915 y 393x851 con el fader del canal 0. `*_dio` dice
+    #     que bajo el dedo estaba el mando y no una tapa. Roto -el flag
+    #     quitado-: la lista se mueve con el knob, FALLA.
+    if r360 is not None:
+        knob, nombre = r360.get ("mesa_arr_knob", -1), r360.get ("mesa_arr_nombre", -1)
+        dio, pan = r360.get ("mesa_arr_dio", 0), float (r360.get ("mesa_arr_pan", 0))
+        print ("dedo     en 360x640, sesenta px de dedo sobre el pan del pad 0: la lista se mueve %d px y el pan "
+               "%.3f (bajo el dedo el knob: %d); sobre el nombre la lista se mueve %d px" % (knob, pan, dio, nombre))
+        if dio != 1:
+            malas.append ("en 360x640 bajo el dedo no estaba el knob del pan: la medida no vale")
+        if knob != 0 or abs (pan) < 0.05:
+            malas.append ("en 360x640 el dedo sobre el knob del pan mueve la lista %d px y el pan %.3f: el giro es "
+                          "del knob y la lista se queda" % (knob, pan))
+        if nombre < 40:
+            malas.append ("en 360x640 el dedo sobre el nombre mueve la lista %d px: por el nombre SI se arrastra, "
+                          "o el dedo no llega" % nombre)
+    for nombre_p, rr in (("412x915", r), ("393x851", r393)):
+        if rr is None: continue
+        fader, nombre, dio = rr.get ("mesa_c_arr_fader", -1), rr.get ("mesa_c_arr_nombre", -1), rr.get ("mesa_c_arr_dio", 0)
+        print ("dedo     en %s, CANALES: sesenta px de dedo sobre el fader del canal 0 mueven la lista %d px "
+               "(bajo el dedo el fader: %d); sobre el nombre, %d px" % (nombre_p, fader, dio, nombre))
+        if dio != 1:
+            malas.append ("en %s bajo el dedo no estaba el fader del canal 0: la medida no vale" % nombre_p)
+        if fader != 0:
+            malas.append ("en %s el dedo sobre el fader del canal 0 mueve la lista %d px: el arrastre es del fader"
+                          % (nombre_p, fader))
+        if nombre < 40:
+            malas.append ("en %s el dedo sobre el nombre del canal mueve la lista %d px: por el nombre SI se "
+                          "arrastra, o el dedo no llega" % (nombre_p, nombre))
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

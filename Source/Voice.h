@@ -634,7 +634,7 @@ struct Voice
             //  back onto the position puts the ragged edge at the end of a
             //  sound instead of at its attack.
             const double gStart = (drift < 0.0) ? -drift * gLen : 0.0;
-            if (gPhase == 0.0 && gOffA == 0.0 && gOffB == 0.0)
+            if (juce::exactlyEqual (gPhase, 0.0) && juce::exactlyEqual (gOffA, 0.0) && juce::exactlyEqual (gOffB, 0.0))
                 gOffA = gOffB = gStart;
 
             //  Where exactly the incoming grain starts. Restarting it at the

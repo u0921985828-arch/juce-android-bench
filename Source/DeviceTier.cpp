@@ -28,7 +28,7 @@ namespace
     {
         const int cores = juce::jmax (1, juce::SystemStats::getNumCpus());
         const int ramMB = juce::jmax (512, juce::SystemStats::getMemorySizeInMegabytes());
-        const int mhz   = juce::jmax (0, juce::SystemStats::getCpuSpeedInMegaherz());
+        const int mhz   = juce::jmax (0, juce::SystemStats::getCpuSpeedInMegahertz());
 
         Profile p;
         p.tier = classify (cores, ramMB, mhz);

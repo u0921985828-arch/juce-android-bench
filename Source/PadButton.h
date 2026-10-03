@@ -279,7 +279,7 @@ public:
     //  rather than leaving the player to guess why the pads got expressive.
     bool lastStrikeUsedPressure() const noexcept { return usedPressure; }
 
-    void paintButton (juce::Graphics& g, bool over, bool down) override
+    void paintButton (juce::Graphics& g, bool /*over*/, bool down) override
     {
         //  Same construction as every other cap in the instrument: the pad is
         //  a printed plate resting on a solid block of ink, and striking it

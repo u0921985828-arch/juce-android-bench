@@ -459,7 +459,7 @@ public:
     {
         return par < 3 ? kFxDef[f][par]
              : par == 3 ? 0.0f
-             : par < 6  ? (kFxDefExtra[f][par - 4] == kSinMando ? 0.0f : kFxDefExtra[f][par - 4])
+             : par < 6  ? (juce::exactlyEqual (kFxDefExtra[f][par - 4], kSinMando) ? 0.0f : kFxDefExtra[f][par - 4])
              : par == kParGraves ? kGravesOff : kAgudosOff;
     }
     //  Si el tipo tiene ese mando. p0..p2 siempre; p3 (enganche) solo los que
@@ -469,7 +469,7 @@ public:
         return par < 3 ? true
              : par == 3 ? (f == kFxCho || f == kFxFla || f == kFxPha || f == kFxTrm
                          || f == kFxRot || f == kFxDuc || f == kFxRep)
-             : par < 6  ? kFxDefExtra[f][par - 4] != kSinMando
+             : par < 6  ? ! juce::exactlyEqual (kFxDefExtra[f][par - 4], kSinMando)
              : f != kFxEq;
     }
 

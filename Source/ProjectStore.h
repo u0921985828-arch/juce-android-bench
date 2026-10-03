@@ -581,14 +581,16 @@ private:
             return false;
 
         juce::WavAudioFormat wav;
-        std::unique_ptr<juce::AudioFormatWriter> writer (
-            wav.createWriterFor (out.get(), sampleRate > 0.0 ? sampleRate : 44100.0,
-                                 (unsigned int) juce::jmax (1, buffer.getNumChannels()),
-                                 24, {}, 0));
+        //  El flujo se cede en un unique_ptr: si el escritor nace se lo queda,
+        //  y si no, sigue aqui y se cierra solo al salir.
+        std::unique_ptr<juce::OutputStream> flujo (std::move (out));
+        auto writer = wav.createWriterFor (flujo, juce::AudioFormatWriterOptions{}
+                                                      .withSampleRate (sampleRate > 0.0 ? sampleRate : 44100.0)
+                                                      .withNumChannels (juce::jmax (1, buffer.getNumChannels()))
+                                                      .withBitsPerSample (24));
         if (writer == nullptr)
             return false;
 
-        out.release();                       // the writer owns the stream now
         const bool wrote = writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples());
 
         //  THE ANSWER IS NOT KNOWN UNTIL THE WRITER IS GONE.

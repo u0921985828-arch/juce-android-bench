@@ -1162,7 +1162,7 @@ namespace ZatiTour
     //  Cortos a proposito. El proyecto anterior tiene veintisiete y aprendio lo
     //  mismo por el camino - "pasos mas cortos" es una de sus versiones -: un
     //  parrafo largo encima de una maquina oscurecida no se lee, se salta.
-    static const char* titulos[MainComponent::kTourPasos] =
+    [[maybe_unused]] static const char* titulos[MainComponent::kTourPasos] =
         { "ZATI",
           "LOS PADS",
           "CUATRO BANCOS",
@@ -1193,7 +1193,7 @@ namespace ZatiTour
     //  decia «dieciseis CANALES» desde que la maquina tiene treinta y dos, y
     //  una cifra dentro de una frase traducida es la unica constante que no
     //  se puede contrastar leyendo el codigo de al lado. Ver Tests/tour.py.
-    static const char* cuerpos[MainComponent::kTourPasos] =
+    [[maybe_unused]] static const char* cuerpos[MainComponent::kTourPasos] =
         { "Un sampler entero en el telefono. Este recorrido senala cada pieza en su "
           "sitio; se salta cuando quieras y se vuelve a abrir desde AJUSTES.",
 

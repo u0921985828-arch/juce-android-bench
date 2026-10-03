@@ -122,7 +122,7 @@ namespace Sintes
     //  divide por el y sin eso quitar el escalon subiria el instrumento entero-
     //  divide por el peso de esa capa. La escalera es una; el cero de la regla,
     //  de quien la lee.
-    static float pesoDeCapa (float razon, int capa) noexcept
+    inline float pesoDeCapa (float razon, int capa) noexcept
     {
         if (kCapas < 2 || ! (razon > 0.0f)) return 1.0f;
         const float t = (float) (kCapas - 1 - capa) / (float) (kCapas - 1);

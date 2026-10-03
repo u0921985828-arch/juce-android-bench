@@ -471,21 +471,21 @@ public:
                                                                  kMeterFloorDb);
                 const int   lit = (int) std::round ((db - kMeterFloorDb) / segDb);
 
-                for (int i = 0; i < nSeg; ++i)
+                for (int sg = 0; sg < nSeg; ++sg)
                 {
                     //  El color es del SEGMENTO, no del nivel: la tira se lee
                     //  como una regla de colores fijos y por donde va la luz
                     //  se sabe cuanto margen queda. Pintarla toda del color
                     //  del pico -que es lo que hace medio mundo- convierte el
                     //  medidor en una lampara.
-                    const auto on = i >= segRed    ? ZatiColours::red
-                                  : i >= segYellow ? ZatiColours::yellow
+                    const auto on = sg >= segRed    ? ZatiColours::red
+                                  : sg >= segYellow ? ZatiColours::yellow
                                                    : ZatiColours::green;
 
                     //  Y el testigo enganchado enciende los dos ultimos aunque
                     //  el nivel ya haya bajado: ES la unica forma de enterarse
                     //  de un pico de un bloque.
-                    const bool alight = i < lit || (clipHeld && i >= segRed);
+                    const bool alight = sg < lit || (clipHeld && sg >= segRed);
 
                     //  Y apagado sigue siendo la tinta de la pantalla al 10%,
                     //  no el color del segmento a media luz: un rojo al 10%
@@ -493,7 +493,7 @@ public:
                     //  asi que la parte apagada saldria de tres tonos - una
                     //  tira que parece rota por la mitad.
                     g.setColour (alight ? on : ZatiColours::lcdFg.withAlpha (0.10f));
-                    g.fillRect (band.getX() + (float) i * segW + 0.5f, r.getY(), segW - 1.0f, r.getHeight());
+                    g.fillRect (band.getX() + (float) sg * segW + 0.5f, r.getY(), segW - 1.0f, r.getHeight());
                 }
             };
 

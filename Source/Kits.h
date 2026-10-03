@@ -405,14 +405,14 @@ namespace Kits
         float p2;
         //  Cual de los dos juegos de parciales usa el metal: 0 la maquina, 1 el
         //  laton. Solo lo miran metal y hat.
-        int   juego;
+        int   juego = 0;
         //  Cuanto se abre el filtro que sigue a la nota, multiplicando el de
         //  siempre. Solo lo miran tone y chord, y CERO significa "el de
         //  siempre" y no "cerrado del todo": los sesenta y cuatro renglones se
         //  escribieron sin este campo y una inicializacion de agregado deja a
         //  cero lo que no se nombra. Un valor por defecto que ademas es un
         //  valor valido es como se apagan sesenta sonidos de golpe.
-        float brillo;
+        float brillo = 0.0f;
     };
 
     inline const Recipe* table()

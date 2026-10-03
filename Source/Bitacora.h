@@ -208,10 +208,10 @@ namespace Bitacora
             {
                 wait (100);
 
-                const auto ultimo = latido.load (std::memory_order_acquire);
-                if (ultimo == 0) continue;          // el hilo de mensajes no ha latido aun
+                const auto ultimoLatido = latido.load (std::memory_order_acquire);
+                if (ultimoLatido == 0) continue;          // el hilo de mensajes no ha latido aun
 
-                const int hueco = (int) (juce::Time::getMillisecondCounter() - ultimo);
+                const int hueco = (int) (juce::Time::getMillisecondCounter() - ultimoLatido);
 
                 if (hueco < umbralMs || avisado.load (std::memory_order_acquire))
                     continue;

@@ -611,9 +611,9 @@ public:
             if (fadeIn01 > 0.0f || fadeOut01 > 0.0f)
             {
                 constexpr int kPasos = 24;      // por rampa: suficiente para que no se vean esquinas
-                const float top = (float) wave.getY();
+                const float arriba = (float) wave.getY();
                 const float bot = (float) wave.getBottom();
-                auto yFor = [top, bot] (float g01) { return bot - g01 * (bot - top); };
+                auto yFor = [arriba, bot] (float g01) { return bot - g01 * (bot - arriba); };
 
                 juce::Path curva;
                 bool empezada = false;

@@ -2717,7 +2717,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  no cuestan un pixel de alto, que en esta ficha es lo unico que no
     //  sobra - la altura de un carril de la rejilla sale de lo que quede.
     {
-        juce::Array<juce::Rectangle<int>> bloques;
+        juce::Array<juce::Rectangle<int>> bloquesSeq;
         juce::Array<int> grupoDe;          // el `grupo` con el que nacio cada bloque
 
         for (const auto& lb : seqLabelBands)
@@ -2736,7 +2736,7 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
             //  Metrics::sm, asi que "unir lo que este a menos de sm" unia la
             //  pagina entera en un solo panel y no agrupaba nada.
             bool unido = false;
-            for (int i = 0; i < bloques.size(); ++i)
+            for (int i = 0; i < bloquesSeq.size(); ++i)
                 //  Mismo renglon, o mismo `grupo` explicito. Ver SeqLabel: la
                 //  tira del paso son tres filas a cuatro pixeles y tres paneles
                 //  ahi salen tocandose, que se lee igual que no dibujar
@@ -2756,17 +2756,17 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
                 //  ventana donde se viera.
                 if ((lb.grupo != 0 && lb.grupo == grupoDe[i])
                     || (lb.grupo == 0 && grupoDe[i] == 0
-                        && std::abs (bloques.getReference (i).getY() - b.getY()) < 3
-                        && std::abs (bloques.getReference (i).getBottom() - b.getBottom()) < 3))
+                        && std::abs (bloquesSeq.getReference (i).getY() - b.getY()) < 3
+                        && std::abs (bloquesSeq.getReference (i).getBottom() - b.getBottom()) < 3))
                 {
-                    bloques.getReference (i) = bloques.getReference (i).getUnion (b);
+                    bloquesSeq.getReference (i) = bloquesSeq.getReference (i).getUnion (b);
                     unido = true;
                     break;
                 }
-            if (! unido) { bloques.add (b); grupoDe.add (lb.grupo); }
+            if (! unido) { bloquesSeq.add (b); grupoDe.add (lb.grupo); }
         }
 
-        pintaPaneles (g, bloques, "seqBloques");
+        pintaPaneles (g, bloquesSeq, "seqBloques");
 
         g.setColour (ZatiColours::inkDim);
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.20f));

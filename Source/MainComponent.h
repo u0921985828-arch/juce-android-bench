@@ -188,6 +188,17 @@ private:
     //  permite. Un aparato que no llega cae hasta ahi y no mas.
     void enVBlank (double timestampSec);
 
+    //  UN VIEWPORT QUE AVISA cuando la vista se mueve -la lista se arrastra
+    //  por su contenido- para que la barra de la casa diga donde esta. Lo
+    //  llevan la mesa, las fichas que se desplazan y el manual: tres listas,
+    //  una barra -`BarraVista`- y un aviso. La barra solo mueve el Viewport
+    //  desde `onMueve`, asi que no hay bucle: `ponRango` no avisa.
+    struct VistaAvisa : public juce::Viewport
+    {
+        std::function<void()> onVista;
+        void visibleAreaChanged (const juce::Rectangle<int>&) override { if (onVista) onVista(); }
+    };
+
     // One perform screen; every deep feature (pad settings, sequencer,
     // pattern chain, auto chop, FX) opens as a pop-up sheet over it — a dim
     // scrim + a bottom card, closed by tapping outside or the x button.
@@ -280,8 +291,27 @@ private:
         bool listaPropia = false;
 
         Cuerpo cuerpo;
-        juce::Viewport vista;
+        VistaAvisa vista;
         bool desplazable = false;
+        //  Y LA BARRA ES DE LA CASA, no la de JUCE. La mesa ya lo era -del
+        //  telefono: «deberia ser hecha en la app, como alguna barra mas que
+        //  aparece por ahi»- y las fichas que se desplazan y el manual seguian
+        //  con la de JUCE pintada por el LookAndFeel: dos barras para una
+        //  misma cosa. La misma `BarraVista` del piano y la mesa, en vertical
+        //  y contando desde arriba, en PIXELES del cuerpo: la primera fila que
+        //  se ve es `getViewPositionY`, las que caben el alto de la vista y el
+        //  total el alto del cuerpo. Del grosor que tenia la de JUCE -`sm`,
+        //  ocho- porque aqui es un indicio y no un mando: la ficha se arrastra
+        //  por su contenido, y un ancho de dedo serian 32 px menos de ficha en
+        //  cada movil. Solo sale cuando el contenido no cabe, como la de
+        //  antes. Tests/expo.py mide que la de JUCE no sale en ninguna
+        //  pantalla.
+        static constexpr int kBarra = Metrics::sm;
+        BarraVista barra;
+        void sincronizaBarra()
+        {
+            barra.ponRango (vista.getViewPositionY(), vista.getMaximumVisibleHeight(), cuerpo.getHeight());
+        }
 
         //  Se llama una vez, al construir, y decide donde viven los hijos de
         //  esta ficha. Quien no la llame se queda exactamente como estaba.
@@ -290,9 +320,14 @@ private:
             desplazable = true;
             cuerpo.capa = (int) getProperties()["capa"];
             vista.setViewedComponent (&cuerpo, false);
-            vista.setScrollBarsShown (true, false);
-            vista.setScrollBarThickness (8);
+            vista.setScrollBarsShown (false, false);
             addAndMakeVisible (vista);
+            barra.ponEje (true);
+            barra.ponHaciaAbajo (true);
+            barra.onMueve = [this] (int primero) { vista.setViewPosition (0, primero); };
+            vista.onVista = [this] { sincronizaBarra(); };
+            addAndMakeVisible (barra);
+            barra.setVisible (false);
             cuerpo.paintBody = [this] (juce::Graphics& g) { if (paintContent) paintContent (g); };
             cuerpo.onClick   = [this] (juce::Point<int> p) { if (onContentClick) onContentClick (p); };
         }
@@ -1588,8 +1623,8 @@ private:
 
         bool operator== (const Readout& o) const noexcept
         {
-            return dev == o.dev && sr == o.sr && block == o.block && latency == o.latency
-                && midiendo == o.midiendo && medido == o.medido && relojMedido == o.relojMedido
+            return dev == o.dev && juce::exactlyEqual (sr, o.sr) && block == o.block && latency == o.latency
+                && midiendo == o.midiendo && juce::exactlyEqual (medido, o.medido) && juce::exactlyEqual (relojMedido, o.relojMedido)
                 && ran == o.ran && mmapKnown == o.mmapKnown && mmapUsed == o.mmapUsed
                 && exclusive == o.exclusive && politicaMmap == o.politicaMmap
                 && politicaExcl == o.politicaExcl && nota == o.nota
@@ -3262,12 +3297,9 @@ private:
     MixRows        mixRows;
     //  El Viewport avisa cuando la vista se mueve -la lista se arrastra por
     //  las filas- para que la barra de la casa diga donde esta. Ver mixBarra.
-    struct MixScroll : public juce::Viewport
-    {
-        std::function<void()> onVista;
-        void visibleAreaChanged (const juce::Rectangle<int>&) override { if (onVista) onVista(); }
-    };
-    MixScroll mixScroll;
+    //  Es la misma `VistaAvisa` que llevan las fichas que se desplazan y el
+    //  manual: tres listas, una barra, un aviso.
+    VistaAvisa mixScroll;
     //  LA BARRA DE LA MESA ES DE LA CASA, no la de JUCE. Del telefono: «la
     //  barra que aparece en el mixer no deberia ser la de JUCE, deberia ser
     //  hecha en la app, como alguna barra mas que aparece por ahi». Es la
@@ -3276,6 +3308,10 @@ private:
     //  contando desde arriba, en filas. Ver sincronizaMixBarra.
     BarraVista mixBarra;
     int  mixFilaAlto = 1;
+    //  Lo que el cajon deja al aire de abajo por no partir una fila: menos
+    //  que filas a la vista desde que las filas se reparten el sobrante.
+    //  Lo publica la auditoria (Tests/canales.py, regla 18).
+    int  mixSobra = 0;
     void sincronizaMixBarra();
     void paintMixRows (juce::Graphics& g);
     //  DONDE EMPIEZA LA FILA DE CADA CANAL. El chip de color y el nombre se
@@ -3514,7 +3550,10 @@ private:
     void paintBusy (juce::Graphics& g);
 
     ManualBody     manualBody;
-    juce::Viewport manualScroll;
+    VistaAvisa     manualScroll;
+    //  Y SU BARRA, la de la casa: la misma que la de las fichas que se
+    //  desplazan, ver Sheet::barra.
+    BarraVista     manualBarra;
     Sheet          manualSheet;
     juce::TextButton manualButton { "GUIA" },
                  manualCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
