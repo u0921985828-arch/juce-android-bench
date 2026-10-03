@@ -532,8 +532,14 @@ def main():
     if cajas != 0:
         malas.append ("%d faders de la mesa conservan una casilla de texto aparte: "
                       "la cifra va dentro de la barra" % cajas)
-    if alto < 36:
-        malas.append ("el fader del pad 0 mide %d px de alto y el dedo pide 36" % alto)
+    #     Y EL ALTO DE LA CELDA ES EL QUE LA TARJETA DA, ya no 36: desde que
+    #     las dieciseis filas entran en la ficha -la regla quince- la fila
+    #     mide lo que toca a cada una, 36 en 412x915 y 32 en 393x851, y el
+    #     fader cuatro menos. Lo que no puede faltar es la banda entera con
+    #     su aire: una celda mas baja que la banda la recorta.
+    if alto < techo + 4:
+        malas.append ("el fader del pad 0 mide %d px de alto: la banda de %d no cabe con su aire"
+                      % (alto, techo))
 
     #  10. CADA FADER LLEVA DENTRO SU AGUJA, Y LA AGUJA DICE LO QUE SUENA.
     #
@@ -578,37 +584,63 @@ def main():
     #     la S de cada fila, y acaba donde acaba la cruz del titulo.
     #
     #     Se miden cinco cosas: que la de JUCE mida CERO, que la de la casa
-    #     este (hay dieciseis filas en una tarjeta de trece) y mida un dedo,
+    #     este (hay dieciseis filas en una tarjeta de siete) y mida un dedo,
     #     el hueco entre la S y la barra, el borde contra la cruz, y que la
     #     barra MUEVA: un toque en su pie pasa una pagina de filas y uno en la
     #     cabeza vuelve a la primera, por el mismo `mouseDown` que el dedo.
     #     Medido en 412x915: JUCE 0, barra 40, hueco 4, borde 0, salta 13
     #     filas, vuelve a 0. Roto a proposito -la barra contando desde abajo
     #     como el piano- el toque en el pie no mueve nada: salta 0.
+    #
+    #     Y SE MIDE EN 360x640, no en 412x915: desde que las dieciseis filas
+    #     entran en la ficha -la regla quince- en 412x915 no hay nada que
+    #     arrastrar y la barra no sale, que es lo correcto y lo que la quince
+    #     pide. Donde ni a 24 por fila entran, la mesa vuelve a ser la de
+    #     antes: filas de 44 con la barra. Medido en 360x640: el Viewport
+    #     ensena 308 y las filas miden 704; JUCE 0, barra 40 a 4 de la S,
+    #     borde 0, salta 7 filas, vuelve a 0.
     vista = r.get ("mesa_vista", -1)
     filas = r.get ("mesa_filas", -2)
     barra = r.get ("mesa_barra", -1)
     borde = r.get ("mesa_borde", -1)
-    barraApp = r.get ("mesa_barra_app", -1)
-    hueco = r.get ("mesa_hueco", -1)
-    salta = r.get ("mesa_salta", -1)
-    vuelve = r.get ("mesa_vuelve", -1)
-    print ("mesa     el Viewport ensena %d px y las filas miden %d; barra de JUCE %d px, barra de la "
-           "casa %d px a %d de la S; acaba a %d px de la cruz; un toque en el pie salta %d filas y "
-           "uno en la cabeza vuelve a %d" % (vista, filas, barra, barraApp, hueco, borde, salta, vuelve))
+    print ("mesa     en 412x915 el Viewport ensena %d px y las filas miden %d; barra de JUCE %d px; "
+           "la S acaba a %d px de la cruz" % (vista, filas, barra, borde))
     if barra != 0:
         malas.append ("la mesa sigue ensenando la barra de JUCE, de %d px" % barra)
-    if barraApp < 36:
-        malas.append ("la barra de la casa de la mesa mide %d px: tiene que estar (hay dieciseis "
-                      "filas) y medir un dedo" % barraApp)
-    if not 1 <= hueco <= 8:
-        malas.append ("la S de la primera fila queda a %d px de la barra: pide aire, y no mas de sm" % hueco)
     if borde != 0:
-        malas.append ("la barra acaba %d px antes que la cruz del titulo" % borde)
-    if salta < 1:
-        malas.append ("un toque en el pie de la barra no mueve la mesa (salta %d filas)" % salta)
-    if vuelve != 0:
-        malas.append ("un toque en la cabeza de la barra no vuelve a la primera fila (queda en %d px)" % vuelve)
+        malas.append ("la S de la primera fila acaba %d px antes que la cruz del titulo" % borde)
+    r360 = corre ({"ZATI_SIZE": "360x640"})
+    if r360 is None:
+        malas.append ("la app no publico la linea de canales en 360x640")
+    else:
+        vista = r360.get ("mesa_vista", -1)
+        filas = r360.get ("mesa_filas", -2)
+        barra = r360.get ("mesa_barra", -1)
+        borde = r360.get ("mesa_borde", -1)
+        barraApp = r360.get ("mesa_barra_app", -1)
+        hueco = r360.get ("mesa_hueco", -1)
+        salta = r360.get ("mesa_salta", -1)
+        vuelve = r360.get ("mesa_vuelve", -1)
+        print ("mesa     en 360x640 el Viewport ensena %d px de alto y las filas miden %d; barra de JUCE %d px, "
+               "barra de la casa %d px a %d de la S; acaba a %d px de la cruz; un toque en el pie salta %d "
+               "filas y uno en la cabeza vuelve a %d"
+               % (r360.get ("mesa_vista_alto", -1), r360.get ("mesa_filas_alto", -1), barra, barraApp,
+                  hueco, borde, salta, vuelve))
+        if barra != 0:
+            malas.append ("en 360x640 la mesa sigue ensenando la barra de JUCE, de %d px" % barra)
+        if barraApp < 36:
+            malas.append ("en 360x640 la barra de la casa de la mesa mide %d px: tiene que estar (hay "
+                          "dieciseis filas en una tarjeta de siete) y medir un dedo" % barraApp)
+        if not 1 <= hueco <= 8:
+            malas.append ("en 360x640 la S de la primera fila queda a %d px de la barra: pide aire, y no "
+                          "mas de sm" % hueco)
+        if borde != 0:
+            malas.append ("en 360x640 la barra acaba %d px antes que la cruz del titulo" % borde)
+        if salta < 1:
+            malas.append ("en 360x640 un toque en el pie de la barra no mueve la mesa (salta %d filas)" % salta)
+        if vuelve != 0:
+            malas.append ("en 360x640 un toque en la cabeza de la barra no vuelve a la primera fila "
+                          "(queda en %d px)" % vuelve)
 
     #  11. EN LA FILA DE UN PAD ENTRA TODO: pan, fader, M y S.
     #
@@ -634,23 +666,41 @@ def main():
     #     cuenta de la escalera pasa a 96 + 44. Medido: 400x900 pan 40, M
     #     37, fader 92; 393x851 pan 40, M 34, fader 93; 412x915 M 40 y el
     #     fader 95, tres mas que con el pan a tercios.
+    #
+    #     Y LA CELDA DEL PAN MIDE LO QUE SU TINTA, con tres switches en la
+    #     fila y el fader con un suelo de 64 -un dedo y medio- en vez de 96.
+    #     Del telefono: «la distancia que quiero que guarden es la que hay
+    #     entre los botones M y S»: la celda de 44 con el dial de 20 dentro
+    #     era doce pixeles de hueco a cada lado del dial, y «tres switch, de
+    #     hecho; que no sean botones, el mute y el solo; y uno que sea mono
+    #     o estereo» son tres celdas donde habia dos. Con el suelo de 96 los
+    #     tres entraban en 393x851 a 34 con el fader en 97 -la cuenta sobre
+    #     la fila medida- pero bajo 384 se caia el ST y en 360x640 tambien
+    #     el pan; con 64 entran los tres y el pan hasta 360x800, y el fader
+    #     del movil mide 79 en vez de 97. La escalera: los tres switches
+    #     se estrechan juntos hasta 32, luego se cae el ST, luego el pan
+    #     (regla diecisiete, en 360x640). Aqui: el pan esta y mide su tinta
+    #     (regla dieciseis), M no baja de 32, el fader conserva su suelo, y
+    #     en 412x915 M sigue en 40. Medido: 400x900 pan 34, M 40, fader 84;
+    #     393x851 pan 34, M 40, fader 79; 412x915 M 40 y el fader 92.
     r400 = corre ({"ZATI_SIZE": "400x900"})
     if r400 is None:
         malas.append ("la app no publico la linea de canales en 400x900")
     else:
-        print ("fila     en 400x900 el pan del pad 0 mide %d, M %d y el fader %d; en 412x915 M mide %d"
-               % (r400.get ("mesa_pan", -1), r400.get ("mesa_ms", -1), r400.get ("fader_ancho", -1),
-                  r.get ("mesa_ms", -1)))
-        if r400.get ("mesa_pan", 0) < 40:
-            malas.append ("en 400x900 el pan del pad 0 no esta en la fila o no mide un dedo (mide %d): "
-                          "los botones tienen que ceder antes que el pan" % r400.get ("mesa_pan", 0))
+        print ("fila     en 400x900 el pan del pad 0 mide %d (tinta %d), M %d y el fader %d; en 412x915 M mide %d"
+               % (r400.get ("mesa_pan", -1), r400.get ("mesa_pan_tinta", -1), r400.get ("mesa_ms", -1),
+                  r400.get ("fader_ancho", -1), r.get ("mesa_ms", -1)))
+        if r400.get ("mesa_pan", 0) < 30 or r400.get ("mesa_pan", 0) != r400.get ("mesa_pan_tinta", -1):
+            malas.append ("en 400x900 el pan del pad 0 no esta en la fila o su celda no mide su tinta (celda %d, "
+                          "tinta %d): los switches tienen que ceder antes que el pan y la celda es el bloque"
+                          % (r400.get ("mesa_pan", 0), r400.get ("mesa_pan_tinta", -1)))
         if r400.get ("mesa_ms", 0) < 32:
             malas.append ("en 400x900 M mide %d: nunca por debajo de 32" % r400.get ("mesa_ms", 0))
-        if r400.get ("fader_ancho", 0) < 92:
-            malas.append ("en 400x900 el fader del pad 0 mide %d: el pan no se paga con el fader (suelo 92)"
+        if r400.get ("fader_ancho", 0) < 64:
+            malas.append ("en 400x900 el fader del pad 0 mide %d: el pan no se paga con el fader (suelo 64)"
                           % r400.get ("fader_ancho", 0))
         if r.get ("mesa_ms", 0) != 40:
-            malas.append ("en 412x915 M mide %d y el pan ya entraba con 40: estrechar donde no hace "
+            malas.append ("en 412x915 M mide %d y la fila entera entraba con 40: estrechar donde no hace "
                           "falta es pagar sin cobrar" % r.get ("mesa_ms", 0))
 
     #  12. EL FADER PINTA SU CELDA, LA CIFRA CABE Y EL PAN ES UN KNOB.
@@ -735,6 +785,19 @@ def main():
     #     binario de las letras en las esquinas da seis de aire y la L desde
     #     el 4 con el dial en el 10, y el de las letras pegadas, cero de aire
     #     con la linea de 2: FALLA los dos.
+    #
+    #     Y LAS LETRAS VAN A LOS LADOS, la L a la izquierda del dial y la R
+    #     a la derecha -«a la izquierda la L y a la derecha la R», lo que el
+    #     telefono dijo la primera vez-, desde que las dieciseis filas
+    #     entran en la ficha: en una fila de 32 no caben debajo del dial. El
+    #     aire entre cada letra y el circulo sigue siendo lo que mide su
+    #     linea, cada letra con su tinta a la altura del centro del dial, el
+    #     dial centrado de arriba abajo, y el bloque -de la L a la R- es la
+    #     celda entera: la L empieza en el borde izquierdo y la R acaba en el
+    #     derecho. Medido en 412x915: dial en x 7..26 e y 6..25 de 34x32 con
+    #     la linea de 2, la L en 0..4 y la R en 29..33, las dos en las filas
+    #     12..19. Roto -el binario de la tanda anterior, con las letras
+    #     debajo-: la L y la R a los lados no estan, FALLA.
     kw, kh = r.get ("mesa_knob_w", 0), r.get ("mesa_knob_h", 0)
     kx0, ky0, ky1 = r.get ("mesa_knob_x0", -1), r.get ("mesa_knob_y0", -1), r.get ("mesa_knob_y1", -1)
     aro = r.get ("mesa_knob_aro", -1)
@@ -744,25 +807,121 @@ def main():
            % (kx0, kx1, ky0, ky1, kw, kh, aro, tl, tr))
     if kx0 < 0 or kw <= 0:
         malas.append ("la app no publica donde pinta el dial del pan del pad 0")
-    elif tl[1] < 0 or tr[1] < 0:
-        malas.append ("debajo del dial del pan del pad 0 falta la L o la R")
+    elif tl[1] < 0 or tr[1] < 0 or tl[1] >= kx0 or tr[0] <= kx1:
+        malas.append ("a los lados del dial del pan del pad 0 falta la L o la R (L %s, R %s, dial %d..%d)"
+                      % (tl, tr, kx0, kx1))
     else:
-        if abs ((kx0 + kx1) - (kw - 1)) > 2:
-            malas.append ("el dial del pan del pad 0 no esta centrado en su celda: va de %d a %d en %d"
-                          % (kx0, kx1, kw))
-        aire = min (tl[2], tr[2]) - ky1 - 1
+        if abs ((ky0 + ky1) - (kh - 1)) > 1:
+            malas.append ("el dial del pan del pad 0 no esta centrado de arriba abajo en su celda: va de %d a "
+                          "%d en %d" % (ky0, ky1, kh))
+        aireL = kx0 - tl[1] - 1
+        aireR = tr[0] - kx1 - 1
         if aro < 1 or aro > 3:
             malas.append ("la linea del circulo del pan del pad 0 mide %d px: no se lee como linea" % aro)
-        elif aire != aro:
-            malas.append ("entre el circulo del pan del pad 0 y sus letras hay %d px de aire y la linea del "
-                          "circulo mide %d: ese aire es el grosor de la linea" % (aire, aro))
-        if abs (tl[0] - kx0) > 1 or abs (tr[1] - kx1) > 1:
-            malas.append ("la L y la R del pan del pad 0 no van al ras del dial: la L desde %d con el "
-                          "dial en %d, la R hasta %d con el dial en %d" % (tl[0], kx0, tr[1], kx1))
-        abajo = max (tl[3], tr[3])
-        if abs ((ky0 + abajo) - (kh - 1)) > 4:
-            malas.append ("el bloque del pan del pad 0 -dial y letras- no esta centrado de arriba abajo: "
-                          "de %d a %d en %d" % (ky0, abajo, kh))
+        elif aireL != aro or aireR != aro:
+            malas.append ("entre el circulo del pan del pad 0 y sus letras hay %d px de aire a la izquierda y "
+                          "%d a la derecha, y la linea del circulo mide %d: ese aire es el grosor de la linea"
+                          % (aireL, aireR, aro))
+        if abs ((tl[2] + tl[3]) - (ky0 + ky1)) > 2 or abs ((tr[2] + tr[3]) - (ky0 + ky1)) > 2:
+            malas.append ("la L y la R del pan del pad 0 no van a la altura del dial: la L en las filas %d..%d y "
+                          "la R en %d..%d con el dial en %d..%d" % (tl[2], tl[3], tr[2], tr[3], ky0, ky1))
+        if tl[0] > 1 or tr[1] < kw - 2:
+            malas.append ("el bloque del pan del pad 0 no es su celda: la L empieza en %d y la R acaba en %d de "
+                          "una celda de %d" % (tl[0], tr[1], kw))
+
+    # 15. LAS DIECISEIS FILAS ENTRAN EN LA FICHA. Del telefono: «tienen que
+    #     entrar todos los canales en el pop up del mixer, o si no es una
+    #     jodienda para girar los knobs de paneo». Era una jodienda medida:
+    #     en 393x851 la tarjeta ensenaba once filas de 44 y las otras cinco
+    #     se arrastraban, y el Viewport arrastra la lista con el mismo gesto
+    #     con el que se gira el knob. Ahora la fila mide lo que la tarjeta
+    #     da -hasta 44, nunca menos de 24- y las dieciseis entran sin barra:
+    #     las filas miden lo que el Viewport ensena o menos, la fila no baja
+    #     de 24 y la barra de la casa no esta. En 412x915 y en 393x851, que
+    #     es la del movil. Medido: 412x915 filas de 36, 576 en 583, sin
+    #     barra; 393x851 filas de 32, 512 en 519. Roto -el binario de la
+    #     tanda anterior-: filas de 44, 704 en 583 con la barra: FALLA.
+    r393 = corre ({"ZATI_SIZE": "393x851"})
+    if r393 is None:
+        malas.append ("la app no publico la linea de canales en 393x851")
+    for nombre, rr in (("412x915", r), ("393x851", r393)):
+        if rr is None: continue
+        fila = rr.get ("mesa_fila", -1)
+        vistaAlto = rr.get ("mesa_vista_alto", -1)
+        filasAlto = rr.get ("mesa_filas_alto", -1)
+        barraApp = rr.get ("mesa_barra_app", -1)
+        print ("filas    en %s cada fila mide %d: las dieciseis miden %d y el Viewport ensena %d; barra de la casa %d"
+               % (nombre, fila, filasAlto, vistaAlto, barraApp))
+        if fila < 24:
+            malas.append ("en %s la fila de la mesa mide %d: nunca por debajo de 24" % (nombre, fila))
+        if filasAlto < 0 or vistaAlto < 0 or filasAlto > vistaAlto:
+            malas.append ("en %s las dieciseis filas miden %d y el Viewport ensena %d: no entran todas"
+                          % (nombre, filasAlto, vistaAlto))
+        if barraApp != 0:
+            malas.append ("en %s la mesa lleva barra de %d px con las dieciseis filas a la vista: no hay nada "
+                          "que arrastrar" % (nombre, barraApp))
+
+    # 16. Y LOS HUECOS DE LA FILA SON TODOS EL MISMO. Del telefono, con la
+    #     foto del knob en su celda de 44: «la distancia que quiero que
+    #     guarden es la que hay entre los botones M y S». La app mide los
+    #     huecos por la TINTA de cada control del pad 0 -su foto, de la
+    #     primera a la ultima columna pintada- y no por los limites de las
+    #     celdas: fader a pan, pan a ST, ST a M y M a S tienen que ser los
+    #     cuatro `halfGap`, 4, el que separaba M de S. Y la celda del pan
+    #     mide lo que su tinta, que es lo que lo hace posible. Medido en
+    #     412x915 y 393x851: [4, 4, 4, 4], celda 34 y tinta 34. Roto -el
+    #     binario de la tanda anterior-: no publica los huecos, FALLA.
+    for nombre, rr in (("412x915", r), ("393x851", r393)):
+        if rr is None: continue
+        huecos = rr.get ("mesa_huecos", [-1] * 4)
+        pan, tinta = rr.get ("mesa_pan", -1), rr.get ("mesa_pan_tinta", -1)
+        print ("huecos   en %s, por la tinta: fader-pan, pan-ST, ST-M y M-S son %s; la celda del pan mide %d y "
+               "su tinta %d" % (nombre, huecos, pan, tinta))
+        if len (huecos) != 4 or any (h != 4 for h in huecos):
+            malas.append ("en %s los huecos de la fila del pad 0 son %s y tienen que ser los cuatro de 4, el "
+                          "que hay entre M y S" % (nombre, huecos))
+        if pan < 30 or pan != tinta:
+            malas.append ("en %s la celda del pan del pad 0 mide %d y su tinta %d: la celda es el bloque, sin "
+                          "aire propio" % (nombre, pan, tinta))
+
+    # 17. TRES SWITCHES, Y EL DE ESTEREO MUEVE EL ANCHO. Del telefono: «tres
+    #     switch, de hecho; que no sean botones, el mute y el solo; y uno
+    #     que sea mono o estereo, por la abertura». La fila del pad 0 lleva
+    #     tres tapas pintadas como switch -ranura y paleta-, y el ST es una
+    #     ventana de dos posiciones al ancho del pad: tocarlo lo pone a cero
+    #     y volver a tocarlo lo devuelve a lo que tenia, leido del MOTOR y
+    #     por el gesto (`pulsaTapa`). Activo si la muestra del pad 0 tiene
+    #     dos canales, como su mando de EL PAD. Y la escalera: en 360x640
+    #     -con la barra, que se cobra un dedo- el ST se cae ANTES que el pan,
+    #     que es el que se gira en cada mezcla: dos switches y el pan puesto.
+    #     Medido en 412x915 y 393x851: 3 switches, la muestra con 2 canales,
+    #     activo, 1.00 -> 0.00 -> 1.00; en 360x640, 2 switches y el pan de
+    #     34. Roto -el binario de la tanda anterior-: no publica switches ni
+    #     el ST, FALLA.
+    for nombre, rr in (("412x915", r), ("393x851", r393)):
+        if rr is None: continue
+        sw = rr.get ("mesa_sw", -1)
+        canales = rr.get ("mesa_st_canales", -1)
+        activo = rr.get ("mesa_st_activo", -1)
+        antes, despues, vuelve = (rr.get ("mesa_st_antes", -1.0), rr.get ("mesa_st_despues", -1.0),
+                                  rr.get ("mesa_st_vuelve", -1.0))
+        print ("switch   en %s la fila del pad 0 lleva %d switches; la muestra tiene %d canales y el ST esta %s: "
+               "el ancho va %.2f -> %.2f -> %.2f" % (nombre, sw, canales, "activo" if activo == 1 else "apagado",
+                                                      antes, despues, vuelve))
+        if sw != 3:
+            malas.append ("en %s la fila del pad 0 lleva %d switches y son tres: S, M y ST" % (nombre, sw))
+        if canales < 0 or activo != (1 if canales > 1 else 0):
+            malas.append ("en %s el ST del pad 0 esta %s con una muestra de %d canales: activo solo con dos"
+                          % (nombre, "activo" if activo == 1 else "apagado", canales))
+        if abs (antes - 1.0) > 0.001 or abs (despues) > 0.001 or abs (vuelve - 1.0) > 0.001:
+            malas.append ("en %s el ST del pad 0 deja el ancho en %.2f -> %.2f -> %.2f y tiene que ir de 1.00 a "
+                          "0.00 y volver a 1.00" % (nombre, antes, despues, vuelve))
+    if r360 is not None:
+        print ("switch   en 360x640 la fila del pad 0 lleva %d switches y el pan mide %d"
+               % (r360.get ("mesa_sw", -1), r360.get ("mesa_pan", -1)))
+        if r360.get ("mesa_sw", -1) != 2 or r360.get ("mesa_pan", 0) < 30:
+            malas.append ("en 360x640 la fila del pad 0 lleva %d switches y el pan mide %d: el ST se cae antes "
+                          "que el pan, y el pan se queda" % (r360.get ("mesa_sw", -1), r360.get ("mesa_pan", 0)))
 
     print()
     if malas:

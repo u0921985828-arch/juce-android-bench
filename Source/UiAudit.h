@@ -1151,9 +1151,10 @@ namespace UiAudit
              //  `ctrlSeamTop` y las costuras, y repetirla en Python serian dos
              //  reglas. Cero para todo lo que llena su rectangulo, que es lo
              //  que hace un `PadButton` -deriva de `juce::Button` y pinta el
-             //  suyo entero- y lo que hace un deslizador.
+             //  suyo entero- y lo que hace un deslizador. Y un switch de la
+             //  mesa deja lo que su ranura no ocupa: `aireDeBoton` lo separa.
              << ",\"aire\":" << (dynamic_cast<juce::TextButton*> (&c) != nullptr
-                                     ? ZatiLookAndFeel::aireTapaVertical (abs.getHeight()) : 0);
+                                     ? ZatiLookAndFeel::aireDeBoton (*dynamic_cast<juce::TextButton*> (&c)) : 0);
 
         //  WHAT IS ON THE PAD. The one piece of state worth carrying in a
         //  layout dump: after leaving the app and coming back, is the sound

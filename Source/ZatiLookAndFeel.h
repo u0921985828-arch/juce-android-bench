@@ -1427,6 +1427,97 @@ public:
         g.drawFittedText (filename, r.reduced (kEdgeV, 0), juce::Justification::centredLeft, 1, 0.9f);
     }
 
+    //  EL BLOQUE DEL PAN DE LA MESA: la L, su aire, el dial, su aire y la R,
+    //  medidos por la TINTA de cada letra -el camino de su glifo- y no por la
+    //  caja de la fuente. Lo usan el ramal "pan" de drawRotarySlider para
+    //  pintar y `anchoCeldaPan` para pedir la celda: UNA cuenta, o el hueco
+    //  que la maqueta deja no seria el que se ve.
+    struct BloquePan
+    {
+        juce::Path pL, pR;
+        juce::Rectangle<float> tL, tR;
+        float R = 0.0f;
+        int   aire = 0, wL = 0, wR = 0, ancho = 0;
+    };
+
+    static BloquePan bloquePan()
+    {
+        BloquePan b;
+        //  El dial mide lo que la banda del fader y el aire hasta cada letra
+        //  lo que su linea pinta: dos pixeles.
+        b.R    = (float) Metrics::grosorFader * 0.5f;
+        b.aire = 2;
+        const auto fuente = ZatiColours::monoFont ((float) Metrics::fMeta, true);
+        { juce::GlyphArrangement ga; ga.addLineOfText (fuente, "L", 0.0f, 0.0f); ga.createPath (b.pL); }
+        { juce::GlyphArrangement ga; ga.addLineOfText (fuente, "R", 0.0f, 0.0f); ga.createPath (b.pR); }
+        b.tL = b.pL.getBounds();
+        b.tR = b.pR.getBounds();
+        //  EN PIXELES ENTEROS, que lo que se mide son pixeles. Cada letra se
+        //  lleva su tinta redondeada hacia arriba y se pega al aire por el
+        //  lado del dial: con el bloque centrado a medias -su ancho de 33 y
+        //  pico en una celda de 34- la L quedaba a dos pixeles del circulo y
+        //  la R a uno, porque el pixel que la R empezaba a medias ya es tinta
+        //  (medido en 393x851 antes de esto: 2 y 1).
+        b.wL    = (int) std::ceil (b.tL.getWidth());
+        b.wR    = (int) std::ceil (b.tR.getWidth());
+        b.ancho = b.wL + b.aire + (int) (b.R * 2.0f) + b.aire + b.wR;
+        return b;
+    }
+
+    //  LA CELDA DEL PAN MIDE LO QUE SU TINTA: ni un pixel de aire propio. Fue
+    //  un dedo y su aire -44- con el dial de 20 centrado dentro, o sea doce
+    //  pixeles de hueco a cada lado del dial que se sumaban al aire de la
+    //  fila; del telefono: «la distancia que quiero que guarden es la que hay
+    //  entre los botones M y S». Ese aire lo pone ahora la maqueta, con el
+    //  mismo `halfGap` para todos los huecos de la fila. Lo que se toca no
+    //  cambia: el knob se gira arrastrando desde cualquier punto de su celda,
+    //  como los mandos de EL PAD.
+    static int anchoCeldaPan()
+    {
+        return bloquePan().ancho;
+    }
+
+    //  EL SWITCH DE LA MESA: una ranura del grosor de la banda del fader -lo
+    //  mismo que mide el dial del pan, que la fila se lee por una sola
+    //  proporcion- y dentro una paleta que corre `kSwitchRecorrido` de un
+    //  lado al otro: apagado a la izquierda, encendido a la derecha. Ver el
+    //  ramal "switch" de drawButtonBackground. Las tres cuentas estan aqui
+    //  porque las piden tres sitios: el dibujo, `reparteTapa` -donde cae el
+    //  rotulo, que es lo que el banco mide- y `aireDeBoton`, el aire que la
+    //  ranura deja en su celda para la regla PEGADO.
+    static constexpr int kSwitchAlto      = Metrics::grosorFader;
+    static constexpr int kSwitchRecorrido = Metrics::md;
+    static constexpr int kSwitchAire      = Metrics::aireTapa;   // de la ranura a la paleta
+
+    //  La ranura empieza en un pixel entero, como la banda del fader: en una
+    //  celda de alto impar, centrada a medias se pintaria en 21 filas.
+    static juce::Rectangle<float> ranuraDeSwitch (juce::Rectangle<float> celda)
+    {
+        const float alto = juce::jmin (celda.getHeight(), (float) kSwitchAlto);
+        return { celda.getX(), std::floor (celda.getY() + (celda.getHeight() - alto) * 0.5f),
+                 celda.getWidth(), alto };
+    }
+
+    //  La paleta mide la celda menos el recorrido y el aire: en la celda de
+    //  32 -el suelo de la escalera de la mesa- son 16, y «ST» con la letra
+    //  de la tapa mas baja de la casa pide 13. Nunca mas estrecha que alta.
+    static juce::Rectangle<int> paletaDeSwitch (juce::Rectangle<int> celda, bool encendido)
+    {
+        auto      ranura = ranuraDeSwitch (celda.toFloat()).getSmallestIntegerContainer().reduced (kSwitchAire);
+        const int ancho  = juce::jmax (ranura.getHeight(), ranura.getWidth() - kSwitchRecorrido);
+        return encendido ? ranura.removeFromRight (ancho) : ranura.removeFromLeft (ancho);
+    }
+
+    //  Y CUANTO AIRE DEJA UNA TAPA EN SU CELDA, segun lo que sea: una tapa
+    //  corriente deja el de `capaDe` (ver aireTapaVertical) y un switch, lo
+    //  que su ranura no ocupa.
+    static int aireDeBoton (const juce::Button& b)
+    {
+        if ((bool) b.getProperties().getWithDefault ("switch", false))
+            return juce::jmax (0, (b.getHeight() - kSwitchAlto) / 2);
+        return aireTapaVertical (b.getHeight());
+    }
+
     // ---- Flat dark knob: plain rim, subtle body shade, white needle, blue tip dot.
     void drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
                            float pos, float startAng, float endAng,
@@ -1463,38 +1554,46 @@ public:
         //  knob», «no hay necesidad de tanto hueco: donde termina el circulo
         //  podria ser la linea de arriba de la L y la R»; y con las letras
         //  pegadas al circulo: «asi me gusta, pero un pelin: el grosor que
-        //  tiene la linea del circulo, eso quiero que sea de aire». Ahora la
-        //  L va al ras del borde izquierdo del dial y la R del derecho, entre
-        //  el circulo y su linea de arriba hay tanto aire como grosor tiene
-        //  la linea del circulo -dos pixeles pintados-, y el bloque entero
-        //  -dial, aire y letras- se centra en la celda de arriba abajo. Todo
-        //  por la TINTA de cada letra, el camino de su glifo, y no por la
-        //  caja de la fuente: la caja lleva aire alrededor y centrarla no
-        //  centra la letra, que la L carga a la izquierda (canales.py, la
-        //  regla catorce).
+        //  tiene la linea del circulo, eso quiero que sea de aire». Entre el
+        //  circulo y cada letra hay tanto aire como grosor tiene la linea
+        //  del circulo -dos pixeles pintados-, y todo por la TINTA de cada
+        //  letra, el camino de su glifo, y no por la caja de la fuente: la
+        //  caja lleva aire alrededor y centrarla no centra la letra, que la L
+        //  carga a la izquierda (canales.py, la regla catorce).
+        //
+        //  Y VAN A LOS LADOS, la L a la izquierda del dial y la R a la
+        //  derecha, que es lo que el telefono dijo la primera vez -«a la
+        //  izquierda la L y a la derecha la R»- y lo unico que la fila deja:
+        //  con las dieciseis filas dentro de la ficha, la fila del movil mide
+        //  32 (ver la mesa en MainComponent_Layout.cpp), y debajo de un dial
+        //  de 20 con sus dos de aire no quedan los diez de una letra. El
+        //  bloque -L, aire, dial, aire, R- se centra en la celda a lo ancho,
+        //  el dial a lo alto, y la tinta de cada letra a la altura del centro
+        //  del dial. Y LA CELDA MIDE LO QUE EL BLOQUE: `anchoCeldaPan` lo
+        //  cuenta con la misma fuente y los mismos glifos -`bloquePan`, una
+        //  sola cuenta-, que es lo que deja el hueco entre el fader y el pan
+        //  en los mismos cuatro pixeles que hay entre M y S (canales.py, la
+        //  regla dieciseis).
         if ((bool) s.getProperties().getWithDefault ("pan", false))
         {
             const auto  celda = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
-            const float R     = (float) Metrics::grosorFader * 0.5f;
-            const float cx    = celda.getCentreX();
+            const auto  bl    = bloquePan();
+            const float R     = bl.R;
             const float ang   = startAng + pos * (endAng - startAng);
 
             //  El aro: 1.6 a caballo del radio R - 1, que pintado son dos
             //  pixeles -el de fuera y el de dentro, con el suavizado-; y esos
             //  dos pixeles son el aire hasta las letras.
             const float grosorAro = 1.6f;
-            const float aire      = 2.0f;
 
-            const auto fuente = ZatiColours::monoFont ((float) Metrics::fMeta, true);
-            juce::Path pL, pR;
-            { juce::GlyphArrangement ga; ga.addLineOfText (fuente, "L", 0.0f, 0.0f); ga.createPath (pL); }
-            { juce::GlyphArrangement ga; ga.addLineOfText (fuente, "R", 0.0f, 0.0f); ga.createPath (pR); }
-            const auto tL = pL.getBounds(), tR = pR.getBounds();
-
-            const float altoBloque = R * 2.0f + aire + juce::jmax (tL.getHeight(), tR.getHeight());
-            const float cy         = std::floor (celda.getY() + (celda.getHeight() - altoBloque) * 0.5f) + R;
-            const float topeLetras = cy + R + aire;
-            const auto  dial       = juce::Rectangle<float> (cx - R, cy - R, R * 2.0f, R * 2.0f).reduced (1.0f);
+            //  Todo en pixeles enteros -ver bloquePan-: la celda mide lo que el
+            //  bloque, asi que x0 es su borde; el centro del dial cae en un
+            //  pixel entero para que el dial de 20 ocupe 20 columnas y 20
+            //  filas, y cada letra acaba o empieza justo donde su aire.
+            const float x0   = (float) ((int) celda.getX() + juce::jmax (0, ((int) celda.getWidth() - bl.ancho) / 2));
+            const float cx   = x0 + (float) (bl.wL + bl.aire) + R;
+            const float cy   = std::floor (celda.getCentreY());
+            const auto  dial = juce::Rectangle<float> (cx - R, cy - R, R * 2.0f, R * 2.0f).reduced (1.0f);
 
             g.setColour (ZatiColours::panel);
             g.fillEllipse (dial);
@@ -1505,11 +1604,13 @@ public:
             g.setColour (ZatiColours::ink.withAlpha (0.75f));
             g.fillRect (cx - 1.0f, cy - R + 1.0f, 2.0f, 3.0f);
 
-            //  La L al ras del borde izquierdo del dial y la R del derecho, con
-            //  su linea de arriba a dos pixeles de donde acaba el circulo.
+            //  La L a la izquierda del dial y la R a la derecha, cada una a
+            //  `aire` del circulo y con su tinta centrada en el centro del dial.
             g.setColour (ZatiColours::ink.withAlpha (0.6f));
-            g.fillPath (pL, juce::AffineTransform::translation ((cx - R) - tL.getX(),     topeLetras - tL.getY()));
-            g.fillPath (pR, juce::AffineTransform::translation ((cx + R) - tR.getRight(), topeLetras - tR.getY()));
+            g.fillPath (bl.pL, juce::AffineTransform::translation ((x0 + (float) bl.wL) - bl.tL.getRight(),
+                                                                   cy - bl.tL.getCentreY()));
+            g.fillPath (bl.pR, juce::AffineTransform::translation ((cx + R + (float) bl.aire) - bl.tR.getX(),
+                                                                   cy - bl.tR.getCentreY()));
 
             juce::Path aguja;
             aguja.addRectangle (-1.0f, -R + 2.0f, 2.0f, R - 2.0f);
@@ -1704,8 +1805,13 @@ public:
             //  limites- y lo que se ve es una barra fina con la cifra dentro.
             //  Del telefono, tras verla a toda la fila: «las barras mas finas
             //  no?». En una celda mas baja que el grosor, la celda manda.
-            const auto cell = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h)
-                                  .withSizeKeepingCentre ((float) w, (float) juce::jmin (h, Metrics::grosorFader));
+            //  Y EMPIEZA EN UN PIXEL ENTERO: en una celda de alto impar -31 en
+            //  400x900, desde que las dieciseis filas entran en la ficha- el
+            //  centro cae a medio pixel y la banda de 20 se pintaba en 21
+            //  filas, con los dos bordes a medias (medido: banda 21).
+            const float grosor = (float) juce::jmin (h, Metrics::grosorFader);
+            const auto  cell   = juce::Rectangle<float> ((float) x, std::floor ((float) y + ((float) h - grosor) * 0.5f),
+                                                         (float) w, grosor);
             const float rad = Metrics::radioChip;
             //  EL RELLENO A MEDIA OPACIDAD Y LA AGUJA ENCIMA. Del telefono:
             //  «que se vea el relleno menos, con menos opacidad y que se vea
@@ -1974,6 +2080,17 @@ public:
         Reparto r;
         const auto texto = b.getButtonText();
 
+        //  EN UN SWITCH EL ROTULO VA EN LA PALETA, con la letra de la tapa mas
+        //  baja de la casa -la de `kCapMinH`, que es la que una tapa de 26
+        //  llevaria- y sin icono: la paleta mide 16 en la celda de 32. Ver el
+        //  ramal "switch" de drawButtonBackground.
+        if ((bool) b.getProperties().getWithDefault ("switch", false))
+        {
+            r.fuente = letraDeTapa ((float) kCapMinH);
+            r.texto  = paletaDeSwitch (b.getLocalBounds(), b.getToggleState()).reduced (Metrics::aireTapaDensa, 0);
+            return r;
+        }
+
         //  Ver drawButtonText: el rotulo pertenece a la TAPA, no al componente.
         const auto tapa = capaDe (b.getLocalBounds().toFloat());
         r.fuente = letraDeTapa (tapa.getHeight());
@@ -2121,6 +2238,53 @@ public:
         const float rad  = Metrics::radio;                        // drawn, not rounded off
         const bool  on   = b.getToggleState();
 
+        //  UN SWITCH NO ES UNA TAPA. Del telefono, con la mesa a la vista:
+        //  «tres switch, de hecho; que no sean botones, el mute y el solo; y
+        //  uno que sea mono o estereo, por la abertura». Un interruptor de
+        //  corredera, como los de un aparato: una RANURA hundida -del grosor
+        //  de la banda del fader, ver kSwitchAlto- a lo ancho de la celda
+        //  entera, y dentro una PALETA que corre de un lado al otro: apagado
+        //  a la izquierda, encendido a la derecha, con el rotulo impreso en
+        //  la paleta, que es lo que se empuja. La ranura que queda a la vista
+        //  con la paleta a la derecha es la LAMPARA: se enciende con el color
+        //  de encendido de la tapa -rojo el mute, amarillo el solo-. El de
+        //  estereo no lleva lampara (`sinLampara`): encendido es su estado
+        //  normal, y dieciseis luces encendidas no dicen nada; lo dice la
+        //  paleta, que en la fila de las dieciseis es la unica a la izquierda.
+        //  Sin bloque de sombra ni filo claro: lo hundido es la ranura y lo
+        //  que sobresale es la paleta, como en el aparato.
+        if ((bool) b.getProperties().getWithDefault ("switch", false))
+        {
+            const auto celda   = b.getLocalBounds();
+            const auto ranura  = ranuraDeSwitch (celda.toFloat());
+            const auto paleta  = paletaDeSwitch (celda, on).toFloat();
+            const bool lampara = on && b.isEnabled()
+                                 && ! (bool) b.getProperties().getWithDefault ("sinLampara", false);
+
+            //  La paleta lleva el color de la tapa apagada siempre: lo que
+            //  cambia de color al encender es la ranura, no lo que se toca.
+            auto tapa = b.findColour (juce::TextButton::buttonColourId);
+            if (over && ! down) tapa = tapa.brighter (0.05f);
+            if (! b.isEnabled())
+                tapa = tapa.withSaturation (tapa.getSaturation() * 0.25f)
+                           .interpolatedWith (ZatiColours::chassis, 0.55f);
+
+            //  La ranura: hundida como la del fader de al lado, o encendida.
+            g.setColour (lampara ? backgroundColour : ZatiColours::groove (0.55f));
+            g.fillRoundedRectangle (ranura, rad);
+            g.setColour (ZatiColours::groove (0.42f));
+            g.drawRoundedRectangle (ranura.reduced (0.5f), rad, Metrics::filo);
+
+            //  La paleta, con su sombra hacia el fondo de la ranura.
+            g.setColour (ZatiColours::groove (0.42f));
+            g.fillRoundedRectangle (paleta.translated (0.0f, 1.0f), Metrics::radioChip);
+            g.setColour (tapa);
+            g.fillRoundedRectangle (paleta, Metrics::radioChip);
+            g.setColour (ZatiColours::groove (0.42f));
+            g.drawRoundedRectangle (paleta.reduced (0.5f), Metrics::radioChip, Metrics::filo);
+            return;
+        }
+
         //  Ver capaDe: el blanco del dedo es el componente entero y la tapa se
         //  pinta dentro, centrada.
         auto full = capaDe (b.getLocalBounds().toFloat().reduced (0.5f));
@@ -2255,6 +2419,24 @@ public:
         const auto t = b.getButtonText();
         const auto off = b.findColour (juce::TextButton::textColourOffId);
         const auto on  = b.findColour (juce::TextButton::textColourOnId);
+
+        //  EL ROTULO DE UN SWITCH VA EN LA PALETA y con la tinta de la tapa
+        //  apagada, que la paleta no cambia de color al encender: lo que se
+        //  enciende es la ranura. Ver el ramal "switch" de drawButtonBackground
+        //  y reparteTapa, que es quien dice donde cae.
+        if ((bool) b.getProperties().getWithDefault ("switch", false))
+        {
+            if (t.isEmpty()) return;
+            const auto rep  = reparteTapa (b);
+            const auto tapa = b.findColour (juce::TextButton::buttonColourId);
+            auto col = off;
+            if (std::abs (tapa.getPerceivedBrightness() - col.getPerceivedBrightness()) < 0.30f)
+                col = ZatiColours::textOn (tapa);
+            g.setColour (col.withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.45f));
+            g.setFont (rep.fuente);
+            g.drawFittedText (t, rep.texto, juce::Justification::centred, 1, 0.9f);
+            return;
+        }
 
         // Pads: big Oswald numeral top, sample name (mono) along the bottom.
         if ((bool) b.getProperties().getWithDefault ("pad", false))

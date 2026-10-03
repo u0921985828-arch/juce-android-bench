@@ -5332,7 +5332,14 @@ void MainComponent::resized()
         //  S came out 36x36 on every screen in the matrix - under the forty the
         //  rest of the app is held to, on the two keys you hit fastest while
         //  something is playing. Four pixels of row is what buys them.
-        const int rowH = Metrics::row;
+        //
+        //  Y LAS DIECISEIS ENTRAN, desde el telefono: «tienen que entrar todos
+        //  los canales en el pop up del mixer, o si no es una jodienda para
+        //  girar los knobs de paneo». La ficha PIDE la fila plena para las
+        //  dieciseis -`filaPlena`, que es lo que la tarjeta recorta si no le
+        //  cabe- y las filas se reparten lo que la tarjeta dio: ver `rowH`
+        //  mas abajo, donde ya se sabe cuanto quedo.
+        const int filaPlena = Metrics::row;
         //  Dieciseis pads o dieciseis canales: son el mismo numero hoy, y se
         //  escribe con el de la pagina que se esta maquetando para que el dia
         //  que uno de los dos cambie no haya que acordarse de esto.
@@ -5348,7 +5355,7 @@ void MainComponent::resized()
         const int mixFurniture = Ficha::cromoConPestanas (tabsH)
                                + Metrics::btn + masterH + Metrics::lg;
         auto inner = sheetFromBottom (mixSheet,
-                                      mixFurniture + (wideFace ? kMixFilas / 2 : kMixFilas) * rowH);
+                                      mixFurniture + (wideFace ? kMixFilas / 2 : kMixFilas) * filaPlena);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         mixCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (Metrics::sm);
@@ -5438,6 +5445,34 @@ void MainComponent::resized()
         //  nueva.
         const int cuantas  = mixPage == mixPageCanales ? kNumCanales : kPadsPerBank;
         const int porCol   = cuantas / columnas;
+        //  LA FILA MIDE LO QUE LA TARJETA DA, para que entren todas. Del
+        //  telefono: «tienen que entrar todos los canales en el pop up del
+        //  mixer, o si no es una jodienda para girar los knobs de paneo». Lo
+        //  era, y por dos cosas medidas: en 393x851 la tarjeta ensena once
+        //  filas de 44 y las otras cinco se arrastran, y el Viewport arrastra
+        //  la lista con el MISMO gesto con el que se gira el knob -un dedo
+        //  que sube sobre el pan mueve el pan Y la lista-. Sin nada que
+        //  arrastrar no hay gesto que robar; y donde si lo hay, los faders y
+        //  los knobs llevan `setViewportIgnoreDragFlag`.
+        //
+        //  Las filas se reparten el alto que quedo: `rowH` es la fila plena
+        //  o lo que toca a cada una, lo que sea menor, y nunca por debajo de
+        //  `Metrics::xl` (24): con menos no cabe la banda del fader -20- con
+        //  su aire. Donde ni a 24 entran -280x653, 360x640, girado- la mesa
+        //  vuelve a ser lo que era, dieciseis filas plenas que se arrastran
+        //  con su barra. Medido: en 393x851 -la del movil- la tarjeta deja
+        //  519 para dieciseis, o sea filas de 32, con el fader y los switches
+        //  de 28 de alto; en 412x915, 583 y filas de 36; en 360x800, 29; en
+        //  800x1280 entran las dieciseis plenas. Tests/canales.py, la regla
+        //  quince, mide que entran.
+        //
+        //  SOLO EN LA PAGINA DE PADS. La de canales no tiene knobs que girar
+        //  -el gesto que el Viewport robaba- y repartirle el alto a sus
+        //  treinta y dos filas daba, medido en 800x1280 con expo.py, filas de
+        //  27 con la S y la M de 40x27: treinta y dos filas bajo el dedo que
+        //  nadie pidio. Se queda como estaba, de 44 con su barra.
+        const bool reparte = mixPage != mixPageCanales && inner.getHeight() / porCol >= Metrics::xl;
+        const int  rowH    = reparte ? juce::jmin (filaPlena, inner.getHeight() / porCol) : filaPlena;
         const int contentH = porCol * rowH;
         //  Y EL CAJON ENCAJA A UN NUMERO ENTERO DE FILAS.
         //
@@ -5472,11 +5507,12 @@ void MainComponent::resized()
         //  pan y el ancho antes que el fader. Donde al fader no le queda un
         //  dedo con la barra puesta, la barra se queda fuera y la mesa se
         //  sigue arrastrando por las filas, que es como se arrastraba antes.
-        //  La cuenta es la de la fila de un pad de mas abajo, en el mismo
-        //  orden: nombre, S, M, sus dos halfGap y el aire del fader.
+        //  La cuenta es la de la fila de un pad de mas abajo, en su suelo:
+        //  nombre, S y M en su minimo de 32 -el ST y el pan ya se cayeron-,
+        //  sus dos halfGap y el aire del fader por la izquierda.
         const int anchoColConBarra = (inner.getWidth() - BarraVista::kGrueso - Metrics::halfGap) / columnas;
         const int faderConBarra    = anchoColConBarra - anchoNombreCanal (anchoColConBarra)
-                                   - 2 * Metrics::hit - 2 * Metrics::halfGap - 2 * Metrics::aireTapa;
+                                   - 2 * (Metrics::hit - Metrics::sm) - 2 * Metrics::halfGap - Metrics::aireTapa;
         const bool hayBarra = contentH > inner.getHeight() && faderConBarra >= Metrics::hit;
         mixBarra.setVisible (hayBarra);
         if (hayBarra)
@@ -5574,54 +5610,72 @@ void MainComponent::resized()
             //  es lo que del telefono llego como «demasiado hueco entre el
             //  fader y el knob». Lo que no se lleva el pan es recorrido del
             //  fader.
-            constexpr int kCeldaPan   = Metrics::hit + 4;
-            constexpr int kFilaConPan = 96 + kCeldaPan;
-            int anchoMS = Metrics::hit;
-            {
-                const int resto = row.getWidth() - 2 * Metrics::hit - 2 * Metrics::halfGap;
-                const int falta = kFilaConPan - resto;
-                if (falta > 0 && Metrics::hit - (falta + 1) / 2 >= Metrics::hit - Metrics::sm)
-                    anchoMS = Metrics::hit - (falta + 1) / 2;
-            }
-            mixSolos[i]->setBounds (row.removeFromRight (anchoMS).reduced (0, Metrics::aireTapaDensa));
-            row.removeFromRight (Metrics::halfGap);
-            mixMutes[i]->setBounds (row.removeFromRight (anchoMS).reduced (0, Metrics::aireTapaDensa));
-            row.removeFromRight (Metrics::halfGap);
-            //  ...and the pan is a target too, so it gets a floor rather than a
-            //  share: a third of the row came to twenty-six pixels of travel on
-            //  a 280 px screen, for a control that has to go both ways from
-            //  centre. Where the floor and a fader worth aiming at do not both
-            //  fit, THE PAN GOES - it is the one control on this row that has a
-            //  full-size knob of its own one tap away in the PADS sheet, and a
-            //  fader you cannot aim has no such second home. Hidden, not
-            //  shrunk: jlimit would have clamped it back up to a width the row
-            //  does not have and drawn it over the fader.
-            //  Y LA ESCALERA PASA A SER DE TRES, con el ANCHO cayendo PRIMERO.
             //
-            //  El pan dice DONDE esta el sonido y el ancho CUANTO ocupa: los
-            //  dos son de la misma decision y por eso van juntos. Y el orden
-            //  no es arbitrario — de los dos, el pan es el que se mueve en
-            //  cada mezcla y el ancho el que se toca una vez, asi que donde
-            //  solo cabe uno se queda el pan. Ninguno de los dos desaparece
-            //  de la app: los dos tienen su mando a tamaño real en EL PAD, a
-            //  un toque.
-            //  Con los dos puestos cada uno pide un CUARTO y no un tercio: a
-            //  tercios, dos deslizadores dejan al fader la tercera parte de la
-            //  fila y en 412x915 la cuenta salia por dos pixeles -94 contra el
-            //  suelo de 96- o sea que el ancho no aparecia en NINGUNA pantalla.
-            //  El reparto de uno solo se queda en su tercio, que es el medido.
-            //  Y MAS CORTOS DESDE QUE EL FADER ES UNA BARRA: un pan se lee por
-            //  donde cae su marca contra el centro y 56 px le bastan; cada
-            //  pixel que no se lleva el pan es recorrido del fader, que es lo
-            //  que se toca en cada mezcla. Medido en 412x915 con `canales.py`:
-            //  el fader del pad 0 mide 110x40 px con los dos puestos.
-            const int panW    = kCeldaPan;
-            const int dosW    = juce::jlimit (Metrics::hit + 4, 56, row.getWidth() / 4);
-            const bool roomAncho = row.getWidth() - panW - dosW >= 96;
-            const bool room = roomAncho || (row.getWidth() - panW >= 96);
-            mixPans[i]->setVisible (room);
-            //  Y APAGADO EN UNA MUESTRA MONO: no hay lado que abrir ni cerrar,
-            //  que es lo que su mando de EL PAD ya hace. Apagado y no
+            //  Y LOS HUECOS SON TODOS EL MISMO. Del telefono, con la foto del
+            //  knob en su celda de 44: «la distancia que quiero que guarden es
+            //  la que hay entre los botones M y S». Cada hueco de la fila
+            //  -fader a pan, pan a ST, ST a M, M a S- es `halfGap`, el que
+            //  separaba M de S. Lo que lo hace posible es que la celda del pan
+            //  mide lo que su tinta (`ZatiLookAndFeel::anchoCeldaPan`: la L,
+            //  su aire, el dial, su aire y la R) y que el fader pinta su celda
+            //  hasta el borde derecho: lo que la maqueta deja es lo que se ve,
+            //  y canales.py -la regla dieciseis- lo mide por la tinta.
+            //
+            //  Y SON TRES SWITCHES, S, M y ST -mono o estereo, ver
+            //  mixEstereos-, leidos desde la derecha, con el fader llevandose
+            //  lo que queda. El orden en que ceden: los tres se estrechan
+            //  juntos hasta 32 (`hit - sm`); luego se cae el ST -su mando a
+            //  tamano real esta en EL PAD, a un toque-; luego el pan, por lo
+            //  mismo; y el fader no baja de `kFaderSuelo`. El suelo del fader
+            //  era 96 y pasa a 64, un dedo y medio, y es una ELECCION, no
+            //  una necesidad: con 96 y la celda del pan a su tinta los tres
+            //  switches entran en el movil de 393 -la cuenta sobre la fila
+            //  medida, 251: los tres a 34 y el fader en 97- pero bajo 384 se
+            //  cae el ST (360x800, fila de 228: 26 por switch, menos de 32)
+            //  y en 360x640 (194) tambien el pan. Con 64 entran los tres y
+            //  el pan hasta 360x800 y en 360x640 queda el pan, que es lo que
+            //  el telefono pidio -los tres switches, y girar el pan sin
+            //  jodienda-, al precio de un fader mas corto en el movil: 79 en
+            //  vez de 97. El fader se arrastra en relativo
+            //  -setSliderSnapsToMousePosition- y su cifra se acorta antes que
+            //  cortarse, asi que 64 siguen siendo un fader que se apunta y
+            //  que dice sus decibelios. Medido con canales.py: 412x915 fader
+            //  92 y los tres a 40; 393x851, 79 y 40; 384x854, 72 y 40;
+            //  360x800, 65 y los tres a 37; 360x640 -con la barra, que se
+            //  cobra un dedo- se cae el ST y quedan S y M a 40 con el fader
+            //  en 66; 280x653, sin ST ni pan, S y M a 32 y el fader en 49.
+            const int     anchoPan    = ZatiLookAndFeel::anchoCeldaPan();
+            constexpr int kFaderSuelo = Metrics::hit + Metrics::xl;
+            constexpr int kSwMin      = Metrics::hit - Metrics::sm;
+            //  Lo que queda al fader con `n` switches de `sw`, el pan si va,
+            //  sus huecos de `halfGap` y el aire del fader por la izquierda.
+            auto faderCon = [&row, anchoPan] (int n, int sw, bool conPan)
+            {
+                return row.getWidth() - n * (sw + Metrics::halfGap)
+                     - (conPan ? anchoPan + Metrics::halfGap : 0) - Metrics::aireTapa;
+            };
+            //  Los switches a `hit`, o estrechados lo justo -los `n` por igual
+            //  y nunca bajo 32- para que al fader le quede su suelo; -1 si ni
+            //  asi.
+            auto anchoSw = [&faderCon] (int n, bool conPan)
+            {
+                const int falta = kFaderSuelo - faderCon (n, Metrics::hit, conPan);
+                if (falta <= 0) return (int) Metrics::hit;
+                const int sw = Metrics::hit - (falta + n - 1) / n;
+                return sw >= kSwMin ? sw : -1;
+            };
+            bool conST = true, conPan = true;
+            int  sw = anchoSw (3, true);
+            if (sw < 0) { conST  = false; sw = anchoSw (2, true); }
+            if (sw < 0) { conPan = false; sw = anchoSw (2, false); }
+            if (sw < 0) sw = kSwMin;
+
+            mixSolos[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));
+            row.removeFromRight (Metrics::halfGap);
+            mixMutes[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));
+            row.removeFromRight (Metrics::halfGap);
+            //  Y EL ST APAGADO EN UNA MUESTRA MONO: no hay lado que abrir ni
+            //  cerrar, que es lo que su mando de EL PAD ya hace. Apagado y no
             //  escondido, que esconderlo daria una fila con dos formas.
             //  Y la pregunta es la MISMA que la de EL PAD -el buffer que
             //  sostiene la interfaz, nunca el que adopto el hilo de audio-
@@ -5629,16 +5683,27 @@ void MainComponent::resized()
             //  que no.
             const bool estereo = uiSample[(size_t) i] != nullptr
                                  && uiSample[(size_t) i]->buffer.getNumChannels() > 1;
-            mixAnchos[i]->setVisible (roomAncho);
-            mixAnchos[i]->setEnabled (estereo);
-            if (roomAncho)
-                mixAnchos[i]->setBounds (row.removeFromRight (dosW)
-                                        .reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
+            mixEstereos[i]->setVisible (conST);
+            mixEstereos[i]->setEnabled (estereo);
+            if (conST)
+            {
+                mixEstereos[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));
+                row.removeFromRight (Metrics::halfGap);
+            }
             else
-                mixAnchos[i]->setBounds ({});
-            if (room)
-                mixPans[i]->setBounds (row.removeFromRight (panW)
-                                          .reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
+                mixEstereos[i]->setBounds ({});
+            //  El pan: escondido donde no entra, no estrechado -jlimit lo
+            //  habria devuelto a un ancho que la fila no tiene y pintado
+            //  encima del fader-. Sin aire propio a los lados: su celda es su
+            //  tinta y el aire es el hueco de la fila.
+            mixPans[i]->setVisible (conPan);
+            if (conPan)
+            {
+                mixPans[i]->setBounds (row.removeFromRight (anchoPan).reduced (0, Metrics::aireTapaDensa));
+                row.removeFromRight (Metrics::halfGap);
+            }
+            else
+                mixPans[i]->setBounds ({});
 
             //  On a narrow phone the level's number was eating the level.
             //  Forty-six pixels of readout plus its air out of an eighty-five
@@ -5650,8 +5715,9 @@ void MainComponent::resized()
             //  La cifra vive dentro de la barra —ver el ramal "fader" del
             //  LookAndFeel— asi que ya no hay casilla que tirar cuando la fila
             //  aprieta: el fader se lleva lo que queda, entero, en todas las
-            //  pantallas.
-            mixFaders[i]->setBounds (row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
+            //  pantallas. Con aire solo por la izquierda, contra el nombre: el
+            //  de la derecha es el hueco de `halfGap`, que ya esta puesto.
+            mixFaders[i]->setBounds (row.withTrimmedLeft (Metrics::aireTapa).reduced (0, Metrics::aireTapaDensa));
         }
     }
 

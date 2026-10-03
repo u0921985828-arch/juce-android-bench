@@ -2787,7 +2787,7 @@ private:
                      mixCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) };
     //  A studio is where a track gets finished, and nothing gets finished
     //  without balancing it. One strip per pad: level, mute, solo.
-    juce::OwnedArray<juce::Slider>     mixFaders, mixPans, mixAnchos;
+    juce::OwnedArray<juce::Slider>     mixFaders, mixPans;
 
     //  A cap with two gestures: tap, and hold.
     //
@@ -2934,6 +2934,16 @@ private:
     void rotulaFxPreset (HoldButton& b, int fx);
     void refreshRack();
     juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
+    //  Y EL TERCER SWITCH DE LA FILA: mono o estereo, «por la abertura». Es
+    //  una ventana de dos posiciones al MISMO numero que el mando ANCHO de EL
+    //  PAD -ver padAnchoUI-: apagado lo pone a cero, encendido lo devuelve a
+    //  lo que tenia (padAnchoMemo). Sustituye al deslizador de ancho que solo
+    //  salia en pantallas anchas: un switch entra en la fila del movil.
+    juce::OwnedArray<juce::TextButton> mixEstereos;
+    //  Lo que el switch devuelve al encenderse: el ancho que el pad tenia
+    //  antes de apagarlo, uno -«como viene»- si nunca lo tuvo.
+    std::array<float, kNumPads> padAnchoMemo {};
+    void sincronizaMixEstereo (int pad);
     juce::TextButton mixClearSolo { "SIN SOLO" };
 
     //  INSTRUMENTOS - el contenido descargable. Ver Instrumentos.h para el

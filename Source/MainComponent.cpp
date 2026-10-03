@@ -93,8 +93,9 @@ MainComponent::MainComponent()
     //  mandaba un "suelta" al pad 0 y le cortaba la nota a otro.
     notaViva.fill (-1);
     //  ANCHO a uno, o sea "como viene la muestra": el cero del array seria la
-    //  maquina entera en mono.
+    //  maquina entera en mono. Y la memoria del switch de estereo, igual.
     padAnchoUI.fill (1.0f);
+    padAnchoMemo.fill (1.0f);
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -2258,7 +2259,7 @@ MainComponent::MainComponent()
     initKnob (anchoSlider, 0.0, 2.0, 0.01, 1.0, 1.0,
              [this] { if (selectedPad >= 0) { padAnchoUI[(size_t) selectedPad] = (float) anchoSlider.getValue();
                                               engine.setPadAncho (selectedPad, (float) anchoSlider.getValue());
-                                              if (auto* ma = mixAnchos[selectedPad]) ma->setValue (anchoSlider.getValue(), juce::dontSendNotification); } });
+                                              sincronizaMixEstereo (selectedPad); } });
     initKnob (attackSlider, 0.0, 200.0, 1.0, 2.0, 20.0,
              [this] { if (selectedPad >= 0) { padAttack[(size_t) selectedPad] = (float) attackSlider.getValue(); engine.setPadAttack (selectedPad, (float) attackSlider.getValue()); } });
     //  HASTA 2500 ms Y NO 800: el mando no puede quedarse corto para lo que la
@@ -3337,6 +3338,15 @@ MainComponent::MainComponent()
         //  brushed finger into a channel slammed to zero; relative dragging
         //  means you take hold of the level and move it from where it was.
         f->setSliderSnapsToMousePosition (false);
+        //  Y EL ARRASTRE ES DEL FADER, no de la lista. El Viewport de la mesa
+        //  arrastra sus filas con el dedo -lo que hace cualquier lista- y en
+        //  un movil ese arrastre se queda con el gesto que empieza sobre un
+        //  control: del telefono, «es una jodienda para girar los knobs de
+        //  paneo». Con las dieciseis filas dentro de la ficha ya no hay nada
+        //  que arrastrar en el movil, y donde si lo hay -280x653, girado- la
+        //  lista se arrastra por el nombre o por la barra de la casa, nunca
+        //  por lo que se esta moviendo.
+        f->setViewportIgnoreDragFlag (true);
         //  Con unidad, que ahora cabe: la barra mide lo que la fila.
         f->textFromValueFunction = [] (double v) { return gainText (v, true); };
         f->onValueChange = [this, i, f]
@@ -3372,6 +3382,8 @@ MainComponent::MainComponent()
         p->setColour (juce::Slider::trackColourId, ZatiColours::inkDim.withAlpha (0.55f));
         p->getProperties().set ("pan", true);
         p->setSliderSnapsToMousePosition (false);
+        //  El giro es del knob, no de la lista: ver el fader de arriba.
+        p->setViewportIgnoreDragFlag (true);
         p->onValueChange = [this, i, p]
         {
             padPan[(size_t) i] = (float) p->getValue();
@@ -3381,41 +3393,18 @@ MainComponent::MainComponent()
         mixRows.addAndMakeVisible (p);
         mixPans.add (p);
 
-        //  Y EL ANCHO AL LADO DEL PAN, que es la otra mitad de donde se pone un
-        //  sonido: el pan dice DONDE esta y el ancho CUANTO ocupa, y sin los
-        //  dos no hay forma de estrechar un break que se come el centro ni de
-        //  abrir un colchon que suena plano sin ir pad por pad a EL PAD.
-        //
-        //  El motor no crece: `setPadAncho` existe desde la tanda del ancho
-        //  estereo -medio/lado antes del pan, acotado 0..2 con uno de defecto-
-        //  asi que esto es una segunda ventana al MISMO numero, como el pan.
-        //
-        //  Y APAGADO EN UNA MUESTRA MONO, que es lo que ya hace su mando en EL
-        //  PAD: sin lado que abrir ni cerrar, un mando que se mueve y no hace
-        //  nada es peor que no tenerlo.
-        auto* an = new juce::Slider();
-        an->setSliderStyle (juce::Slider::LinearHorizontal);
-        an->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        an->setRange (0.0, 2.0, 0.01);
-        an->setValue (padAnchoUI[(size_t) i], juce::dontSendNotification);
-        an->setDoubleClickReturnValue (true, 1.0);
-        an->setColour (juce::Slider::trackColourId, ZatiColours::inkDim.withAlpha (0.55f));
-        an->getProperties().set ("pan", true);
-        an->setSliderSnapsToMousePosition (false);
-        an->onValueChange = [this, i, an]
-        {
-            padAnchoUI[(size_t) i] = (float) an->getValue();
-            engine.setPadAncho (i, (float) an->getValue());
-            if (i == selectedPad) anchoSlider.setValue (an->getValue(), juce::dontSendNotification);
-        };
-        mixRows.addAndMakeVisible (an);
-        mixAnchos.add (an);
-
+        //  Y TRES SWITCHES, NO DOS BOTONES. Del telefono, con la mesa a la
+        //  vista: «tres switch, de hecho; que no sean botones, el mute y el
+        //  solo; y tambien anadir uno que sea como mono o estereo, por la
+        //  abertura». Las tres tapas se pintan en el ramal "switch" de
+        //  ZatiLookAndFeel: una ranura con una paleta que corre de un lado al
+        //  otro, con la lampara -roja, amarilla- en la ranura al encender.
         auto* m = new juce::TextButton ("M");
         styleButton (*m, kStepOff);
         m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
         m->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
         m->setClickingTogglesState (true);
+        m->getProperties().set ("switch", true);
         m->onClick = [this, i, m] { engine.setPadMute (i, m->getToggleState()); refreshMixStrip(); };
         mixRows.addAndMakeVisible (m);
         mixMutes.add (m);
@@ -3424,9 +3413,46 @@ MainComponent::MainComponent()
         styleButton (*so, kStepOff);
         so->setColour (juce::TextButton::buttonOnColourId, ZatiColours::yellow);
         so->setClickingTogglesState (true);
+        so->getProperties().set ("switch", true);
         so->onClick = [this, i, so] { engine.setPadSolo (i, so->getToggleState()); refreshMixStrip(); };
         mixRows.addAndMakeVisible (so);
         mixSolos.add (so);
+
+        //  Y EL DE ESTEREO, que es la otra mitad de donde se pone un sonido:
+        //  el pan dice DONDE esta y el ancho CUANTO ocupa. Fue un deslizador
+        //  de ancho al lado del pan que solo salia en pantallas anchas -en el
+        //  movil la escalera lo tiraba siempre-, y un switch entra en la fila.
+        //
+        //  El motor no crece: `setPadAncho` existe desde la tanda del ancho
+        //  estereo -medio/lado antes del pan, acotado 0..2 con uno de defecto-
+        //  asi que esto es una ventana de DOS posiciones al MISMO numero que
+        //  el mando ANCHO de EL PAD: apagado lo pone a cero -mono- y
+        //  encendido lo devuelve a lo que tenia, `padAnchoMemo`, que es uno
+        //  -«como viene»- si nunca se toco. Un ancho de 1.6 puesto en EL PAD
+        //  sobrevive a apagar y encender aqui; a cero el switch se lee
+        //  apagado, venga de donde venga (sincronizaMixEstereo).
+        //
+        //  Y APAGADO EN UNA MUESTRA MONO, que es lo que ya hacia el deslizador
+        //  y lo que hace su mando en EL PAD: sin lado que abrir ni cerrar, un
+        //  switch que se mueve y no hace nada es peor que no tenerlo.
+        auto* st = new juce::TextButton ("ST");
+        styleButton (*st, kStepOff);
+        st->setClickingTogglesState (true);
+        st->setToggleState (padAnchoUI[(size_t) i] > 0.0f, juce::dontSendNotification);
+        st->getProperties().set ("switch", true);
+        st->getProperties().set ("sinLampara", true);
+        st->onClick = [this, i, st]
+        {
+            const bool estereo = st->getToggleState();
+            if (! estereo && padAnchoUI[(size_t) i] > 0.0f)
+                padAnchoMemo[(size_t) i] = padAnchoUI[(size_t) i];
+            const float ancho = estereo ? padAnchoMemo[(size_t) i] : 0.0f;
+            padAnchoUI[(size_t) i] = ancho;
+            engine.setPadAncho (i, ancho);
+            if (i == selectedPad) anchoSlider.setValue (ancho, juce::dontSendNotification);
+        };
+        mixRows.addAndMakeVisible (st);
+        mixEstereos.add (st);
     }
     //  Y LAS DIECISEIS TIRAS DE CANAL, en el mismo Viewport y con la misma
     //  forma de fila: color, numero, fader, `M` y cuantos pads le entran. Sin
@@ -3448,6 +3474,8 @@ MainComponent::MainComponent()
         f->setSliderSnapsToMousePosition (false);
         f->textFromValueFunction = [] (double v) { return gainText (v, true); };
         f->onValueChange = [this, c, f] { engine.setCanalGain (c, gainFromDb (f->getValue())); };
+        //  El arrastre es del fader, no de la lista: ver el fader de un pad.
+        f->setViewportIgnoreDragFlag (true);
         mixRows.addAndMakeVisible (f);
         canFaders.add (f);
 
@@ -3756,7 +3784,7 @@ MainComponent::MainComponent()
         {
             if (mixFaders[i] != nullptr) mixFaders[i]->setValue (dbFromGain (padGain[(size_t) i]), juce::dontSendNotification);
             if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
-            if (mixAnchos[i] != nullptr) mixAnchos[i]->setValue (padAnchoUI[(size_t) i], juce::dontSendNotification);
+            sincronizaMixEstereo (i);
         }
         openSheet (mixSheet, mixButton);
         refreshMixStrip();
@@ -8201,17 +8229,17 @@ void MainComponent::showMixBank (int bank)
         const bool on = mixPage == mixPagePads && (i / kPadsPerBank) == mixBank;
         if (! on)
         {
-            if (auto* f = mixFaders[i]) f->setBounds ({});
-            if (auto* p = mixPans[i])   p->setBounds ({});
-        if (auto* a = mixAnchos[i]) a->setBounds ({});
-            if (auto* m = mixMutes[i])  m->setBounds ({});
-            if (auto* s = mixSolos[i])  s->setBounds ({});
+            if (auto* f = mixFaders[i])   f->setBounds ({});
+            if (auto* p = mixPans[i])     p->setBounds ({});
+            if (auto* e = mixEstereos[i]) e->setBounds ({});
+            if (auto* m = mixMutes[i])    m->setBounds ({});
+            if (auto* s = mixSolos[i])    s->setBounds ({});
         }
-        if (auto* f = mixFaders[i]) f->setVisible (on);
-        if (auto* p = mixPans[i])   p->setVisible (on);
-        if (auto* a = mixAnchos[i]) a->setVisible (on);
-        if (auto* m = mixMutes[i])  m->setVisible (on);
-        if (auto* s = mixSolos[i])  s->setVisible (on);
+        if (auto* f = mixFaders[i])   f->setVisible (on);
+        if (auto* p = mixPans[i])     p->setVisible (on);
+        if (auto* e = mixEstereos[i]) e->setVisible (on);
+        if (auto* m = mixMutes[i])    m->setVisible (on);
+        if (auto* s = mixSolos[i])    s->setVisible (on);
     }
 
     //  Back to the top of the new bank. Left where it was, switching from a
@@ -10730,7 +10758,7 @@ void MainComponent::refreshAccessibleNames()
         const auto ch = juce::String (i + 1);
         if (auto* f = mixFaders[i]) { f->setTitle (T ("Ganancia pad %1", ch)); f->setDescription (T ("del mezclador")); }
         if (auto* p = mixPans[i])   { p->setTitle (T ("Paneo pad %1",   ch)); p->setDescription (T ("del mezclador")); }
-        if (auto* a = mixAnchos[i]) { a->setTitle (T ("Ancho pad %1",   ch)); a->setDescription (T ("del mezclador")); }
+        if (auto* e = mixEstereos[i]) { e->setTitle (T ("Ancho pad %1", ch)); e->setDescription (T ("del mezclador")); }
         if (auto* m = mixMutes[i])  { m->setTitle (T ("Silencio %1", ch)); }
         if (auto* s = mixSolos[i])  { s->setTitle (T ("Solo %1",     ch)); }
     }
@@ -13581,7 +13609,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
     {
         if (mixFaders[i] != nullptr) mixFaders[i]->setValue (dbFromGain (padGain[(size_t) i]), juce::dontSendNotification);
         if (mixPans[i]   != nullptr) mixPans[i]  ->setValue (padPan[(size_t) i],  juce::dontSendNotification);
-            if (mixAnchos[i] != nullptr) mixAnchos[i]->setValue (padAnchoUI[(size_t) i], juce::dontSendNotification);
+        sincronizaMixEstereo (i);
     }
     refreshMixStrip();
     selectPad (juce::jmax (0, selectedPad));
@@ -13944,6 +13972,7 @@ void MainComponent::padPorDefecto (int i)
     padChokeUI[k] = 0;
     padPan[k]     = 0.0f;
     padAnchoUI[k] = 1.0f;
+    padAnchoMemo[k] = 1.0f;
     padAttack[k]  = 2.0f;
     padRelease[k] = 5.0f;
     padSueltaPreset[k] = false;
@@ -16429,7 +16458,7 @@ void MainComponent::refreshMixStrip()
             const bool audible = ! engine.isPadMuted (i) && (! any || engine.isPadSoloed (i));
             mixFaders[i]->setAlpha (audible ? 1.0f : 0.45f);
             if (mixPans[i] != nullptr) mixPans[i]->setAlpha (audible ? 1.0f : 0.45f);
-            if (mixAnchos[i] != nullptr) mixAnchos[i]->setAlpha (audible ? 1.0f : 0.45f);
+            if (mixEstereos[i] != nullptr) mixEstereos[i]->setAlpha (audible ? 1.0f : 0.45f);
         }
     }
     //  Y SE ENCIENDE POR EL AMBITO QUE VACIA, no por el del pad: en CANALES
@@ -16437,6 +16466,18 @@ void MainComponent::refreshMixStrip()
     //  pad la tapa salia apagada justo cuando hacia falta.
     mixClearSolo.setEnabled (mixPage == mixPageCanales ? engine.anyCanalSolo() : any);
     mixSheet.repaint();
+}
+
+//  EL SWITCH DE ESTEREO LEE EL ANCHO, no al reves: encendido si el pad tiene
+//  algo de lado -el ancho que sea, que no es suyo- y apagado a cero. Se llama
+//  desde donde el ancho cambia sin pasar por el switch: el mando de EL PAD,
+//  abrir la mesa y volver de un proyecto. Un switch que dice que si con el
+//  ancho a cero es la app diciendo dos cosas del mismo numero.
+void MainComponent::sincronizaMixEstereo (int pad)
+{
+    if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
+    if (auto* st = mixEstereos[pad])
+        st->setToggleState (padAnchoUI[(size_t) pad] > 0.0f, juce::dontSendNotification);
 }
 
 //  DE LOS CLIPS DEL MODELO A LA TABLA DEL MOTOR.

@@ -5983,6 +5983,15 @@ void MainComponent::auditCanales()
     int faderPintado = 0, faderCabe = -1, mesaKnob = 0, mesaKnobD = 0;
     int mesaKnobW = 0, mesaKnobH = 0, mesaKnobX0 = -1, mesaKnobY0 = -1, mesaKnobY1 = -1, mesaKnobAro = 0;
     int mesaL[4] = { -1, -1, -1, -1 }, mesaR[4] = { -1, -1, -1, -1 };
+    //  La fila entera del pad 0, para las reglas quince a diecisiete de
+    //  canales.py: la tinta del pan de borde a borde, los huecos entre lo
+    //  pintado de cada control y el siguiente -fader, pan, ST, M, S-, cuantos
+    //  switches hay en la fila, y el ST: cuantos canales tiene la muestra del
+    //  pad 0, si el switch esta activo, y el ancho del motor antes de tocarlo,
+    //  tras tocarlo y tras volver a tocarlo.
+    int mesaPanTinta = -1, mesaHuecos[4] = { -1, -1, -1, -1 }, mesaSw = 0;
+    int mesaStCanales = -1, mesaStActivo = -1;
+    float mesaStAntes = -1.0f, mesaStDespues = -1.0f, mesaStVuelve = -1.0f;
     juce::String faderCifra;
     if (auto* f = mixFaders[0])
     {
@@ -6040,8 +6049,8 @@ void MainComponent::auditCanales()
         //  Y LO QUE MIDE EL DIAL DEL KNOB, por lo que se pinta: del telefono,
         //  con la foto del dial de 28 en la celda de 38, «muy grande el knob,
         //  no? como que no pega las proporciones». Se mide el ancho mayor con
-        //  tinta de las filas de arriba de la celda -ahi va el dial; la L y
-        //  la R van abajo, en sus `fMeta` ultimas filas- y canales.py lo
+        //  tinta de las filas que pasan por la columna del centro de la celda
+        //  -ahi va el dial; la L y la R van a los lados- y canales.py lo
         //  compara con la banda del fader de al lado: el knob no es mas
         //  grueso que la barra. Ver Tests/canales.py, la regla trece.
         //
@@ -6051,14 +6060,16 @@ void MainComponent::auditCanales()
         //  la R». El dial esta relleno, asi que en su ecuador es UNA tira de
         //  tinta que pasa por la columna del centro: la mas ancha de esas da
         //  sus bordes, y las filas seguidas con tinta en esa columna, su
-        //  arriba y su abajo. Lo que queda pintado por debajo son las letras:
-        //  la L a la izquierda del centro y la R a la derecha, con sus cajas.
-        //  Y la linea del circulo se mide en el ecuador, desde el borde hacia
-        //  dentro: los pixeles claros -tinta- antes del relleno oscuro; «el
-        //  grosor que tiene la linea del circulo, eso quiero que sea de
-        //  aire» entre el circulo y las letras. canales.py pide el dial
-        //  centrado, las letras al ras de sus bordes y a ese aire de su
-        //  circulo, y el bloque centrado de arriba abajo.
+        //  arriba y su abajo. Lo que queda pintado a los lados son las letras
+        //  -la L a la izquierda del dial y la R a la derecha, desde que las
+        //  dieciseis filas entran en la ficha y debajo del dial no cabe una
+        //  letra-, con sus cajas. Y la linea del circulo se mide en el
+        //  ecuador, desde el borde hacia dentro: los pixeles claros -tinta-
+        //  antes del relleno oscuro; «el grosor que tiene la linea del
+        //  circulo, eso quiero que sea de aire» entre el circulo y las
+        //  letras. canales.py pide el dial centrado a lo alto, las letras a
+        //  ese aire de su circulo y centradas en su altura, y la tinta del
+        //  bloque -de la L a la R- midiendo lo que la celda.
         if (mesaKnob == 1 && mixPans[0]->isVisible())
         {
             auto* p = mixPans[0];
@@ -6090,14 +6101,77 @@ void MainComponent::auditCanales()
                 while (a > 0 && tinta (a - 1, ecuador)) --a;
                 for (int x = a; x <= dialR && img.getPixelAt (x, ecuador).getPerceivedBrightness() > 0.5f; ++x)
                     ++mesaKnobAro;
-                for (int y = y1 + 1; y < h; ++y)
+                //  Las letras: todo lo pintado fuera de los bordes del dial,
+                //  la L a su izquierda y la R a su derecha.
+                for (int y = 0; y < h; ++y)
                     for (int x = 0; x < w; ++x)
-                        if (tinta (x, y))
+                        if ((x < dialL || x > dialR) && tinta (x, y))
                         {
-                            int* c = x < w / 2 ? mesaL : mesaR;
+                            int* c = x < dialL ? mesaL : mesaR;
                             c[0] = c[0] < 0 ? x : juce::jmin (c[0], x); c[1] = juce::jmax (c[1], x);
                             c[2] = c[2] < 0 ? y : juce::jmin (c[2], y); c[3] = juce::jmax (c[3], y);
                         }
+                if (mesaL[0] >= 0 && mesaR[1] >= 0)
+                    mesaPanTinta = mesaR[1] - mesaL[0] + 1;
+            }
+        }
+
+        //  15-17. LA FILA ENTERA DEL PAD 0: los huecos entre lo PINTADO de cada
+        //  control y el siguiente, los switches y el ST.
+        //
+        //  Del telefono: «la distancia que quiero que guarden es la que hay
+        //  entre los botones M y S». Se mide por la tinta de cada control -su
+        //  foto, la primera y la ultima columna con algo pintado- en las
+        //  coordenadas de la fila, y no por los limites de las celdas: la
+        //  celda del pan de 44 con el dial de 20 dentro cumplia cualquier
+        //  regla de limites con doce pixeles de hueco a cada lado del dial.
+        //  Van en orden, de izquierda a derecha, los que esten: fader, pan,
+        //  ST, M, S.
+        {
+            auto tintaX = [] (juce::Component& c) -> std::pair<int, int>
+            {
+                const auto img = c.createComponentSnapshot (c.getLocalBounds(), true, 1.0f);
+                int l = -1, r = -1;
+                for (int x = 0; x < img.getWidth(); ++x)
+                    for (int y = 0; y < img.getHeight(); ++y)
+                        if (img.getPixelAt (x, y).getAlpha() > 0)
+                        {
+                            if (l < 0) l = x;
+                            r = x;
+                            break;
+                        }
+                return { c.getX() + l, c.getX() + r };
+            };
+            juce::Array<juce::Component*> cadena;
+            cadena.add (f);
+            if (mixPans[0]     != nullptr && mixPans[0]->isVisible())     cadena.add (mixPans[0]);
+            if (mixEstereos[0] != nullptr && mixEstereos[0]->isVisible()) cadena.add (mixEstereos[0]);
+            cadena.add (mixMutes[0]);
+            cadena.add (mixSolos[0]);
+            int anterior = -1, n = 0;
+            for (auto* c : cadena)
+            {
+                const auto t = tintaX (*c);
+                if (anterior >= 0 && n < 4) mesaHuecos[n++] = t.first - anterior - 1;
+                anterior = t.second;
+            }
+            for (auto* b : { mixMutes[0], mixSolos[0], mixEstereos[0] })
+                if (b != nullptr && b->isVisible() && (bool) b->getProperties().getWithDefault ("switch", false))
+                    ++mesaSw;
+
+            //  Y EL ST MUEVE EL ANCHO: apagado lo pone a cero y encendido lo
+            //  devuelve a lo que tenia, por el gesto -`pulsaTapa`- y leido
+            //  del motor, que es quien abre el estereo. Activo solo si la
+            //  muestra del pad 0 tiene dos canales, como su mando de EL PAD.
+            if (auto* st = mixEstereos[0])
+            {
+                mesaStCanales = uiSample[0] != nullptr ? uiSample[0]->buffer.getNumChannels() : 0;
+                mesaStActivo  = st->isEnabled() ? 1 : 0;
+                mesaStAntes   = engine.getPadAncho (0);
+                pulsaTapa (st);
+                mesaStDespues = engine.getPadAncho (0);
+                pulsaTapa (st);
+                mesaStVuelve  = engine.getPadAncho (0);
             }
         }
         faderTinta = cuenta (0.0, false);
@@ -6181,6 +6255,11 @@ void MainComponent::auditCanales()
     //  la barra de los dos.)
     const int mesaVista = mixScroll.getMaximumVisibleWidth();
     const int mesaFilas = mixRows.getWidth();
+    //  Y A LO ALTO, que es la regla quince: las filas miden lo que la ficha
+    //  ensena o menos -las dieciseis entran- y cada fila mide `mesa_fila`.
+    const int mesaFila      = mixFilaAlto;
+    const int mesaVistaAlto = mixScroll.getMaximumVisibleHeight();
+    const int mesaFilasAlto = mixRows.getHeight();
     //  La de JUCE tiene que medir CERO: la barra de la mesa es `mixBarra`,
     //  la de la casa, y se mide aparte -ancho, hueco hasta la S de la fila y
     //  borde contra la cruz-. Y SE TOCA: un toque en el pie de la barra pasa
@@ -6214,6 +6293,15 @@ void MainComponent::auditCanales()
               << ",\"mesa_knob_aro\":" << mesaKnobAro
               << ",\"mesa_l\":[" << mesaL[0] << "," << mesaL[1] << "," << mesaL[2] << "," << mesaL[3] << "]"
               << ",\"mesa_r\":[" << mesaR[0] << "," << mesaR[1] << "," << mesaR[2] << "," << mesaR[3] << "]"
+              << ",\"mesa_pan_tinta\":" << mesaPanTinta
+              << ",\"mesa_huecos\":[" << mesaHuecos[0] << "," << mesaHuecos[1] << "," << mesaHuecos[2] << "," << mesaHuecos[3] << "]"
+              << ",\"mesa_sw\":" << mesaSw
+              << ",\"mesa_st_canales\":" << mesaStCanales << ",\"mesa_st_activo\":" << mesaStActivo
+              << ",\"mesa_st_antes\":" << juce::String (mesaStAntes, 2)
+              << ",\"mesa_st_despues\":" << juce::String (mesaStDespues, 2)
+              << ",\"mesa_st_vuelve\":" << juce::String (mesaStVuelve, 2)
+              << ",\"mesa_fila\":" << mesaFila
+              << ",\"mesa_vista_alto\":" << mesaVistaAlto << ",\"mesa_filas_alto\":" << mesaFilasAlto
               << ",\"mesa_vista\":" << mesaVista << ",\"mesa_filas\":" << mesaFilas
               << ",\"mesa_barra\":" << mesaBarra << ",\"mesa_borde\":" << mesaBorde
               << ",\"mesa_barra_app\":" << mesaBarraApp << ",\"mesa_hueco\":" << mesaHueco

@@ -447,6 +447,7 @@ UNTRANSLATED_OK = {
     # (handled by the regex below)
     "ZATI",                                    # the wordmark
     "L", "R", "C", "M", "S", "A", "B", "D",    # channel, pan and bank letters
+    "ST",           # el switch de estereo de la mesa: dos letras, como la M y la S de al lado
     "FLT", "ISO", "HPF", "DRV", "DLY", "BIT", "REV", "EQ",  # effect abbreviations
     "CMP", "GTE", "DSS", "LIM",                # la familia de dinamica, tres letras cada una
     "CHO", "FLA", "PHA", "TRM",                # la de modulacion, igual: tres letras
