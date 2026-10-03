@@ -564,7 +564,15 @@ namespace Metrics
     //  «el fader de volumen lo haria un poquito mas alto»: `lg` (16), la
     //  aguja de ocho, y sigue por debajo de la mitad de la celda, que es el
     //  techo de Tests/canales.py, regla del fader.
-    static constexpr int grosorFader = lg;
+    //  Y OTRA VEZ DEL TELEFONO, con la foto de los 16 delante: «te he dicho
+    //  que lo hagas mas alto, no menos ancho; el alto es de abajo arriba» y
+    //  «tiene que ser algo mas grande, que si no, no entra». La MITAD de la
+    //  celda, 20: el techo de la regla -lo normativo que pidio en la tanda
+    //  de los 22- y donde la cifra de `fMeta` cabe DENTRO de la barra con
+    //  tres pixeles de aire arriba y abajo, como en el master. Lo que le
+    //  faltaba de tamano no era solo el alto: la barra se pintaba en 68 de
+    //  sus 92 px de ancho -ver getSliderLayout- y por eso parecia un taco.
+    static constexpr int grosorFader = hit / 2;
     //  Y DENTRO DE LA BARRA, LA AGUJA: el vumetro del fader, mas fino que
     //  la barra para que se lea como otra cosa -lo que PEGA, no lo que esta
     //  puesto-. La mitad del grosor, centrada.
@@ -1424,6 +1432,98 @@ public:
                            float pos, float startAng, float endAng,
                            juce::Slider& s) override
     {
+        //  EL PAN DE LA MESA ES UN KNOB, con la L a la izquierda y la R a la
+        //  derecha. Era un deslizador horizontal con el pomo redondo de JUCE
+        //  y, con los doce pixeles que `getSliderLayout` le quitaba por cada
+        //  lado, un recorrido de DIECINUEVE en una celda de 43: un punto que
+        //  apenas se movia sobre una raya. Del telefono, con la foto: «eso no
+        //  es un knob, es como un joystick; yo quiero un knob: a la izquierda
+        //  la L y a la derecha la R. Es sencillo».
+        //
+        //  Es sencillo: un dial hueco como los demas mandos de la casa, con
+        //  su aguja y su punta, una marca arriba -el centro, donde descansa-
+        //  y las dos letras debajo, la L bajo el lado izquierdo y la R bajo
+        //  el derecho. Sin la corona de once marcas del mando grande: en 40
+        //  px no se leen, y un pan no se lee por marcas sino contra el
+        //  centro. La celda no crece porque el dial es redondo: ver
+        //  MainComponent_Layout.cpp, la celda del pan.
+        //
+        //  Y EL DIAL MIDE LO QUE LA BANDA DEL FADER, `grosorFader` (20). Fue
+        //  de 28 -lo que cabia en la celda menos cinco por lado- y del
+        //  telefono, con la foto: «muy grande el knob, no? como que no pega
+        //  las proporciones». La proporcion de la fila la pone la barra de al
+        //  lado: el knob tan grueso como ella, con el aro de 1.6 pintado por
+        //  DENTRO del radio, que lo que se mide es lo que se pinta
+        //  (canales.py, la regla trece: el dial no es mas grueso que la
+        //  banda).
+        //
+        //  Y LAS LETRAS SON DEL KNOB, no de la celda. Estuvieron en las
+        //  esquinas de abajo de la celda, a seis pixeles del circulo y a seis
+        //  de sus bordes, y del telefono: «no esta centrado el texto LR o el
+        //  knob», «no hay necesidad de tanto hueco: donde termina el circulo
+        //  podria ser la linea de arriba de la L y la R»; y con las letras
+        //  pegadas al circulo: «asi me gusta, pero un pelin: el grosor que
+        //  tiene la linea del circulo, eso quiero que sea de aire». Ahora la
+        //  L va al ras del borde izquierdo del dial y la R del derecho, entre
+        //  el circulo y su linea de arriba hay tanto aire como grosor tiene
+        //  la linea del circulo -dos pixeles pintados-, y el bloque entero
+        //  -dial, aire y letras- se centra en la celda de arriba abajo. Todo
+        //  por la TINTA de cada letra, el camino de su glifo, y no por la
+        //  caja de la fuente: la caja lleva aire alrededor y centrarla no
+        //  centra la letra, que la L carga a la izquierda (canales.py, la
+        //  regla catorce).
+        if ((bool) s.getProperties().getWithDefault ("pan", false))
+        {
+            const auto  celda = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+            const float R     = (float) Metrics::grosorFader * 0.5f;
+            const float cx    = celda.getCentreX();
+            const float ang   = startAng + pos * (endAng - startAng);
+
+            //  El aro: 1.6 a caballo del radio R - 1, que pintado son dos
+            //  pixeles -el de fuera y el de dentro, con el suavizado-; y esos
+            //  dos pixeles son el aire hasta las letras.
+            const float grosorAro = 1.6f;
+            const float aire      = 2.0f;
+
+            const auto fuente = ZatiColours::monoFont ((float) Metrics::fMeta, true);
+            juce::Path pL, pR;
+            { juce::GlyphArrangement ga; ga.addLineOfText (fuente, "L", 0.0f, 0.0f); ga.createPath (pL); }
+            { juce::GlyphArrangement ga; ga.addLineOfText (fuente, "R", 0.0f, 0.0f); ga.createPath (pR); }
+            const auto tL = pL.getBounds(), tR = pR.getBounds();
+
+            const float altoBloque = R * 2.0f + aire + juce::jmax (tL.getHeight(), tR.getHeight());
+            const float cy         = std::floor (celda.getY() + (celda.getHeight() - altoBloque) * 0.5f) + R;
+            const float topeLetras = cy + R + aire;
+            const auto  dial       = juce::Rectangle<float> (cx - R, cy - R, R * 2.0f, R * 2.0f).reduced (1.0f);
+
+            g.setColour (ZatiColours::panel);
+            g.fillEllipse (dial);
+            g.setColour (ZatiColours::ink.withAlpha (0.85f));
+            g.drawEllipse (dial, grosorAro);
+
+            //  La marca del centro, del borde hacia dentro.
+            g.setColour (ZatiColours::ink.withAlpha (0.75f));
+            g.fillRect (cx - 1.0f, cy - R + 1.0f, 2.0f, 3.0f);
+
+            //  La L al ras del borde izquierdo del dial y la R del derecho, con
+            //  su linea de arriba a dos pixeles de donde acaba el circulo.
+            g.setColour (ZatiColours::ink.withAlpha (0.6f));
+            g.fillPath (pL, juce::AffineTransform::translation ((cx - R) - tL.getX(),     topeLetras - tL.getY()));
+            g.fillPath (pR, juce::AffineTransform::translation ((cx + R) - tR.getRight(), topeLetras - tR.getY()));
+
+            juce::Path aguja;
+            aguja.addRectangle (-1.0f, -R + 2.0f, 2.0f, R - 2.0f);
+            aguja.applyTransform (juce::AffineTransform::rotation (ang).translated (cx, cy));
+            g.setColour (ZatiColours::ink);
+            g.fillPath (aguja);
+            const auto punta = juce::Point<float> (0.0f, -R + 4.0f)
+                                 .transformedBy (juce::AffineTransform::rotation (ang).translated (cx, cy));
+            g.setColour (s.isColourSpecified (juce::Slider::rotarySliderFillColourId)
+                           ? s.findColour (juce::Slider::rotarySliderFillColourId) : ZatiColours::amber);
+            g.fillEllipse (punta.x - 2.5f, punta.y - 2.5f, 5.0f, 5.0f);
+            return;
+        }
+
         auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (3.0f);
         const float r  = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f;
         const float cx = area.getCentreX();
@@ -1502,9 +1602,32 @@ public:
     //  the caller asked for - that width is what sizes a stepper's keys, so
     //  shrinking it here would undo the "one size per job" work - and the gap
     //  comes out of the track or the keys, which have it to spare.
+    //  EL FADER DE LA MESA PINTA SU CELDA ENTERA, no 68 de sus 92 px.
+    //
+    //  `LookAndFeel_V4::getSliderLayout` mete la pista `getSliderThumbRadius`
+    //  por cada lado -doce, el radio del pomo redondo de JUCE, que aqui no
+    //  existe- y `Slider::resized` recorta el recorrido otro tanto. Con la
+    //  barra pintada sobre esos limites, en una celda de 92 la barra media 68
+    //  y a cada lado quedaban doce pixeles de nada: del telefono, con la foto,
+    //  «demasiado hueco entre el titulo del pad y el fader, y entre el fader
+    //  y el pan». El pomo de la barra es una linea de dos pixeles, asi que su
+    //  radio es UNO: la barra ocupa la celda y la linea no se sale de ella.
+    //  Tests/canales.py, regla del fader: lo pintado contra los bordes.
+    int getSliderThumbRadius (juce::Slider& s) override
+    {
+        if ((bool) s.getProperties().getWithDefault ("fader", false)) return 1;
+        return juce::LookAndFeel_V4::getSliderThumbRadius (s);
+    }
+
     juce::Slider::SliderLayout getSliderLayout (juce::Slider& s) override
     {
         auto layout = juce::LookAndFeel_V4::getSliderLayout (s);
+
+        if ((bool) s.getProperties().getWithDefault ("fader", false))
+        {
+            layout.sliderBounds = s.getLocalBounds();
+            return layout;
+        }
 
         if (s.getTextBoxPosition() == juce::Slider::NoTextBox || s.isBar())
             return layout;
@@ -1624,10 +1747,8 @@ public:
 
             if (h >= Metrics::fMeta + 4 && w >= 48)
             {
-                const auto txt = s.getTextFromValue (s.getValue());
                 const auto fuente = ZatiColours::monoFont ((float) Metrics::fMeta, true);
                 g.setFont (fuente);
-                const float anchoTxt = juce::GlyphArrangement::getStringWidth (fuente, txt) + 12.0f;
                 //  A UN LADO DEL POMO, NUNCA ENCIMA. La cifra vive a la derecha,
                 //  en la ranura vacia; cuando el valor sube hasta ahi -a 0 dB el
                 //  pomo esta a tres cuartos- se pasa a la izquierda del pomo,
@@ -1635,9 +1756,38 @@ public:
                 //  la derecha: el pomo cruzaba el «0.0» de los dieciseis
                 //  faders. El color lo decide `bestOn` contra lo que tenga
                 //  debajo en cada lado.
-                const bool cabeDerecha = cell.getRight() - pos >= anchoTxt;
-                const bool cabeIzquierda = pos - cell.getX() >= anchoTxt;
-                const bool aLaDerecha = cabeDerecha || ! cabeIzquierda;
+                //
+                //  Y SE ACORTA ANTES QUE CORTARSE. Del telefono, con la foto:
+                //  «-5.», «+» y «-» en tres faders, que eran «-5.0 dB»,
+                //  «+0.0 dB» y «-0.0 dB» recortados por su caja -«tiene que
+                //  ser algo mas grande, que si no, no entra»-. En 92 px con el
+                //  pomo por el medio no caben ocho caracteres a ningun lado, y
+                //  una cifra cortada no es una cifra. Tres formas, de mas a
+                //  menos: con unidad, sin unidad y el entero; se pinta la
+                //  primera que cabe, al lado que tenga sitio, y si no cabe
+                //  ninguna se pinta el entero igual, que es la que menos
+                //  miente. `cabe` y `cifra` los publica para Tests/canales.py.
+                const double v = s.getValue();
+                const auto conUnidad = s.getTextFromValue (v);
+                const auto sinUnidad = conUnidad.replace (" dB", "");
+                const auto entero    = sinUnidad.containsChar ((juce::juce_wchar) 0x221e)
+                                         ? sinUnidad
+                                         : Lang::ltr ((v > 0.0 ? "+" : "") + juce::String (juce::roundToInt (v)));
+                const float libreDer = cell.getRight() - 6.0f - (pos + 4.0f);
+                const float libreIzq = (pos - 4.0f) - (cell.getX() + 6.0f);
+                auto cabeEn = [&fuente] (float libre, const juce::String& t)
+                {
+                    return libre >= juce::GlyphArrangement::getStringWidth (fuente, t) + 2.0f;
+                };
+                juce::String txt = entero;
+                bool aLaDerecha = libreDer >= libreIzq, cabe = false;
+                for (const auto& t : { conUnidad, sinUnidad, entero })
+                {
+                    if (cabeEn (libreDer, t)) { txt = t; aLaDerecha = true;  cabe = true; break; }
+                    if (cabeEn (libreIzq, t)) { txt = t; aLaDerecha = false; cabe = true; break; }
+                }
+                s.getProperties().set ("cabe", cabe ? 1 : 0);
+                s.getProperties().set ("cifra", txt);
                 //  Y el fondo contra el que se elige la letra es el que HAY:
                 //  el relleno ya no es opaco, asi que a la izquierda del pomo
                 //  lo que se ve es el chasis con el color del pad por encima a

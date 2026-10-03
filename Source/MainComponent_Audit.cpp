@@ -5980,6 +5980,10 @@ void MainComponent::auditCanales()
     //  llena daria la misma cifra que un carril gordo y vacio.
     double faderTinta = 0.0, faderLetra = 0.0;
     int faderAlto = 0, faderAncho = 0, faderCajas = 0, faderBanda = 0, mesaPan = 0, mesaMS = 0;
+    int faderPintado = 0, faderCabe = -1, mesaKnob = 0, mesaKnobD = 0;
+    int mesaKnobW = 0, mesaKnobH = 0, mesaKnobX0 = -1, mesaKnobY0 = -1, mesaKnobY1 = -1, mesaKnobAro = 0;
+    int mesaL[4] = { -1, -1, -1, -1 }, mesaR[4] = { -1, -1, -1, -1 };
+    juce::String faderCifra;
     if (auto* f = mixFaders[0])
     {
         const double antes = f->getValue();
@@ -5996,7 +6000,19 @@ void MainComponent::auditCanales()
                 for (int x = 0; x < w; ++x)
                     if (img.getPixelAt (x, y).getAlpha() > 0) { y0 = juce::jmin (y0, y); y1 = juce::jmax (y1, y); break; }
             if (y1 < y0) return 0.0;
-            if (! derecha) faderBanda = y1 - y0 + 1;
+            if (! derecha)
+            {
+                faderBanda = y1 - y0 + 1;
+                //  Y LO PINTADO A LO ANCHO: de la primera a la ultima columna
+                //  con tinta dentro de la banda. La barra se pintaba en 68 de
+                //  sus 92 px -el pomo de JUCE que getSliderLayout le metia por
+                //  cada lado- y se veia un taco en medio de la fila.
+                int xa = w, xb = -1;
+                for (int y = y0; y <= y1; ++y)
+                    for (int x = 0; x < w; ++x)
+                        if (img.getPixelAt (x, y).getAlpha() > 0) { xa = juce::jmin (xa, x); xb = juce::jmax (xb, x); }
+                faderPintado = xb >= xa ? xb - xa + 1 : 0;
+            }
             //  El color que mas se repite en la zona es el fondo; lo demas es
             //  letra o borde.
             std::map<juce::uint32, int> cuentas;
@@ -6018,10 +6034,81 @@ void MainComponent::auditCanales()
         faderAncho = f->getWidth();
         //  La fila del pad 0 con su pan y sus dos botones: lo que mide el
         //  pan si esta (cero si la escalera lo tiro) y lo que mide M.
-        mesaPan = mixPans[0]->isVisible() ? mixPans[0]->getWidth() : 0;
-        mesaMS  = mixMutes[0]->getWidth();
+        mesaPan  = mixPans[0]->isVisible() ? mixPans[0]->getWidth() : 0;
+        mesaMS   = mixMutes[0]->getWidth();
+        mesaKnob = mixPans[0]->isRotary() ? 1 : 0;
+        //  Y LO QUE MIDE EL DIAL DEL KNOB, por lo que se pinta: del telefono,
+        //  con la foto del dial de 28 en la celda de 38, «muy grande el knob,
+        //  no? como que no pega las proporciones». Se mide el ancho mayor con
+        //  tinta de las filas de arriba de la celda -ahi va el dial; la L y
+        //  la R van abajo, en sus `fMeta` ultimas filas- y canales.py lo
+        //  compara con la banda del fader de al lado: el knob no es mas
+        //  grueso que la barra. Ver Tests/canales.py, la regla trece.
+        //
+        //  Y DONDE ESTA CADA COSA, tambien por la tinta, desde «no esta
+        //  centrado el texto LR o el knob» y «no hay necesidad de tanto hueco:
+        //  donde termina el circulo podria ser la linea de arriba de la L y
+        //  la R». El dial esta relleno, asi que en su ecuador es UNA tira de
+        //  tinta que pasa por la columna del centro: la mas ancha de esas da
+        //  sus bordes, y las filas seguidas con tinta en esa columna, su
+        //  arriba y su abajo. Lo que queda pintado por debajo son las letras:
+        //  la L a la izquierda del centro y la R a la derecha, con sus cajas.
+        //  Y la linea del circulo se mide en el ecuador, desde el borde hacia
+        //  dentro: los pixeles claros -tinta- antes del relleno oscuro; «el
+        //  grosor que tiene la linea del circulo, eso quiero que sea de
+        //  aire» entre el circulo y las letras. canales.py pide el dial
+        //  centrado, las letras al ras de sus bordes y a ese aire de su
+        //  circulo, y el bloque centrado de arriba abajo.
+        if (mesaKnob == 1 && mixPans[0]->isVisible())
+        {
+            auto* p = mixPans[0];
+            const auto img = p->createComponentSnapshot (p->getLocalBounds(), true, 1.0f);
+            const int w = img.getWidth(), h = img.getHeight();
+            mesaKnobW = w; mesaKnobH = h;
+            auto tinta = [&img] (int x, int y) { return img.getPixelAt (x, y).getAlpha() > 0; };
+            int dialL = -1, dialR = -1, dialY = -1;
+            for (int y = 0; y < h; ++y)
+            {
+                if (! tinta (w / 2, y)) continue;
+                int a = w / 2, b = w / 2;
+                while (a > 0 && tinta (a - 1, y)) --a;
+                while (b < w - 1 && tinta (b + 1, y)) ++b;
+                if (b - a > dialR - dialL) { dialL = a; dialR = b; dialY = y; }
+            }
+            if (dialY >= 0)
+            {
+                int y0 = dialY, y1 = dialY;
+                while (y0 > 0 && tinta (w / 2, y0 - 1)) --y0;
+                while (y1 < h - 1 && tinta (w / 2, y1 + 1)) ++y1;
+                mesaKnobD = dialR - dialL + 1; mesaKnobX0 = dialL; mesaKnobY0 = y0; mesaKnobY1 = y1;
+                //  La linea se mide en el ecuador de verdad, la fila del medio
+                //  entre arriba y abajo: la primera fila que llega al ancho
+                //  entero puede ser una de mas arriba, donde el aro se corta
+                //  oblicuo y sale un pixel mas ancho (3 en vez de 2).
+                const int ecuador = (y0 + y1) / 2;
+                int a = w / 2;
+                while (a > 0 && tinta (a - 1, ecuador)) --a;
+                for (int x = a; x <= dialR && img.getPixelAt (x, ecuador).getPerceivedBrightness() > 0.5f; ++x)
+                    ++mesaKnobAro;
+                for (int y = y1 + 1; y < h; ++y)
+                    for (int x = 0; x < w; ++x)
+                        if (tinta (x, y))
+                        {
+                            int* c = x < w / 2 ? mesaL : mesaR;
+                            c[0] = c[0] < 0 ? x : juce::jmin (c[0], x); c[1] = juce::jmax (c[1], x);
+                            c[2] = c[2] < 0 ? y : juce::jmin (c[2], y); c[3] = juce::jmax (c[3], y);
+                        }
+            }
+        }
         faderTinta = cuenta (0.0, false);
         faderLetra = cuenta (-60.0, true);
+        //  Y LA CIFRA CON EL POMO POR EL MEDIO, a -10.3 dB: el ramal "fader"
+        //  de drawLinearSlider publica si la que pinta cabe en su lado y
+        //  cual es, que a 92 px es el entero. Ver Tests/canales.py.
+        f->setValue (-10.3, juce::dontSendNotification);
+        f->createComponentSnapshot (f->getLocalBounds(), true, 1.0f);
+        faderCabe  = (int) f->getProperties().getWithDefault ("cabe", -1);
+        faderCifra = f->getProperties().getWithDefault ("cifra", "").toString();
         f->setValue (antes, juce::dontSendNotification);
     }
     for (auto* f : mixFaders) if (f != nullptr && f->getTextBoxPosition() != juce::Slider::NoTextBox) ++faderCajas;
@@ -6119,6 +6206,14 @@ void MainComponent::auditCanales()
               << ",\"fader_alto\":" << faderAlto << ",\"fader_ancho\":" << faderAncho
               << ",\"fader_banda\":" << faderBanda
               << ",\"mesa_pan\":" << mesaPan << ",\"mesa_ms\":" << mesaMS
+              << ",\"fader_pintado\":" << faderPintado << ",\"fader_cabe\":" << faderCabe
+              << ",\"fader_cifra\":\"" << faderCifra << "\",\"mesa_knob\":" << mesaKnob
+              << ",\"mesa_knob_d\":" << mesaKnobD
+              << ",\"mesa_knob_w\":" << mesaKnobW << ",\"mesa_knob_h\":" << mesaKnobH
+              << ",\"mesa_knob_x0\":" << mesaKnobX0 << ",\"mesa_knob_y0\":" << mesaKnobY0 << ",\"mesa_knob_y1\":" << mesaKnobY1
+              << ",\"mesa_knob_aro\":" << mesaKnobAro
+              << ",\"mesa_l\":[" << mesaL[0] << "," << mesaL[1] << "," << mesaL[2] << "," << mesaL[3] << "]"
+              << ",\"mesa_r\":[" << mesaR[0] << "," << mesaR[1] << "," << mesaR[2] << "," << mesaR[3] << "]"
               << ",\"mesa_vista\":" << mesaVista << ",\"mesa_filas\":" << mesaFilas
               << ",\"mesa_barra\":" << mesaBarra << ",\"mesa_borde\":" << mesaBorde
               << ",\"mesa_barra_app\":" << mesaBarraApp << ",\"mesa_hueco\":" << mesaHueco

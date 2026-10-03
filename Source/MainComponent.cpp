@@ -3352,11 +3352,19 @@ MainComponent::MainComponent()
         //  Pan on the strip, next to the level it belongs to. Placing a sound
         //  is half of mixing and it was only reachable one pad at a time, in
         //  another sheet - which is the wrong place to decide where things sit
-        //  relative to each other. No number: the thumb against its centre
-        //  tick says it, a double tap puts it back, and the PADS knob still
+        //  relative to each other. No number: the pointer against its centre
+        //  mark says it, a double tap puts it back, and the PADS knob still
         //  gives the exact figure when you want one.
+        //  UN KNOB, no un deslizador. Del telefono, con la foto: «eso no es
+        //  un knob, es como un joystick; yo quiero un knob: a la izquierda la
+        //  L y a la derecha la R». El deslizador tenia DIECINUEVE pixeles de
+        //  recorrido en su celda -los doce de pomo de JUCE por cada lado, ver
+        //  getSliderLayout en ZatiLookAndFeel-. El knob se arrastra como los
+        //  de EL PAD, con el mismo recorrido de 320 px para la vuelta entera,
+        //  y se pinta en el ramal "pan" de drawRotarySlider.
         auto* p = new juce::Slider();
-        p->setSliderStyle (juce::Slider::LinearHorizontal);
+        p->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        p->setMouseDragSensitivity (320);
         p->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         p->setRange (-1.0, 1.0, 0.01);
         p->setValue (padPan[(size_t) i], juce::dontSendNotification);

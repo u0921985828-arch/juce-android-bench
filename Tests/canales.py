@@ -503,6 +503,14 @@ def main():
     #     carriles de JUCE y medio, y la aguja de 6 dentro con un pixel de
     #     margen por lado). Medido con la barra de 22: banda 22; con la de
     #     12: la cifra de abajo.
+    #
+    #     Y A LA MITAD DE LA CELDA, del telefono tras verla de 16: «te he
+    #     dicho que lo hagas mas alto, no menos ancho; el alto es de abajo
+    #     arriba». Veinte, el techo de esta regla, y la cifra cabe dentro con
+    #     tres de aire, como en el master. El techo se escribe como 20 -la
+    #     mitad de `hit`- y no como la mitad de lo que mide el Slider, que
+    #     son 38 por el aire denso de la fila: 19 habria tirado la barra de
+    #     20 por un pixel que no es de la barra.
     tinta  = r.get ("fader_tinta", -1.0)
     letra  = r.get ("fader_letra", -1.0)
     cajas  = r.get ("fader_cajas", -1)
@@ -514,9 +522,10 @@ def main():
     if tinta < 0.6:
         malas.append ("el fader del pad 0 a 0 dB solo pinta el %.0f%% de su banda: "
                       "sigue siendo un carril de cuatro pixeles" % (tinta * 100.0))
-    if banda < 10 or banda > alto // 2:
+    techo = 20   # la mitad de la celda de `hit` (40); los bordes del Slider miden 38
+    if banda < 10 or banda > techo:
         malas.append ("la banda del fader del pad 0 mide %d px en una celda de %d: tiene que "
-                      "verse fina (hasta %d) y verse (desde 10)" % (banda, alto, alto // 2))
+                      "verse fina (hasta %d) y verse (desde 10)" % (banda, alto, techo))
     if letra < 0.2:
         malas.append ("el fader del pad 0 a -60 dB no lleva cifra dentro (%.3f de la "
                       "mitad derecha no es fondo)" % letra)
@@ -619,6 +628,12 @@ def main():
     #     Medido: 400x900 pan 44, M 35, fader 92; 412x915 M 40. Roto a
     #     proposito -la escalera quitada, M y S en 40 siempre- el pan de
     #     400x900 mide 0.
+    #     Y DESDE QUE EL PAN ES UN KNOB su celda es un dedo y su aire -44,
+    #     que son 40 de bordes- y no un tercio de la fila: un knob es
+    #     redondo y el ancho de mas era hueco entre el fader y el pan. La
+    #     cuenta de la escalera pasa a 96 + 44. Medido: 400x900 pan 40, M
+    #     37, fader 92; 393x851 pan 40, M 34, fader 93; 412x915 M 40 y el
+    #     fader 95, tres mas que con el pan a tercios.
     r400 = corre ({"ZATI_SIZE": "400x900"})
     if r400 is None:
         malas.append ("la app no publico la linea de canales en 400x900")
@@ -626,9 +641,9 @@ def main():
         print ("fila     en 400x900 el pan del pad 0 mide %d, M %d y el fader %d; en 412x915 M mide %d"
                % (r400.get ("mesa_pan", -1), r400.get ("mesa_ms", -1), r400.get ("fader_ancho", -1),
                   r.get ("mesa_ms", -1)))
-        if r400.get ("mesa_pan", 0) < 44:
-            malas.append ("en 400x900 el pan del pad 0 no esta en la fila (mide %d): los botones "
-                          "tienen que ceder antes que el pan" % r400.get ("mesa_pan", 0))
+        if r400.get ("mesa_pan", 0) < 40:
+            malas.append ("en 400x900 el pan del pad 0 no esta en la fila o no mide un dedo (mide %d): "
+                          "los botones tienen que ceder antes que el pan" % r400.get ("mesa_pan", 0))
         if r400.get ("mesa_ms", 0) < 32:
             malas.append ("en 400x900 M mide %d: nunca por debajo de 32" % r400.get ("mesa_ms", 0))
         if r400.get ("fader_ancho", 0) < 92:
@@ -637,6 +652,117 @@ def main():
         if r.get ("mesa_ms", 0) != 40:
             malas.append ("en 412x915 M mide %d y el pan ya entraba con 40: estrechar donde no hace "
                           "falta es pagar sin cobrar" % r.get ("mesa_ms", 0))
+
+    #  12. EL FADER PINTA SU CELDA, LA CIFRA CABE Y EL PAN ES UN KNOB.
+    #
+    #     Del telefono, con la foto de la tanda anterior delante: «te he
+    #     dicho que lo hagas mas alto, no menos ancho», «eso no es un knob,
+    #     es un joystick: a la izquierda la L y a la derecha la R»,
+    #     «demasiado hueco entre el titulo y el fader, y entre el fader y el
+    #     knob» y «tiene que ser algo mas grande, que si no, no entra». Lo
+    #     medido dijo por que: la barra se pintaba en 68 de sus 92 px -doce
+    #     de pomo de JUCE por cada lado que nadie habia pedido-, el pan era
+    #     un deslizador con 19 px de recorrido, y la cifra se cortaba
+    #     («-5.», «+», «-») cuando no cabia a ningun lado del pomo.
+    #     Ahora: lo pintado llega a los bordes (a dos pixeles, el filo
+    #     redondeado), a -10.3 dB -el pomo por el medio- la cifra que se
+    #     pinta cabe entera en su lado (se acorta: sin unidad, y luego el
+    #     entero), y el pan del pad 0 es rotatorio.
+    #     Medido en 412x915: pintado 95 de 95, banda 20, a -10.3 dB pinta
+    #     «-10.3» (sin unidad) y cabe, knob; en 800x1280 cabe «-10.3 dB». La
+    #     tinta a 0 dB pasa de 0.74 -que era exactamente 68 de 92- a 1.00, y
+    #     la letra a -60 dB baja de 0.59 a 0.28 porque la misma cifra es
+    #     menos parte de una barra mas ancha. Roto -el binario de la tanda
+    #     anterior, sin cambiar nada-: no publica lo pintado ni `cabe`, y el
+    #     pan no es rotatorio: tres FALLA.
+    pintado = r.get ("fader_pintado", -1)
+    cabe    = r.get ("fader_cabe", -1)
+    cifra   = r.get ("fader_cifra", "")
+    knob    = r.get ("mesa_knob", 0)
+    print ("fader    pintado %d de %d px de ancho; a -10.3 dB pinta «%s» y %s; el pan del pad 0 %s"
+           % (pintado, ancho, cifra, "cabe" if cabe == 1 else "NO cabe",
+              "es un knob" if knob == 1 else "NO es un knob"))
+    if pintado < 0:
+        malas.append ("la app no publica cuanto pinta a lo ancho el fader del pad 0")
+    elif pintado < ancho - 2:
+        malas.append ("el fader del pad 0 pinta %d de sus %d px: la barra tiene que llegar a los bordes"
+                      % (pintado, ancho))
+    if cabe < 0:
+        malas.append ("la app no publica si la cifra del fader del pad 0 cabe")
+    elif cabe != 1:
+        malas.append ("a -10.3 dB la cifra del fader del pad 0 no cabe en su lado (pinta «%s»): "
+                      "se acorta antes que cortarse" % cifra)
+    if knob != 1:
+        malas.append ("el pan del pad 0 no es un knob")
+
+    # 13. Y EL DIAL DEL KNOB MIDE LO QUE LA BANDA DEL FADER. Del telefono, con
+    #     la foto del dial de 28 en la celda de 38: «muy grande el knob, no?
+    #     como que no pega las proporciones». La proporcion de la fila la da
+    #     la barra del fader, `grosorFader` (20) de alto: el dial pintado -el
+    #     ancho mayor con tinta de las filas de arriba de su celda, que es el
+    #     dial; la L y la R van abajo- no es mas grueso que esa banda, y no
+    #     baja de 16 (`lg`), que con menos no se le ve la aguja.
+    #     Medido en 412x915: dial 20 con banda 20. Roto -el binario del dial
+    #     de 28, con esta medida puesta y el dibujo sin tocar-: pinta 32 (el
+    #     aro de 1.6 y su suavizado caen por fuera del radio) contra 20:
+    #     FALLA.
+    knob_d = r.get ("mesa_knob_d", -1)
+    print ("knob     el pan del pad 0 pinta un dial de %d px; la banda del fader mide %d" % (knob_d, banda))
+    if knob_d < 0:
+        malas.append ("la app no publica lo que mide el dial del pan del pad 0")
+    elif knob_d > banda:
+        malas.append ("el dial del pan del pad 0 mide %d y la banda del fader %d: el knob no es mas "
+                      "grueso que el fader de al lado" % (knob_d, banda))
+    elif knob_d < 16:
+        malas.append ("el dial del pan del pad 0 mide %d: con menos de 16 no se le ve la aguja" % knob_d)
+
+    # 14. Y EL KNOB Y SUS LETRAS SON UN BLOQUE CENTRADO. Del telefono, con la
+    #     foto del dial de 20 y las letras en las esquinas de abajo de la
+    #     celda: «no esta centrado el texto LR o el knob» y «no hay necesidad
+    #     de tanto hueco: donde termina el circulo del knob podria ser la
+    #     linea de arriba de la L y la R»; y con las letras pegadas: «asi me
+    #     gusta, pero un pelin: el grosor que tiene la linea del circulo, eso
+    #     quiero que sea de aire». Medido por la tinta del pad 0 -la app
+    #     publica donde pinta el dial, cuanto mide su linea en el ecuador y
+    #     las cajas de las dos letras-: el dial centrado en su celda (a un
+    #     pixel), las letras debajo a tanto aire del circulo como mide su
+    #     linea (ni mas ni menos), la L al ras del borde izquierdo del dial y
+    #     la R del derecho (a un pixel), y el bloque entero -dial, aire y
+    #     letras- centrado de arriba abajo en la celda (a dos).
+    #     Medido en 412x915: dial en x 10..29 e y 5..24 de 40x40 con la
+    #     linea de 2, la L en 10..14 y la R en 25..29 desde la fila 27: dos
+    #     de aire. Rotos, con la medida puesta y el dibujo sin tocar: el
+    #     binario de las letras en las esquinas da seis de aire y la L desde
+    #     el 4 con el dial en el 10, y el de las letras pegadas, cero de aire
+    #     con la linea de 2: FALLA los dos.
+    kw, kh = r.get ("mesa_knob_w", 0), r.get ("mesa_knob_h", 0)
+    kx0, ky0, ky1 = r.get ("mesa_knob_x0", -1), r.get ("mesa_knob_y0", -1), r.get ("mesa_knob_y1", -1)
+    aro = r.get ("mesa_knob_aro", -1)
+    tl, tr = r.get ("mesa_l", [-1] * 4), r.get ("mesa_r", [-1] * 4)
+    kx1 = kx0 + knob_d - 1
+    print ("knob     dial en x %d..%d, y %d..%d de una celda de %dx%d, linea de %d; L en %s, R en %s"
+           % (kx0, kx1, ky0, ky1, kw, kh, aro, tl, tr))
+    if kx0 < 0 or kw <= 0:
+        malas.append ("la app no publica donde pinta el dial del pan del pad 0")
+    elif tl[1] < 0 or tr[1] < 0:
+        malas.append ("debajo del dial del pan del pad 0 falta la L o la R")
+    else:
+        if abs ((kx0 + kx1) - (kw - 1)) > 2:
+            malas.append ("el dial del pan del pad 0 no esta centrado en su celda: va de %d a %d en %d"
+                          % (kx0, kx1, kw))
+        aire = min (tl[2], tr[2]) - ky1 - 1
+        if aro < 1 or aro > 3:
+            malas.append ("la linea del circulo del pan del pad 0 mide %d px: no se lee como linea" % aro)
+        elif aire != aro:
+            malas.append ("entre el circulo del pan del pad 0 y sus letras hay %d px de aire y la linea del "
+                          "circulo mide %d: ese aire es el grosor de la linea" % (aire, aro))
+        if abs (tl[0] - kx0) > 1 or abs (tr[1] - kx1) > 1:
+            malas.append ("la L y la R del pan del pad 0 no van al ras del dial: la L desde %d con el "
+                          "dial en %d, la R hasta %d con el dial en %d" % (tl[0], kx0, tr[1], kx1))
+        abajo = max (tl[3], tr[3])
+        if abs ((ky0 + abajo) - (kh - 1)) > 4:
+            malas.append ("el bloque del pan del pad 0 -dial y letras- no esta centrado de arriba abajo: "
+                          "de %d a %d en %d" % (ky0, abajo, kh))
 
     print()
     if malas:

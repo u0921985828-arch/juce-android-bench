@@ -5556,19 +5556,26 @@ void MainComponent::resized()
             //  ver abajo-; donde le faltan unos pixeles, S y M se estrechan
             //  LO JUSTO, nunca por debajo de `hit - sm` (32), y solo si con
             //  eso el pan entra de verdad: estrecharlos para que el pan siga
-            //  fuera seria pagar sin cobrar. El numero sale de la cuenta del
-            //  pan de abajo: el pan se lleva un tercio del resto -47 de 143-
-            //  y al fader le tienen que quedar 96 con su aire; con 142 el pan
-            //  se lleva 47 y al fader le quedan 95. La primera version decia
-            //  144 y en 412 estrechaba M a 39 para nada: ahi el resto es 143
-            //  y el pan ya entraba. Medido: 412 no se toca (40); 400 baja a
-            //  35, 393 -la del banco- a 33 y 392 a 32, y en los tres el pan
-            //  entra (44, 43, 44) y el fader en 92 de bordes (96 de fila);
-            //  384 se queda en 40 y sin pan, porque ni a 32 le llega. En
-            //  393x851 S y M quedan por debajo del dedo: son los 256 TOUCH
-            //  mas de expo.py, el precio pedido. Tests/canales.py, regla de
-            //  la fila con pan.
-            constexpr int kFilaConPan = 96 + 47;
+            //  fuera seria pagar sin cobrar. El numero es el suelo del fader
+            //  mas la celda del pan, 96 + 44. (Fue 96 + 47 cuando el pan se
+            //  llevaba un tercio del resto, y antes 144, que en 412
+            //  estrechaba M a 39 para nada: ahi el resto es 143 y el pan ya
+            //  entraba.) Medido con la celda del pan en 44: 412 no se toca
+            //  (M 40, fader 95); 400 baja M a 37, 393 -la del banco- y 392 a
+            //  34, y en los tres el pan entra con 40 y el fader en 92 o 93 de
+            //  bordes; 384 se queda en 40 y sin pan, porque ni a 32 le llega
+            //  (resto 120, faltan 20). Tests/canales.py, regla de la fila
+            //  con pan.
+            //
+            //  Y LA CELDA DEL PAN ES UN DEDO Y SU AIRE, no un tercio de la
+            //  fila: el pan es un knob -ver drawRotarySlider- y un knob es
+            //  redondo, asi que el ancho de mas que le daba el tercio (47 en
+            //  412, 64 en una tableta) era aire entre el fader y el pan, que
+            //  es lo que del telefono llego como «demasiado hueco entre el
+            //  fader y el knob». Lo que no se lleva el pan es recorrido del
+            //  fader.
+            constexpr int kCeldaPan   = Metrics::hit + 4;
+            constexpr int kFilaConPan = 96 + kCeldaPan;
             int anchoMS = Metrics::hit;
             {
                 const int resto = row.getWidth() - 2 * Metrics::hit - 2 * Metrics::halfGap;
@@ -5608,11 +5615,10 @@ void MainComponent::resized()
             //  pixel que no se lleva el pan es recorrido del fader, que es lo
             //  que se toca en cada mezcla. Medido en 412x915 con `canales.py`:
             //  el fader del pad 0 mide 110x40 px con los dos puestos.
-            const int panW    = juce::jlimit (Metrics::hit + 4, 64, row.getWidth() / 3);
+            const int panW    = kCeldaPan;
             const int dosW    = juce::jlimit (Metrics::hit + 4, 56, row.getWidth() / 4);
-            const bool roomAncho = row.getWidth() - 2 * dosW >= 96;
+            const bool roomAncho = row.getWidth() - panW - dosW >= 96;
             const bool room = roomAncho || (row.getWidth() - panW >= 96);
-            const int celda = roomAncho ? dosW : panW;
             mixPans[i]->setVisible (room);
             //  Y APAGADO EN UNA MUESTRA MONO: no hay lado que abrir ni cerrar,
             //  que es lo que su mando de EL PAD ya hace. Apagado y no
@@ -5626,12 +5632,12 @@ void MainComponent::resized()
             mixAnchos[i]->setVisible (roomAncho);
             mixAnchos[i]->setEnabled (estereo);
             if (roomAncho)
-                mixAnchos[i]->setBounds (row.removeFromRight (celda)
+                mixAnchos[i]->setBounds (row.removeFromRight (dosW)
                                         .reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
             else
                 mixAnchos[i]->setBounds ({});
             if (room)
-                mixPans[i]->setBounds (row.removeFromRight (celda)
+                mixPans[i]->setBounds (row.removeFromRight (panW)
                                           .reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
 
             //  On a narrow phone the level's number was eating the level.
