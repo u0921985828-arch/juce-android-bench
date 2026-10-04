@@ -890,16 +890,20 @@ def main():
     #     tres tapas pintadas como switch -ranura y paleta-, y el ST es una
     #     ventana de dos posiciones al ancho del pad: tocarlo lo pone a cero
     #     y volver a tocarlo lo devuelve a lo que tenia, leido del MOTOR y
-    #     por el gesto (`pulsaTapa`). Activo con la muestra que sea: del
-    #     telefono, «con una mono, todas son mono» y «que abra los canales
-    #     mono» -la de un canal se ABRE (regla 20), asi que un ST apagado
-    #     por mono es la version anterior, la que lo gateaba por los canales
-    #     del fichero-. Y la escalera: en 360x640 -con la barra, que se cobra
-    #     un dedo- el ST se cae ANTES que el pan, que es el que se gira en
-    #     cada mezcla: dos switches y el pan puesto. Medido en 412x915 y
-    #     393x851: 3 switches, activo, 1.00 -> 0.00 -> 1.00; en 360x640, 2
-    #     switches y el pan de 34. Roto -el binario de la tanda anterior-:
-    #     el ST apagado con la muestra de un canal, FALLA.
+    #     por el gesto (`pulsaTapa`). Activo con la muestra que sea, y la
+    #     app lo MIDE con una de UN canal -el izquierdo de la de fabrica,
+    #     puesto por `assignSampleToPad`-: del telefono, «con una mono,
+    #     todas son mono» y «que abra los canales mono»; la de un canal se
+    #     ABRE (regla 20), asi que un ST apagado por mono es la version
+    #     anterior, la que lo gateaba por los canales del fichero. Con la de
+    #     dos canales la medida no distingue nada -alli siempre estuvo
+    #     activo-, por eso la regla exige que sea de uno. Y la escalera: en
+    #     360x640 -con la barra, que se cobra un dedo- el ST se cae ANTES
+    #     que el pan, que es el que se gira en cada mezcla: dos switches y el
+    #     pan puesto. Medido en 412x915 y 393x851: 3 switches, la muestra de
+    #     1 canal, activo, 1.00 -> 0.00 -> 1.00; en 360x640, 2 switches y el
+    #     pan de 34. Roto -el binario de la tanda anterior-: mide con la de
+    #     dos canales, FALLA.
     for nombre, rr in (("412x915", r), ("393x851", r393)):
         if rr is None: continue
         sw = rr.get ("mesa_sw", -1)
@@ -912,7 +916,10 @@ def main():
                                                       antes, despues, vuelve))
         if sw != 3:
             malas.append ("en %s la fila del pad 0 lleva %d switches y son tres: S, M y ST" % (nombre, sw))
-        if canales < 1 or activo != 1:
+        if canales != 1:
+            malas.append ("en %s el ST del pad 0 se midio con una muestra de %d canales y tiene que ser de UNO: "
+                          "con dos la medida no distingue nada" % (nombre, canales))
+        if activo != 1:
             malas.append ("en %s el ST del pad 0 esta %s con una muestra de %d canales: activo con la que sea, "
                           "que la de un canal se abre" % (nombre, "activo" if activo == 1 else "apagado", canales))
         if abs (antes - 1.0) > 0.001 or abs (despues) > 0.001 or abs (vuelve - 1.0) > 0.001:
@@ -1048,10 +1055,10 @@ def main():
     #     dos fuentes. Medido en 412x915: lado 0.000000 -> 0.050705 (k por
     #     el centro: 0.051000), centro 0.102000 las dos, suma 0.00000001,
     #     corr 0.6039. Roto -el binario de la tanda anterior-: no publica la
-    #     apertura, FALLA. (La regla 17 sola no cae en ese binario: la
-    #     muestra del pad 0 de la auditoria es estereo y su ST ya salia
-    #     activo; lo que la hace caer es esta, que es la que mide lo que el
-    #     ST hace ahora con una mono.)
+    #     apertura, FALLA. (La 17 cae tambien desde que la auditoria mide
+    #     el ST con una muestra de UN canal: ese binario la mide con la de
+    #     dos y dice canales=2. Esta es la que mide lo que el ST HACE con
+    #     la mono; la 17, que esta encendido.)
     canalesM = r.get ("abre_canales", 0)
     lado0, lado1 = float (r.get ("abre_lado0", -1)), float (r.get ("abre_lado1", -1))
     centro0, centro1 = float (r.get ("abre_centro0", -1)), float (r.get ("abre_centro1", -1))

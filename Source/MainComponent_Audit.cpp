@@ -6206,6 +6206,24 @@ void MainComponent::auditCanales()
             //  del motor, que es quien abre el estereo. Activo con la
             //  muestra que sea: la de un canal se abre (Estereo::abre), y se
             //  publica cuantos canales tiene para que la regla lo sepa.
+            //
+            //  Y CON UNA MUESTRA DE UN CANAL, puesta por la puerta de la app
+            //  -`assignSampleToPad`, la misma de LOAD y del kit-: es el caso
+            //  que la regla quiere ver, y con la de fabrica -dos canales- la
+            //  regla 17 no podia caer en el binario anterior, que ya decia
+            //  «activo» con ella. El canal izquierdo de la que habia, al
+            //  mismo nivel, para que la aguja de abajo mida lo mismo.
+            if (uiSample[0] != nullptr && uiSample[0]->buffer.getNumChannels() > 1)
+            {
+                auto* mono = new SampleBuffer();
+                const auto& de = uiSample[0]->buffer;
+                mono->buffer.setSize (1, de.getNumSamples());
+                mono->buffer.copyFrom (0, 0, de, 0, 0, de.getNumSamples());
+                mono->sourceSampleRate = uiSample[0]->sourceSampleRate;
+                assignSampleToPad (0, SampleBuffer::Ptr (mono), {}, false);
+                refreshMixStrip();
+                resized();
+            }
             if (auto* st = mixEstereos[0])
             {
                 mesaStCanales = uiSample[0] != nullptr ? uiSample[0]->buffer.getNumChannels() : 0;

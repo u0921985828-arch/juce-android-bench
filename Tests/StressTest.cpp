@@ -212,9 +212,9 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    const double sr = 48000.0;
+    const double srBase = 48000.0;
     const int    bs = 128;                       // Oboe's low-latency burst on a modern phone
-    const double budgetMs = 1000.0 * bs / sr;    // 2.67 ms
+    const double budgetMs = 1000.0 * bs / srBase;    // 2.67 ms
 
     //  ------------------------------------------------------------------
     //  LO QUE CUESTAN LOS DIECISEIS INSERTOS, medido y no deducido.
@@ -238,12 +238,12 @@ int main()
     //  cuesta y no sobre lo que costaba.
     const long rssAntes = zatiRssKb();
 
-    const auto monton_e = std::make_unique<AudioEngine>();
-    AudioEngine& e = *monton_e;
+    const auto montonBase = std::make_unique<AudioEngine>();
+    AudioEngine& eBase = *montonBase;
     const long rssMotor = zatiRssKb();
-    e.prepareToPlay (sr, bs);
-    e.setPolyphony (32, 4);
-    enCanalCero (e);
+    eBase.prepareToPlay (srBase, bs);
+    eBase.setPolyphony (32, 4);
+    enCanalCero (eBase);
 
     {
         const long rssTras = zatiRssKb();
@@ -257,27 +257,27 @@ int main()
                      (double) (rssMotor - rssAntes), (double) (rssTras - rssMotor), vivoKb);
     }
 
-    juce::AudioBuffer<float> buf (2, bs);
+    juce::AudioBuffer<float> bufBase (2, bs);
 
     //  padGain is value-initialised to zero: the app sets every channel at
     //  startup, so a bench that skips it renders a perfect, silent pass.
     for (int p = 0; p < 16; ++p)
     {
-        e.setPadGain (p, 0.85f);
-        e.publishSample (p, makeSample (44100.0, 1.2, 110.0f * (float) (p + 1)));
+        eBase.setPadGain (p, 0.85f);
+        eBase.publishSample (p, makeSample (44100.0, 1.2, 110.0f * (float) (p + 1)));
     }
 
     // The engine adopts a published sample at the top of a block.
-    runBlocks (e, buf, bs, 8);
+    runBlocks (eBase, bufBase, bs, 8);
 
     // 1. SILENCE — nothing playing must cost nothing and produce nothing.
-    report ("idle", runBlocks (e, buf, bs, 400), budgetMs);
+    report ("idle", runBlocks (eBase, bufBase, bs, 400), budgetMs);
 
     // 2. ALL SIXTEEN AT ONCE — the thing every demo does in the first minute.
     {
-        auto s = runBlocks (e, buf, bs, 600, [&e] (int b)
+        auto s = runBlocks (eBase, bufBase, bs, 600, [&eBase] (int b)
         {
-            if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 1.0f);
+            if (b == 0) for (int p = 0; p < 16; ++p) eBase.postNoteOn (p, 1.0f);
         });
         report ("16 pads at once", s, budgetMs);
     }
@@ -285,29 +285,29 @@ int main()
     // 3. MACHINE-GUN RETRIGGER — one pad, every single block, for 5 seconds.
     //    This is where a voice pool leaks or a choke group deadlocks.
     {
-        auto s = runBlocks (e, buf, bs, 1875, [&e] (int) { e.postNoteOn (3, 0.9f); });
+        auto s = runBlocks (eBase, bufBase, bs, 1875, [&eBase] (int) { eBase.postNoteOn (3, 0.9f); });
         report ("1 pad retriggered every block", s, budgetMs);
     }
 
     // 4. QUEUE SATURATION — push far more commands per block than the FIFO
     //    holds. Dropping is fine; wedging is not, so we check it still plays.
     {
-        auto s = runBlocks (e, buf, bs, 400, [&e] (int)
+        auto s = runBlocks (eBase, bufBase, bs, 400, [&eBase] (int)
         {
-            for (int k = 0; k < 64; ++k) e.postNoteOn (k % 16, 0.7f);
+            for (int k = 0; k < 64; ++k) eBase.postNoteOn (k % 16, 0.7f);
         });
         report ("queue saturated (64 cmds/block)", s, budgetMs);
-        std::printf ("%-34s dropped %d commands, still audible: %s\n", "", e.takeDroppedCommands(),
+        std::printf ("%-34s dropped %d commands, still audible: %s\n", "", eBase.takeDroppedCommands(),
                      s.rms > 1.0e-4 ? "YES" : "NO  <-- WEDGED");
     }
 
     // 5. DEVICE CHANGE MID-PHRASE — the headphone-unplug path, 40 times.
     {
         int reprepares = 0;
-        auto s = runBlocks (e, buf, bs, 800, [&e, &reprepares] (int b)
+        auto s = runBlocks (eBase, bufBase, bs, 800, [&eBase, &reprepares] (int b)
         {
-            if (b % 20 == 0) { e.prepareToPlay (b % 40 == 0 ? 44100.0 : 48000.0, 128); ++reprepares; }
-            if (b % 7 == 0)  e.postNoteOn (b % 16, 0.9f);
+            if (b % 20 == 0) { eBase.prepareToPlay (b % 40 == 0 ? 44100.0 : 48000.0, 128); ++reprepares; }
+            if (b % 7 == 0)  eBase.postNoteOn (b % 16, 0.9f);
         });
         report ("route changes mid-phrase", s, budgetMs);
         std::printf ("%-34s %d re-prepares, still audible: %s\n", "", reprepares,
@@ -327,7 +327,7 @@ int main()
     {
         const auto monton_d = std::make_unique<AudioEngine>();
         AudioEngine& d = *monton_d;
-        d.prepareToPlay (sr, bs);
+        d.prepareToPlay (srBase, bs);
         d.setPolyphony (32, 4);
         enCanalCero (d);
         d.setPadGain (0, 0.85f);
@@ -368,7 +368,7 @@ int main()
         const bool ok = ratio > 0.24 && ratio < 0.33 && back > 0.97 && back < 1.03 && rampBlocks >= 3 && rampBlocks <= 24;
         std::printf ("%-34s ducked to %.3f of level  back to %.3f  ramp %d blocks (%.1f ms)  %s\n",
                      "notification duck / restore", ratio, back, rampBlocks,
-                     rampBlocks * 1000.0 * bs / sr, ok ? "OK" : zatiFalla ("<-- FAILED"));
+                     rampBlocks * 1000.0 * bs / srBase, ok ? "OK" : zatiFalla ("<-- FAILED"));
     }
 
     // 5c. RESAMPLE. The master printed back onto a pad: what lands there has
@@ -377,7 +377,7 @@ int main()
     {
         const auto monton_r = std::make_unique<AudioEngine>();
         AudioEngine& r = *monton_r;
-        r.prepareToPlay (sr, bs);
+        r.prepareToPlay (srBase, bs);
         r.setPolyphony (32, 4);
         enCanalCero (r);
         r.setPadGain (0, 0.85f);
@@ -409,7 +409,7 @@ int main()
         }
 
         const double ratio = heard > 0 ? printed / heard : 0.0;
-        const bool ok = sb != nullptr && len > (int) (sr * 0.5) && ratio > 0.95 && ratio < 1.05;
+        const bool ok = sb != nullptr && len > (int) (srBase * 0.5) && ratio > 0.95 && ratio < 1.05;
         std::printf ("%-34s heard %.4f  printed %.4f  ratio %.3f  %d samples  %s\n",
                      "resample master -> pad", heard, printed, ratio, len,
                      ok ? "OK" : zatiFalla ("<-- FAILED"));
@@ -421,15 +421,15 @@ int main()
     {
         const auto monton_e2 = std::make_unique<AudioEngine>();
         AudioEngine& e2 = *monton_e2;
-        e2.prepareToPlay (sr, b);
+        e2.prepareToPlay (srBase, b);
         e2.setPolyphony (32, 4);
         enCanalCero (e2);
         for (int p = 0; p < 16; ++p) { e2.setPadGain (p, 0.85f); e2.publishSample (p, makeSample (44100.0, 1.2, 110.0f * (float) (p + 1))); }
         juce::AudioBuffer<float> bb (2, b);
         runBlocks (e2, bb, b, 4);
-        auto s = runBlocks (e2, bb, b, (int) (sr * 3 / b), [&e2] (int i) { if (i % 4 == 0) e2.postNoteOn (i % 16, 1.0f); });
-        char name[64]; std::snprintf (name, sizeof name, "buffer %d (%.2f ms round trip)", b, 2.0 * 1000.0 * b / sr);
-        report (name, s, 1000.0 * b / sr);
+        auto s = runBlocks (e2, bb, b, (int) (srBase * 3 / b), [&e2] (int i) { if (i % 4 == 0) e2.postNoteOn (i % 16, 1.0f); });
+        char name[64]; std::snprintf (name, sizeof name, "buffer %d (%.2f ms round trip)", b, 2.0 * 1000.0 * b / srBase);
+        report (name, s, 1000.0 * b / srBase);
     }
 
     //  MIDI QUE SALE. La nota, la velocidad, y sobre todo QUE NO FALTE NINGUNA.
@@ -1316,7 +1316,7 @@ int main()
         runTone (1000.0f, AudioEngine::kFiltOpenHz, 0.0f, openB, &nan);
         int differ = 0;
         for (int i = 0; i < openA.getNumSamples(); ++i)
-            if (openA.getSample (0, i) != openB.getSample (0, i)) ++differ;
+            if (! juce::exactlyEqual (openA.getSample (0, i), openB.getSample (0, i))) ++differ;
 
         //  Y LA RESONANCIA RESUENA. Un tono justo en el corte con Q alta tiene
         //  que salir MAS ALTO que con Q baja, o el mando no hace nada y nadie
@@ -2377,7 +2377,7 @@ int main()
             const float pc = pico (sin);
             int distintos = 0;
             for (size_t i = 0; i < con.size(); ++i)
-                if (con[i] != sin[i]) ++distintos;
+                if (! juce::exactlyEqual (con[i], sin[i])) ++distintos;
             const bool bajo = pc < 0.944f;
             std::printf ("%-34s bajo el umbral: pico %.4f, %d muestras distintas de %d   %s\n",
                          "suma de 32 canales", pc, distintos, (int) con.size(),
@@ -2872,7 +2872,7 @@ int main()
 
         int differ = 0;
         for (int i = 0; i < seco.getNumSamples(); ++i)
-            if (seco.getSample (0, i) != seco2.getSample (0, i)) ++differ;
+            if (! juce::exactlyEqual (seco.getSample (0, i), seco2.getSample (0, i))) ++differ;
 
         const double bajaDb  = 20.0 * std::log10 (juce::jmax (1.0e-9, eSuave) / juce::jmax (1.0e-9, eSeco));
         const double pierdeDb = 20.0 * std::log10 (juce::jmax (1.0e-9, dSuave) / juce::jmax (1.0e-9, dSeco));
@@ -4547,7 +4547,7 @@ int main()
         const float antes = e.getRecordSeconds();
         e.prepareToPlay (48000.0, 512, 1);
         const float despues = e.getRecordSeconds();
-        const bool ok = antes > 0.01f && despues == 0.0f;
+        const bool ok = antes > 0.01f && juce::exactlyEqual (despues, 0.0f);
         std::printf ("%-34s grabado %.3f s, tras preparar %.3f s (0)   %s\n",
                      "la toma vuelve a cero al preparar", (double) antes, (double) despues,
                      ok ? "OK" : zatiFalla());
@@ -5326,12 +5326,12 @@ int main()
         };
 
         std::vector<float> entera, corta;
-        const auto a = corre (1.00f, entera);
+        corre (1.00f, entera);
         const auto c = corre (0.25f, corta);
 
         int distintas = 0;
         for (size_t i = 0; i < entera.size() && i < corta.size(); ++i)
-            if (entera[i] != corta[i]) ++distintas;
+            if (! juce::exactlyEqual (entera[i], corta[i])) ++distintas;
 
         const bool ok = distintas > 0 && c.second > 0 && c.first > 0.01;
         std::printf ("%-34s %d muestras cambian   sigue sonando %.4f con %d voz   %s\n",
@@ -5801,7 +5801,7 @@ int main()
         hum = seco;
         eq.procesa (canal, 1, 0, kN);
         int distintas = 0;
-        for (int i = 0; i < kN; ++i) if (hum[(size_t) i] != seco[(size_t) i]) ++distintas;
+        for (int i = 0; i < kN; ++i) if (! juce::exactlyEqual (hum[(size_t) i], seco[(size_t) i])) ++distintas;
 
         //  2. +12 dB en la banda 2, que es la del medio (1 kHz de fabrica).
         Eq5 eq2;
@@ -5905,7 +5905,7 @@ int main()
 
         int distintas = 0;
         for (size_t i = 0; i < seco.size() && i < cerrado.size(); ++i)
-            if (seco[i] != cerrado[i]) ++distintas;
+            if (! juce::exactlyEqual (seco[i], cerrado[i])) ++distintas;
 
         const double rSeco = rmsDe (seco);
         const double rEq   = rmsDe (conEq);
@@ -6023,7 +6023,7 @@ int main()
                                                    / juce::jmax (1.0e-12, rmsDe (fuerteSin, 4096, 12288)));
             int distintas = 0;
             for (size_t i = 0; i < flojoSin.size() && i < flojoCon.size(); ++i)
-                if (flojoSin[i] != flojoCon[i]) ++distintas;
+                if (! juce::exactlyEqual (flojoSin[i], flojoCon[i])) ++distintas;
 
             const bool ok = (baja < -6.0) && (distintas == 0);
             std::printf ("%-34s fuerte %+.2f dB   flojo %d muestras cambian   %s\n",
@@ -7832,7 +7832,7 @@ int main()
         corre (false, c);
         int distintas = 0;
         for (size_t i = 0; i < a.size() && i < c.size(); ++i)
-            if (a[i] != c[i]) ++distintas;
+            if (! juce::exactlyEqual (a[i], c[i])) ++distintas;
 
         //  El de la izquierda manda por el CANAL y el de la derecha por el
         //  RECORTE del pad. Que salgan distintos es el resultado correcto desde
@@ -7930,7 +7930,7 @@ int main()
                                                / juce::jmax (1.0e-12, rms (solo)));
         int distintas = 0;
         for (size_t i = 0; i < uno.size() && i < dos.size(); ++i)
-            if (uno[i] != dos[i]) ++distintas;
+            if (! juce::exactlyEqual (uno[i], dos[i])) ++distintas;
 
         //  LAS DOS CIFRAS, MEDIDAS Y NO PREVISTAS: en CADENA sale -27.65 dB
         //  —el compresor ve la señal ya ecualizada y la aplasta— y en PARALELO
@@ -8591,7 +8591,7 @@ int main()
         corre (true,  true,  dieciseisD);
         int distintas = 0;
         for (size_t i = 0; i < uno.size() && i < dieciseis.size(); ++i)
-            if (uno[i] != dieciseis[i]) ++distintas;
+            if (! juce::exactlyEqual (uno[i], dieciseis[i])) ++distintas;
         double pico = 0.0, dif = 0.0;
         for (size_t i = 0; i < unoD.size() && i < dieciseisD.size(); ++i)
         {
@@ -8664,8 +8664,8 @@ int main()
         int difMute = 0, difLibre = 0;
         for (size_t i = 0; i < solo.size(); ++i)
         {
-            if (i < mutes.size() && solo[i] != mutes[i]) ++difMute;
-            if (i < libre.size() && solo[i] != libre[i]) ++difLibre;
+            if (i < mutes.size() && ! juce::exactlyEqual (solo[i], mutes[i])) ++difMute;
+            if (i < libre.size() && ! juce::exactlyEqual (solo[i], libre[i])) ++difLibre;
         }
         const bool ok = difMute == 0 && difLibre > 0 && ! solo.empty();
         std::printf ("%-34s %d contra mutear los otros, %d contra no hacer nada   %s\n",
@@ -8734,8 +8734,8 @@ int main()
         int difOrigen = 0, difSin = 0;
         for (size_t i = 0; i < vRebote.size(); ++i)
         {
-            if (i < vOrigen.size()  && vRebote[i] != vOrigen[i])  ++difOrigen;
-            if (i < vSinSolo.size() && vRebote[i] != vSinSolo[i]) ++difSin;
+            if (i < vOrigen.size()  && ! juce::exactlyEqual (vRebote[i], vOrigen[i]))  ++difOrigen;
+            if (i < vSinSolo.size() && ! juce::exactlyEqual (vRebote[i], vSinSolo[i])) ++difSin;
         }
         const bool ok = difOrigen == 0 && difSin > 0 && ! vRebote.empty();
         std::printf ("%-34s %d contra el original, %d contra uno sin solo   %s\n",
@@ -8818,7 +8818,7 @@ int main()
 
         int tomaDistintas = 0;
         for (size_t i = 0; i < tomaSin.size() && i < tomaCon.size(); ++i)
-            if (tomaSin[i] != tomaCon[i]) ++tomaDistintas;
+            if (! juce::exactlyEqual (tomaSin[i], tomaCon[i])) ++tomaDistintas;
 
         const bool ok = apagado < 1.0e-6f && puesto > 0.40f
                         && tomaDistintas == 0 && ! tomaSin.empty();
@@ -9085,8 +9085,10 @@ int main()
             envolvente (aL, eL); envolvente (aR, eR);
 
             double mL = 0.0, mR = 0.0;
-            for (auto v : eL) mL += v;  mL /= juce::jmax ((size_t) 1, eL.size());
-            for (auto v : eR) mR += v;  mR /= juce::jmax ((size_t) 1, eR.size());
+            for (auto v : eL) mL += v;
+            mL /= (double) juce::jmax ((size_t) 1, eL.size());
+            for (auto v : eR) mR += v;
+            mR /= (double) juce::jmax ((size_t) 1, eR.size());
             double num = 0.0, dL = 0.0, dR = 0.0;
             for (size_t i = 0; i < eL.size() && i < eR.size(); ++i)
             {
