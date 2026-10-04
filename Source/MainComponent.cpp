@@ -3432,9 +3432,11 @@ MainComponent::MainComponent()
         //  sobrevive a apagar y encender aqui; a cero el switch se lee
         //  apagado, venga de donde venga (sincronizaMixEstereo).
         //
-        //  Y APAGADO EN UNA MUESTRA MONO, que es lo que ya hacia el deslizador
-        //  y lo que hace su mando en EL PAD: sin lado que abrir ni cerrar, un
-        //  switch que se mueve y no hace nada es peor que no tenerlo.
+        //  Y ACTIVO TAMBIEN EN UNA MUESTRA MONO, desde que la muestra de un
+        //  canal se ABRE (ver Estereo::abre): estuvo apagado porque no habia
+        //  lado que abrir, y del telefono llego «no se si funciona muy bien»,
+        //  «con una mono, todas son mono». Ahora apagado es mono y encendido
+        //  es el lado fabricado al ancho que tenga.
         auto* st = new juce::TextButton ("ST");
         styleButton (*st, kStepOff);
         st->setClickingTogglesState (true);
@@ -3697,7 +3699,9 @@ MainComponent::MainComponent()
         litAccent (*t);
         t->setClickingTogglesState (true);
         filaDeRadio (*t, "banco mezcla", 5151);
-        t->onClick = [this, b] { showMixBank (b); };
+        //  La misma tapa manda en la pagina que este delante: los cuatro
+        //  bancos de pads o los dos de canales, cada pagina con su numero.
+        t->onClick = [this, b] { if (mixPage == mixPageCanales) showCanBank (b); else showMixBank (b); };
         mixSheet.addAndMakeVisible (t);
         mixBankBtns.add (t);
     }
@@ -8200,17 +8204,49 @@ void MainComponent::showMixPage (MixPage p)
     //  que la pagina de PADS tiene esta tapa, con sesenta y cuatro.
     mixClearSolo.setVisible (true);
 
-    //  Los cuatro chips de banco son de la pagina de PADS: un canal no vive en
-    //  un banco.
-    for (auto* t : mixBankBtns) if (t != nullptr)
+    //  Los cuatro chips de banco en la pagina de PADS y los dos primeros en
+    //  la de CANALES -A y B, dieciseis y dieciseis-: ver canBank.
+    for (int b = 0; b < mixBankBtns.size(); ++b) if (auto* t = mixBankBtns[b])
     {
-        t->setVisible (p == mixPagePads);
-        if (p != mixPagePads) t->setBounds ({});
+        const bool on = p == mixPagePads || b < kCanBancos;
+        t->setVisible (on);
+        if (! on) t->setBounds ({});
     }
 
     mixScroll.setViewPosition (0, 0);
     showMixBank (mixBank);       // apaga y vacia las tiras de pad si toca
+    showCanBank (canBank);       // y las de canal del otro banco, o todas
     refreshMixStrip();
+}
+
+//  EL BANCO DE LA PAGINA DE CANALES, con la misma regla que `showMixBank`:
+//  la funcion escribe la fila de chips ENTERA y apaga Y vacia las tiras que
+//  no son del banco. Dieciseis canales con la fila que la tarjeta da, como
+//  los dieciseis pads: es lo que hace que entren sin barra en el movil.
+void MainComponent::showCanBank (int bank)
+{
+    canBank = juce::jlimit (0, kCanBancos - 1, bank);
+    if (mixPage == mixPageCanales)
+        for (int i = 0; i < mixBankBtns.size(); ++i)
+            if (auto* t = mixBankBtns[i])
+                t->setToggleState (i == canBank, juce::dontSendNotification);
+
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        const bool on = mixPage == mixPageCanales && (c / kPadsPerBank) == canBank;
+        if (! on)
+        {
+            if (auto* f = canFaders[c]) f->setBounds ({});
+            if (auto* m = canMutes[c])  m->setBounds ({});
+            if (auto* s = canSolos[c])  s->setBounds ({});
+        }
+        if (auto* f = canFaders[c]) f->setVisible (on);
+        if (auto* m = canMutes[c])  m->setVisible (on);
+        if (auto* s = canSolos[c])  s->setVisible (on);
+    }
+    mixScroll.setViewPosition (0, 0);
+    resized();
+    mixRows.repaint();
 }
 
 void MainComponent::showMixBank (int bank)
@@ -8236,9 +8272,12 @@ void MainComponent::showMixBank (int bank)
     //  Asi la segunda pasada apaga de verdad a la que volvio, y ademas se cura
     //  sola venga el estado de donde venga - una guarda de reentrada solo tapa
     //  el camino que se trazo.
-    for (int i = 0; i < mixBankBtns.size(); ++i)
-        if (auto* t = mixBankBtns[i])
-            t->setToggleState (i == mixBank, juce::dontSendNotification);
+    //  Y solo si la fila de chips es la suya: en CANALES los chips dicen el
+    //  banco de canales (showCanBank).
+    if (mixPage == mixPagePads)
+        for (int i = 0; i < mixBankBtns.size(); ++i)
+            if (auto* t = mixBankBtns[i])
+                t->setToggleState (i == mixBank, juce::dontSendNotification);
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -9952,11 +9991,12 @@ void MainComponent::updateControlsFromPad (int index)
     chokeSlider.setValue (padChokeUI[(size_t) index], juce::dontSendNotification);
     panSlider.setValue     (padPan[(size_t) index],     juce::dontSendNotification);
     anchoSlider.setValue   (padAnchoUI[(size_t) index], juce::dontSendNotification);
-    //  Y APAGADO EN UNA MUESTRA MONO, que no tiene lado que abrir ni cerrar.
-    //  El mando se moveria y no pasaria nada, que es lo que esta casa no deja:
-    //  un control que no puede hacer nada no es informacion, es ruido.
-    anchoSlider.setEnabled (uiSample[(size_t) index] != nullptr
-                            && uiSample[(size_t) index]->buffer.getNumChannels() > 1);
+    //  Y ACTIVO TAMBIEN EN UNA MUESTRA MONO. Estuvo apagado -«un control que
+    //  no puede hacer nada no es informacion, es ruido»- mientras el ancho
+    //  solo escalaba un lado que una muestra de un canal no tiene; desde que
+    //  se le fabrica (ver Estereo::abre) el mando hace lo que dice en las
+    //  dos: a cero mono, a uno abierta, a dos el doble.
+    anchoSlider.setEnabled (true);
     attackSlider.setValue  (padAttack[(size_t) index],  juce::dontSendNotification);
     releaseSlider.setValue (padRelease[(size_t) index], juce::dontSendNotification);
     cutSlider.setValue  (padCut[(size_t) index],  juce::dontSendNotification);

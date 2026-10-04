@@ -890,14 +890,16 @@ def main():
     #     tres tapas pintadas como switch -ranura y paleta-, y el ST es una
     #     ventana de dos posiciones al ancho del pad: tocarlo lo pone a cero
     #     y volver a tocarlo lo devuelve a lo que tenia, leido del MOTOR y
-    #     por el gesto (`pulsaTapa`). Activo si la muestra del pad 0 tiene
-    #     dos canales, como su mando de EL PAD. Y la escalera: en 360x640
-    #     -con la barra, que se cobra un dedo- el ST se cae ANTES que el pan,
-    #     que es el que se gira en cada mezcla: dos switches y el pan puesto.
-    #     Medido en 412x915 y 393x851: 3 switches, la muestra con 2 canales,
-    #     activo, 1.00 -> 0.00 -> 1.00; en 360x640, 2 switches y el pan de
-    #     34. Roto -el binario de la tanda anterior-: no publica switches ni
-    #     el ST, FALLA.
+    #     por el gesto (`pulsaTapa`). Activo con la muestra que sea: del
+    #     telefono, «con una mono, todas son mono» y «que abra los canales
+    #     mono» -la de un canal se ABRE (regla 20), asi que un ST apagado
+    #     por mono es la version anterior, la que lo gateaba por los canales
+    #     del fichero-. Y la escalera: en 360x640 -con la barra, que se cobra
+    #     un dedo- el ST se cae ANTES que el pan, que es el que se gira en
+    #     cada mezcla: dos switches y el pan puesto. Medido en 412x915 y
+    #     393x851: 3 switches, activo, 1.00 -> 0.00 -> 1.00; en 360x640, 2
+    #     switches y el pan de 34. Roto -el binario de la tanda anterior-:
+    #     el ST apagado con la muestra de un canal, FALLA.
     for nombre, rr in (("412x915", r), ("393x851", r393)):
         if rr is None: continue
         sw = rr.get ("mesa_sw", -1)
@@ -910,9 +912,9 @@ def main():
                                                       antes, despues, vuelve))
         if sw != 3:
             malas.append ("en %s la fila del pad 0 lleva %d switches y son tres: S, M y ST" % (nombre, sw))
-        if canales < 0 or activo != (1 if canales > 1 else 0):
-            malas.append ("en %s el ST del pad 0 esta %s con una muestra de %d canales: activo solo con dos"
-                          % (nombre, "activo" if activo == 1 else "apagado", canales))
+        if canales < 1 or activo != 1:
+            malas.append ("en %s el ST del pad 0 esta %s con una muestra de %d canales: activo con la que sea, "
+                          "que la de un canal se abre" % (nombre, "activo" if activo == 1 else "apagado", canales))
         if abs (antes - 1.0) > 0.001 or abs (despues) > 0.001 or abs (vuelve - 1.0) > 0.001:
             malas.append ("en %s el ST del pad 0 deja el ancho en %.2f -> %.2f -> %.2f y tiene que ir de 1.00 a "
                           "0.00 y volver a 1.00" % (nombre, antes, despues, vuelve))
@@ -929,44 +931,67 @@ def main():
     #     en el borde y la S a un pixel -al reves que en la fila de un pad-,
     #     y una franja vacia de una fila entre la ultima y el MASTER, lo que
     #     el cajon tiraba por encajar filas plenas (hasta 43 px). Ahora: S y
-    #     M switches, la S en el borde y la M a `halfGap` (4), treinta y dos
-    #     filas que no bajan de 44 -con 43 la S y la M quedan en 39, bajo el
-    #     dedo- y se reparten el sobrante, asi que lo que queda al aire es
-    #     menos que filas a la vista. La app lo mide por el gesto -el
-    #     interruptor de vista- y vuelve. Medido en 412x915 y 393x851 por
-    #     la app; en 360x640, con la barra, la pagina de PADS hace lo mismo:
-    #     `mesa_sobra` menor que las filas que se ven. Roto -el binario de la
-    #     tanda anterior-: no publica la pagina de canales, FALLA.
+    #     M switches, la S en el borde y la M a `halfGap` (4). Y DOS BANCOS,
+    #     del telefono con las dos fotos: «como en el de pads, que aparezca
+    #     una A y una B arriba separando los 32 canales en 16 y 16, asi si
+    #     que entraria en una pantalla como esta en los pads». Asi que la
+    #     pagina lleva dos chips -A y B- y dieciseis filas, con la MISMA
+    #     regla de la de PADS: donde las dieciseis entran -412x915, 393x851-
+    #     la fila es alto/16 (suelo 24) y no hay barra; tocar B pone delante
+    #     la fila del canal 17 y quita la del 1, con las mismas dieciseis
+    #     filas. Donde no entran -360x640- la fila no baja de 44, la barra de
+    #     la casa esta y el sobrante se reparte, asi que lo que queda al aire
+    #     es menos que filas a la vista; y la pagina de PADS hace lo mismo.
+    #     La app lo mide por el gesto -el interruptor de vista, los chips- y
+    #     vuelve. Medido: 412x915 dos chips, filas de 36, 576 en 583 sin
+    #     barra, el B ensena el 17 con 576; 393x851 filas de 32, 512 en 519.
+    #     Roto -el binario de la tanda anterior-: ningun chip en CANALES y
+    #     treinta y dos filas de 45 (1440 px en 630) con barra de 40, FALLA.
     for nombre, rr in (("412x915", r), ("393x851", r393)):
         if rr is None: continue
         fila, ven, sobra = rr.get ("mesa_c_fila", -1), rr.get ("mesa_c_ven", -1), rr.get ("mesa_c_sobra", -1)
         sw, orden, hueco = rr.get ("mesa_c_sw", -1), rr.get ("mesa_c_orden", -1), rr.get ("mesa_c_hueco_sm", -1)
         barraApp = rr.get ("mesa_c_barra_app", -1)
-        print ("canales  en %s la pagina de CANALES: filas de %d, %d a la vista y %d px al aire; %d switches, la S "
-               "%s y a %d de la M; barra de la casa %d"
-               % (nombre, fila, ven, sobra, sw, "en el borde" if orden == 1 else "DENTRO", hueco, barraApp))
-        if fila < 44:
-            malas.append ("en %s la fila de CANALES mide %d: nunca por debajo de 44, que con 43 la S y la M "
-                          "quedan bajo el dedo" % (nombre, fila))
-        if ven < 1 or sobra < 0 or sobra >= ven:
-            malas.append ("en %s la pagina de CANALES deja %d px al aire con %d filas a la vista: el sobrante se "
-                          "reparte entre las filas, no se tira" % (nombre, sobra, ven))
+        vistaAlto, filasAlto = rr.get ("mesa_c_vista_alto", -1), rr.get ("mesa_c_filas_alto", -1)
+        bancos, bancoB, filasB = rr.get ("mesa_c_bancos", 0), rr.get ("mesa_c_banco_b", -1), rr.get ("mesa_c_filas_b", -1)
+        print ("canales  en %s la pagina de CANALES: %d chips, filas de %d, las dieciseis miden %d y el Viewport "
+               "ensena %d, barra de la casa %d; el B pone delante el canal 17: %d, con %d; %d switches, la S %s "
+               "y a %d de la M"
+               % (nombre, bancos, fila, filasAlto, vistaAlto, barraApp, bancoB, filasB, sw,
+                  "en el borde" if orden == 1 else "DENTRO", hueco))
+        if bancos != 2:
+            malas.append ("en %s la pagina de CANALES lleva %d chips de banco y son dos: A y B, dieciseis y dieciseis"
+                          % (nombre, bancos))
+        if fila < 24:
+            malas.append ("en %s la fila de CANALES mide %d: nunca por debajo de 24" % (nombre, fila))
+        if filasAlto < 0 or vistaAlto < 0 or filasAlto > vistaAlto:
+            malas.append ("en %s las dieciseis filas de CANALES miden %d y el Viewport ensena %d: no entran todas"
+                          % (nombre, filasAlto, vistaAlto))
+        if barraApp != 0:
+            malas.append ("en %s la pagina de CANALES lleva barra de %d px con las dieciseis filas a la vista: no "
+                          "hay nada que arrastrar" % (nombre, barraApp))
+        if bancoB != 1 or filasB != filasAlto:
+            malas.append ("en %s tocar el B de CANALES %s la fila del canal 17 delante (filas de %d contra %d en "
+                          "el A): el banco no cambia de filas" % (nombre, "pone" if bancoB == 1 else "NO pone",
+                                                                 filasB, filasAlto))
         if sw != 2:
             malas.append ("en %s la fila del canal 1 lleva %d switches y son dos: S y M" % (nombre, sw))
         if orden != 1 or hueco != 4:
             malas.append ("en %s la S del canal 1 %s y queda a %d de la M: en el borde y a 4, como en la fila de "
                           "un pad" % (nombre, "esta en el borde" if orden == 1 else "esta DENTRO", hueco))
-        if barraApp < 36:
-            malas.append ("en %s la pagina de CANALES no lleva la barra de la casa (%d px) con treinta y dos "
-                          "filas que no entran" % (nombre, barraApp))
     if r360 is not None:
-        fila, sobra = r360.get ("mesa_fila", -1), r360.get ("mesa_sobra", -1)
-        ven = r360.get ("mesa_vista_alto", 0) // max (1, fila)
-        print ("canales  en 360x640 la pagina de PADS, con la barra: filas de %d, %d a la vista y %d px al aire"
-               % (fila, ven, sobra))
-        if fila < 44 or ven < 1 or sobra < 0 or sobra >= ven:
-            malas.append ("en 360x640 la pagina de PADS deja %d px al aire con %d filas de %d a la vista"
-                          % (sobra, ven, fila))
+        for pagina, kf, ks, kv, kb in (("PADS", "mesa_fila", "mesa_sobra", "mesa_vista_alto", "mesa_barra_app"),
+                                       ("CANALES", "mesa_c_fila", "mesa_c_sobra", "mesa_c_vista_alto", "mesa_c_barra_app")):
+            fila, sobra, barraApp = r360.get (kf, -1), r360.get (ks, -1), r360.get (kb, -1)
+            ven = r360.get (kv, 0) // max (1, fila)
+            print ("canales  en 360x640 la pagina de %s, con la barra de %d: filas de %d, %d a la vista y %d px al aire"
+                   % (pagina, barraApp, fila, ven, sobra))
+            if fila < 44 or ven < 1 or sobra < 0 or sobra >= ven:
+                malas.append ("en 360x640 la pagina de %s deja %d px al aire con %d filas de %d a la vista"
+                              % (pagina, sobra, ven, fila))
+            if barraApp < 36:
+                malas.append ("en 360x640 la pagina de %s no lleva la barra de la casa (%d px) con filas que no "
+                              "entran" % (pagina, barraApp))
 
     # 19. EL GESTO SOBRE UN MANDO ES DEL MANDO, NO DE LA LISTA. Del telefono:
     #     «es una jodienda para girar los knobs de paneo». Estaba escrito -los
@@ -976,10 +1001,11 @@ def main():
     #     sobre el nombre de la fila, y publica cuanto se movio la lista en
     #     cada caso y cuanto el pan. Lo que vale: sobre el knob la lista se
     #     queda a 0 y el pan se mueve; sobre el nombre la lista se mueve -eso
-    #     prueba que el dedo llega-. Donde hay barra: 360x640 en PADS, y
-    #     CANALES en 412x915 y 393x851 con el fader del canal 0. `*_dio` dice
-    #     que bajo el dedo estaba el mando y no una tapa. Roto -el flag
-    #     quitado-: la lista se mueve con el knob, FALLA.
+    #     prueba que el dedo llega-. Donde hay barra: 360x640, en PADS y en
+    #     CANALES -con el fader del canal 0-; desde los dos bancos CANALES ya
+    #     no la lleva en 412x915 ni 393x851, y sin barra el nombre deja 0
+    #     tambien. `*_dio` dice que bajo el dedo estaba el mando y no una
+    #     tapa. Roto -el flag quitado-: la lista se mueve con el knob, FALLA.
     if r360 is not None:
         knob, nombre = r360.get ("mesa_arr_knob", -1), r360.get ("mesa_arr_nombre", -1)
         dio, pan = r360.get ("mesa_arr_dio", 0), float (r360.get ("mesa_arr_pan", 0))
@@ -993,7 +1019,7 @@ def main():
         if nombre < 40:
             malas.append ("en 360x640 el dedo sobre el nombre mueve la lista %d px: por el nombre SI se arrastra, "
                           "o el dedo no llega" % nombre)
-    for nombre_p, rr in (("412x915", r), ("393x851", r393)):
+    for nombre_p, rr in (("360x640", r360),):
         if rr is None: continue
         fader, nombre, dio = rr.get ("mesa_c_arr_fader", -1), rr.get ("mesa_c_arr_nombre", -1), rr.get ("mesa_c_arr_dio", 0)
         print ("dedo     en %s, CANALES: sesenta px de dedo sobre el fader del canal 0 mueven la lista %d px "
@@ -1006,6 +1032,51 @@ def main():
         if nombre < 40:
             malas.append ("en %s el dedo sobre el nombre del canal mueve la lista %d px: por el nombre SI se "
                           "arrastra, o el dedo no llega" % (nombre_p, nombre))
+
+    # 20. LA MUESTRA MONO SE ABRE. Del telefono: «con una mono, todas son
+    #     mono» y «dale, que abra los canales mono». Hasta aqui el ST y el
+    #     ANCHO no podian hacer nada con una muestra de un canal: escalaban
+    #     un lado que era cero. Ahora el motor FABRICA el lado -la misma
+    #     senal retrasada 10 ms, por `kLadoMono` (0.5) y por `ancho`- y la
+    #     app lo mide en el motor y no en el mando: un ruido de UN canal en
+    #     el pad 0, directo al master, renderizado con ancho 0 y con 1. Lo
+    #     que vale: con ancho 0 el lado es CERO (cerrada es mono); con 1 el
+    #     lado es k veces el centro (±5 %) y el centro no se mueve (±0.5 %);
+    #     la suma L+R es la MISMA muestra a muestra en las dos tiradas
+    #     -mono-compatible: en un altavoz no cambia nada-; y la correlacion
+    #     L/R con ancho 1 es (1-k^2)/(1+k^2) = 0.60 (±0.05), abierto sin ser
+    #     dos fuentes. Medido en 412x915: lado 0.000000 -> 0.050705 (k por
+    #     el centro: 0.051000), centro 0.102000 las dos, suma 0.00000001,
+    #     corr 0.6039. Roto -el binario de la tanda anterior-: no publica la
+    #     apertura, FALLA. (La regla 17 sola no cae en ese binario: la
+    #     muestra del pad 0 de la auditoria es estereo y su ST ya salia
+    #     activo; lo que la hace caer es esta, que es la que mide lo que el
+    #     ST hace ahora con una mono.)
+    canalesM = r.get ("abre_canales", 0)
+    lado0, lado1 = float (r.get ("abre_lado0", -1)), float (r.get ("abre_lado1", -1))
+    centro0, centro1 = float (r.get ("abre_centro0", -1)), float (r.get ("abre_centro1", -1))
+    corr1, suma, k = float (r.get ("abre_corr1", -2)), float (r.get ("abre_suma", -1)), float (r.get ("abre_k", 0))
+    corrTeor = (1.0 - k * k) / (1.0 + k * k) if k > 0 else 2.0
+    print ("abre     la muestra de %d canal en el pad 0: con ancho 0 lado %.6f y centro %.6f; con ancho 1 lado %.6f "
+           "(k %.3f -> %.6f) y centro %.6f; la suma L+R cambia %.8f; correlacion L/R %.4f (teorica %.2f)"
+           % (canalesM, lado0, centro0, lado1, k, k * centro1, centro1, suma, corr1, corrTeor))
+    if canalesM != 1:
+        malas.append ("la app no midio la apertura con una muestra de UN canal (%d): la medida no vale" % canalesM)
+    if lado0 < 0 or lado0 > 1.0e-6:
+        malas.append ("con ancho 0 la muestra mono deja lado %.6f: cerrada tiene que ser mono, lado cero" % lado0)
+    if centro0 <= 0.01:
+        malas.append ("con ancho 0 el centro es %.6f: el pad no sono, la medida no vale" % centro0)
+    if k <= 0 or lado1 <= 0 or abs (lado1 - k * centro1) > 0.05 * k * centro1:
+        malas.append ("con ancho 1 la muestra mono deja lado %.6f y tiene que ser k=%.3f veces el centro (%.6f): "
+                      "no se abre" % (lado1, k, k * centro1))
+    if centro0 <= 0 or abs (centro1 - centro0) > 0.005 * centro0:
+        malas.append ("abrir la muestra mono mueve el centro de %.6f a %.6f: el centro no se toca" % (centro0, centro1))
+    if suma < 0 or suma > 1.0e-5:
+        malas.append ("abrir la muestra mono cambia la suma L+R en %.8f rms: tiene que ser mono-compatible, la "
+                      "misma suma" % suma)
+    if abs (corr1 - corrTeor) > 0.05:
+        malas.append ("con ancho 1 la correlacion L/R de la muestra mono es %.4f y tiene que ser %.2f (±0.05): "
+                      "ni dos fuentes ni mono" % (corr1, corrTeor))
 
     print()
     if malas:

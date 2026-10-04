@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "Estereo.h"
+#include <algorithm>
 #include <cmath>
 #include "SampleBuffer.h"
 
@@ -228,10 +229,36 @@ struct Voice
     //  el lado -es lo que hace un pan- y el ancho la amplificaria: abrir el
     //  ancho de un pad panorámico se oiria como moverlo mas a la izquierda.
     //
-    //  Uno es "como viene". Una muestra MONO tiene S = 0, asi que el ancho no
-    //  puede hacer nada con ella y no hace falta ninguna rama para saberlo.
+    //  Uno es "como viene". Una muestra MONO tiene S = 0, asi que escalar el
+    //  lado no puede hacer nada con ella: a esa se le fabrica el lado, ver
+    //  `lado` y `Estereo::abre`.
     float  ancho     = 1.0f;
     float  anchoT    = 1.0f;
+
+    //  Y LA LINEA DEL LADO FABRICADO, para la muestra de UN canal. Ver
+    //  `Estereo::abre`: el lado es el propio sonido con `kAbreMs` de
+    //  retardo, en muestras del APARATO y despues del antialias, asi que
+    //  mide lo mismo suene la nota al tono que suene o venga la fuente a la
+    //  frecuencia que venga. Mil veinticuatro son diez milisegundos hasta
+    //  102.4 kHz; por encima el retardo se queda corto y se dice aqui. Se
+    //  vacia en `start`, que una voz reciclada guarda la cola de la nota
+    //  anterior, y solo el tramo que se usa.
+    static constexpr int kAbreCap = 1024;
+    float  abreBuf[kAbreCap] {};
+    int    abreIdx   = 0;
+    int    abreLen   = 1;
+
+    //  ESTEREO SE ESCALA, MONO SE ABRE. Es la unica rama del lado: con dos
+    //  canales en la fuente `Estereo::ancho`; con uno, la linea y
+    //  `Estereo::abre`. En las dos, DESPUES del antialias y ANTES del pan.
+    inline void lado (float& l, float& r, bool fuenteEstereo) noexcept
+    {
+        if (fuenteEstereo) { Estereo::ancho (l, r, ancho); return; }
+        const float retardada = abreBuf[abreIdx];
+        abreBuf[abreIdx] = l;
+        if (++abreIdx >= abreLen) abreIdx = 0;
+        Estereo::abre (l, r, ancho, retardada);
+    }
 
     //  padGain is the pad's level (volume knob, mute, solo); vel is how hard
     //  this particular note was struck. They were one number, which is why
@@ -393,6 +420,10 @@ struct Voice
         //  cosas: una voz reciclada guarda el anchoT de la nota anterior, y sin
         //  esto el primer bloque de la nueva sonaria con el ancho de la vieja.
         ancho = anchoT = juce::jlimit (0.0f, 2.0f, anchoPad);
+        abreLen = juce::jlimit (1, kAbreCap,
+                                (int) std::lround (Estereo::kAbreMs * 0.001 * juce::jmax (1.0, fSys)));
+        abreIdx = 0;
+        std::fill (abreBuf, abreBuf + abreLen, 0.0f);
         gate      = -1;          // el que dispara la pone si el paso lleva largo
         panPropio = false;       // idem: solo si el paso trae bloqueo de pan
         nota      = 0;           // idem: lo escribe triggerPad tras start
@@ -738,7 +769,7 @@ struct Voice
                               ? wA * hermite4 (fa, srcR, ia) + wB * hermite4 (fb, srcR, ib)
                               : l;
                 ancho += anchoInc;
-                Estereo::ancho (l, r, ancho);
+                lado (l, r, srcR != nullptr);
                 const float ge = (hayFundido ? gain * bordeGain (pos) : gain) * envS;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)
@@ -867,7 +898,7 @@ struct Voice
                 }
                 //  DESPUES del antialias y ANTES del pan. Ver `ancho`.
                 ancho += anchoInc;
-                Estereo::ancho (l, r, ancho);
+                lado (l, r, srcR != nullptr);
                 const float ge = (hayFundido ? gain * bordeGain (pos) : gain) * envS;
                 dstL[i] += ge * panL * l;
                 if (stereoOut)

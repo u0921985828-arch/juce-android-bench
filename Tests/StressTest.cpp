@@ -5427,12 +5427,23 @@ int main()
         //  izquierda. Con el pan al centro las dos versiones dan lo MISMO, que
         //  es por lo que la medida de arriba no puede verlo.
         //
-        //  Se mide con una muestra MONO y el pan fuera del centro: una fuente
-        //  mono tiene lado cero, asi que en el orden correcto el ancho no puede
-        //  hacer absolutamente nada y las tres corridas salen IGUALES. Bit a
-        //  bit y no por nivel: "casi lo mismo, 0.1 dB" es justo lo que dejaria
-        //  pasar un orden invertido con un pan suave. Es la misma comparacion
-        //  que ya se hace con el filtro del pad apagado.
+        //  Se mide con una muestra MONO y el pan fuera del centro. Antes la
+        //  medida era «las tres corridas salen bit a bit iguales», porque una
+        //  fuente mono no tenia lado y el ancho no podia hacer nada con ella;
+        //  desde que la muestra de un canal se ABRE (ver `Estereo::abre`) el
+        //  ancho si hace algo, y lo que queda del orden es esto: el SITIO no
+        //  se mueve. Con el ancho antes del pan, L = panL * (M + S) y
+        //  R = panR * (M - S): el lado entra con el MISMO peso en los dos
+        //  y el pan lo reparte despues, asi que L + (panL/panR) * R es
+        //  2 * panL * M, valga lo que valga el ancho -muestra a muestra, no
+        //  en nivel-. La corrida a cero da panL/panR (es M pura por los dos
+        //  lados) y 2 * panL * M es dos veces su L. Al reves el pan ya puso
+        //  señal en el lado y el ancho la escala: a cero la fuente vuelve al
+        //  centro y a dos se va mas a la izquierda, y esa cuenta se rompe.
+        //  Se mide EXACTA, a 1e-5, y no por niveles: la razon L/R si se mueve
+        //  un 1 % con el ancho, porque S es M retrasada y en 4600 muestras
+        //  el retardo descorrelaciona casi, no del todo -se imprime, para
+        //  verla, pero no decide-.
         auto unRuidoMono = []
         {
             auto* sb = new SampleBuffer();
@@ -5444,7 +5455,9 @@ int main()
             return SampleBuffer::Ptr (sb);
         };
 
-        auto panoramico = [&] (float ancho)
+        //  Dos canales de la salida, desde el tercer bloque -los dos primeros
+        //  llevan el ataque y la linea del lado llenandose-.
+        auto rindeMono = [&] (float ancho, float pan, std::vector<float>& L, std::vector<float>& R)
         {
             const auto monton_e = std::make_unique<AudioEngine>();
             AudioEngine& e = *monton_e;
@@ -5452,36 +5465,111 @@ int main()
             e.setSafetyLimiter (false);
             e.publishSample (0, unRuidoMono());
             e.setPadGain (0, 1.0f);
-            e.setPadPan (0, -0.5f);          // fuera del centro: ahi se ve el orden
+            e.setPadPan (0, pan);
             e.setPadAncho (0, ancho);
 
             juce::AudioBuffer<float> out (2, 512);
             out.clear(); e.renderNextBlock (out, 0, 512);
             e.postNoteOn (0, 1.0f);
-
-            std::vector<float> salida;
-            for (int b = 0; b < 10; ++b)
+            L.clear(); R.clear();
+            for (int b = 0; b < 12; ++b)
             {
                 out.clear();
                 e.renderNextBlock (out, 0, 512);
-                for (int c = 0; c < 2; ++c)
-                    salida.insert (salida.end(), out.getReadPointer (c),
-                                   out.getReadPointer (c) + 512);
+                if (b < 3) continue;
+                L.insert (L.end(), out.getReadPointer (0), out.getReadPointer (0) + 512);
+                R.insert (R.end(), out.getReadPointer (1), out.getReadPointer (1) + 512);
             }
-            return salida;
+        };
+        auto rmsDe = [] (const std::vector<float>& v)
+        {
+            double e = 0.0;
+            for (float x : v) e += (double) x * x;
+            return std::sqrt (e / (double) juce::jmax<size_t> (1, v.size()));
         };
 
-        const auto pm = panoramico (0.0f);
-        const auto pt = panoramico (1.0f);
-        const auto pd = panoramico (2.0f);
+        std::vector<float> L0, R0, L1, R1, L2, R2;
+        rindeMono (0.0f, -0.5f, L0, R0);
+        rindeMono (1.0f, -0.5f, L1, R1);
+        rindeMono (2.0f, -0.5f, L2, R2);
+        const double sitio0 = rmsDe (L0) / rmsDe (R0);
+        const double sitio1 = rmsDe (L1) / rmsDe (R1);
+        const double sitio2 = rmsDe (L2) / rmsDe (R2);
+        //  panL/panR sale de la corrida a cero, y la cuenta se cierra
+        //  muestra a muestra en las de uno y dos.
+        auto residuo = [&] (const std::vector<float>& L, const std::vector<float>& R)
+        {
+            double peor = 0.0;
+            for (size_t i = 0; i < L.size() && i < L0.size(); ++i)
+                peor = juce::jmax (peor, std::abs ((double) L[i] + sitio0 * (double) R[i] - 2.0 * (double) L0[i]));
+            return peor;
+        };
+        const double residuo1 = residuo (L1, R1), residuo2 = residuo (L2, R2);
+        const bool ordenOk = ! L0.empty() && L1.size() == L0.size() && L2.size() == L0.size()
+                          && rmsDe (L1) > 0.01 && rmsDe (L2) > 0.01
+                          && residuo1 < 1.0e-5 && residuo2 < 1.0e-5;
+        std::printf ("%-34s mono con el pan a -0.5: L + %.4f R - 2 L0 queda en %.1e / %.1e con el ancho a 1 / 2 (L/R %.4f / %.4f / %.4f)   %s\n",
+                     "el ancho va antes del pan", sitio0, residuo1, residuo2, sitio0, sitio1, sitio2,
+                     ordenOk ? "OK" : zatiFalla());
 
-        int difiere = 0;
-        for (size_t i = 0; i < pt.size(); ++i)
-            if (pm[i] != pt[i] || pd[i] != pt[i]) ++difiere;
-
-        std::printf ("%-34s mono con el pan a -0.5: %d muestras de %d cambian   %s\n",
-                     "el ancho va antes del pan", difiere, (int) pt.size(),
-                     difiere == 0 ? "OK" : zatiFalla());
+        // --------------------------------------------------------------
+        //  Y LA MUESTRA MONO SE ABRE, en cuatro cifras. Del telefono: «el
+        //  switch de estereo a mono no se si funciona muy bien», «con una
+        //  mono, todas son mono». No podia funcionar: el lado de una muestra
+        //  de un canal es cero. Ahora se fabrica (ver `Estereo::abre`), y lo
+        //  que lo prueba y lo acota:
+        //
+        //    - a cero el lado es SILENCIO -lo que separa a L de R es lo que
+        //      separa a cos de sin en pi/4, un ulp-: el ST apagado y toda
+        //      muestra de antes suenan tal cual;
+        //    - a uno hay lado, y a dos el doble (es lineal en el ancho);
+        //    - el CENTRO es el mismo en los tres -M no se toca- y la suma
+        //      L+R a uno es la de cero muestra a muestra: un altavoz mono no
+        //      oye nada nuevo;
+        //    - la correlacion L/R a uno es la de la cuenta, (1-k^2)/(1+k^2)
+        //      con k = kLadoMono: 0.60, y no 1.00 -que seria no abrir- ni
+        //      cero -que seria dos sonidos distintos y no uno abierto-.
+        std::vector<float> cL0, cR0, cL1, cR1, cL2, cR2;
+        rindeMono (0.0f, 0.0f, cL0, cR0);
+        rindeMono (1.0f, 0.0f, cL1, cR1);
+        rindeMono (2.0f, 0.0f, cL2, cR2);
+        auto ladoCentro = [] (const std::vector<float>& L, const std::vector<float>& R)
+        {
+            double s2 = 0.0, m2 = 0.0;
+            for (size_t i = 0; i < L.size(); ++i)
+            {
+                const double s = 0.5 * ((double) L[i] - (double) R[i]);
+                const double m = 0.5 * ((double) L[i] + (double) R[i]);
+                s2 += s * s; m2 += m * m;
+            }
+            const double n = (double) juce::jmax<size_t> (1, L.size());
+            return std::pair<double, double> { std::sqrt (s2 / n), std::sqrt (m2 / n) };
+        };
+        const auto a0 = ladoCentro (cL0, cR0), a1 = ladoCentro (cL1, cR1), a2 = ladoCentro (cL2, cR2);
+        double sumaDif = 0.0, ladoCero = 0.0;
+        for (size_t i = 0; i < cL0.size(); ++i)
+        {
+            sumaDif  = juce::jmax (sumaDif, std::abs (((double) cL1[i] + cR1[i]) - ((double) cL0[i] + cR0[i])));
+            ladoCero = juce::jmax (ladoCero, std::abs ((double) cL0[i] - cR0[i]));
+        }
+        double pLR = 0.0, pLL = 0.0, pRR = 0.0;
+        for (size_t i = 0; i < cL1.size(); ++i)
+        {
+            pLR += (double) cL1[i] * cR1[i]; pLL += (double) cL1[i] * cL1[i]; pRR += (double) cR1[i] * cR1[i];
+        }
+        const double corr1 = pLR / std::sqrt (juce::jmax (1.0e-12, pLL * pRR));
+        const double k = (double) Estereo::kLadoMono;
+        const double corrTeor = (1.0 - k * k) / (1.0 + k * k);
+        const bool abreOk = ladoCero < 1.0e-6
+                         && a1.first > 0.01
+                         && std::abs (a2.first - 2.0 * a1.first) < a1.first * 0.02
+                         && std::abs (a1.second - a0.second) < a0.second * 0.001
+                         && std::abs (a2.second - a0.second) < a0.second * 0.001
+                         && sumaDif < 1.0e-5
+                         && std::abs (corr1 - corrTeor) < 0.05;
+        std::printf ("%-34s lado %.5f / %.5f / %.5f   centro %.5f / %.5f / %.5f   suma L+R cambia %.1e   L/R a uno %.3f (cuenta %.3f)   %s\n",
+                     "la muestra mono se abre", a0.first, a1.first, a2.first,
+                     a0.second, a1.second, a2.second, sumaDif, corr1, corrTeor, abreOk ? "OK" : zatiFalla());
     }
 
     //  UN CLIP DE AUDIO SUENA DONDE SE PUSO, Y NO ANTES.

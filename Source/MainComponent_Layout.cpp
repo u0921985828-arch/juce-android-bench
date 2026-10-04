@@ -5347,14 +5347,15 @@ void MainComponent::resized()
         //  cabe- y las filas se reparten lo que la tarjeta dio: ver `rowH`
         //  mas abajo, donde ya se sabe cuanto quedo.
         const int filaPlena = Metrics::row;
-        //  Dieciseis pads o dieciseis canales: son el mismo numero hoy, y se
-        //  escribe con el de la pagina que se esta maquetando para que el dia
-        //  que uno de los dos cambie no haya que acordarse de esto.
-        const int kMixFilas = (mixPage == mixPageCanales) ? kNumCanales : kPadsPerBank;
-        //  La fila de chips es de la pagina de PADS: en CANALES no hay bancos
-        //  que elegir, asi que la ficha pide `Metrics::tab` menos y las
-        //  dieciseis tiras se quedan con ese alto.
-        const int tabsH = (mixPage == mixPageCanales) ? 0 : Metrics::tab + Metrics::sm;
+        //  Dieciseis pads de un banco o dieciseis canales de un banco: la
+        //  pagina de CANALES tiene dos, A y B (canBank), desde el telefono:
+        //  «que aparezca una A y una B arriba separando los 32 canales en 16
+        //  y 16, asi entraria en una pantalla como esta en los pads». Es lo
+        //  que hace que las dos paginas pidan la misma ficha y que la de
+        //  canales entre sin barra donde entra la de pads.
+        const int kMixFilas = kPadsPerBank;
+        //  La fila de chips, en las dos paginas: cuatro bancos o dos.
+        const int tabsH = Metrics::tab + Metrics::sm;
         //  Y el master cuenta como mueble: es una fila fija que no se desplaza,
         //  asi que si no entra en la cuenta se la come al Viewport y la mesa
         //  pierde media fila de canal en las pantallas justas.
@@ -5386,19 +5387,25 @@ void MainComponent::resized()
         }
 
         {
-            //  Y LA FILA DE CHIPS SIGUE SIENDO LA DE LOS BANCOS, con sus cuatro
-            //  tapas de siempre. En la pagina de CANALES no hay bancos que
-            //  elegir -un canal no vive en un banco- asi que no se maqueta y
-            //  la ficha pide `Metrics::tab` menos: la pagina nueva no le quita
-            //  alto a una ficha que ya pide 936 px en un tope de 499.
-            if (mixPage != mixPageCanales)
+            //  Y LA FILA DE CHIPS ES LA DE LOS BANCOS, con sus cuatro tapas
+            //  de siempre en PADS y las dos primeras -A y B- en CANALES, que
+            //  son los treinta y dos canales en dos de dieciseis (canBank).
+            //  Las mismas tapas, el mismo sitio y las mismas letras: «banco
+            //  B» es lo mismo en las dos paginas de la ficha.
+            auto tabs = inner.removeFromTop (Metrics::tab);
+            if (mixPage == mixPageCanales)
             {
-                auto tabs = inner.removeFromTop (Metrics::tab);
+                juce::TextButton* pb[kCanBancos] = { mixBankBtns[0], mixBankBtns[1] };
+                layoutModuleBar (tabs, pb, 0, kCanBancos);
+                for (int b = kCanBancos; b < kNumBanks; ++b) mixBankBtns[b]->setBounds ({});
+            }
+            else
+            {
                 juce::TextButton* pb[kNumBanks] = { mixBankBtns[0], mixBankBtns[1],
                                                    mixBankBtns[2], mixBankBtns[3] };
                 layoutModuleBar (tabs, pb, 0, kNumBanks);
-                inner.removeFromTop (Metrics::sm);
             }
+            inner.removeFromTop (Metrics::sm);
         }
 
         //  Aire SOLO a los lados: la fila mide Metrics::btn -44- y quitarle
@@ -5447,10 +5454,10 @@ void MainComponent::resized()
         //  ancho que la pantalla ya tiene. Cada fila sigue siendo la misma
         //  fila: no se quita ningun control, se reparte el sitio.
         const int columnas = wideFace ? 2 : 1;
-        //  Dieciseis pads de un banco o dieciseis canales: la cuenta es la
-        //  misma, que es lo que hace que la pagina nueva no traiga geometria
-        //  nueva.
-        const int cuantas  = mixPage == mixPageCanales ? kNumCanales : kPadsPerBank;
+        //  Dieciseis pads de un banco o dieciseis canales de un banco: la
+        //  cuenta es la misma, que es lo que hace que la pagina de canales no
+        //  traiga geometria nueva.
+        const int cuantas  = kPadsPerBank;
         const int porCol   = cuantas / columnas;
         //  LA FILA MIDE LO QUE LA TARJETA DA, para que entren todas. Del
         //  telefono: «tienen que entrar todos los canales en el pop up del
@@ -5473,12 +5480,12 @@ void MainComponent::resized()
         //  800x1280 entran las dieciseis plenas. Tests/canales.py, la regla
         //  quince, mide que entran.
         //
-        //  SOLO EN LA PAGINA DE PADS. La de canales no tiene knobs que girar
-        //  -el gesto que el Viewport robaba- y repartirle el alto a sus
-        //  treinta y dos filas daba, medido en 800x1280 con expo.py, filas de
-        //  27 con la S y la M de 40x27: treinta y dos filas bajo el dedo que
-        //  nadie pidio. Se queda como estaba, de 44 con su barra.
-        const bool reparte = mixPage != mixPageCanales && inner.getHeight() / porCol >= Metrics::xl;
+        //  Y EN LAS DOS PAGINAS. Estuvo solo en la de pads: repartirle el
+        //  alto a treinta y dos canales daba filas de 27 en 800x1280. Desde
+        //  que la de canales va en dos bancos de dieciseis (canBank) son las
+        //  mismas dieciseis filas que la de pads, y entran igual: del
+        //  telefono, «asi entraria en una pantalla como esta en los pads».
+        const bool reparte = inner.getHeight() / porCol >= Metrics::xl;
         int rowH = reparte ? juce::jmin (filaPlena, inner.getHeight() / porCol) : filaPlena;
         //  Y DONDE HAY ARRASTRE, LAS FILAS QUE SE VEN SE REPARTEN EL CAJON.
         //
@@ -5563,10 +5570,13 @@ void MainComponent::resized()
         //  toca que mire antes de apretar, en la pagina que se usa sonando.
         if (mixPage == mixPageCanales)
         {
-            for (int c = 0; c < kNumCanales; ++c)
+            //  Los dieciseis del banco de canales que esta delante, como los
+            //  dieciseis pads del suyo mas abajo.
+            for (int c = canBank * kPadsPerBank; c < (canBank + 1) * kPadsPerBank; ++c)
             {
-                if (c % porCol == 0)
-                    columna = (c / porCol < columnas - 1)
+                const int enBanco = c - canBank * kPadsPerBank;
+                if (enBanco % porCol == 0)
+                    columna = (enBanco / porCol < columnas - 1)
                                 ? Lang::takeStart (rows, anchoCol) : rows;
 
                 auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, Metrics::aireTapaDensa);
@@ -5698,17 +5708,12 @@ void MainComponent::resized()
             row.removeFromRight (Metrics::halfGap);
             mixMutes[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));
             row.removeFromRight (Metrics::halfGap);
-            //  Y EL ST APAGADO EN UNA MUESTRA MONO: no hay lado que abrir ni
-            //  cerrar, que es lo que su mando de EL PAD ya hace. Apagado y no
-            //  escondido, que esconderlo daria una fila con dos formas.
-            //  Y la pregunta es la MISMA que la de EL PAD -el buffer que
-            //  sostiene la interfaz, nunca el que adopto el hilo de audio-
-            //  o serian dos reglas y una diria que si donde la otra dice
-            //  que no.
-            const bool estereo = uiSample[(size_t) i] != nullptr
-                                 && uiSample[(size_t) i]->buffer.getNumChannels() > 1;
+            //  Y EL ST ACTIVO EN TODA MUESTRA. Estuvo apagado en la de un
+            //  canal -«no hay lado que abrir ni cerrar»- y del telefono llego
+            //  «con una mono, todas son mono»: ahora a esa se le fabrica el
+            //  lado (Estereo::abre) y el switch hace lo mismo en las dos.
             mixEstereos[i]->setVisible (conST);
-            mixEstereos[i]->setEnabled (estereo);
+            mixEstereos[i]->setEnabled (true);
             if (conST)
             {
                 mixEstereos[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));

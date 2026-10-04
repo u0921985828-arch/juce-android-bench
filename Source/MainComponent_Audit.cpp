@@ -3563,6 +3563,10 @@ void MainComponent::auditOpen (const juce::String& pedido)
         for (int p = 0; p < kNumPads; ++p) engine.setPadCanal (p, p % kNumCanales);
         showMixPage (mixPageCanales);
         openSheet (mixSheet, mixButton);
+        //  Y por los dos bancos de canales, ida y vuelta, como en `mix`: la
+        //  fila de chips pasa por el camino de verdad y se mide el A.
+        pulsaTapa (mixBankBtns[kCanBancos - 1]);
+        pulsaTapa (mixBankBtns[0]);
     }
     //  Y LA REJILLA DE DIECISEIS CANALES, que se dibuja ENCIMA de la ficha del
     //  pad: una capa que se pone sobre otra es donde vive el residuo.
@@ -6199,8 +6203,9 @@ void MainComponent::auditCanales()
 
             //  Y EL ST MUEVE EL ANCHO: apagado lo pone a cero y encendido lo
             //  devuelve a lo que tenia, por el gesto -`pulsaTapa`- y leido
-            //  del motor, que es quien abre el estereo. Activo solo si la
-            //  muestra del pad 0 tiene dos canales, como su mando de EL PAD.
+            //  del motor, que es quien abre el estereo. Activo con la
+            //  muestra que sea: la de un canal se abre (Estereo::abre), y se
+            //  publica cuantos canales tiene para que la regla lo sepa.
             if (auto* st = mixEstereos[0])
             {
                 mesaStCanales = uiSample[0] != nullptr ? uiSample[0]->buffer.getNumChannels() : 0;
@@ -6375,6 +6380,7 @@ void MainComponent::auditCanales()
     int mesaCFila = -1, mesaCVen = -1, mesaCSobra = -1, mesaCSw = 0, mesaCOrden = -1, mesaCHuecoSM = -1;
     int mesaCVistaAlto = -1, mesaCFilasAlto = -1, mesaCBarraApp = -1;
     int mesaCArrFader = -1, mesaCArrNombre = -1, mesaCArrDio = 0;
+    int mesaCBancos = 0, mesaCBancoB = -1, mesaCFilasB = -1;
     {
         pulsaTapa (&mixVistaBtn);
         mesaCFila      = mixFilaAlto;
@@ -6383,6 +6389,21 @@ void MainComponent::auditCanales()
         mesaCFilasAlto = mixRows.getHeight();
         mesaCVen       = mesaCVistaAlto / juce::jmax (1, mesaCFila);
         mesaCBarraApp  = mixBarra.isVisible() ? mixBarra.getWidth() : 0;
+        //  Y LOS DOS BANCOS, A y B, por el gesto: cuantos chips hay a la
+        //  vista en esta pagina, y que al tocar B la fila de delante sea la
+        //  del canal 17 y la del canal 1 ya no este -`mesa_c_banco_b`-, con
+        //  las mismas dieciseis filas del A. Y vuelta al A, que es lo que se
+        //  mide arriba y abajo.
+        for (auto* t : mixBankBtns)
+            if (t != nullptr && t->isVisible() && t->getWidth() > 0) ++mesaCBancos;
+        if (mixBankBtns.size() >= kCanBancos && canFaders[kPadsPerBank] != nullptr && canFaders[0] != nullptr)
+        {
+            pulsaTapa (mixBankBtns[kCanBancos - 1]);
+            mesaCBancoB = (canFaders[kPadsPerBank]->isVisible() && canFaders[kPadsPerBank]->getWidth() > 0
+                           && ! canFaders[0]->isVisible()) ? 1 : 0;
+            mesaCFilasB = mixRows.getHeight();
+            pulsaTapa (mixBankBtns[0]);
+        }
         for (auto* b : { canMutes[0], canSolos[0] })
             if (b != nullptr && b->isVisible() && (bool) b->getProperties().getWithDefault ("switch", false))
                 ++mesaCSw;
@@ -6395,8 +6416,8 @@ void MainComponent::auditCanales()
         //  el mando de esta pagina: la lista se queda y el fader lo recibe
         //  -el dedo sube, un fader horizontal no se mueve, y eso no importa:
         //  lo que se mide es que la lista NO se mueve-; y por el nombre si.
-        //  Esta pagina lleva barra en toda pantalla del movil, treinta y dos
-        //  filas de 44 no entran en ninguna.
+        //  Desde los dos bancos esta pagina solo lleva barra donde la de
+        //  pads -360x640, 280x653, girado-: canales.py lo lee ahi.
         mixScroll.setViewPosition (0, 0);
         mixScroll.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::all);
         if (auto* f = canFaders[0]; f != nullptr && f->isShowing() && f->getWidth() > 0)
@@ -6416,6 +6437,126 @@ void MainComponent::auditCanales()
         pulsaTapa (&mixVistaBtn);
     }
 
+    //  20. LA MUESTRA MONO SE ABRE, medido en el motor y no en el mando.
+    //
+    //  Del telefono: «con una mono, todas son mono» y «dale, que abra los
+    //  canales mono». Hasta aqui el ST de una muestra de un canal estaba
+    //  apagado porque no habia lado que escalar: `Estereo::ancho` multiplica
+    //  S y S era cero. Ahora `Estereo::abre` FABRICA el lado -la misma senal
+    //  retrasada 10 ms, media, por `ancho`- y esto mide que lo hace y que
+    //  no rompe lo que no tiene que romper, por el camino de verdad: un
+    //  ruido de UN canal en el pad 0, sin tira -directo al master-, el motor
+    //  renderizando con `ancho` 0 y con 1, y de cada tirada el lado, el
+    //  centro y la correlacion L/R. Ver canales.py, regla 20.
+    //
+    //  Lo que tiene que salir: con ancho 0 lado CERO -una mono cerrada es
+    //  mono-; con ancho 1 lado la mitad del centro -`kLadoMono`-, centro
+    //  IGUAL al de ancho 0 -el centro no se toca-, la suma L+R IGUAL muestra
+    //  a muestra -mono-compatible: en un altavoz no cambia nada- y la
+    //  correlacion (1-k^2)/(1+k^2) = 0.60 para ruido, que es lo que se oye
+    //  como «abierto» sin llegar a «dos fuentes».
+    //
+    //  Dos tiradas por ancho y se queda la segunda, y se tiran los doce
+    //  primeros bloques: lo que `auditRanuras` aprendio del suavizado -ver
+    //  el bloque 4b-, aqui con el ataque del pad delante.
+    double abreLado0 = -1.0, abreLado1 = -1.0, abreCentro0 = -1.0, abreCentro1 = -1.0;
+    double abreCorr1 = -2.0, abreSuma = -1.0;
+    int abreCanalesMuestra = 0;
+    {
+        constexpr int kBloque = 128, kBloques = 48, kTira = 12;
+        engine.prepareToPlay (48000.0, kBloque);
+
+        auto* sb = new SampleBuffer();
+        {
+            const int n = 24000;
+            sb->buffer.setSize (1, n);
+            juce::Random r (20261003);
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (0, i, 0.25f * (r.nextFloat() * 2.0f - 1.0f));
+            sb->sourceSampleRate = 48000.0;
+        }
+        abreCanalesMuestra = sb->buffer.getNumChannels();
+
+        const int   canalAntes = engine.getPadCanal (0);
+        const float anchoAntes = engine.getPadAncho (0);
+        engine.setSafetyLimiter (false);
+        engine.setPadCanal (0, AudioEngine::kSinCanal);
+        engine.setPadGain  (0, 1.0f);
+        engine.setPadPan   (0, 0.0f);
+        engine.publishSample (0, SampleBuffer::Ptr (sb));
+
+        auto rinde = [&] (float ancho, juce::AudioBuffer<float>& out)
+        {
+            engine.setPadAncho (0, ancho);
+            out.setSize (2, kBloque * kBloques, false, false, true);
+            juce::AudioBuffer<float> b (2, kBloque);
+            for (int pasada = 0; pasada < 2; ++pasada)
+            {
+                engine.postPanic();
+                out.clear();
+                engine.postNoteOn (0, 1.0f);
+                for (int i = 0; i < kBloques; ++i)
+                {
+                    b.clear();
+                    engine.renderNextBlock (b, 0, kBloque);
+                    for (int ch = 0; ch < 2; ++ch)
+                        out.copyFrom (ch, i * kBloque, b, ch, 0, kBloque);
+                }
+            }
+        };
+        //  Lado y centro en rms, desde el bloque `kTira`.
+        auto ladoCentro = [&] (const juce::AudioBuffer<float>& a, double& lado, double& centro)
+        {
+            double el = 0.0, ec = 0.0;
+            const int n0 = kTira * kBloque, n = a.getNumSamples();
+            for (int i = n0; i < n; ++i)
+            {
+                const double l = a.getSample (0, i), r = a.getSample (1, i);
+                el += 0.25 * (l - r) * (l - r);
+                ec += 0.25 * (l + r) * (l + r);
+            }
+            const double m = (double) juce::jmax (1, n - n0);
+            lado   = std::sqrt (el / m);
+            centro = std::sqrt (ec / m);
+        };
+        auto corr = [&] (const juce::AudioBuffer<float>& a)
+        {
+            double lr = 0.0, ll = 0.0, rr = 0.0;
+            for (int i = kTira * kBloque; i < a.getNumSamples(); ++i)
+            {
+                const double l = a.getSample (0, i), r = a.getSample (1, i);
+                lr += l * r; ll += l * l; rr += r * r;
+            }
+            return (ll > 0.0 && rr > 0.0) ? lr / std::sqrt (ll * rr) : 0.0;
+        };
+
+        juce::AudioBuffer<float> cerrada, abierta;
+        rinde (0.0f, cerrada);
+        rinde (1.0f, abierta);
+        ladoCentro (cerrada, abreLado0, abreCentro0);
+        ladoCentro (abierta, abreLado1, abreCentro1);
+        abreCorr1 = corr (abierta);
+        {
+            double e = 0.0;
+            const int n0 = kTira * kBloque, n = juce::jmin (cerrada.getNumSamples(), abierta.getNumSamples());
+            for (int i = n0; i < n; ++i)
+            {
+                const double s0 = cerrada.getSample (0, i) + cerrada.getSample (1, i);
+                const double s1 = abierta.getSample (0, i) + abierta.getSample (1, i);
+                e += (s1 - s0) * (s1 - s0);
+            }
+            abreSuma = std::sqrt (e / (double) juce::jmax (1, n - n0));
+        }
+
+        //  Y se deja el pad como estaba en lo que tiene lectura: ancho, tira,
+        //  limitador y voces. El ruido se queda publicado: la linea de abajo
+        //  es lo ultimo que hace esta auditoria.
+        engine.postPanic();
+        engine.setPadAncho (0, anchoAntes);
+        engine.setPadCanal (0, canalAntes);
+        engine.setSafetyLimiter (true);
+    }
+
     std::cout << "{\"canales\":" << kNumCanales
               << ",\"mesa_c_fila\":" << mesaCFila << ",\"mesa_c_ven\":" << mesaCVen
               << ",\"mesa_c_sobra\":" << mesaCSobra << ",\"mesa_c_sw\":" << mesaCSw
@@ -6424,6 +6565,17 @@ void MainComponent::auditCanales()
               << ",\"mesa_c_barra_app\":" << mesaCBarraApp
               << ",\"mesa_c_arr_fader\":" << mesaCArrFader << ",\"mesa_c_arr_nombre\":" << mesaCArrNombre
               << ",\"mesa_c_arr_dio\":" << mesaCArrDio
+              << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_banco_b\":" << mesaCBancoB
+              << ",\"mesa_c_filas_b\":" << mesaCFilasB
+              //  LA APERTURA DE LA MONO, seis cifras del motor. Ver el bloque 20.
+              << ",\"abre_canales\":" << abreCanalesMuestra
+              << ",\"abre_lado0\":"   << juce::String (abreLado0, 6)
+              << ",\"abre_lado1\":"   << juce::String (abreLado1, 6)
+              << ",\"abre_centro0\":" << juce::String (abreCentro0, 6)
+              << ",\"abre_centro1\":" << juce::String (abreCentro1, 6)
+              << ",\"abre_corr1\":"   << juce::String (abreCorr1, 4)
+              << ",\"abre_suma\":"    << juce::String (abreSuma, 8)
+              << ",\"abre_k\":"       << juce::String ((double) Estereo::kLadoMono, 3)
               << ",\"mesa_arr_knob\":" << mesaArrKnob << ",\"mesa_arr_nombre\":" << mesaArrNombre
               << ",\"mesa_arr_dio\":" << mesaArrDio
               << ",\"mesa_arr_pan\":" << juce::String (mesaArrPan, 3)

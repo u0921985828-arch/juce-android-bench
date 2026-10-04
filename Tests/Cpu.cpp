@@ -39,14 +39,16 @@ using Clock = std::chrono::steady_clock;
 //  Dieciseis senos en fase suman dieciseis veces un seno, que ningun sampler
 //  toca y que mete el saturador del master en accion permanente - medir eso
 //  seria medir la senal de prueba. Cada pad con su fase y su suelo de ruido.
-static SampleBuffer::Ptr makeSample (double sr, double seconds, float freq)
+//  `mono` es la muestra de UN canal, que es la de la persona -«todas son
+//  mono»- y la que recorre el camino de abrir (ver Estereo::abre).
+static SampleBuffer::Ptr makeSample (double sr, double seconds, float freq, bool mono = false)
 {
     auto* sb = new SampleBuffer();
     const int n = (int) (sr * seconds);
     juce::Random rng ((juce::int64) (freq * 1000.0f));
     const float phase = rng.nextFloat() * juce::MathConstants<float>::twoPi;
-    sb->buffer.setSize (2, n);
-    for (int c = 0; c < 2; ++c)
+    sb->buffer.setSize (mono ? 1 : 2, n);
+    for (int c = 0; c < sb->buffer.getNumChannels(); ++c)
         for (int i = 0; i < n; ++i)
         {
             const float env  = std::exp (-1.2f * (float) i / (float) n);
@@ -434,6 +436,30 @@ int main()
         e.miraCanal (-1);
         e.miraMesa (true);
         fila ("16 pads, con la MESA a la vista", corre (e, buf, 2000));
+    }
+
+    //  Y LOS PADS MONO, que son los de la persona: «todas son mono». La
+    //  muestra de un canal no trae lado, asi que abrirla es FABRICARLO -una
+    //  copia retardada del propio sonido, ver Estereo::abre- y eso es una
+    //  linea de retardo por voz que la muestra estereo no paga. Se mide con
+    //  los dieciseis en mono y el ancho en uno, que es como nace un pad, y
+    //  con el ancho a cero, que es el ST apagado: la linea corre igual en los
+    //  dos -el ancho se suaviza por muestra y no hay rama que lo mire-, asi
+    //  que las dos filas tienen que salir iguales, y lo que cuesta abrir se
+    //  lee contra los dieciseis estereo de arriba.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; prepara (e);
+        for (int p = 0; p < 16; ++p)
+        {
+            e.publishSample (p, makeSample (44100.0, 2.0, 110.0f * (float) (p + 1), true));
+            e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
+        }
+        corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
+        fila ("16 pads MONO, ancho 1 (abiertos)", corre (e, buf, 2000));
+        for (int p = 0; p < 16; ++p) e.setPadAncho (p, 0.0f);
+        corre (e, buf, 64);
+        fila ("16 pads MONO, ancho 0 (cerrados)", corre (e, buf, 2000));
     }
 
     std::printf ("\n-- el transporte ----------------------------------------------------\n");

@@ -3242,6 +3242,16 @@ private:
     int mixBank = 0;
     juce::OwnedArray<juce::TextButton> mixBankBtns;
     void showMixBank (int bank);
+    //  Y LOS DOS BANCOS DE LA PAGINA DE CANALES, A y B de dieciseis. Del
+    //  telefono, con la foto de las dos paginas: «en el pop-up de canales se
+    //  podria hacer como en el de pads, que aparezca una A y una B arriba
+    //  separando los 32 canales en 16 y 16; asi entraria en una pantalla
+    //  como esta en los pads». Las mismas tapas que los bancos de pads -las
+    //  dos primeras-, su propio numero: mezclas los canales 17..32 con la
+    //  pagina de pads en el banco A, y una pagina no mueve a la otra.
+    static constexpr int kCanBancos = kNumCanales / kPadsPerBank;
+    int canBank = 0;
+    void showCanBank (int bank);
 
     //  LA MESA TIENE DOS PAGINAS: los pads y los CANALES.
     //
