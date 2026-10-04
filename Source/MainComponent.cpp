@@ -5831,10 +5831,17 @@ void MainComponent::escribeFxParam (int f, int pi, float v)
     //  escribir en cada uno serian cinco reglas.
     anotaAutomacion (canalActual, f, pi, v);
 
+    //  Y EL MIX QUE ENCENDER DEVOLVERA, por el mismo embudo: el mando, un
+    //  preset y el DEFECTO lo dejan aqui, y un cero lo vacia. Solo el
+    //  interruptor no escribe: su cero es «apagado», no «el MIX es cero».
+    if (pi == 2 && ! conmutandoFx)
+        fxMixGuardado[(size_t) AudioEngine::canalDeParam (canalActual, f)][(size_t) f] = v;
+
     //  Y POR LO MISMO, EL PRESET DEJA DE SER EL QUE ERA. Por aqui pasan los
-    //  cinco caminos, asi que la marca va aqui y no en cada uno; la unica
-    //  excepcion es el propio preset, que se anuncia con la guarda.
-    if (! aplicandoFxPreset) marcaFxMovido (f);
+    //  cinco caminos, asi que la marca va aqui y no en cada uno; las unicas
+    //  excepciones son el propio preset y el interruptor, que se anuncian con
+    //  su guarda.
+    if (! aplicandoFxPreset && ! conmutandoFx) marcaFxMovido (f);
 }
 
 void MainComponent::marcaFxMovido (int f)
@@ -6292,12 +6299,51 @@ void MainComponent::vaciaAutomacion()
 }
 
 // On/off is a MIX move, not a separate flag: one truth, and it is the same
-// number the knob shows. Switching back on restores the effect's own default
-// amount, so the button behaves like a switch rather than a fader you have to
-// go and find again.
+// number the knob shows. Switching back on restores the MIX the effect HAD
+// when it was switched off -and only with nothing remembered, its own default
+// amount-, so the button behaves like a switch rather than a fader you have to
+// go and find again, and a switch that does not forget where the fader was.
+//
+//  Y EL INTERRUPTOR NO ES UN MANDO: apagar y encender no marca el preset
+//  como movido. Pasaba por `escribeFxParam` como cualquier mando y el rack
+//  decia «movido» sobre un preset que nadie habia tocado -la otra mitad de
+//  la queja, «no se guarda en esa memoria del preset»-.
+//
+//  SIN NADA GUARDADO -un proyecto recien abierto con el efecto apagado- manda
+//  la ficha: si nombra un preset de fabrica vuelve SU MIX, y solo si no nombra
+//  ninguno el de fabrica del tipo. Y la ficha sigue diciendo el nombre solo si
+//  lo que suena es ese preset: el DEFECTO tiene el MIX en cero, asi que
+//  encenderlo siempre lo deja MOVIDO, y uno TUYO -cuyo MIX no se sabe sin leer
+//  el fichero- se queda con su nombre solo si el MIX sale de la memoria.
 void MainComponent::setFxEnabled (int f, bool on)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return;
+    float& guardado = fxMixGuardado[(size_t) AudioEngine::canalDeParam (canalActual, f)][(size_t) f];
+    //  DEL MOTOR y no del deslizador: NUEVO y `applyState` apagan canal por
+    //  canal moviendo `canalActual` sin `ponCanalActual`, y la ventana sigue
+    //  ensenando el MIX del canal de delante.
+    if (! on)
+        if (const float mixAhora = engine.getFxParam (canalActual, f, 2); mixAhora > 0.001f)
+            guardado = mixAhora;
+
+    double mixAlEncender = 0.0;
+    if (on)
+    {
+        const int  k    = fxPresetPuesto[(size_t) canalActual][(size_t) f];
+        const bool tuyo = fxPresetTuyo  [(size_t) canalActual][(size_t) f].isNotEmpty();
+        const bool deFabrica = ! tuyo && juce::isPositiveAndBelow (k, FxPresets::cuantos());
+        const double mixFicha = deFabrica ? acotaFxPreset (f, 2, (double) FxPresets::valor (f, k, 2)) : 0.0;
+        const bool deMemoria = guardado > 0.001f;
+
+        mixAlEncender = deMemoria         ? (double) guardado
+                      : mixFicha > 0.001  ? mixFicha
+                                          : fxDefs[f].onMix;
+
+        const bool sigue = tuyo      ? deMemoria
+                         : deFabrica ? std::abs (mixAlEncender - mixFicha) <= 0.005
+                                     : true;
+        if (! sigue) marcaFxMovido (f);
+    }
     ponFxEncendido (f, on);
     //  Y LA LUZ POR EL EMBUDO, que es lo que aqui llevaba sin hacerse.
     //
@@ -6316,8 +6362,11 @@ void MainComponent::setFxEnabled (int f, bool on)
     //  por segunda vez, y de las dos copias la buena era la otra. Es la misma
     //  figura que `refrescaPlato`, que nacio por esto mismo.
     refrescaRanuras();
-    fxParam (f, 2).setValue (on ? fxDefs[f].onMix : 0.0, juce::dontSendNotification);
-    pushFxParam (f, 2);
+    fxParam (f, 2).setValue (mixAlEncender, juce::dontSendNotification);
+    {
+        const juce::ScopedValueSetter<bool> interruptor (conmutandoFx, true);
+        pushFxParam (f, 2);
+    }
     refreshMacroValues();
     //  ENCENDIDO Y APAGADO POR `T()`, que es la regla de la casa y llevaba sin
     //  cumplirse desde que existe esta linea: el nombre del efecto son tres
@@ -13827,6 +13876,10 @@ void MainComponent::finishProjectOpen (const juce::String& name, const juce::Val
 {
     int missing = 0;
     applyState (tree);
+    //  EL MIX GUARDADO ES DEL PROYECTO DE ANTES: encender un efecto apagado de
+    //  este devolveria el que tenia aquel. Aqui y no en `applyState`, que
+    //  tambien es deshacer y ahi la memoria si es de este proyecto.
+    for (auto& porCanal : fxMixGuardado) porCanal.fill (0.0f);
 
     // Names live in the state, so re-stamp the tiles after applyState.
     for (int i = 0; i < kNumPads; ++i)
@@ -14121,6 +14174,9 @@ void MainComponent::newProject()
         }
         ponCanalActual (guarda);
     }
+    //  Y EL MIX QUE CADA UNO TENIA, que apagarlos acaba de guardar: es del
+    //  proyecto que se va. Ver fxMixGuardado.
+    for (auto& porCanal : fxMixGuardado) porCanal.fill (0.0f);
 
     //  Y LA MESA ENTERA con ellas: los envios a cero -que es como nace una
     //  mezcla-, el fader en uno y sin mute. Sin esto, el proyecto siguiente

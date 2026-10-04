@@ -3823,6 +3823,21 @@ private:
     { if (juce::isPositiveAndBelow (fx, kNumFx))
           fxOn[(size_t) AudioEngine::canalDeParam (canalActual, fx)][(size_t) fx] = on; }
 
+    //  Y EL MIX QUE TENIA AL APAGARLO, en la misma casilla que la luz. Apagar
+    //  es poner el MIX a cero -una verdad, la del mando-, y encender volvia a
+    //  poner el de fabrica, `onMix`: el que habia afinado el mando se perdia
+    //  con cada apagado. Del telefono: «enciendo el efecto, modifico los
+    //  parametros, lo apago, lo vuelvo a encender y se reinicia». Aqui se
+    //  guarda el que tenia -si era distinto de cero- y encender lo devuelve;
+    //  solo si no hay nada guardado entra el del preset que dice la ficha, y si
+    //  la ficha no nombra ninguno el de fabrica. Lo escribe `escribeFxParam`
+    //  cada vez que algo que no es el interruptor mueve el MIX -el mando, un
+    //  preset, el DEFECTO- y apagar guarda el que lee del MOTOR, que es el del
+    //  canal de verdad aunque la ventana ensene otro. No va al proyecto: un
+    //  efecto apagado se guarda con su MIX en cero, como siempre, y por eso
+    //  NUEVO y abrir lo vacian.
+    std::array<std::array<float, kNumFx>, kNumCanales> fxMixGuardado {};
+
     //  EL CANAL DE DELANTE SE PONE POR UNA PUERTA, que es lo que hace posible
     //  que los sesenta y tres deslizadores dejen de ser el ALMACEN y pasen a
     //  ser una VENTANA. Mil ocho mandos moverian el recuento de componentes y
@@ -4016,6 +4031,9 @@ private:
     //  Y la guarda que impide que poner un preset se marque a si mismo como
     //  MOVIDO: `escribeFxParam` es el embudo de los dos caminos.
     bool aplicandoFxPreset = false;
+    //  Y la del interruptor: apagar y encender pasa por `escribeFxParam` y ni
+    //  marca el preset como movido ni pisa el MIX guardado con el cero.
+    bool conmutandoFx = false;
     //  Puesta mientras `applyState` repone: lo que se mueve desde ahi no es una
     //  accion de la persona y no lleva foto de deshacer. Ver gridSlider.
     bool aplicandoEstado = false;

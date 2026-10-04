@@ -169,6 +169,73 @@ def main():
         malas.append ("vaciar la ranura dejo su efecto SONANDO y sin tapa donde "
                       "tocarlo")
 
+    #  4c. APAGAR Y ENCENDER NO REINICIA. Del telefono: «enciendo el efecto,
+    #      modifico los parametros, lo apago, lo vuelvo a encender y se
+    #      reinicia; no se guarda en esa memoria del preset». Apagar es poner
+    #      el MIX a cero -una verdad, la del mando- y encender ponia el de
+    #      FABRICA, asi que lo afinado se perdia con cada apagado; y el
+    #      interruptor pasaba por el mismo camino que un mando, asi que el
+    #      preset puesto salia «movido» sin que nadie lo moviera.
+    #
+    #      Las dos mitades con sus testigos: hace falta ver el MIX afinado
+    #      ANTES -0.37, que no es el de fabrica del DRV ni cero- y a cero
+    #      apagado, o «vuelve a 0.37» lo cumple tambien una tapa que no apaga
+    #      nada; y hace falta ver el preset 3 -SUCIO- PUESTO antes, o «sigue
+    #      en 3» lo cumple un preset que nunca se puso. Roto -el binario de la
+    #      tanda anterior-: encendido 0.80 y preset -1, FALLA las dos.
+    if "conserva_afinado" not in r:
+        malas.append ("la app no publica la medida de apagar y encender: no hay "
+                      "forma de saber si el interruptor reinicia lo afinado")
+    cv = lambda k: r.get (k, -1)
+    print ("conserva MIX afinado %.2f -> apagado %.2f -> encendido %.2f (motor %.2f)   preset %s -> %s"
+           % (cv ("conserva_afinado"), cv ("conserva_apagado"), cv ("conserva_encendido"),
+              cv ("conserva_motor"), cv ("conserva_preset_antes"), cv ("conserva_preset_despues")))
+    if abs (cv ("conserva_afinado") - 0.37) > 0.005:
+        malas.append ("el MIX no se afino a 0.37 (%.3f): la medida no mide nada"
+                      % cv ("conserva_afinado"))
+    if cv ("conserva_apagado") > 0.001:
+        malas.append ("apagar la ranura dejo el MIX en %.3f: la tapa no apaga"
+                      % cv ("conserva_apagado"))
+    for cual, v in (("el mando", cv ("conserva_encendido")), ("el motor", cv ("conserva_motor"))):
+        if abs (v - 0.37) > 0.005:
+            malas.append ("apagar y encender devolvio el MIX a %.3f en %s y tenia 0.37: "
+                          "el interruptor reinicia lo afinado" % (v, cual))
+    if cv ("conserva_preset_antes") != 3:
+        malas.append ("el preset 3 -SUCIO- no llego a ponerse (%s): la medida no mide nada"
+                      % cv ("conserva_preset_antes"))
+    if cv ("conserva_preset_despues") != 3:
+        malas.append ("apagar y encender dejo el preset en %s y estaba puesto el 3: "
+                      "el interruptor no es un mando y no puede marcarlo movido"
+                      % cv ("conserva_preset_despues"))
+    #      Y EL NUMERO QUE ESE NOMBRE PROMETE: SUCIO es MIX 0.90, y una ficha
+    #      que sigue diciendo SUCIO con otro MIX sonando miente igual que una
+    #      que dice «movido» sin que nadie lo haya movido.
+    print ("conserva preset SUCIO tras apagar y encender: mando %.2f motor %.2f   "
+           "DEFECTO apagado %.2f -> encendido %.2f preset %s"
+           % (cv ("conserva_preset_mix"), cv ("conserva_preset_motor"),
+              cv ("conserva_defecto_apagado"), cv ("conserva_defecto_mix"),
+              cv ("conserva_defecto_preset")))
+    for cual, v in (("el mando", cv ("conserva_preset_mix")), ("el motor", cv ("conserva_preset_motor"))):
+        if abs (v - 0.90) > 0.005:
+            malas.append ("SUCIO apagado y encendido volvio con el MIX en %.3f en %s y "
+                          "el preset dice 0.90" % (v, cual))
+    #      Y EL DEFECTO, que es el preset con el MIX en CERO: ponerlo apaga, y
+    #      encender despues no puede devolver el 0.90 que SUCIO dejo guardado
+    #      -lo ultimo que se eligio fue el DEFECTO- sino el de fabrica del DRV,
+    #      0.80; y con el efecto sonando la ficha ya no puede decir DEFECTO.
+    #      Roto -la memoria escrita solo por el interruptor-: 0.90.
+    if cv ("conserva_defecto_apagado") > 0.001:
+        malas.append ("poner el DEFECTO dejo el MIX en %.3f y su MIX es cero: la medida "
+                      "no mide nada" % cv ("conserva_defecto_apagado"))
+    if abs (cv ("conserva_defecto_mix") - 0.80) > 0.005:
+        malas.append ("encender tras el DEFECTO dio MIX %.3f y se esperaba el de fabrica "
+                      "del DRV, 0.80: la memoria guardo un MIX que ya no era el elegido"
+                      % cv ("conserva_defecto_mix"))
+    if cv ("conserva_defecto_preset") != -1:
+        malas.append ("encender tras el DEFECTO dejo la ficha en %s: el DEFECTO tiene el "
+                      "MIX en cero y con el efecto sonando tiene que decir movido"
+                      % cv ("conserva_defecto_preset"))
+
     #  5. EL MOTOR Y SU MANDO ARRANCAN EN EL MISMO NUMERO.
     #
     #     `AudioEngine::kFxDef` y `MainComponent::fxDefs[f].spec[p].def` son la

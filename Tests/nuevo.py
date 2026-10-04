@@ -143,10 +143,18 @@ def main():
                            "%.2f y %d mutes puestos"
                            % (que, d["canales"], d["cgansuma"], d["cmuten"]))
 
+        #  Y EL MIX QUE ENCENDER DEVOLVERIA, que no va al fichero: uno que
+        #  sobrevive a NUEVO enciende un efecto del proyecto vacio con el MIX
+        #  que tenia en el de ayer. La auditoria deja uno puesto a mano antes
+        #  de NUEVO, como el resto de la herencia.
+        if d.get ("mixguardados", -1) != 0:
+            fallos.append ("%s: %s efectos guardan el MIX de antes de apagarse y se "
+                           "esperaba ninguno" % (que, d.get ("mixguardados", "?")))
+
         print ("%-10s %2d pads   envios max %.2f suma %.2f   sin canal %d/64   "
-               "canal max %d gan %.1f mutes %d   ranuras %s   carril 0 %s"
+               "canal max %d gan %.1f mutes %d   mix guardados %s   ranuras %s   carril 0 %s"
                % (que, d["pads"], d["envmax"], d["envsuma"], d["sincanal"],
-                  d["canalmax"], d["cgansuma"], d["cmuten"],
+                  d["canalmax"], d["cgansuma"], d["cmuten"], d.get ("mixguardados", "?"),
                   "todas vacias" if d.get ("ranuras") == vacias else d.get ("ranuras", "?"),
                   carriles[0]))
 

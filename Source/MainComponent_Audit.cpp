@@ -3182,12 +3182,20 @@ void MainComponent::auditNuevo()
             for (int sr = 0; sr < kNumRanuras; ++sr)
                 ranuras += ((c || sr) ? "," : "") + juce::String (slotFx[(size_t) c][(size_t) sr]);
 
+        //  Y EL MIX QUE ENCENDER DEVOLVERIA, que es del proyecto y no se
+        //  guarda en el: uno que sobrevive a NUEVO enciende un efecto del
+        //  proyecto vacio con el MIX que tenia en el de ayer.
+        int mixGuardados = 0;
+        for (const auto& porCanal : fxMixGuardado)
+            for (const float m : porCanal) if (m > 0.001f) ++mixGuardados;
+
         std::cout << "{\"nuevo\":\"" << que << "\",\"pads\":" << conSonido
                   << ",\"canales\":" << kNumCanales << ",\"ranurasPorCanal\":" << kNumRanuras
                   << ",\"envmax\":" << envMax << ",\"envsuma\":" << envSuma
                   << ",\"canalmax\":" << canalMax << ",\"cgansuma\":" << ganSuma
                   << ",\"cmuten\":" << muteN
                   << ",\"sincanal\":" << sinCanalN
+                  << ",\"mixguardados\":" << mixGuardados
                   << ",\"ranuras\":[" << ranuras << "]"
                   << ",\"largo\":" << engine.getSongLength() << ",\"carriles\":[";
         for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
@@ -3215,6 +3223,7 @@ void MainComponent::auditNuevo()
     engine.setCanalGain (7, 0.25f);
     engine.setCanalMute (2, true);
     slotFx[7][0] = AudioEngine::kFxDly;
+    fxMixGuardado[7][(size_t) AudioEngine::kFxDly] = 0.6f;
 
     newProject();
     fila ("nuevo");
@@ -6781,6 +6790,55 @@ void MainComponent::auditRanuras()
     ponEnRanura (3, kSlotVacia);
     const int trasVaciar = fxEncendido (3) ? 1 : 0;
 
+    //  4c. APAGAR Y ENCENDER NO REINICIA. Del telefono: «enciendo el efecto,
+    //      modifico los parametros, lo apago, lo vuelvo a encender y se
+    //      reinicia; no se guarda en esa memoria del preset». Dos mitades,
+    //      medidas por la tapa de verdad -`pulsaTapa`, que es `fxTapped`-:
+    //      el MIX afinado a mano vuelve al encender, en el mando Y en el
+    //      motor; y un preset de fabrica puesto sigue siendo ese preset tras
+    //      apagar y encender, no «movido». El MIX se afina a 0.37, que no es
+    //      el de fabrica del DRV -0.80- ni cero; el preset es SUCIO -el 3,
+    //      MIX 0.90-, que tampoco es el de fabrica: con CINTA -el 2, MIX
+    //      0.80, el mismo que el de fabrica- la cifra saldria bien con el
+    //      codigo roto, y salio: la primera version de esta medida usaba el 2.
+    double conservaAfinado = -1.0, conservaApagado = -1.0, conservaEncendido = -1.0, conservaMotor = -1.0;
+    int    conservaPresetAntes = -2, conservaPresetDespues = -2, conservaDefectoPreset = -2;
+    double conservaPresetMix = -1.0, conservaPresetMotor = -1.0;
+    double conservaDefectoApagado = -1.0, conservaDefectoMix = -1.0;
+    {
+        const int fC = AudioEngine::kFxDrv;
+        for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
+        ponEnRanura (0, fC);                        // entra encendida, con su MIX de fabrica
+        fxParam (fC, 2).setValue (0.37, juce::sendNotificationSync);   // el mando, con su callback
+        conservaAfinado = fxParam (fC, 2).getValue();
+        pulsaTapa (fxButtons[0]);                   // apaga
+        conservaApagado = fxParam (fC, 2).getValue();
+        pulsaTapa (fxButtons[0]);                   // enciende
+        conservaEncendido = fxParam (fC, 2).getValue();
+        conservaMotor     = (double) engine.getFxParam (canalActual, fC, 2);
+
+        aplicaFxPreset (fC, 3);
+        conservaPresetAntes = fxPresetPuesto[(size_t) canalActual][(size_t) fC];
+        pulsaTapa (fxButtons[0]);                   // apaga
+        pulsaTapa (fxButtons[0]);                   // enciende
+        conservaPresetDespues = fxPresetPuesto[(size_t) canalActual][(size_t) fC];
+        //  Y EL NUMERO DEL PRESET, no solo su indice: una ficha que sigue
+        //  diciendo SUCIO con el MIX de otra cosa es la misma mentira.
+        conservaPresetMix   = fxParam (fC, 2).getValue();
+        conservaPresetMotor = (double) engine.getFxParam (canalActual, fC, 2);
+
+        //  Y EL DEFECTO, que tiene el MIX en cero: ponerlo apaga, y encender
+        //  despues no puede devolver el 0.90 de SUCIO que quedo guardado -el
+        //  DEFECTO es lo ultimo que se eligio- sino el de fabrica del tipo, y
+        //  la ficha ya no puede decir DEFECTO con el efecto sonando.
+        aplicaFxPreset (fC, 0);
+        conservaDefectoApagado = fxParam (fC, 2).getValue();
+        pulsaTapa (fxButtons[0]);                   // enciende
+        conservaDefectoMix    = fxParam (fC, 2).getValue();
+        conservaDefectoPreset = fxPresetPuesto[(size_t) canalActual][(size_t) fC];
+        setFxEnabled (fC, false);
+    }
+
     //  4b. EL GESTO ENTERO CONTRA EL AUDIO — la medida que no tenia nadie.
     //
     //  Llego del telefono: «cuando inserto un efecto en uno de los slots, hasta
@@ -7108,6 +7166,18 @@ void MainComponent::auditRanuras()
               << ",\"tras_mover\":\""      << trasMover << "\""
               << ",\"antes_de_vaciar\":"   << antesDeVaciar
               << ",\"tras_vaciar\":"       << trasVaciar
+              //  APAGAR Y ENCENDER NO REINICIA, seis cifras. Ver el bloque 4c.
+              << ",\"conserva_afinado\":"   << juce::String (conservaAfinado, 3)
+              << ",\"conserva_apagado\":"   << juce::String (conservaApagado, 3)
+              << ",\"conserva_encendido\":" << juce::String (conservaEncendido, 3)
+              << ",\"conserva_motor\":"     << juce::String (conservaMotor, 3)
+              << ",\"conserva_preset_antes\":"   << conservaPresetAntes
+              << ",\"conserva_preset_despues\":" << conservaPresetDespues
+              << ",\"conserva_preset_mix\":"   << juce::String (conservaPresetMix, 3)
+              << ",\"conserva_preset_motor\":" << juce::String (conservaPresetMotor, 3)
+              << ",\"conserva_defecto_apagado\":" << juce::String (conservaDefectoApagado, 3)
+              << ",\"conserva_defecto_mix\":"     << juce::String (conservaDefectoMix, 3)
+              << ",\"conserva_defecto_preset\":"  << conservaDefectoPreset
               //  EL GESTO ENTERO, siete cifras. Ver el bloque 4b.
               << ",\"gesto_foco\":"        << gestoFoco
               << ",\"gesto_drv\":"         << AudioEngine::kFxDrv
