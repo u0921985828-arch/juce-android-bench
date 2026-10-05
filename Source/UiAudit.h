@@ -86,6 +86,13 @@ namespace UiAudit
     //  porque pide su banda. Con la maquina sonando las dos cosas pasan a la
     //  vez y la cuenta de llamadas deja de decir nada.
     inline long long pixelesPintados = 0;
+    //  Y SI EL RECORTE SON VARIOS TROZOS, LA SUMA DE LOS TROZOS. `getClipBounds`
+    //  da la caja que los abarca, y no es lo que se pinta: medido en el EQ, la
+    //  linea de continuidad arriba -192x24- y las lamparas abajo salian como un
+    //  recorte de 384x438, 0.45 ventanas, por pintar menos de 8000 pixeles.
+    //  `CacheCara` sabe los trozos y los deja aqui mientras pinta; fuera de
+    //  ella vale -1 y se cuenta la caja, como siempre.
+    inline long long areaRecorte = -1;
     //  Y CUANTOS CUADROS SE HAN PEDIDO, que desde que el dibujo cuelga del
     //  vblank es la mitad que faltaba: los pixeles TOTALES suben por
     //  definicion al subir la tasa -a 120 Hz se pintan cuatro veces mas

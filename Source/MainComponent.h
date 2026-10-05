@@ -153,6 +153,10 @@ private:
     //  El periodo del panel, suavizado. Ver enVBlank: con el instantaneo el
     //  suelo de la cadencia aleteaba con el jitter del propio aviso de vblank.
     double periodoPanel  = 0.0;
+    //  Cuantos avisos seguidos han llegado tarde por periodos enteros. Ver
+    //  enVBlank: uno suelto es un cuadro perdido; cuatro seguidos, el panel.
+    int    avisosLargosSeguidos = 0;
+    static constexpr int kAvisosLargosModo = 4;
     //  El periodo con el que se resolvio el suelo de cadencia, y el suelo. Ver
     //  enVBlank: recalcularlo por cuadro deja que el temblor del aviso cruce un
     //  umbral entero y cambie la cadencia sin que haya cambiado nada.
@@ -1423,6 +1427,27 @@ private:
     //  nombre es el unico que no se puede deducir mirando la maquina.
     juce::String lineaDeContinuidad (int anchoDisponible,
                                      const juce::Font& fuente) const;
+    //  Y SE REPINTA SOLA cuando cambia sin que nadie toque nada: el «A SALVO»
+    //  llega cuando el escritor acaba -en su hilo- y se va a los treinta
+    //  segundos sin escribir. Ver miraContinuidad.
+    void miraContinuidad();
+    static juce::Font fuenteContinuidad();
+    juce::Rectangle<int> cajaContinuidad;   // donde la pone `paint`
+    juce::String lineaVista;                // lo que se vio la ultima vez
+    double continuidadMs = 0.0;
+    //  Y LA BANDA DE LOS OCHO COLORES, por lo mismo: un segmento se enciende
+    //  cuando un pad con muestra lleva ese color, y la muestra entra por media
+    //  docena de caminos -la fabrica, un kit, deshacer, un proyecto- que no
+    //  saben que la banda existe. Ver miraBanda.
+    void miraBanda();
+    juce::Rectangle<int> cajaBanda;         // donde la pone `paint`
+    int bandaVista = -1;                    // los colores encendidos la ultima vez
+    //  Y LA CUNA QUE SEÑALA LA RANURA DE LOS TRES MANDOS, que la pinta la cara
+    //  encima de la tapa y no la tapa: cambiar de canal o vaciar una ranura
+    //  repinta las tapas y la dejaba donde estaba. Ver miraCuna.
+    void miraCuna();
+    juce::Rectangle<int> cajaCunas;         // la franja donde puede ir
+    int cunaVista = -2;                     // la ranura que se vio la ultima vez
 
     // --- Export -----------------------------------------------------------
     //  The bounce runs on its own thread through a clone of the engine (see
@@ -1977,6 +2002,34 @@ public:
     void auditPlay (bool on);
     //  El pico del espectro del cristal, para el banco. Ver SpectrumDisplay.
     float auditPicoEspectro() const { return cristal.picoEspectro(); }
+    //  EL CUADRO DEL TELEFONO, en milisegundos. Ver MainComponent_Audit.cpp:
+    //  la ventana entera pintada `n` veces a la escala `esc`, cada vez con lo
+    //  que un cuadro sonando invalida -las agujas que se ven y el cristal-.
+    //  `ventanas` sale con lo que la cara volvio a pintar por cuadro, en
+    //  ventanas: el numero que no depende de la maquina. Y `distintos`, los
+    //  pixeles en que ese cuadro difiere de la cara pintada entera tras mover
+    //  los `movidos` mandos que se ven: lo que una imagen vieja ensenaria;
+    //  `mirado`, la parte de la ventana que esa comparacion miro.
+    std::vector<double> auditCuadroTelefono (float esc, int n, double& ventanas,
+                                             int& distintos, int& movidos, double& mirado);
+    //  LOS OPACOS, QUE CUBREN SU CAJA. Cada componente que se ve y dice ser
+    //  opaco, pintado solo sobre transparente: los pixeles que deja sin cubrir.
+    //  `opacos` sale con cuantos se miraron. Ver MainComponent_Audit.cpp.
+    int auditOpacos (int& opacos);
+    //  Y LA CARA GUARDADA CONTRA LA DE AHORA, sin mover nada: tras un cuadro,
+    //  los pixeles en que lo pintado por la imagen difiere de la cara pintada
+    //  entera a la escala `esc`, fuera de lo que ese cuadro vuelve a pintar; la
+    //  caja que los abarca, quien se pinta en medio y que parte de la ventana
+    //  se miro. -1 si no se puede medir. Ver `auditTapas`, que lo pregunta tras
+    //  cada apretada.
+    int auditCaraVieja (float esc, juce::Rectangle<int>& caja, juce::String& quien,
+                        double& mirado);
+    //  Lo que la imagen de la cara tiene pendiente de volver a pintar a la
+    //  escala `esc`: todo si no existe o es de otra escala. Ver CacheCara.
+    juce::RectangleList<int> auditSucio (float esc) const;
+    //  Y LA IMAGEN AL DIA: un cuadro por ella, para que lo pendiente despues
+    //  sea solo lo que se invalide desde aqui. Ver auditTapas.
+    void auditAlDia (float esc);
     //  LAS HERRAMIENTAS DE ARREGLO, medidas. Ver auditArrange: monta una
     //  cancion y un patron conocidos, ejecuta las seis operaciones y dice lo
     //  que quedo. Sin esto, "insertar un compas" es una tapa que se pulsa y
@@ -2171,6 +2224,7 @@ private:
     static constexpr double kSyncSesionMs   = 2000.0;   // los pads al escritor
     static constexpr double kEstadoSesionMs = 20000.0;  // y el estado entero
     static constexpr double kConfirmMs      = 3000.0;   // un SEGURO? sin contestar
+    static constexpr double kContinuidadMs  = 250.0;    // mirar la linea de continuidad
     //  CUANTO DURA EL «A SALVO» de la banda de continuidad. Ver
     //  `lineaDeContinuidad`: es un estado binario y no un contador, asi que
     //  esta cifra es lo unico que hay que elegir. Treinta segundos son quince
@@ -3819,9 +3873,20 @@ private:
     bool  fxEncendido (int fx) const
     { return juce::isPositiveAndBelow (fx, kNumFx)
           && fxOn[(size_t) AudioEngine::canalDeParam (canalActual, fx)][(size_t) fx]; }
+    //  Y EL FADER DEL RACK SE VUELVE A PINTAR, que su velo sale de esta luz:
+    //  lo pone `paintRackSheetContent` con `setAlpha` AL PINTAR, y el
+    //  `repaint` que ese `setAlpha` pide llega a `CacheCara` en mitad de su
+    //  `paint` y lo borra el `sucio.clear()` de despues. Asi que con la cara
+    //  guardada el fader se quedaba encendido sobre un efecto ya apagado.
+    //  Medido con `ZATI_CENTINELA`: 1595 pixeles tras BRILLO en `rackf`, que
+    //  pasa a DEFECTO y apaga DRV con el MIX en cero. Aqui y no en quien
+    //  llama: el preset, el tuyo, el interruptor y el MIX pasan todos por esta
+    //  puerta. Solo el fader, que las tapas de su fila ya se repintan solas.
     void  ponFxEncendido (int fx, bool on)
     { if (juce::isPositiveAndBelow (fx, kNumFx))
-          fxOn[(size_t) AudioEngine::canalDeParam (canalActual, fx)][(size_t) fx] = on; }
+          fxOn[(size_t) AudioEngine::canalDeParam (canalActual, fx)][(size_t) fx] = on;
+      if (const int s = slotDeFx (fx); juce::isPositiveAndBelow (s, rackSends.size()))
+          rackSends[s]->repaint(); }
 
     //  Y EL MIX QUE TENIA AL APAGARLO, en la misma casilla que la luz. Apagar
     //  es poner el MIX a cero -una verdad, la del mando-, y encender volvia a

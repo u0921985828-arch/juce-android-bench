@@ -226,7 +226,17 @@ public:
     //  que no se puede aprender. Con un modo el gesto es inequivoco, y sin el
     //  modo puesto el piano se comporta exactamente igual que antes.
     enum Herramienta { dibujar = 0, lapiz, goma, tijeras, sel };
-    void setHerramienta (int h) { util = juce::jlimit (0, 4, h); }
+    //  Y SE VUELVE A PINTAR, que el marco de la herramienta armada sale de
+    //  `util` -ver paint-. Sin esto el marco aparecia al siguiente repintado
+    //  de otra cosa: en el telefono, con la cara guardada, nunca. Medido con
+    //  `ZATI_CENTINELA`: 2700 pixeles tras LAPIZ.
+    void setHerramienta (int h)
+    {
+        const int nueva = juce::jlimit (0, 4, h);
+        if (nueva == util) return;
+        util = nueva;
+        repaint();
+    }
     int  getHerramienta() const { return util; }
 
     //  Cuantas columnas se estan dibujando. Lo pide el banco para no repetir la

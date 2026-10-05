@@ -166,10 +166,21 @@ public:
     //  The engine hands over min/max columns already decimated. Re-bucketing
     //  them into however many the screen is wide is exact: the minimum of a
     //  group of minima IS the minimum.
+    //  Y SI CAMBIA CUANTAS HAY, SE VUELVE A PINTAR. Aqui solo se guardaba: el
+    //  repintado lo pide `setSamples`, y con la maquina callada su guarda de
+    //  silencio se lo salta. Asi que apagar el MOVIMIENTO -`ponMovimiento`
+    //  vacia la silueta, de 256 columnas a 0- dejaba en la cara guardada la
+    //  linea plana de la onda, debajo del velo de AJUSTES, hasta cerrar la
+    //  ficha. Medido con `ZATI_CENTINELA`: 736 pixeles tras NO en ASPECTO. Y
+    //  por cuantas y no por lo que valen: con la cara a la vista son siempre
+    //  256 y lo que valen lo invalida `setSamples` en el mismo cuadro, asi que
+    //  el reposo sigue sin costar un repintado.
     void setColumns (const float* mn, const float* mx, int n)
     {
+        const int antes = colCount;
         colCount = juce::jlimit (0, kMaxCols, n);
         for (int i = 0; i < colCount; ++i) { srcMin[i] = mn[i]; srcMax[i] = mx[i]; }
+        if (colCount != antes) repaint();
     }
 
     //  The two meters that used to live outside, on strips of their own above

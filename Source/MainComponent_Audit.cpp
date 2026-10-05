@@ -10246,6 +10246,18 @@ void MainComponent::auditTapas()
     double peorMs = 0.0;
     juce::String peorQuien;
 
+    //  Y LA CARA GUARDADA, si se pide con `ZATI_CENTINELA`: tras cada apretada,
+    //  lo que la ventana ensenaria contra la cara pintada de cero, a la escala
+    //  de la ventana -otra escala obligaria a la imagen a rehacerse entera y
+    //  no probaria nada-. Fuera del cronometro, que esto no es de la tapa. Ver
+    //  auditCaraVieja.
+    const bool  centinela     = UiAudit::env ("ZATI_CENTINELA").isNotEmpty();
+    const float escalaVentana = (float) juce::Component::getApproximateScaleFactorForComponent (this);
+    int comprobadas = 0, viejas = 0, peorVieja = 0;
+    juce::int64 pxViejos = 0;
+    double miradoTotal = 0.0;
+    juce::String peorViejaEn;
+
     for (const char* ficha : kFichas)
     {
         const juce::String nombreFicha = (*ficha == 0 ? juce::String ("cara")
@@ -10317,6 +10329,10 @@ void MainComponent::auditTapas()
 
             if (quien.isEmpty()) { ++saltadas; continue; }
 
+            //  Con la imagen al dia ANTES de apretar, que es lo que hace que
+            //  la comprobacion de despues mire algo. Fuera del cronometro.
+            if (centinela) auditAlDia (escalaVentana);
+
             //  Y CON ETIQUETA EN LA CAJA NEGRA, que es la otra mitad de la
             //  medida: si una tapa cuelga esto de verdad, el vigilante escribe
             //  QUIEN mientras el atasco dura y no despues. Ver Bitacora::Tarea.
@@ -10343,6 +10359,30 @@ void MainComponent::auditTapas()
             std::cout << "{\"atasco\":\"op\",\"que\":\"" << UiAudit::esc (nombreFicha + "/" + quien)
                       << "\",\"ms\":" << juce::roundToInt (ms)
                       << ",\"tapa\":1}" << std::endl;
+
+            if (centinela)
+            {
+                juce::Rectangle<int> caja;
+                juce::String enMedio;
+                double mirado = 0.0;
+                const int px = auditCaraVieja (escalaVentana, caja, enMedio, mirado);
+                if (px >= 0) { ++comprobadas; miradoTotal += mirado; }
+                if (px > 0)
+                {
+                    ++viejas;
+                    pxViejos += px;
+                    if (px > peorVieja) { peorVieja = px; peorViejaEn = nombreFicha + "/" + quien; }
+                    std::cout << "{\"centinela\":\"vieja\",\"que\":\""
+                              << UiAudit::esc (nombreFicha + "/" + quien)
+                              << "\",\"px\":" << px
+                              << ",\"caja\":[" << caja.getX() << "," << caja.getY() << ","
+                              << caja.getWidth() << "," << caja.getHeight() << "]"
+                              << ",\"quien\":\"" << UiAudit::esc (enMedio) << "\"}" << std::endl;
+                    //  Y entera otra vez, para que la siguiente apretada no
+                    //  cargue con lo viejo de esta.
+                    repaint();
+                }
+            }
         }
     }
 
@@ -10356,6 +10396,14 @@ void MainComponent::auditTapas()
               << ",\"fichas\":" << (int) juce::numElementsInArray (kFichas)
               << ",\"peor\":" << juce::roundToInt (peorMs)
               << ",\"peor_en\":\"" << UiAudit::esc (peorQuien) << "\"}" << std::endl;
+
+    if (centinela)
+        std::cout << "{\"centinela\":\"total\",\"comprobadas\":" << comprobadas
+                  << ",\"viejas\":" << viejas
+                  << ",\"mirado\":" << (comprobadas > 0 ? miradoTotal / comprobadas : 0.0)
+                  << ",\"px\":" << pxViejos
+                  << ",\"peor\":" << peorVieja
+                  << ",\"peor_en\":\"" << UiAudit::esc (peorViejaEn) << "\"}" << std::endl;
 }
 
 //  UN DISPOSITIVO DE BANCO QUE CUENTA COMO CUENTA OBOE.
@@ -11127,4 +11175,347 @@ void MainComponent::auditPasos()
               << ",\"en_1_8\":" << (en18 ? 1 : 0)
               << ",\"ajenas_1_8\":" << ajenas18
               << "}" << std::endl;
+}
+
+// ============================================================================
+//  EL CUADRO DEL TELEFONO.
+//
+//  Del telefono: la app «es menos ligera» y el gesto es «en el Mixer». Y el
+//  banco del escritorio no podia verlo, porque el escritorio respeta el
+//  recorte: la aguja que se mueve pide su banda de 22 px y se pinta su banda.
+//  Un Android con aceleracion por hardware NO -desde la API 21 la vista ignora
+//  el rectangulo de `invalidate` y vuelve a grabarse entera-, y JUCE la pinta
+//  por software en un bufer del tamano de la pantalla: `handlePaintCallback`
+//  pide `getClipBounds` y le llega la ventana. O sea que alli cada aguja que
+//  se mueve es la cara, el velo, la tarjeta y las dieciseis filas de la mesa,
+//  sesenta veces por segundo mientras suena algo.
+//
+//  Aqui se paga ese cuadro tal cual: la ventana entera, a la escala del
+//  telefono, `n` veces, y antes de cada una se invalida exactamente lo que un
+//  cuadro sonando invalida -la banda de cada aguja que se ve, como `mideMesa`,
+//  y el cristal si la cara se ve-. Sin bombear eventos entre medias, que es lo
+//  que hace la medida repetible: lo que se invalida es lo mismo cada vez.
+// ============================================================================
+std::vector<double> MainComponent::auditCuadroTelefono (float esc, int n, double& ventanas,
+                                                       int& distintos, int& movidos, double& mirado)
+{
+    std::vector<double> ms;
+    ventanas  = -1.0;
+    distintos = -1;
+    movidos   = 0;
+    mirado    = 0.0;
+    auto* raiz = getTopLevelComponent();
+    if (raiz == nullptr || raiz->getWidth() <= 0 || n <= 0) return ms;
+
+    juce::Image lienzo (juce::Image::ARGB,
+                        juce::roundToInt ((float) raiz->getWidth()  * esc),
+                        juce::roundToInt ((float) raiz->getHeight() * esc),
+                        true, juce::SoftwareImageType());
+
+    auto banda = [] (juce::Slider& f)
+    {
+        if (! f.isShowing()) return;
+        f.repaint (f.getLocalBounds().withSizeKeepingCentre (
+                       f.getWidth(), juce::jmin (f.getHeight(), Metrics::grosorFader)));
+    };
+    const bool seVeLaCara = ! caraTapada();
+    auto pinta = [&]
+    {
+        juce::Graphics g (lienzo);
+        g.addTransform (juce::AffineTransform::scale (esc));
+        raiz->paintEntireComponent (g, true);
+    };
+
+    //  Lo pintado aqui no cuenta en los contadores del giro: es la medida.
+    const int  f0 = UiAudit::fondosPintados;
+    const auto p0 = UiAudit::pixelesPintados;
+
+    //  El primero sin cronometrar: el telefono tambien pinta uno al abrir la
+    //  ficha, y es el que llena lo que haya que llenar.
+    pinta();
+    const auto p1 = UiAudit::pixelesPintados;
+    for (int i = 0; i < n; ++i)
+    {
+        for (auto* f : mixFaders) if (f != nullptr) banda (*f);
+        for (auto* f : canFaders) if (f != nullptr) banda (*f);
+        banda (masterFader);
+        if (seVeLaCara) cristal.repaint();
+
+        const double a = juce::Time::getMillisecondCounterHiRes();
+        pinta();
+        ms.push_back (juce::Time::getMillisecondCounterHiRes() - a);
+    }
+
+    //  Lo que la cara volvio a pintar, en ventanas por cuadro. Sin nada que
+    //  lo guarde, cada cuadro es la ventana entera: 1.000, y esa es la cifra
+    //  del telefono.
+    ventanas = (double) (UiAudit::pixelesPintados - p1)
+             / ((double) getWidth() * (double) getHeight() * (double) n);
+
+    //  Y QUE LO GUARDADO SEA LO QUE HAY. Una imagen que se queda vieja ahorra
+    //  exactamente lo mismo que una buena, asi que el ahorro solo vale con
+    //  esta segunda cifra: se mueven mandos que SE VEN -por su camino de
+    //  verdad, con su repaint-, se pinta el cuadro por la imagen y se pinta la
+    //  cara ENTERA sin ella, a la misma escala, y se cuentan los pixeles
+    //  distintos. Cero, o la imagen esta ensenando algo que ya no es.
+    //
+    //  Uno por vista, y los que no se ven no cuentan: el fader del pad 0 en
+    //  la pagina de PADS, el del canal 0 en la de CANALES, y en la cara el
+    //  primer CTRL y el primer mando de efecto que asome -debajo del velo
+    //  tambien, que la imagen guarda la cara entera-. La primera version
+    //  movia solo los del pad 0, y con la imagen rota a proposito la cara y
+    //  CANALES salian con cero distintos: no habia nada suyo que se moviera.
+    //  `movidos` lo dice, y una vista sin ninguno no prueba nada.
+    //
+    //  Y SOLO CUENTA LO DE LA VISTA QUE SE VE: los mandos de la cara siguen
+    //  `isShowing` debajo del velo de una ficha, y contados alli la mesa
+    //  salia con un movido aunque no se hubiera movido nada suyo.
+    //
+    //  Y SIN EL MUTE, que la segunda version tambien pulsaba: el MUTE repinta
+    //  la mesa entera -`refreshMixStrip`- y la mesa ocupa la ventana, asi que
+    //  todo quedaba pendiente, nada se comparaba y los distintos eran cero
+    //  por construccion. `mirado` lo dice ahora, y cpu.py le pone suelo.
+    if (raiz->getLocalPoint (this, juce::Point<int>()) == juce::Point<int>())
+    {
+        std::vector<std::pair<juce::Slider*, double>> deslizadores;
+        auto mueve = [&] (juce::Slider* d, bool cuenta)
+        {
+            if (d == nullptr || ! d->isShowing() || d->getWidth() <= 0) return;
+            const double v0 = d->getValue();
+            const double paso = 0.25 * (d->getMaximum() - d->getMinimum());
+            deslizadores.push_back ({ d, v0 });
+            d->setValue (v0 + paso <= d->getMaximum() ? v0 + paso : v0 - paso, juce::sendNotificationSync);
+            if (cuenta) ++movidos;
+        };
+        mueve (mixFaders[0], true);
+        mueve (canFaders[0], true);
+        mueve (&macroCtrl1, seVeLaCara);
+        for (auto* d : fxParams)
+            if (d != nullptr && d->isShowing() && d->getWidth() > 0) { mueve (d, seVeLaCara); break; }
+
+        juce::Rectangle<int> caja;
+        juce::String enMedio;
+        distintos = auditCaraVieja (esc, caja, enMedio, mirado);
+
+        for (auto& [d, v0] : deslizadores) d->setValue (v0, juce::sendNotificationSync);
+    }
+
+    UiAudit::fondosPintados  = f0;
+    UiAudit::pixelesPintados = p0;
+    return ms;
+}
+
+//  LOS OPACOS, QUE CUBREN SU CAJA ENTERA. Un componente que dice `setOpaque`
+//  le promete a JUCE que no hace falta pintar lo de debajo, y con la cara
+//  guardada en una imagen esa promesa se cobra: si deja pixeles a medio
+//  cubrir -las esquinas de un redondeo- se mezclan una vez y otra sobre lo
+//  que la imagen ya tenia, y nada los vuelve a pintar. La curva del EQ lo
+//  hacia: opaca, con su cristal redondeado y las cuatro esquinas al aire.
+//  Asi que cada uno que se ve se pinta solo, sobre transparente, a escala 1,
+//  y se cuentan los pixeles con algo de transparencia. Cero, o miente.
+int MainComponent::auditOpacos (int& opacos)
+{
+    opacos = 0;
+    int huecos = 0;
+    const int  f0 = UiAudit::fondosPintados;
+    const auto p0 = UiAudit::pixelesPintados;
+    std::function<void (juce::Component&)> recorre = [&] (juce::Component& c)
+    {
+        if (! c.isShowing() || c.getWidth() <= 0 || c.getHeight() <= 0) return;
+        if (c.isOpaque())
+        {
+            ++opacos;
+            juce::Image im (juce::Image::ARGB, c.getWidth(), c.getHeight(), true,
+                            juce::SoftwareImageType());
+            {
+                juce::Graphics g (im);
+                c.paintEntireComponent (g, true);
+            }
+            const juce::Image::BitmapData d (im, juce::Image::BitmapData::readOnly);
+            for (int y = 0; y < c.getHeight(); ++y)
+                for (int x = 0; x < c.getWidth(); ++x)
+                    if (d.getPixelColour (x, y).getAlpha() < 255) ++huecos;
+        }
+        for (auto* k : c.getChildren())
+            if (k != nullptr) recorre (*k);
+    };
+    recorre (*this);
+    UiAudit::fondosPintados  = f0;
+    UiAudit::pixelesPintados = p0;
+    return huecos;
+}
+
+//  LA IMAGEN AL DIA, como la dejaria el cuadro que viene: lo que estaba
+//  pendiente se pinta y deja de estarlo. En el banco no corre ningun cuadro
+//  -todo pasa de arriba abajo, sin bucle de mensajes- asi que sin esto lo
+//  pendiente se acumula entre apretadas, y reabrir una ficha invalida la
+//  ventana entera: medido, la comprobacion de cada apretada miraba el 0.6 %
+//  de la ventana, la media de 2491. Lo que se tira es el dibujo; lo que
+//  importa es lo que la imagen hace al pintarlo.
+//
+//  Y CON SU CUADRO DELANTE, que es como pinta la app: cada vblank llama a
+//  `pintaCuadro` y despues pinta, asi que lo que la cara mira sola -la banda,
+//  la cuna, la linea de continuidad- ha visto el estado que se pinta. Sin el,
+//  la cuna se pintaba en una ranura que `miraCuna` no habia visto nunca y la
+//  comprobacion de despues la daba por vieja: quince apretadas en el EQ.
+void MainComponent::auditAlDia (float esc)
+{
+    auto* raiz = getTopLevelComponent();
+    if (raiz == nullptr || getWidth() <= 0 || getHeight() <= 0) return;
+
+    const int  f0 = UiAudit::fondosPintados;
+    const auto p0 = UiAudit::pixelesPintados;
+    const int  c0 = UiAudit::cuadrosPintados;
+    pintaCuadro (kContinuidadMs);
+    juce::Image tirada (juce::Image::ARGB,
+                        juce::roundToInt ((float) raiz->getWidth()  * esc),
+                        juce::roundToInt ((float) raiz->getHeight() * esc),
+                        true, juce::SoftwareImageType());
+    {
+        juce::Graphics g (tirada);
+        g.addTransform (juce::AffineTransform::scale (esc));
+        raiz->paintEntireComponent (g, true);
+    }
+    UiAudit::fondosPintados  = f0;
+    UiAudit::pixelesPintados = p0;
+    UiAudit::cuadrosPintados = c0;
+}
+
+// ============================================================================
+//  LA CARA GUARDADA CONTRA LA DE AHORA.
+//
+//  `CacheCara` solo vuelve a pintar lo que alguien invalido, asi que un
+//  control que cambia sin su `repaint` se queda viejo EN EL TELEFONO. Hasta
+//  esta tanda alli no se podia notar: cada cuadro era la ventana entera y lo
+//  arreglaba el siguiente que se moviera. Y el banco tampoco lo veia, porque
+//  sus fotos -`createComponentSnapshot`- pintan la cara de cero.
+//
+//  Esto pinta el cuadro por la imagen -por la raiz, como lo pinta la ventana-
+//  y la cara entera sin ella, a la misma escala, y cuenta los pixeles que no
+//  son iguales.
+// ============================================================================
+int MainComponent::auditCaraVieja (float esc, juce::Rectangle<int>& caja, juce::String& quien,
+                                   double& mirado)
+{
+    caja   = {};
+    quien  = {};
+    mirado = 0.0;
+    auto* raiz = getTopLevelComponent();
+    if (raiz == nullptr || getWidth() <= 0 || getHeight() <= 0
+        || raiz->getLocalPoint (this, juce::Point<int>()) != juce::Point<int>())
+        return -1;
+
+    const int  f0 = UiAudit::fondosPintados;
+    const auto p0 = UiAudit::pixelesPintados;
+    const int  c0 = UiAudit::cuadrosPintados;
+
+    //  UN CUARTO DE SEGUNDO DE CUADROS PRIMERO, como el que vendria: lo que se
+    //  mueve solo -la barra de trabajo, las agujas, el destello de un pad, la
+    //  banda de los colores, la linea de continuidad- se invalida donde lo
+    //  invalida la app. Sin el, todo lo que anima su reloj saldria viejo por no
+    //  haber pasado el tiempo y no porque falte un `repaint`. Y es el cuadro
+    //  de la app y nada mas: llamar aqui a `miraContinuidad` -como hacia la
+    //  primera version- arreglaba en la prueba lo que la app no arreglase.
+    pintaCuadro (kContinuidadMs);
+
+    //  Y LO QUE ESE CUADRO VUELVE A PINTAR NO SE MIRA: sale recien pintado por
+    //  construccion, y si difiere de la cara entera es porque las dos se
+    //  pintan con unos milisegundos de diferencia -la barra de trabajo se
+    //  mueve con el reloj de pared-. Lo viejo vive justo fuera: donde nadie
+    //  invalido. Redondeado hacia fuera, como lo recorta la imagen.
+    juce::RectangleList<int> fresco;
+    for (const auto& r : auditSucio (esc))
+        fresco.add ((r.toFloat() * esc).getSmallestIntegerContainer());
+
+    const int lw = juce::roundToInt ((float) raiz->getWidth()  * esc);
+    const int lh = juce::roundToInt ((float) raiz->getHeight() * esc);
+    juce::Image porImagen (juce::Image::ARGB, lw, lh, true, juce::SoftwareImageType());
+    juce::Image entera    (juce::Image::ARGB, lw, lh, true, juce::SoftwareImageType());
+    {
+        juce::Graphics g (porImagen);
+        g.addTransform (juce::AffineTransform::scale (esc));
+        raiz->paintEntireComponent (g, true);
+    }
+    {
+        juce::Graphics g (entera);
+        g.addTransform (juce::AffineTransform::scale (esc));
+        paintEntireComponent (g, true);
+    }
+    UiAudit::fondosPintados  = f0;
+    UiAudit::pixelesPintados = p0;
+    UiAudit::cuadrosPintados = c0;
+
+    //  Sin la ultima columna ni la ultima fila si la escala las parte:
+    //  412 x 2.625 son 1081.5 pixeles, y pintada entera la cara deja ese
+    //  medio pixel a medio cubrir donde la imagen -redondeada hacia fuera-
+    //  lo tiene lleno. Son el borde de la pantalla, no algo viejo: medido,
+    //  las 3483 diferencias de la primera corrida eran 1081 + 2402.
+    const int w = juce::jmin (lw, (int) std::floor ((float) getWidth()  * esc));
+    const int h = juce::jmin (lh, (int) std::floor ((float) getHeight() * esc));
+    std::vector<char> fuera ((size_t) juce::jmax (0, w * h), 1);
+    for (const auto& r : fresco)
+        for (int y = juce::jmax (0, r.getY()); y < juce::jmin (h, r.getBottom()); ++y)
+            for (int x = juce::jmax (0, r.getX()); x < juce::jmin (w, r.getRight()); ++x)
+                fuera[(size_t) (y * w + x)] = 0;
+
+    //  Y A MAS DE DOS UNIDADES por canal. El chasis es una imagen horneada
+    //  que a 2.625 se pinta remuestreada, y JUCE la recorre por tramos:
+    //  un tramo que empieza en el borde de lo que se invalido redondea
+    //  distinto que uno que empieza en el borde de la ventana. Medido en
+    //  la cara: tres pixeles del fondo a UNA unidad en un canal -ff264443
+    //  contra ff264543- y ninguno mas. Lo viejo de verdad no se esconde
+    //  ahi: con la imagen rota a proposito, la mesa da 25 456 pixeles,
+    //  CANALES 28 559 y la cara 1 739.
+    auto difiere = [] (juce::Colour p, juce::Colour q)
+    {
+        return std::abs ((int) p.getRed()   - (int) q.getRed())   > 2
+            || std::abs ((int) p.getGreen() - (int) q.getGreen()) > 2
+            || std::abs ((int) p.getBlue()  - (int) q.getBlue())  > 2
+            || std::abs ((int) p.getAlpha() - (int) q.getAlpha()) > 2;
+    };
+    const juce::Image::BitmapData a (porImagen, juce::Image::BitmapData::readOnly);
+    const juce::Image::BitmapData b (entera,    juce::Image::BitmapData::readOnly);
+    int distintos = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+    long long vistos = 0;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+        {
+            if (fuera[(size_t) (y * w + x)] == 0) continue;
+            ++vistos;
+            if (difiere (a.getPixelColour (x, y), b.getPixelColour (x, y)))
+            {
+                ++distintos;
+                x0 = juce::jmin (x0, x);  x1 = juce::jmax (x1, x);
+                y0 = juce::jmin (y0, y);  y1 = juce::jmax (y1, y);
+            }
+        }
+    mirado = w > 0 && h > 0 ? (double) vistos / ((double) w * (double) h) : 0.0;
+
+    if (distintos > 0)
+    {
+        //  En puntos de la cara y no en pixeles del aparato, que es como se
+        //  colocan los controles.
+        caja = juce::Rectangle<int>::leftTopRightBottom (x0, y0, x1 + 1, y1 + 1).toFloat()
+                   .transformedBy (juce::AffineTransform::scale (1.0f / esc))
+                   .getSmallestIntegerContainer();
+
+        //  Y quien se pinta en el centro de esa caja: el mas hondo que se ve,
+        //  con los suyos detras. Es lo que hay que ir a mirar.
+        juce::Component* hondo = this;
+        for (bool baja = true; baja;)
+        {
+            baja = false;
+            const auto punto = hondo->getLocalPoint (this, caja.getCentre());
+            for (int i = hondo->getNumChildComponents(); --i >= 0;)
+            {
+                auto* k = hondo->getChildComponent (i);
+                if (k->isVisible() && k->getBounds().contains (punto)) { hondo = k; baja = true; break; }
+            }
+        }
+        for (auto* k = hondo; k != nullptr && k != this; k = k->getParentComponent())
+            quien << (quien.isEmpty() ? "" : " < ")
+                  << (k->getName().isNotEmpty() ? k->getName() : juce::String (typeid (*k).name()));
+        if (quien.isEmpty()) quien = "MainComponent";   // lo pinta la cara misma
+    }
+    return distintos;
 }

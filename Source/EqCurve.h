@@ -151,7 +151,17 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
-        if (r.isEmpty() || fuente == nullptr) return;
+        if (r.isEmpty()) return;
+
+        //  OPACA ES CUBRIR LA CAJA ENTERA, esquinas incluidas. Con la cara
+        //  guardada en una imagen, repintar solo la curva no repinta lo de
+        //  debajo, y las cuatro esquinas del redondeo se mezclaban una y otra
+        //  vez sobre lo que ya habia: el cristal acababa con esquinas
+        //  cuadradas y oscuras en el telefono. Lo que hay debajo es el plato
+        //  -la curva esta dentro de el, a `margenPlato` de su borde- y eso es
+        //  lo que se pinta.
+        g.fillAll (ZatiColours::plate);
+        if (fuente == nullptr) return;
 
         //  El cristal, como el del espectro y el de la rejilla: la curva es un
         //  instrumento de lectura y se lee sobre fondo hundido.

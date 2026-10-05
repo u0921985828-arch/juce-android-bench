@@ -28,9 +28,114 @@ static_assert (Iconos::kFamiliasConDibujo == Sintes::kFamilias,
 //  Los divisores del ENGANCHE, en el orden de sus chips: cero es libre.
 static constexpr int kDivSync[] = { 0, 1, 2, 4, 8, 16 };
 
+//  LA CARA GUARDADA EN UNA IMAGEN, por el telefono.
+//
+//  Un Android con aceleracion por hardware no respeta el recorte de
+//  `invalidate`: desde la API 21 la vista se vuelve a grabar ENTERA en cada
+//  cuadro, y JUCE la pinta por software en un bufer del tamano de la pantalla
+//  -`handlePaintCallback` lee `getClipBounds` y le llega la ventana-. O sea
+//  que la aguja de un fader que pide su banda de 22 px le costaba al telefono
+//  la cara, el velo, la tarjeta y las dieciseis filas de la mesa, sesenta
+//  veces por segundo con algo sonando: «en el Mixer» la app iba pesada.
+//
+//  Con la cara en una imagen, lo que se repinta es lo que se invalido -como en
+//  el escritorio- y el resto del cuadro es copiar la imagen.
+//
+//  Y NO ES `setBufferedToImage`, que fue lo primero que se probo: la de JUCE
+//  guarda lo VALIDO y recorta excluyendolo, y a una escala que no es entera
+//  -2.625 en un 412x915- cada rectangulo excluido se redondea hacia dentro y
+//  deja una rendija de un pixel en cada borde. Con veintidos rectangulos las
+//  rendijas cruzan la ventana, el recorte vuelve a ser la ventana entera y
+//  cada control de la app entra a pintarse: medido, 1.004 ventanas por
+//  cuadro igual que sin imagen. Esta guarda lo SUCIO y recorta en pixeles del
+//  aparato, redondeando hacia fuera, antes de poner la escala.
+class CacheCara final : public juce::CachedComponentImage
+{
+public:
+    explicit CacheCara (juce::Component& c) : duena (c) {}
+
+    void paint (juce::Graphics& g) override
+    {
+        const float esc = g.getInternalContext().getPhysicalPixelScaleFactor();
+        const auto  b   = duena.getLocalBounds();
+        const auto  ib  = (b.toFloat() * esc).getSmallestIntegerContainer();
+
+        if (imagen.isNull() || imagen.getBounds() != ib.withZeroOrigin()
+            || std::abs (esc - escala) > 1.0e-4f)
+        {
+            imagen = juce::Image (duena.isOpaque() ? juce::Image::RGB : juce::Image::ARGB,
+                                  juce::jmax (1, ib.getWidth()), juce::jmax (1, ib.getHeight()),
+                                  ! duena.isOpaque(), juce::SoftwareImageType());
+            escala = esc;
+            sucio  = b;
+        }
+
+        if (! sucio.isEmpty())
+        {
+            juce::RectangleList<int> enAparato;
+            for (const auto& r : sucio)
+                enAparato.add ((r.toFloat() * esc).getSmallestIntegerContainer());
+
+            juce::Graphics ig (imagen);
+            ig.reduceClipRegion (enAparato);
+            if (! duena.isOpaque())
+            {
+                ig.getInternalContext().setFill (juce::Colours::transparentBlack);
+                ig.getInternalContext().fillRect (imagen.getBounds(), true);
+                ig.getInternalContext().setFill (juce::Colours::black);
+            }
+            ig.addTransform (juce::AffineTransform::scale (esc));
+            long long area = 0;
+            for (const auto& r : sucio) area += (long long) r.getWidth() * (long long) r.getHeight();
+            UiAudit::areaRecorte = area;
+            duena.paintEntireComponent (ig, true);
+            UiAudit::areaRecorte = -1;
+            sucio.clear();
+        }
+
+        g.setColour (juce::Colours::black.withAlpha (duena.getAlpha()));
+        g.drawImageTransformed (imagen, juce::AffineTransform::scale (
+                                    (float) b.getWidth()  / (float) imagen.getWidth(),
+                                    (float) b.getHeight() / (float) imagen.getHeight()), false);
+    }
+
+    //  Lo que el siguiente `paint` a la escala `esc` va a volver a pintar:
+    //  todo si la imagen no existe o es de otra escala. Ver auditCaraVieja.
+    juce::RectangleList<int> pendiente (float esc) const
+    {
+        const auto b = duena.getLocalBounds();
+        if (imagen.isNull() || std::abs (esc - escala) > 1.0e-4f
+            || imagen.getBounds() != (b.toFloat() * esc).getSmallestIntegerContainer().withZeroOrigin())
+            return juce::RectangleList<int> (b);
+        return sucio;
+    }
+
+    bool invalidateAll() override                                 { sucio = duena.getLocalBounds(); return true; }
+    bool invalidate (const juce::Rectangle<int>& area) override   { sucio.add (area.getIntersection (duena.getLocalBounds())); return true; }
+    void releaseResources() override                              { imagen = {}; }
+
+private:
+    juce::Component& duena;
+    juce::Image imagen;
+    juce::RectangleList<int> sucio;
+    float escala = 0.0f;
+};
+
+juce::RectangleList<int> MainComponent::auditSucio (float esc) const
+{
+    if (auto* c = dynamic_cast<const CacheCara*> (getCachedComponentImage()))
+        return c->pendiente (esc);
+    return {};
+}
+
 MainComponent::MainComponent()
 {
     setLookAndFeel (&lnf);
+    //  Opaca porque lo es -`pintaFondo` copia una imagen opaca a toda la
+    //  ventana-, y decirlo deja la imagen en RGB y ahorra pintar la ventana de
+    //  debajo. Ver CacheCara.
+    setOpaque (true);
+    setCachedComponentImage (new CacheCara (*this));
 
     // Build the ZATI folder tree before anything can need it: the browser opens
     // in Samples/, projects save into Projects/, REC writes to Recordings/.
@@ -4867,12 +4972,31 @@ MainComponent::MainComponent()
         const int hz = UiAudit::env ("ZATI_VBLANK").getIntValue();
         if (hz > 0)
         {
-            relojDibujo.fn = [this]
+            //  Y LA MARCA DE TIEMPO ES LA DEL PANEL, no la de cuando llega el
+            //  temporizador. En el telefono el aviso trae la hora del vsync,
+            //  que cae en multiplos exactos del periodo aunque el hilo de
+            //  mensajes lo coja tarde; la del temporizador temblaba con la
+            //  carga, un panel de 120 salia de 9.3 a 10.6 ms segun la corrida
+            //  -justo por donde 50 cuadros por segundo decide si se salta uno
+            //  de cada dos- y la cadencia cambiaba sin que nada cambiara: hasta
+            //  seis cambios en diez segundos, y `Tests/fluidez.py` en rojo una
+            //  corrida de cada ocho con cualquier binario. Asi que se redondea
+            //  al vsync de un panel de verdad, y dos avisos en el mismo vsync
+            //  son uno.
+            //
+            //  Y EL TEMPORIZADOR MIRA DOS VECES POR PERIODO: a un periodo justo
+            //  llegaba tarde con la carga y se comia vsyncs que un panel de
+            //  verdad si entrega -575 cuadros en diez segundos a 60 Hz con la
+            //  cara quieta, en vez de 600-, y lo que se perdia era el banco.
+            const double periodoMs = 1000.0 / (double) juce::jlimit (1, 240, hz);
+            relojDibujo.fn = [this, periodoMs, ultimo = -1.0] () mutable
             {
-                const double t = juce::Time::getMillisecondCounterHiRes();
-                enVBlank (t / 1000.0);
+                const double vsync = std::floor (juce::Time::getMillisecondCounterHiRes() / periodoMs);
+                if (vsync <= ultimo) return;
+                ultimo = vsync;
+                enVBlank (vsync * periodoMs / 1000.0);
             };
-            relojDibujo.startTimerHz (juce::jlimit (1, 240, hz));
+            relojDibujo.startTimer (juce::jmax (1, (int) (periodoMs / 2.0)));
         }
         else
         {
@@ -8715,6 +8839,21 @@ void MainComponent::ponModoCancion (bool on)
     }
     status.setText (on ? T ("PLAY toca la cancion") : T ("PLAY toca el patron / la cadena"),
                     juce::dontSendNotification);
+
+    //  Y EL CONTENIDO DE EXPORTAR, que dice el modo dos veces: «fuente» sale
+    //  de `exportSourceLabel` -CANCION o el patron- y «duracion» de
+    //  `lengthInSteps`, que mide una cosa u otra segun este estado. Se
+    //  repintaban las tres tapas y la ficha no, y con la cara guardada -ver
+    //  CacheCara- EXPORTAR seguia diciendo CANCION con PLAY tocando ya el
+    //  patron. Medido con `ZATI_CENTINELA`: 1125 pixeles tras la tapa de modo
+    //  de la cara con la ficha abierta (`expo`), todos en esos dos renglones.
+    //  Aqui, que es el embudo del modo, y no en una tapa: asi vale para las
+    //  tres, para PLAY de la cancion y para abrir un proyecto. Y el contenido
+    //  entero y no los dos renglones: medirlos aqui seria repetir el maquetado
+    //  de `paintExportSheetContent`, que son dos reglas; y no la ficha, que
+    //  ocupa la ventana entera.
+    if (exportSheet.isVisible())
+        exportSheet.donde().repaint (exportSheet.areaContenido());
 }
 
 juce::Rectangle<int> MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectangle<int> caja,
@@ -9696,6 +9835,15 @@ void MainComponent::selectPad (int index)
         refreshStepGrid();      // el carril marcado es el del pad elegido
         seqSheet.repaint();     // y la cabecera dice de que pad son las notas
     }
+    //  Y EL TITULO DE LA FICHA MIDI, que dice de que pad sale el fichero
+    //  -`etiquetaPad (selectedPad)`- y nadie lo avisaba: con la tarjeta abierta
+    //  los pads de debajo se siguen tocando por `onFuera`, y con la cara en una
+    //  imagen el titulo se quedaba en el pad de antes. Medido con
+    //  `ZATI_CENTINELA`: de 42 a 660 pixeles por toque en los dieciseis pads
+    //  de detras (`midf/49`..`midf/64`), todos dentro de `midiTitleArea`. Solo
+    //  el renglon y no la ficha, que ocupa la ventana entera, y con un pixel de
+    //  mas por el suavizado de los bordes, como `seqChainBand`.
+    if (midiSheet.isVisible()) midiSheet.repaint (midiTitleArea.expanded (1));
     //  Y EL TROCEADO, que ya se podia cambiar de pad DESDE QUE la ficha pasa
     //  por `openSheet` -o sea desde que un toque en un pad que asoma llega a
     //  `selectPad`- y no se enteraba: la cabecera decia «PAD 05», los golpes
@@ -14010,6 +14158,56 @@ juce::String MainComponent::lineaDeContinuidad (int anchoDisponible,
     }
 
     return linea;
+}
+
+//  LA LINEA CAMBIA SOLA, y con la cara guardada en una imagen -ver CacheCara-
+//  lo que nadie invalida no se vuelve a pintar. En el telefono antes no se
+//  notaba: cada cuadro era la ventana entera. Medido despues de seis segundos
+//  sonando: la ventana seguia diciendo «64 PADS» con la app diciendo «A
+//  SALVO», 214 pixeles. Cuatro veces por segundo desde el cuadro, que
+//  componerla son tres medidas de texto y cambia un par de veces por sesion.
+void MainComponent::miraContinuidad()
+{
+    if (cajaContinuidad.isEmpty()) return;
+    const auto linea = lineaDeContinuidad (cajaContinuidad.getWidth(), fuenteContinuidad());
+    if (linea == lineaVista) return;
+    lineaVista = linea;
+    repaint (cajaContinuidad);
+}
+
+//  Y LA BANDA DE LOS OCHO COLORES, que se enciende por lo que hay en los pads
+//  y no por lo que alguien toca. Medido con `ZATI_CENTINELA` tras cargar la
+//  fabrica: la ventana con los ocho segmentos apagados y la app con los ocho
+//  encendidos, 1504 pixeles. En cada cuadro, que son 64 comparaciones.
+void MainComponent::miraBanda()
+{
+    if (cajaBanda.isEmpty()) return;
+    int encendidos = 0;
+    for (int p = 0; p < kNumPads; ++p)
+        if (padHasSample[(size_t) p] && juce::isPositiveAndBelow (padZati[(size_t) p], Zati::kNumColours))
+            encendidos |= 1 << padZati[(size_t) p];
+    if (encendidos == bandaVista) return;
+    bandaVista = encendidos;
+    repaint (cajaBanda);
+}
+
+//  Y LA CUNA, que apunta a la ranura donde esta el efecto con los tres mandos
+//  y la dibuja la cara en la costura de encima. Medido con `ZATI_CENTINELA`
+//  tras cambiar de canal: la fila ya decia «+» en las seis y la ventana seguia
+//  señalando la primera, 24 pixeles en quince apretadas. Las seis ranuras se
+//  rehacen desde veinte sitios (`refrescaRanuras`); el foco, desde otros.
+void MainComponent::miraCuna()
+{
+    if (cajaCunas.isEmpty()) return;
+    const int s = slotDeFx (focusedFx);
+    if (s == cunaVista) return;
+    cunaVista = s;
+    repaint (cajaCunas);
+}
+
+juce::Font MainComponent::fuenteContinuidad()
+{
+    return ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f);
 }
 
 void MainComponent::deleteProject (const juce::String& name)
@@ -21639,7 +21837,51 @@ void MainComponent::enVBlank (double timestampSec)
     //  aleteaba con el jitter del propio aviso: 28 cambios en 10 s a 60 Hz con
     //  la cara quieta, que es peor que no tener techo. Con la media movil el
     //  panel se mide una vez y se cree.
-    periodoPanel = periodoPanel > 0.0 ? 0.9 * periodoPanel + 0.1 * periodo : periodo;
+    //
+    //  Y UN AVISO QUE LLEGA TARDE POR PERIODOS ENTEROS NO ES UN PANEL MAS
+    //  LENTO: es un cuadro que el hilo de mensajes no llego a coger. Metido tal
+    //  cual en la media, uno solo de 24 ms a 120 Hz la subia de 8.4 a 10.0, el
+    //  suelo se recalculaba y la cadencia cambiaba dos veces sin que el panel
+    //  hubiera cambiado nada: medido, hasta seis cambios en diez segundos en
+    //  `Tests/fluidez.py`, y tres corridas de siete por encima del tope. Se
+    //  cuenta como los periodos que son. Y si llegan tarde CUATRO SEGUIDOS si
+    //  es el panel, que ha cambiado de modo, y se cree.
+    //
+    //  Y SOLO SI SON PERIODOS ENTEROS DE VERDAD, a un cuarto de periodo. Un
+    //  aviso de periodo y medio no es un cuadro perdido, es un aviso que se
+    //  retraso y que el siguiente compensa llegando antes; partido en dos
+    //  metia 8.3 ms en la media de un panel de 90 Hz, el siguiente corto la
+    //  bajaba otra vez, y la cadencia cambiaba: medido, 0.83 cambios de media
+    //  y cuatro de pico en doce corridas a 90 Hz, contra cero sin el arreglo.
+    //
+    //  SOLO CON CUADROS BARATOS: si el cuadro cuesta medio periodo o mas, que
+    //  el aviso llegue tarde es lo normal y no un tropiezo, y la cadencia ya
+    //  vive de ese periodo largo. Sin esta condicion, con un cuadro de 24 ms a
+    //  60 Hz la app se creia un panel de 60 que no alcanzaba, saltaba avisos
+    //  y pintaba 245 cuadros en diez segundos en vez de 377.
+    //
+    //  Y BARATO ES CONTRA EL TIEMPO QUE EL CUADRO TIENE, no contra un periodo:
+    //  a 120 Hz pintando uno de cada dos, un cuadro de 5 ms tiene 16.7 y es
+    //  barato, y medido contra los 8.3 de un vsync salia caro, entraba tal
+    //  cual y volvia el doble cambio de cadencia que esto quita.
+    //
+    //  Y EL CAMBIO DE MODO SE CREE DE UNA VEZ: un panel adaptativo que baja de
+    //  120 a 60 entrega avisos de dos periodos, todos; al cuarto seguido el
+    //  periodo pasa a ser el nuevo sin esperar a que la media lo alcance. Con
+    //  ocho y la media detras, la app pintaba a 30 en un panel de 60 durante
+    //  unos 370 ms en vez de los 133 de antes de este arreglo.
+    double periodoMuestra = periodo;
+    if (periodoPanel > 0.0 && cuadroCosteMs >= 0.5 * periodoPanel * (double) (saltoNivel + 1))
+        avisosLargosSeguidos = 0;
+    else if (periodoPanel > 0.0)
+    {
+        const double razon = periodo / periodoPanel;
+        const double veces = std::round (razon);
+        if (veces < 2.0 || std::abs (razon - veces) > 0.25)       avisosLargosSeguidos = 0;
+        else if (++avisosLargosSeguidos < kAvisosLargosModo)      periodoMuestra = periodo / veces;
+        else                                                      { periodoPanel = 0.0; avisosLargosSeguidos = 0; }
+    }
+    periodoPanel = periodoPanel > 0.0 ? 0.9 * periodoPanel + 0.1 * periodoMuestra : periodoMuestra;
 
     //  Y CON MARGEN DEL 10 %: un panel de 60 Hz declarado entrega 16.6 o 16.8
     //  segun el momento, y sin el margen la mitad de los telefonos de 60 Hz
@@ -21714,6 +21956,20 @@ void MainComponent::pintaCuadro (double dtMs)
     //  Mientras algo este cargando, la barra se repinta sola: es lo unico de
     //  la cara que tiene que moverse aunque no pase nada mas.
     if (busyJobs > 0) busyBar.repaint();
+
+    //  Y LO QUE CAMBIA SOLO EN LA CARA, aqui y no en el temporizador: la banda
+    //  de los colores si lo que hay en los pads la cambio, la cuna si el foco
+    //  cambio de ranura, y la linea de continuidad cada cuarto de segundo. En
+    //  el cuadro porque es lo que el banco puede repetir -ver auditCaraVieja-,
+    //  y un arreglo que el banco no puede quitar sin que se note es lo unico
+    //  que vale como arreglo.
+    miraBanda();
+    miraCuna();
+    if ((continuidadMs += dtMs) >= kContinuidadMs)
+    {
+        continuidadMs = 0.0;
+        miraContinuidad();
+    }
 
 
     //  The lamps under the effect keys.

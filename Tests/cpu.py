@@ -100,6 +100,63 @@ VBLANK_HZ = 60
 TOPE_SONANDO = 0.05
 
 
+#  Y EL CUADRO COMO LO PAGA EL TELEFONO, que es lo que todo lo de arriba no
+#  podia ver.
+#
+#  Las ventanas por cuadro de arriba son las del ESCRITORIO, que respeta el
+#  recorte: la aguja que se mueve pide su banda y se pinta su banda. Un Android
+#  con aceleracion por hardware no -desde la API 21 la vista ignora el
+#  rectangulo de `invalidate` y se vuelve a grabar entera, y JUCE la pinta por
+#  software en un bufer del tamano de la pantalla-, asi que alli cada una de
+#  esas bandas era la ventana ENTERA. Del telefono: «es menos ligera», y el
+#  gesto, «en el Mixer». Medido a la escala de un 412x915 de verdad, 2.625, con
+#  la maquina sonando: la mesa pagaba 1.004 ventanas por cuadro -la cara, el
+#  velo, la tarjeta y las dieciseis filas- a sesenta cuadros por segundo.
+#
+#  Lo que se juzga es lo que la cara VUELVE A PINTAR en ese cuadro entero, en
+#  ventanas, que no depende de la maquina; los milisegundos se imprimen porque
+#  son la otra mitad de la historia, pero un tope en milisegundos seria un tope
+#  del portatil. Y con la segunda cifra al lado: los pixeles en que ese cuadro
+#  difiere de la cara pintada entera tras mover un fader y un MUTE. Una imagen
+#  vieja ahorra lo mismo que una buena; solo las dos juntas dicen que el ahorro
+#  es de verdad. Los mandos que se mueven son uno por vista -el fader y el MUTE
+#  del pad 0, los del canal 0, el primer CTRL de la cara- y una vista en la que
+#  no se ve ninguno no prueba nada: por eso la tercera columna.
+ESCALA_TELEFONO = 2.625
+#  La mesa repinta sus agujas y nada mas: 0.425 medido, con las dieciseis
+#  bandas y la del master juntas en un recorte. Media ventana deja pasar eso y
+#  no deja pasar el cuadro entero, que mide 1.004.
+TOPE_TELEFONO = 0.5
+
+
+#  Y LO VIEJO, QUE ES LO QUE ESE AHORRO TRAE CONSIGO.
+#
+#  La cara guardada solo vuelve a pintar lo que alguien invalido, asi que lo
+#  que cambia sin su `repaint` se queda viejo EN EL TELEFONO. Antes alli no se
+#  podia notar -cada cuadro era la ventana entera- y aqui tampoco: las fotos
+#  del banco pintan la cara de cero. Se mira por dos sitios, porque cada uno
+#  ve lo que el otro no:
+#
+#    - VIVO: tras los seis segundos sonando, con los temporizadores y los
+#      hilos de verdad, la ventana contra la cara pintada entera. Asi salio la
+#      linea de continuidad: «64 PADS» en la ventana con la app diciendo «A
+#      SALVO», 214 pixeles.
+#    - TRAS CADA TAPA: la misma comparacion despues de cada una de las ~2500
+#      apretadas de `ZATI_TAPAS`, con la imagen puesta al dia antes de apretar.
+#      Asi salio la banda de los ocho colores: apagada en la ventana y
+#      encendida en la app tras cargar la fabrica, 1504 pixeles. Esta corrida
+#      va de arriba abajo -ningun temporizador salta- y por eso hace falta la
+#      otra.
+#
+#  Y con un recuento debajo, que una comprobacion que no mira nada sale en
+#  cero: el minimo de apretadas es el de `Tests/atasco.py`, y la parte de la
+#  ventana mirada por apretada tiene suelo. Sin poner la imagen al dia antes
+#  de cada una, reabrir la ficha invalidaba la ventana entera y la
+#  comprobacion miraba el 0.6 % de media: cero viejas, sin haber mirado.
+MINIMO_CENTINELA = 2000
+MIRADO_CENTINELA = 0.10
+
+
 #  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA.
 #
 #  `display_alive` caia a ":99" cuando `DISPLAY` no esta puesta y las corridas
@@ -122,7 +179,7 @@ def display_alive():
         return False
 
 
-def corre (ficha, sonando=False, quieta=False):
+def corre (ficha, sonando=False, quieta=False, cuadro=False):
     #  CON SU PROPIO HOME, que es lo que le faltaba. Sin el, la app restaura la
     #  SESION que dejara la ultima prueba que corriera - y `Tests/ranuras.py` y
     #  `Tests/dinamica.py` dejan DOS efectos encendidos, cuyas lamparas laten a
@@ -138,6 +195,7 @@ def corre (ficha, sonando=False, quieta=False):
                  "ZATI_DEMO": "1", "ZATI_OPEN": ficha, "ZATI_SPIN": str (SEGUNDOS),
                  "ZATI_VBLANK": str (VBLANK_HZ)})
     if sonando: env["ZATI_SONANDO"] = "1"
+    if cuadro:  env["ZATI_CUADRO"] = str (ESCALA_TELEFONO)
 
     #  APAGAR EL MOVIMIENTO se pide como se pide de verdad: escribiendo la
     #  PREFERENCIA en el HOME de la corrida. No hace falta una entrada de banco
@@ -166,6 +224,38 @@ def corre (ficha, sonando=False, quieta=False):
             except Exception:
                 pass
     return None
+
+
+#  LAS ~2500 APRETADAS DE `ZATI_TAPAS`, cada una comprobada contra la cara
+#  pintada entera. Ver MINIMO_CENTINELA. Con su propio HOME, como `corre`, y
+#  con el plazo de `Tests/atasco.py`, que es la misma corrida.
+def centinela():
+    casa = tempfile.mkdtemp (prefix="zati-centinela-")
+    env = dict (os.environ)
+    env["DISPLAY"] = DISPLAY
+    env.update ({"HOME": casa,
+                 "XDG_DATA_HOME": os.path.join (casa, ".local", "share"),
+                 "ZATI_AUDIT": "1", "ZATI_SIZE": "412x915", "ZATI_LANG": "es",
+                 "ZATI_TAPAS": "1", "ZATI_CENTINELA": "1"})
+    try:
+        out = subprocess.run ([APP], env=env, capture_output=True, text=True,
+                              timeout=2400).stdout
+    except subprocess.TimeoutExpired:
+        return None, []
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+    total, viejas = None, []
+    for linea in out.splitlines():
+        linea = linea.strip()
+        if not linea.startswith ('{') or '"centinela"' not in linea: continue
+        try:
+            d = json.loads (linea)
+        except Exception:
+            continue
+        if   d.get ("centinela") == "total": total = d
+        elif d.get ("centinela") == "vieja": viejas.append (d)
+    return total, viejas
 
 
 #  Ventanas repintadas POR CUADRO. Contar LLAMADAS no separa un fotograma de
@@ -216,6 +306,7 @@ def main():
 
     print ("ficha    entradas  ventanas   CPU ms / %d s" % SEGUNDOS)
     malas = []
+    opacosMalos = []
     for f in FICHAS:
         r = corre (f)
         if r is None:
@@ -237,6 +328,20 @@ def main():
                   "   <-- se repinta sola" if equi > TOPE else ""))
         if equi > TOPE:
             malas.append (f or "(cara)")
+        #  Y LOS OPACOS, QUE CUBREN SU CAJA. Ver `auditOpacos`: uno que deja
+        #  pixeles al aire los mezcla una vez y otra en la imagen de la cara.
+        #  En el EQ se miran DOS -la cara y la curva-, o no se ha mirado la
+        #  que importa.
+        hu, op = int (r.get ("opacos_huecos", -1)), int (r.get ("opacos", 0))
+        if hu != 0:
+            malas.append ("%s: %s pixeles sin cubrir en los %d componentes opacos que se ven"
+                          % (f or "(cara)", hu if hu > 0 else "no contesto:", op))
+            opacosMalos.append ((f or "(cara)", hu, op))
+        if f == "eq" and op < 2:
+            malas.append ("eq: se miraron %d componentes opacos y la curva es uno de dos" % op)
+    for f, hu, op in opacosMalos:
+        print ("  %-8s %d pixeles sin cubrir en %d opacos   <-- un opaco que no cubre su caja"
+               % (f, hu, op))
 
     print()
     caraLate = 0.0
@@ -288,6 +393,98 @@ def main():
                                         ("   <-- pinta lo que no se ve" if mal else "")))
         if mal:
             malas.append ((f or "(cara)") + " sonando")
+    #  EL CUADRO DEL TELEFONO. Ver ESCALA_TELEFONO.
+    print()
+    print ("y el cuadro ENTERO como lo pinta un Android, a %.3f, sonando" % ESCALA_TELEFONO)
+    print ("ficha    ventanas  distintos  movidos   vivo   ms (mediana / p95, de esta maquina)")
+    for f in ("", "mix", "mixc"):
+        r = corre (f, sonando=True, cuadro=True)
+        nombre = f or "(cara)"
+        if r is None or "cuadro_ventanas" not in r:
+            print ("%-8s  --   no contesto" % nombre);  malas.append (nombre + " en el telefono")
+            continue
+        vt = float (r["cuadro_ventanas"])
+        di = int (r.get ("cuadro_distintos", -1))
+        mv = int (r.get ("cuadro_movidos", 0))
+        vi = int (r.get ("cuadro_vivo", -1))
+        print ("%-8s %8.3f %10d %8d %6d   %6.2f / %6.2f%s"
+               % (nombre, vt, di, mv, vi, float (r.get ("cuadro_ms_mediana", -1)),
+                  float (r.get ("cuadro_ms_p95", -1)),
+                  "   <-- pinta la ventana entera en cada cuadro" if vt > TOPE_TELEFONO else
+                  ("   <-- ensena algo viejo" if di != 0 else
+                   ("   <-- ensena algo viejo sin tocar nada, en %s"
+                    % (r.get ("cuadro_vivo_en") or "?") if vi != 0 else
+                    ("   <-- no se movio nada que se vea" if mv < 1 else "")))))
+        if vt < 0 or vt > TOPE_TELEFONO:
+            malas.append ("%s repinta %.3f ventanas por cuadro en el telefono (tope %.2f)"
+                          % (nombre, vt, TOPE_TELEFONO))
+        if di != 0:
+            malas.append ("%s: el cuadro del telefono difiere en %d pixeles de la cara "
+                          "pintada entera" % (nombre, di))
+        #  Y CON ALGO MOVIDO, que si no la segunda cifra es cero por no haber
+        #  mirado: la primera version de la medida no movia nada de la cara ni
+        #  de CANALES, y con la imagen rota a proposito las dos daban cero.
+        if mv < 1:
+            malas.append ("%s: la comprobacion de lo viejo no movio ningun mando que se vea"
+                          % nombre)
+        #  Y LO VIEJO QUE DEJA LA APP SOLA. Ver MINIMO_CENTINELA. -1 es que no
+        #  se pudo mirar, que tampoco es un cero.
+        if vi != 0:
+            malas.append ("%s: tras %d s sonando la ventana difiere en %d pixeles de la "
+                          "cara pintada entera, en %s caja %s"
+                          % (nombre, SEGUNDOS, vi, r.get ("cuadro_vivo_en") or "?",
+                             r.get ("cuadro_vivo_caja")))
+        #  Mirando al menos la mitad que el cuadro no vuelve a pintar: lo que
+        #  esta pendiente sale nuevo por construccion y no se compara, y un
+        #  cuadro puede pedir hasta TOPE_TELEFONO. Medido: 0.80 la cara, 0.97
+        #  la mesa, 0.95 CANALES.
+        #  Y LO MISMO TRAS MOVER: el MUTE que se pulsaba repintaba la mesa
+        #  entera, todo quedaba pendiente y en la mesa y en CANALES no se
+        #  comparaba ni un pixel. Cero distintos sin mirar no es cero.
+        cm = float (r.get ("cuadro_mirado", 0.0))
+        if cm < 1.0 - TOPE_TELEFONO:
+            malas.append ("%s: la comprobacion de lo viejo tras mover miro el %.0f %% de la "
+                          "ventana y el suelo es el %.0f %%"
+                          % (nombre, cm * 100.0, (1.0 - TOPE_TELEFONO) * 100.0))
+        vm = float (r.get ("cuadro_vivo_mirado", 0.0))
+        if vm < 1.0 - TOPE_TELEFONO:
+            malas.append ("%s: la comprobacion de lo viejo sin tocar nada miro el %.0f %% de la "
+                          "ventana y el suelo es el %.0f %%"
+                          % (nombre, vm * 100.0, (1.0 - TOPE_TELEFONO) * 100.0))
+
+    #  Y TRAS CADA TAPA. Ver MINIMO_CENTINELA.
+    print()
+    print ("y lo que la cara guardada ensenaria tras cada tapa de la app")
+    total, viejas = centinela()
+    if total is None:
+        print ("la sonda ZATI_CENTINELA no contesto")
+        malas.append ("la sonda ZATI_CENTINELA no contesto: no hay nada que juzgar")
+    else:
+        comp  = int (total.get ("comprobadas", 0))
+        mir   = float (total.get ("mirado", 0.0))
+        print ("  %d apretadas comprobadas, %d con algo viejo, %.3f de la ventana mirada por "
+               "apretada" % (comp, int (total.get ("viejas", -1)), mir))
+        for v in viejas[:12]:
+            print ("    %-28s %6d px  caja %-20s en %s"
+                   % (v.get ("que"), int (v.get ("px", 0)), v.get ("caja"), v.get ("quien")))
+        if len (viejas) > 12:
+            print ("    ... y %d mas" % (len (viejas) - 12))
+        if viejas or int (total.get ("viejas", -1)) != 0:
+            peor = max (viejas, key=lambda v: int (v.get ("px", 0))) if viejas else {}
+            malas.append ("%d apretadas dejan la ventana con algo viejo (la peor, %s: %d px en %s)"
+                          % (max (len (viejas), int (total.get ("viejas", 0))), peor.get ("que"),
+                             int (peor.get ("px", 0)), peor.get ("quien")))
+        if len (viejas) != int (total.get ("viejas", -1)):
+            malas.append ("el recuento dice %s apretadas con algo viejo y hay %d lineas: una "
+                          "de las dos miente" % (total.get ("viejas"), len (viejas)))
+        if comp < MINIMO_CENTINELA:
+            malas.append ("solo se comprobaron %d apretadas y el minimo son %d: la sonda no "
+                          "esta recorriendo la app" % (comp, MINIMO_CENTINELA))
+        if mir < MIRADO_CENTINELA:
+            malas.append ("la comprobacion tras cada tapa mira el %.1f %% de la ventana y el "
+                          "suelo es el %.0f %%: cero viejas sin haber mirado"
+                          % (mir * 100.0, MIRADO_CENTINELA * 100.0))
+
     #  Y QUE EL VBLANK ESTE VIVO, que es la comprobacion sin la cual todo lo
     #  de arriba puede salir verde con el dibujo cayendose al reloj.
     #

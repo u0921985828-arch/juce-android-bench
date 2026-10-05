@@ -33,7 +33,8 @@ void MainComponent::paint (juce::Graphics& g)
     ++UiAudit::fondosPintados;
     {
         const auto c = g.getClipBounds();
-        UiAudit::pixelesPintados += (long long) c.getWidth() * (long long) c.getHeight();
+        const auto caja = (long long) c.getWidth() * (long long) c.getHeight();
+        UiAudit::pixelesPintados += UiAudit::areaRecorte >= 0 ? juce::jmin (UiAudit::areaRecorte, caja) : caja;
     }
 
     //  La cara es la capa 0, y se pinta antes que las fichas. Ver
@@ -246,6 +247,18 @@ void MainComponent::paint (juce::Graphics& g)
         //  es su indice: con la fila en ranuras, `fxButtons[focusedFx]` es la
         //  tapa que ESTA en ese sitio y no la del efecto. Y si el tipo no esta
         //  puesto no hay a donde apuntar, asi que no se dibuja.
+        //  Y LA FRANJA DONDE PUEDE IR, se pinte o no: es lo que `miraCuna`
+        //  repinta cuando la ranura del foco cambia. Las mismas dos cuentas que
+        //  la cuna de abajo, con un pixel de mas por el suavizado.
+        {
+            const float tapaInk = (float) (fxRowArea.getY()
+                                           + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()));
+            const float arriba  = bandaEfectos.isEmpty() ? tapaInk - 9.0f
+                                                         : bandaEfectos.getEnd() + 1.0f;
+            cajaCunas = juce::Rectangle<float> ((float) fxRowArea.getX(), arriba,
+                                                (float) fxRowArea.getWidth(), tapaInk - arriba)
+                            .expanded (1.0f).getSmallestIntegerContainer();
+        }
         if (const int sFoco = slotDeFx (focusedFx); sFoco >= 0)
             if (auto* fb = fxButtons[sFoco])
             {
@@ -483,8 +496,7 @@ void MainComponent::paint (juce::Graphics& g)
                 //  es quien sabe que campos caben — con el TEXTO puesto, no con
                 //  el ancho de la ventana.
                 const bool named = currentProject.isNotEmpty();
-                const auto fuenteMeta = ZatiColours::monoFont (Metrics::fMeta, true)
-                                            .withExtraKerningFactor (0.10f);
+                const auto fuenteMeta = fuenteContinuidad();
                 const auto texto = lineaDeContinuidad (nameW, fuenteMeta);
 
                 g.setColour (ZatiColours::ink.withAlpha (named ? 0.55f : 0.28f));
@@ -499,6 +511,7 @@ void MainComponent::paint (juce::Graphics& g)
                 //  tres campos, o sea exactamente el caso en que eso importa:
                 //  si se metiera debajo de algo no fallaria, se publicaria.
                 const auto cajaProy = juce::Rectangle<int> (nameX, h.getY(), nameW, h.getHeight());
+                cajaContinuidad = cajaProy;
                 //  Marcada como ELIDIBLE: esta linea se corta con puntos
                 //  suspensivos a proposito -un nombre de proyecto no tiene
                 //  largo con el que contar, y cortado a media letra se lee como
@@ -517,6 +530,8 @@ void MainComponent::paint (juce::Graphics& g)
             const float w  = (float) h.getWidth() / (float) Zati::kNumColours;
             const float y0 = (float) h.getBottom() + 4.0f;
             const float bh = 4.0f;
+            cajaBanda = juce::Rectangle<float> (x0, y0, w * (float) Zati::kNumColours, bh)
+                            .getSmallestIntegerContainer();
 
             for (int i = 0; i < Zati::kNumColours; ++i)
             {

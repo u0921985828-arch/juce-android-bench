@@ -921,7 +921,60 @@ public:
                                       << ",\"huecos\":[";
                             for (size_t i = 0; i < UiAudit::huecoCubos.size(); ++i)
                                 std::cout << (i ? "," : "") << UiAudit::huecoCubos[i];
-                            std::cout << "]}" << std::endl;
+                            std::cout << "]";
+                            //  EL CUADRO DEL TELEFONO, despues del giro y con
+                            //  la maquina todavia sonando. Ver
+                            //  `auditCuadroTelefono`. `ZATI_CUADRO` es la
+                            //  escala: 2.625 es la de un 412x915 de verdad.
+                            if (const auto ce = UiAudit::env ("ZATI_CUADRO"); ce.isNotEmpty())
+                            {
+                                //  Y antes, lo que dejo el giro DE VERDAD: los
+                                //  temporizadores sonando invalidan lo suyo y
+                                //  la ventana lo pinta por la imagen. A la
+                                //  escala de la ventana, que con la del
+                                //  telefono la imagen se rehace entera y no
+                                //  queda nada viejo que ver.
+                                juce::Rectangle<int> cajaVivo;
+                                juce::String quienVivo;
+                                double miradoVivo = 0.0;
+                                const int vivo = c2->auditCaraVieja (
+                                    (float) juce::Component::getApproximateScaleFactorForComponent (c2),
+                                    cajaVivo, quienVivo, miradoVivo);
+                                std::cout << ",\"cuadro_vivo\":" << vivo
+                                          << ",\"cuadro_vivo_mirado\":" << miradoVivo
+                                          << ",\"cuadro_vivo_caja\":[" << cajaVivo.getX() << ","
+                                          << cajaVivo.getY() << "," << cajaVivo.getWidth() << ","
+                                          << cajaVivo.getHeight() << "]"
+                                          << ",\"cuadro_vivo_en\":\"" << UiAudit::esc (quienVivo) << "\"";
+                                double ventanasCuadro = -1.0, miradoCuadro = 0.0;
+                                int distintosCuadro = -1, movidosCuadro = 0;
+                                auto orden = c2->auditCuadroTelefono (
+                                                 juce::jlimit (0.5f, 4.0f, (float) ce.getDoubleValue()),
+                                                 60, ventanasCuadro, distintosCuadro, movidosCuadro,
+                                                 miradoCuadro);
+                                std::sort (orden.begin(), orden.end());
+                                std::cout << ",\"cuadro_ventanas\":" << ventanasCuadro
+                                          << ",\"cuadro_distintos\":" << distintosCuadro
+                                          << ",\"cuadro_movidos\":" << movidosCuadro
+                                          << ",\"cuadro_mirado\":" << miradoCuadro
+                                          << ",\"cuadro_muestras\":" << orden.size();
+                                if (! orden.empty())
+                                    std::cout << ",\"cuadro_ms_mediana\":" << orden[orden.size() / 2]
+                                              << ",\"cuadro_ms_p95\":" << orden[(orden.size() * 95) / 100];
+                            }
+                            //  Y LOS OPACOS. Ver `auditOpacos`: uno que no
+                            //  cubre su caja deja lo de debajo a medio mezclar
+                            //  en la imagen de la cara, y nada lo repinta.
+                            //  Al final: pintar la cara pasa por la imagen y
+                            //  la pone al dia, y lo de arriba mira lo que el
+                            //  giro dejo tal cual.
+                            {
+                                int opacos = 0;
+                                const int huecos = c2->auditOpacos (opacos);
+                                std::cout << ",\"opacos\":" << opacos
+                                          << ",\"opacos_huecos\":" << huecos;
+                            }
+                            std::cout << "}" << std::endl;
                             quit();
                         });
                         return;
