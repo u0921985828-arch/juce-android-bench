@@ -10141,13 +10141,16 @@ void MainComponent::refrescaCanalDelPad()
 void MainComponent::abreCanalNombre (int c)
 {
     const bool abrir = juce::isPositiveAndBelow (c, kNumCanales);
+    const bool yaAbierto = canNomSheet.isVisible();
     canEditado = abrir ? c : -1;
     canDibujando = false;
     canNomSheet.setVisible (abrir);
 
     if (abrir)
     {
-        canNomSheet.toFront (false);
+        //  Ya abierta ya esta delante: reordenar repinta la ventana entera, y
+        //  otra tira con la ficha abierta es la misma tarjeta (cpu.py).
+        if (! yaAbierto) canNomSheet.toFront (false);
         canNomBox.setText (canNombre[(size_t) c], juce::dontSendNotification);
         canLienzo.trazos.clear();
         refrescaCanalNombre();
