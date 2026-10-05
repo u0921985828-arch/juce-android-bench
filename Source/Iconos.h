@@ -2646,17 +2646,18 @@ namespace Iconos
     //  Ver ZatiLookAndFeel::reparteTapa, que es quien decide.
     static constexpr int kLadoMin = 13;
 
-    inline void dibuja (juce::Graphics& g, Id id, juce::Rectangle<float> caja, juce::Colour c)
+    //  UN TRAZO CUALQUIERA CON LA MANO DE LA CASA: la misma caja, el mismo
+    //  llenado y el mismo grosor que los dibujos de la tabla. Es lo que pinta
+    //  tambien el icono que se dibuja a dedo -ver `aIcono`-, y por eso esta
+    //  aparte: un dibujo de la persona y uno de la tabla, en la misma fila, se
+    //  leen de la misma mano porque los pinta la misma funcion.
+    inline void dibujaTrazo (juce::Graphics& g, Trazo t, juce::Rectangle<float> caja, juce::Colour c)
     {
-        if (id == Id::ninguno || id == Id::kNum) return;
-
         //  Cuadrada y centrada: un icono estirado a la caja que le toque sale
         //  con la rueda de AJUSTES ovalada y las tijeras torcidas.
         const float lado = juce::jmin (caja.getWidth(), caja.getHeight());
         if (lado < 4.0f) return;
         caja = caja.withSizeKeepingCentre (lado, lado);
-
-        auto t = trazo (id);
 
         //  TODOS OCUPAN LA MISMA CAJA.
         //
@@ -2713,6 +2714,99 @@ namespace Iconos
                                                    juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
         }
+    }
+
+    inline void dibuja (juce::Graphics& g, Id id, juce::Rectangle<float> caja, juce::Colour c)
+    {
+        if (id == Id::ninguno || id == Id::kNum) return;
+        dibujaTrazo (g, trazo (id), caja, c);
+    }
+
+    //  EL DIBUJO A DEDO, PASADO A ICONO. Del telefono: «un marco para dibujar
+    //  el icono que tu quieras y que se transforme». Lo que se transforma es la
+    //  MANO: un dedo tiembla, se pasa y deja esquinas donde queria curvas, y
+    //  ese temblor es lo que separa un garabato de un icono. Asi que cada trazo
+    //  se SIMPLIFICA -Ramer-Douglas-Peucker, al 3 % del dibujo: el temblor se
+    //  va y las esquinas que se querian se quedan-, se SUAVIZA -dos pasadas de
+    //  Chaikin, que redondean sin salirse del trazo-, se CIERRA si acaba donde
+    //  empezo, y el conjunto se encaja en la rejilla de 24 de la tabla. Lo
+    //  demas -caja, llenado y grosor- lo pone `dibujaTrazo`, como a los otros.
+    using Puntos = std::vector<juce::Point<float>>;
+
+    inline void simplifica (const Puntos& p, size_t a, size_t b, float eps, std::vector<bool>& queda)
+    {
+        if (b <= a + 1) return;
+        const juce::Line<float> recta (p[a], p[b]);
+        float peor = -1.0f; size_t cual = a;
+        for (size_t i = a + 1; i < b; ++i)
+        {
+            const float d = recta.getLength() < 1.0e-4f ? p[i].getDistanceFrom (p[a])
+                                                       : [&] { juce::Point<float> cerca; return recta.getDistanceFromPoint (p[i], cerca); }();
+            if (d > peor) { peor = d; cual = i; }
+        }
+        if (peor <= eps) return;
+        queda[cual] = true;
+        simplifica (p, a, cual, eps, queda);
+        simplifica (p, cual, b, eps, queda);
+    }
+
+    inline juce::Path aIcono (const std::vector<Puntos>& trazos)
+    {
+        float x0 = 1.0e9f, y0 = 1.0e9f, x1 = -1.0e9f, y1 = -1.0e9f;
+        for (const auto& t : trazos)
+            for (const auto& q : t)
+            {
+                x0 = juce::jmin (x0, q.x); y0 = juce::jmin (y0, q.y);
+                x1 = juce::jmax (x1, q.x); y1 = juce::jmax (y1, q.y);
+            }
+        const auto caja = x1 < x0 ? juce::Rectangle<float>() : juce::Rectangle<float>::leftTopRightBottom (x0, y0, x1, y1);
+        const float tam = juce::jmax (caja.getWidth(), caja.getHeight(), 1.0f);
+
+        juce::Path out;
+        for (const auto& t : trazos)
+        {
+            if (t.empty()) continue;
+            Puntos p = t;
+            if (p.size() > 2)
+            {
+                std::vector<bool> queda (p.size(), false);
+                queda.front() = queda.back() = true;
+                simplifica (p, 0, p.size() - 1, tam * 0.03f, queda);
+                Puntos s;
+                for (size_t i = 0; i < p.size(); ++i) if (queda[i]) s.push_back (p[i]);
+                p = s;
+            }
+            //  Un toque sin arrastre es un PUNTO, y un punto se dibuja: la
+            //  raya de una centesima que lo lleva sale redonda por la punta.
+            if (p.size() == 1) { out.startNewSubPath (p[0]); out.lineTo (p[0].translated (0.01f, 0.0f)); continue; }
+
+            //  Y SE CIERRA si el final cae cerca del principio: un dedo que da
+            //  la vuelta a un circulo lo acaba a un quinto del dibujo del
+            //  arranque, no encima (medido en la auditoria, bloque 22).
+            const bool cerrado = p.size() > 2 && p.front().getDistanceFrom (p.back()) < tam * 0.2f;
+            if (cerrado) p.back() = p.front();
+            for (int vuelta = 0; vuelta < 2 && p.size() > 2; ++vuelta)
+            {
+                Puntos c;
+                if (! cerrado) c.push_back (p.front());
+                for (size_t i = 0; i + 1 < p.size(); ++i)
+                {
+                    c.push_back (p[i] * 0.75f + p[i + 1] * 0.25f);
+                    c.push_back (p[i] * 0.25f + p[i + 1] * 0.75f);
+                }
+                if (! cerrado) c.push_back (p.back());
+                else           c.push_back (c.front());
+                p = c;
+            }
+            out.startNewSubPath (p[0]);
+            for (size_t i = 1; i < p.size(); ++i) out.lineTo (p[i]);
+            if (cerrado) out.closeSubPath();
+        }
+        if (out.isEmpty()) return out;
+        //  A la rejilla de 24, centrado y sin deformar, con el aire del grosor.
+        const float lado = 24.0f - 2.0f * grosorPara (24.0f);
+        out.applyTransform (out.getTransformToScaleToFit (juce::Rectangle<float> (12.0f - lado * 0.5f, 12.0f - lado * 0.5f, lado, lado), true));
+        return out;
     }
 
     //  EL ICONO EN UNA REJILLA DE ALFAS, que es lo que el banco compara. Se

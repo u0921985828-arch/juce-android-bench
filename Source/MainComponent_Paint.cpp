@@ -1742,6 +1742,80 @@ void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
                       area, juce::Justification::centredLeft, 2, 1.0f);
 }
 
+//  EL CHIP DE UN CANAL: su icono -de la tabla o dibujado- o su numero.
+void MainComponent::pintaChipCanal (juce::Graphics& g, int c, juce::Rectangle<int> chip, bool lleno)
+{
+    const auto frag = Zati::colour (c);
+    g.setColour (lleno ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.20f));
+    g.fillRect (chip);
+    const auto tinta = lleno ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
+                             : ZatiColours::inkDim;
+    const int ico = canIcono[(size_t) c];
+    const auto caja = chip.toFloat().reduced (2.0f);
+    if (ico == kIconoDibujo && ! canDibujo[(size_t) c].isEmpty())
+    {
+        Iconos::Trazo t; t.linea = canDibujo[(size_t) c];
+        Iconos::dibujaTrazo (g, t, caja, tinta);
+        return;
+    }
+    if (ico >= 0 && ico < (int) Iconos::Id::kNum && (Iconos::Id) ico != Iconos::Id::ninguno)
+    {
+        Iconos::dibuja (g, (Iconos::Id) ico, caja, tinta);
+        return;
+    }
+    g.setColour (tinta);
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
+    g.drawText (juce::String (c + 1).paddedLeft ('0', 2), chip, juce::Justification::centred);
+}
+
+//  LA TAPA DE UN CANAL: el chip y, al lado, el nombre que se le puso o, sin
+//  el, la CUENTA DE PADS -cuantos le entran-, que es lo que separa un canal
+//  vacio de uno que suena y no se oye. Las mismas medidas que tenia pintado
+//  en la fila: el chip a cuatro del borde del fader y el nombre a seis.
+void MainComponent::pintaRotuloCanal (juce::Graphics& g, int c, juce::Rectangle<int> r, bool abajo)
+{
+    int cuenta = 0;
+    //  Y UN PAD SIN CANAL NO CUENTA EN NINGUNA TIRA: `tieneCanal` y no un
+    //  `jlimit`, que clampaba el centinela al canal 31.
+    for (int p = 0; p < kNumPads; ++p)
+        if (padHasSample[(size_t) p] && engine.getPadCanal (p) == c) ++cuenta;
+    const bool has = cuenta > 0;
+    if (auto* rot = canRotulos[c]) rot->padsPintados = cuenta;
+
+    if (abajo)
+    {
+        g.setColour (ZatiColours::ink.withAlpha (0.08f));
+        g.fillRect (r);
+    }
+
+    const auto fila = r.reduced (0, Metrics::aireTapaDensa);
+    const auto chip = juce::Rectangle<int> (r.getX() + 4, fila.getY() + 4, 22, juce::jmax (8, fila.getHeight() - 8));
+    pintaChipCanal (g, c, chip, has);
+
+    const auto& nombre = canNombre[(size_t) c];
+    g.setColour (has || nombre.isNotEmpty() ? ZatiColours::ink.withAlpha (0.8f) : ZatiColours::inkDim.withAlpha (0.5f));
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta));
+    const int nameX = chip.getRight() + 6;
+    g.drawText (nombre.isNotEmpty() ? nombre
+                                    : has ? padsTexto (cuenta)
+                                          : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
+                nameX, fila.getY(), juce::jmax (24, r.getRight() - nameX), fila.getHeight(),
+                Lang::start(), true);
+}
+
+//  LA FICHA DEL CANAL: el titulo, que dice que canal se esta cambiando.
+void MainComponent::paintCanalNombreContent (juce::Graphics& g)
+{
+    if (canNomSheet.sheetBounds.isEmpty() || canNomTituloBanda.isEmpty()
+        || ! juce::isPositiveAndBelow (canEditado, kNumCanales)) return;
+    g.setColour (ZatiColours::ink.withAlpha (0.9f));
+    g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    pintaTitulo (g, canNomTituloBanda,
+                 canDibujando ? T ("Dibuja con el dedo")
+                              : T ("CANAL %1", Lang::ltr (juce::String (canEditado + 1))),
+                 "titulo", true);
+}
+
 //  The chip and the name belong to the ROW, so they are painted by the panel
 //  the rows live in - in its coordinates, which scroll with them. Painted on
 //  the sheet behind the sliders, as they were, they stayed put while the
@@ -1752,47 +1826,9 @@ void MainComponent::paintMixRows (juce::Graphics& g)
     //  PADS donde un pad lleva su nombre. Un canal no tiene nombre que enseñar
     //  y si tiene algo que decir de si mismo — cuantos le entran, que es lo que
     //  separa un canal vacio de uno que suena y no se oye.
-    if (mixPage == mixPageCanales)
-    {
-        int cuentan[kNumCanales] = {};
-        for (int p = 0; p < kNumPads; ++p)
-            if (padHasSample[(size_t) p])
-            {
-                //  Y UN PAD SIN CANAL NO CUENTA EN NINGUNA TIRA, que es lo que
-                //  el `jlimit` de antes hacia mal: clampaba el centinela al
-                //  canal 31 y ese canal decia tener sesenta y cuatro pads que no
-                //  le entran. La cuenta existe para separar un canal vacio de
-                //  uno que suena y no se oye; sumarle lo que no es suyo la
-                //  convierte en lo contrario.
-                const int c = engine.getPadCanal (p);
-                if (AudioEngine::tieneCanal (c)) ++cuentan[c];
-            }
-
-        for (int c = 0; c < kNumCanales; ++c)
-        {
-            if (canFaders[c] == nullptr || ! canFaders[c]->isVisible()) continue;
-            const auto fr   = canFaders[c]->getBounds();
-            const auto frag = Zati::colour (c);
-            const bool has  = cuentan[c] > 0;
-
-            auto chip = juce::Rectangle<int> (canRowX[(size_t) c] + 4, fr.getY() + 4, 22, fr.getHeight() - 8);
-            g.setColour (has ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.20f));
-            g.fillRect (chip);
-            g.setColour (has ? ZatiColours::bestOn (frag, ZatiColours::ink, juce::Colours::white)
-                             : ZatiColours::inkDim);
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText (juce::String (c + 1).paddedLeft ('0', 2), chip, juce::Justification::centred);
-
-            g.setColour (has ? ZatiColours::ink.withAlpha (0.8f) : ZatiColours::inkDim.withAlpha (0.5f));
-            g.setFont (ZatiColours::monoFont (Metrics::fMeta));
-            const int nameX = chip.getRight() + 6;
-            g.drawText (has ? padsTexto (cuentan[c])
-                            : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
-                        nameX, fr.getY(), juce::jmax (24, fr.getX() - 6 - nameX), fr.getHeight(),
-                        Lang::start(), true);
-        }
-        return;
-    }
+    //  Y EL CHIP Y EL NOMBRE DE CADA CANAL los pinta su tapa, que es lo que
+    //  se aprieta: ver RotuloCanal y pintaRotuloCanal.
+    if (mixPage == mixPageCanales) return;
 
     //  Only the bank on show. Painting all sixty-four drew the chip, number and
     //  name of forty-eight strips whose sliders are hidden - at whatever

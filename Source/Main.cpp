@@ -62,7 +62,7 @@ static void fuzz (MainComponent& mc, int semilla, int sesiones, int acciones)
 {
     static const char* kFichas[] = { "pads", "pad2", "pad3", "sec", "secp", "paso", "song",
                                      "piano", "pianod", "mix", "xy", "set", "asp", "proj", "gest",
-                                     "midi", "mixc", "canal", "rack", "ranura", "chop",
+                                     "midi", "mixc", "cannom", "canal", "rack", "ranura", "chop",
                                      "manual", "expo", "" };
     static const int kAnchos[] = { 280, 320, 360, 393, 412, 480, 653, 915 };
 
@@ -529,7 +529,7 @@ public:
                     {
                         static const char* kFichas[] =
                         { "pads", "pad2", "pad3", "sec", "secp", "paso", "song", "piano",
-                          "pianod", "mix", "mixc", "canal", "set", "proj", "midi", "midf", "gest",
+                          "pianod", "mix", "mixc", "cannom", "canal", "set", "proj", "midi", "midf", "gest",
                           "rack", "ranura", "chop",
                           "inst", "manual", "expo", "browse", "xy" };
                         const int n2 = juce::numElementsInArray (kFichas);

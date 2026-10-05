@@ -3577,6 +3577,17 @@ void MainComponent::auditOpen (const juce::String& pedido)
         pulsaTapa (mixBankBtns[kCanBancos - 1]);
         pulsaTapa (mixBankBtns[0]);
     }
+    //  LA FICHA DEL NOMBRE DE UNA TIRA, en sus dos estados: la rejilla de
+    //  iconos y el lienzo, que cambia la fila de abajo y el titulo. Se llega
+    //  TOCANDO el rotulo de la tira uno, que es el camino de verdad.
+    else if (which == "cannom" || which == "cannomd")
+    {
+        for (int p = 0; p < kNumPads; ++p) engine.setPadCanal (p, p % kNumCanales);
+        showMixPage (mixPageCanales);
+        openSheet (mixSheet, mixButton);
+        pulsaTapa (canRotulos[0]);
+        if (which == "cannomd") pulsaTapa (&canDibujarBtn);
+    }
     //  Y LA REJILLA DE DIECISEIS CANALES, que se dibuja ENCIMA de la ficha del
     //  pad: una capa que se pone sobre otra es donde vive el residuo.
     else if (which == "canal")
@@ -4363,6 +4374,24 @@ static void dedoArrastra (juce::Component& sobre, juce::Point<float> enSobre, in
     for (int i = 1; i <= pasos; ++i)
         toca (base.translated (0.0f, (float) dy * (float) i / (float) juce::jmax (1, pasos)), true);
     toca (base.translated (0.0f, (float) dy), false);
+}
+
+//  Y UN DEDO QUE DIBUJA: lo mismo, por la ventana, siguiendo una lista de
+//  puntos en coordenadas de `sobre` y soltando en el ultimo.
+static void dedoTraza (juce::Component& sobre, const std::vector<juce::Point<float>>& puntos)
+{
+    auto* peer = sobre.getPeer();
+    if (peer == nullptr || puntos.empty()) return;
+    for (size_t i = 0; i <= puntos.size(); ++i)
+    {
+        const bool suelta = (i == puntos.size());
+        const auto p = peer->globalToLocal (sobre.localPointToGlobal (puntos[suelta ? i - 1 : i]));
+        peer->handleMouseEvent (juce::MouseInputSource::InputSourceType::mouse, p,
+                                suelta ? juce::ModifierKeys()
+                                       : juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+                                juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                juce::Time::currentTimeMillis(), {}, 0);
+    }
 }
 
 void MainComponent::auditPiano()
@@ -6423,6 +6452,11 @@ void MainComponent::auditCanales()
     int mesaCVistaAlto = -1, mesaCFilasAlto = -1, mesaCBarraApp = -1;
     int mesaCArrFader = -1, mesaCArrNombre = -1, mesaCArrDio = 0;
     int mesaCBancos = 0, mesaCBancoB = -1, mesaCFilasB = -1;
+    int canArrAbre = -1, canToqueAbre = -1, canCeldas = 0, canCeldaMin = -1, canIconoOk = -1;
+    int canLienzoLado = -1, canUsarAntes = -1, canTrazos = -1, canDibujoDentro = -1, canDibujoUsa = -1;
+    int canDibujoTramos = 0, canDibujoCerrados = 0, canIdaVuelta = -1, canCierra = -1;
+    float canDibujoLado = -1.0f;
+    juce::String canNombreDice;
     {
         pulsaTapa (&mixVistaBtn);
         mesaCFila      = mixFilaAlto;
@@ -6473,9 +6507,101 @@ void MainComponent::auditCanales()
             mixScroll.setViewPosition (0, 0);
             dedoArrastra (mixRows, { (float) f->getX() * 0.5f, (float) mixFilaAlto * 0.5f }, -60, 6);
             mesaCArrNombre = mixScroll.getViewPositionY();
+            //  Y ESE ARRASTRE CAE SOBRE EL ROTULO DE LA TIRA, que desde la
+            //  tanda del nombre es una tapa: desplazar no la abre (bloque 22).
+            canArrAbre = canEditado >= 0 ? 1 : 0;
+            if (canEditado >= 0) abreCanalNombre (-1);
             mixScroll.setViewPosition (0, 0);
         }
         mixScroll.setScrollOnDragMode (modoArrastre);
+
+        //  22. EL NOMBRE Y EL ICONO DE UNA TIRA.
+        //
+        //  Del telefono: «que en el mixer se pudiese cambiar los nombres de
+        //  los canales y que donde aparece el numero de canal [...] apretando
+        //  salga como un pop-up [...] con los iconos de los instrumentos [...]
+        //  reducidos [...] y un marco para dibujar el icono que tu quieras y
+        //  que se transforme». Todo por el camino de verdad: el toque entra
+        //  por la ventana sobre el rotulo de la tira 1, el nombre por la caja
+        //  y GUARDAR, el icono por su celda, el dibujo con un dedo que traza
+        //  un circulo torcido en el lienzo y USAR, y la vuelta por el estado
+        //  del proyecto, que es lo que guardan el fichero y el deshacer.
+        canalesPorDefecto();
+        if (auto* r = canRotulos[0]; r != nullptr && r->isShowing() && r->getWidth() > 0)
+        {
+            dedoArrastra (*r, r->getLocalBounds().toFloat().getCentre(), 0, 0);
+            canToqueAbre = (canEditado == 0 && canNomSheet.isVisible()) ? 1 : 0;
+        }
+        if (canEditado == 0)
+        {
+            canNomBox.setText ("  bombo ", juce::dontSendNotification);
+            pulsaTapa (&canNomGuardarBtn);
+            canNombreDice = canNombre[0];
+
+            const auto tarjeta = canNomSheet.sheetBounds;
+            canCeldaMin = 1 << 20;
+            for (auto* b : canIconoBtns)
+                if (b != nullptr && b->isVisible() && ! b->getBounds().isEmpty()
+                    && tarjeta.contains (b->getBounds().translated (canNomSheet.getX(), canNomSheet.getY())))
+                {
+                    ++canCeldas;
+                    canCeldaMin = juce::jmin (canCeldaMin, b->getWidth(), b->getHeight());
+                }
+            if (canCeldas == 0) canCeldaMin = -1;
+            if (canIconoBtns.size() > 3)
+            {
+                pulsaTapa (canIconoBtns[3]);
+                canIconoOk = canIcono[0] == (int) Iconos::deFamilia (3) ? 1 : 0;
+            }
+
+            pulsaTapa (&canDibujarBtn);
+            canLienzoLado = canLienzo.isShowing() ? juce::jmin (canLienzo.getWidth(), canLienzo.getHeight()) : -1;
+            canUsarAntes  = canUsarBtn.isEnabled() ? 1 : 0;
+            if (canLienzoLado > 0)
+            {
+                //  Un circulo a mano: radio que tiembla y un final que no
+                //  llega al principio. Lo que tiene que salir es UN tramo
+                //  cerrado y dentro de la rejilla de 24 de los iconos.
+                std::vector<juce::Point<float>> pts;
+                const auto c0 = canLienzo.getLocalBounds().toFloat().getCentre();
+                const float rad = (float) canLienzoLado * 0.3f;
+                for (int i = 0; i <= 40; ++i)
+                {
+                    const float a = juce::MathConstants<float>::twoPi * (float) i / 42.0f;
+                    const float rr = rad * (1.0f + 0.06f * std::sin ((float) i * 2.3f));
+                    pts.push_back (c0 + juce::Point<float> (std::cos (a), std::sin (a)) * rr);
+                }
+                dedoTraza (canLienzo, pts);
+                canTrazos = (int) canLienzo.trazos.size();
+                pulsaTapa (&canUsarBtn);
+                const auto& d = canDibujo[0];
+                const auto caja = d.getBounds();
+                canDibujoDentro = (! d.isEmpty() && caja.getX() >= 0.0f && caja.getY() >= 0.0f
+                                   && caja.getRight() <= 24.0f && caja.getBottom() <= 24.0f) ? 1 : 0;
+                canDibujoLado = juce::jmax (caja.getWidth(), caja.getHeight());
+                juce::Path::Iterator it (d);
+                while (it.next())
+                {
+                    if (it.elementType == juce::Path::Iterator::startNewSubPath) ++canDibujoTramos;
+                    if (it.elementType == juce::Path::Iterator::closePath)       ++canDibujoCerrados;
+                }
+                canDibujoUsa = (canIcono[0] == kIconoDibujo && ! canDibujando) ? 1 : 0;
+            }
+
+            //  Ida y vuelta por el estado del proyecto.
+            const auto nombreAntes = canNombre[0];
+            const auto dibujoAntes = canDibujo[0].toString();
+            const int  iconoAntes  = canIcono[0];
+            const auto estado = captureState();
+            canalesPorDefecto();
+            applyState (estado);
+            canIdaVuelta = (canNombre[0] == nombreAntes && canIcono[0] == iconoAntes
+                            && canDibujo[0].toString() == dibujoAntes) ? 1 : 0;
+
+            pulsaTapa (&canNomCloseBtn);
+            canCierra = (canEditado < 0 && ! canNomSheet.isVisible()) ? 1 : 0;
+        }
+        canalesPorDefecto();
         pulsaTapa (&mixVistaBtn);
     }
 
@@ -6609,6 +6735,17 @@ void MainComponent::auditCanales()
               << ",\"mesa_c_arr_dio\":" << mesaCArrDio
               << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_banco_b\":" << mesaCBancoB
               << ",\"mesa_c_filas_b\":" << mesaCFilasB
+              //  EL NOMBRE Y EL ICONO DE UNA TIRA. Ver el bloque 22.
+              << ",\"can_arr_abre\":" << canArrAbre << ",\"can_toque_abre\":" << canToqueAbre
+              << ",\"can_nombre\":" << juce::JSON::toString (canNombreDice)
+              << ",\"can_celdas\":" << canCeldas << ",\"can_celda_min\":" << canCeldaMin
+              << ",\"can_icono_ok\":" << canIconoOk
+              << ",\"can_lienzo_lado\":" << canLienzoLado << ",\"can_usar_antes\":" << canUsarAntes
+              << ",\"can_trazos\":" << canTrazos
+              << ",\"can_dibujo_dentro\":" << canDibujoDentro << ",\"can_dibujo_usa\":" << canDibujoUsa
+              << ",\"can_dibujo_lado\":" << juce::String (canDibujoLado, 2)
+              << ",\"can_dibujo_tramos\":" << canDibujoTramos << ",\"can_dibujo_cerrados\":" << canDibujoCerrados
+              << ",\"can_ida_vuelta\":" << canIdaVuelta << ",\"can_cierra\":" << canCierra
               //  LA APERTURA DE LA MONO, seis cifras del motor. Ver el bloque 20.
               << ",\"abre_canales\":" << abreCanalesMuestra
               << ",\"abre_lado0\":"   << juce::String (abreLado0, 6)
@@ -10252,7 +10389,7 @@ void MainComponent::auditTapas()
     //  bancos y las dieciseis tapas de pad.
     static const char* kFichas[] = {
         "", "pads", "pad2", "pad3", "sec", "paso", "secp", "song", "songm",
-        "piano", "pianod", "mix", "mixc", "canal", "xy", "eq", "eqb", "plato", "mandos", "platopad",
+        "piano", "pianod", "mix", "mixc", "cannom", "cannomd", "canal", "xy", "eq", "eqb", "plato", "mandos", "platopad",
         "set", "asp", "lang", "proj", "gest", "midi", "midf", "rack", "rackf",
         "ranura", "ranural", "preset", "preseteq", "inst", "instg", "instd",
         "chop", "expo", "manual", "tour", "pick"

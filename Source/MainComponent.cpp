@@ -417,7 +417,7 @@ MainComponent::MainComponent()
         tourSheet  .nombre = "tour";     instSheet  .nombre = "inst";
         vstSheet   .nombre = "vst";      padPickSheet.nombre = "padpick";
         canalSheet .nombre = "canal";    ranuraSheet.nombre = "ranura";
-        eqBandaSheet.nombre = "eqb";
+        eqBandaSheet.nombre = "eqb";     canNomSheet.nombre = "cannom";
         //  «midf» y no «midi»: esa ya es la pagina AJUSTES · MIDI —los
         //  puertos— en `ZATI_OPEN` y en `ZATI_PAGES` desde hace tandas, y
         //  dos fichas con el mismo nombre son dos partes de caja negra que
@@ -687,6 +687,104 @@ MainComponent::MainComponent()
             if (ok) { presetNombreBox.clear(); abreMenuPresets (-1); }
         };
         presetSheet.addAndMakeVisible (presetGuardarBtn);
+    }
+
+    //  LA FICHA DEL CANAL: nombre, icono o dibujo. Ver canNomSheet en la
+    //  cabecera.
+    {
+        addAndMakeVisible (canNomSheet);
+        canNomSheet.setVisible (false);
+        canNomSheet.onDismiss    = [this] { abreCanalNombre (-1); };
+        canNomSheet.paintContent = [this] (juce::Graphics& g) { paintCanalNombreContent (g); };
+        styleButton (canNomCloseBtn, kKey);
+        canNomCloseBtn.onClick = [this] { abreCanalNombre (-1); };
+        canNomSheet.addAndMakeVisible (canNomCloseBtn);
+
+        canNomBox.setMultiLine (false);
+        canNomBox.setReturnKeyStartsNewLine (false);
+        canNomBox.setInputRestrictions (24);
+        canNomBox.setTextToShowWhenEmpty (T ("NOMBRE"), ZatiColours::ink.withAlpha (0.45f));
+        canNomBox.onReturnKey = [this] { canNomGuardarBtn.triggerClick(); };
+        canNomSheet.addAndMakeVisible (canNomBox);
+
+        //  GUARDAR EL NOMBRE, y vacio vuelve a la cuenta de pads: es la forma
+        //  de quitarlo sin una tapa mas.
+        styleButton (canNomGuardarBtn, kKey);
+        canNomGuardarBtn.onClick = [this]
+        {
+            if (! juce::isPositiveAndBelow (canEditado, kNumCanales)) return;
+            pushUndo (T ("NOMBRE"));
+            canNombre[(size_t) canEditado] = canNomBox.getText().trim().toUpperCase();
+            canNomBox.unfocusAllComponents();
+            if (auto* r = canRotulos[canEditado]) r->repaint();
+            canNomSheet.repintaTarjeta();
+        };
+        canNomSheet.addAndMakeVisible (canNomGuardarBtn);
+
+        //  LOS VEINTICUATRO DE LA TABLA, REDUCIDOS: el dibujo y no la palabra,
+        //  que es lo que se pidio -«que sean reducidos para que se vean
+        //  ahi»-: el chip de la tira mide 22 de ancho y lo que lleva es un
+        //  dibujo. El nombre de la familia va en el titulo accesible.
+        for (int f = 0; f < Sintes::kFamilias; ++f)
+        {
+            auto* b = new juce::TextButton();
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->getProperties().set ("icono", (int) Iconos::deFamilia (f));
+            b->setTitle (T (juce::String (Sintes::tabla()[f].nombre)));
+            b->onClick = [this, f]
+            {
+                if (! juce::isPositiveAndBelow (canEditado, kNumCanales)) return;
+                pushUndo (T ("ICONO"));
+                canIcono[(size_t) canEditado] = (int) Iconos::deFamilia (f);
+                refrescaCanalNombre();
+            };
+            canNomSheet.addChildComponent (b);
+            canIconoBtns.add (b);
+        }
+
+        styleButton (canNumeroBtn, kKey);
+        litAccent (canNumeroBtn);
+        canNumeroBtn.onClick = [this]
+        {
+            if (! juce::isPositiveAndBelow (canEditado, kNumCanales)) return;
+            pushUndo (T ("ICONO"));
+            canIcono[(size_t) canEditado] = kIconoNumero;
+            refrescaCanalNombre();
+        };
+        canNomSheet.addChildComponent (canNumeroBtn);
+
+        styleButton (canDibujarBtn, kKey);
+        litAccent (canDibujarBtn);
+        canDibujarBtn.onClick = [this]
+        {
+            canDibujando = true;
+            canLienzo.trazos.clear();
+            refrescaCanalNombre();
+        };
+        canNomSheet.addChildComponent (canDibujarBtn);
+
+        canLienzo.onCambio = [this] { canUsarBtn.setEnabled (! canLienzo.trazos.empty()); };
+        canNomSheet.addChildComponent (canLienzo);
+
+        styleButton (canBorrarBtn, kKey);
+        canBorrarBtn.onClick = [this] { canLienzo.borra(); };
+        canNomSheet.addChildComponent (canBorrarBtn);
+
+        //  USAR: el icono es el TRANSFORMADO, que es el que el lienzo ensena.
+        styleButton (canUsarBtn, kKey);
+        canUsarBtn.onClick = [this]
+        {
+            if (! juce::isPositiveAndBelow (canEditado, kNumCanales)) return;
+            const auto p = Iconos::aIcono (canLienzo.trazos);
+            if (p.isEmpty()) return;
+            pushUndo (T ("ICONO"));
+            canDibujo[(size_t) canEditado] = p;
+            canIcono[(size_t) canEditado] = kIconoDibujo;
+            canDibujando = false;
+            refrescaCanalNombre();
+        };
+        canNomSheet.addChildComponent (canUsarBtn);
     }
 
     //  LA FICHA DE UNA BANDA DEL EQ. Ver eqBandaSheet en la cabecera.
@@ -3578,8 +3676,17 @@ MainComponent::MainComponent()
     //  forma de fila: color, numero, fader, `M` y cuantos pads le entran. Sin
     //  pan —el sitio en la imagen es del pad, que es lo que se coloca— y sin
     //  SOLO, que se queda donde ya estaba.
+    canalesPorDefecto();
     for (int c = 0; c < kNumCanales; ++c)
     {
+        //  El chip y el nombre, que se aprietan: ver RotuloCanal.
+        auto* rot = new RotuloCanal();
+        rot->pinta = [this, c] (juce::Graphics& g, juce::Rectangle<int> r, bool abajo) { pintaRotuloCanal (g, c, r, abajo); };
+        rot->onClick = [this, c] { abreCanalNombre (c); };
+        rot->setTitle (T ("CANAL %1", juce::String (c + 1)));
+        mixRows.addAndMakeVisible (rot);
+        canRotulos.add (rot);
+
         auto* f = new juce::Slider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
         f->setRange (kGainMinDb, kGainMaxDb, 0.1);
         f->setValue (0.0, juce::dontSendNotification);
@@ -8401,6 +8508,7 @@ void MainComponent::showMixPage (MixPage p)
         if (auto* f = canFaders[c]) { f->setVisible (on); if (! on) f->setBounds ({}); }
         if (auto* m = canMutes[c])  { m->setVisible (on); if (! on) m->setBounds ({}); }
         if (auto* s = canSolos[c])  { s->setVisible (on); if (! on) s->setBounds ({}); }
+        if (auto* r = canRotulos[c]) { r->setVisible (on); if (! on) r->setBounds ({}); }
     }
     //  Y VACIAR SOLO SALE EN LAS DOS, cada una vaciando la suya.
     //
@@ -8448,10 +8556,12 @@ void MainComponent::showCanBank (int bank)
             if (auto* f = canFaders[c]) f->setBounds ({});
             if (auto* m = canMutes[c])  m->setBounds ({});
             if (auto* s = canSolos[c])  s->setBounds ({});
+            if (auto* r = canRotulos[c]) r->setBounds ({});
         }
         if (auto* f = canFaders[c]) f->setVisible (on);
         if (auto* m = canMutes[c])  m->setVisible (on);
         if (auto* s = canSolos[c])  s->setVisible (on);
+        if (auto* r = canRotulos[c]) r->setVisible (on);
     }
     mixScroll.setViewPosition (0, 0);
     resized();
@@ -8592,6 +8702,7 @@ void MainComponent::closeAllSheets()
     if (padPickAbierto) abrePadPicker (false);
     //  Y la de canales, que vive igual.
     if (canalPickAbierto) abreCanalPicker (false);
+    if (canEditado >= 0) abreCanalNombre (-1);
 
     //  Y EL MENU DE UNA RANURA, por lo mismo: tambien vive ENCIMA de todo, asi
     //  que sin esto se queda flotando sobre la ficha que se acaba de abrir.
@@ -10026,6 +10137,72 @@ void MainComponent::refrescaCanalDelPad()
     canalNingunoBtn.setToggleState (! AudioEngine::tieneCanal (c), juce::dontSendNotification);
 }
 
+//  LA FICHA DEL CANAL, ABIERTA SOBRE UN CANAL O CERRADA (-1).
+void MainComponent::abreCanalNombre (int c)
+{
+    const bool abrir = juce::isPositiveAndBelow (c, kNumCanales);
+    canEditado = abrir ? c : -1;
+    canDibujando = false;
+    canNomSheet.setVisible (abrir);
+
+    if (abrir)
+    {
+        canNomSheet.toFront (false);
+        canNomBox.setText (canNombre[(size_t) c], juce::dontSendNotification);
+        canLienzo.trazos.clear();
+        refrescaCanalNombre();
+        return;
+    }
+
+    //  APAGAR *Y* VACIAR LOS LIMITES, la regla de las fichas.
+    for (auto* b : canIconoBtns) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
+    for (juce::Component* k : { (juce::Component*) &canNumeroBtn, (juce::Component*) &canDibujarBtn,
+                                (juce::Component*) &canLienzo, (juce::Component*) &canBorrarBtn,
+                                (juce::Component*) &canUsarBtn })
+    { k->setVisible (false); k->setBounds ({}); }
+    canNomCloseBtn.setBounds ({});
+    canNomBox.setBounds ({});
+    canNomGuardarBtn.setBounds ({});
+    canNomBox.unfocusAllComponents();
+    canNomSheet.sheetBounds = {};
+    canNomTituloBanda = {};
+    resized();
+    repaint();
+}
+
+//  LO QUE LA FICHA ENSENA SEGUN ESTE ELIGIENDO O DIBUJANDO, y la tira con el.
+void MainComponent::refrescaCanalNombre()
+{
+    if (! juce::isPositiveAndBelow (canEditado, kNumCanales)) return;
+    const int ico = canIcono[(size_t) canEditado];
+    for (auto* b : canIconoBtns)
+    {
+        b->setVisible (! canDibujando);
+        b->setToggleState ((int) b->getProperties()["icono"] == ico, juce::dontSendNotification);
+    }
+    canNumeroBtn.setVisible (! canDibujando);
+    canNumeroBtn.setToggleState (ico == kIconoNumero, juce::dontSendNotification);
+    canDibujarBtn.setVisible (! canDibujando);
+    canDibujarBtn.setToggleState (ico == kIconoDibujo, juce::dontSendNotification);
+    canLienzo.setVisible (canDibujando);
+    canBorrarBtn.setVisible (canDibujando);
+    canUsarBtn.setVisible (canDibujando);
+    canUsarBtn.setEnabled (! canLienzo.trazos.empty());
+    canLienzo.tinta = ZatiColours::ink;
+    canLienzo.fondo = ZatiColours::screenBg;
+    if (auto* r = canRotulos[canEditado]) r->repaint();
+    resized();
+    canNomSheet.repintaTarjeta();
+}
+
+//  LO DE SIEMPRE: sin nombre, con el numero y sin dibujo.
+void MainComponent::canalesPorDefecto()
+{
+    for (auto& n : canNombre) n.clear();
+    canIcono.fill (kIconoNumero);
+    for (auto& d : canDibujo) d.clear();
+}
+
 //  LA REJILLA DE CANALES, ABIERTA O CERRADA.
 void MainComponent::abreCanalPicker (bool abrir)
 {
@@ -11329,6 +11506,14 @@ void MainComponent::retranslateUi()
     //  linea del destino.
     exportDirBtn      .setButtonText (T ("REBOTE"));
     canalNingunoBtn   .setButtonText (T ("SIN CANAL"));
+    canNomGuardarBtn  .setButtonText (T ("GUARDAR"));
+    canNumeroBtn      .setButtonText (T ("NUMERO"));
+    canDibujarBtn     .setButtonText (T ("DIBUJAR"));
+    canBorrarBtn      .setButtonText (T ("BORRAR"));
+    canUsarBtn        .setButtonText (T ("USAR"));
+    canNomBox.setTextToShowWhenEmpty (T ("NOMBRE"), ZatiColours::ink.withAlpha (0.45f));
+    for (int c = 0; c < canRotulos.size(); ++c) canRotulos[c]->setTitle (T ("CANAL %1", juce::String (c + 1)));
+    for (int f = 0; f < canIconoBtns.size(); ++f) canIconoBtns[f]->setTitle (T (juce::String (Sintes::tabla()[f].nombre)));
     projDirBtn        .setButtonText (T ("PROYECTOS"));
     samplesDirBtn     .setButtonText (T ("SONIDOS"));
     kitsDirBtn        .setButtonText (T ("KITS"));
@@ -12765,6 +12950,20 @@ juce::ValueTree MainComponent::captureState() const
         fx.setProperty ("cpan",  pn.joinIntoString (","), nullptr);
         fx.setProperty ("canc",  an.joinIntoString (","), nullptr);
     }
+    //  EL NOMBRE, EL ICONO Y EL DIBUJO DE CADA CANAL, como hijos y solo los
+    //  que no son los de siempre: un nombre lo escribe la persona y puede
+    //  llevar cualquier signo, asi que no va en una lista con separador.
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        if (canNombre[(size_t) c].isEmpty() && canIcono[(size_t) c] == kIconoNumero) continue;
+        juce::ValueTree cn ("CANAL");
+        cn.setProperty ("i", c, nullptr);
+        if (canNombre[(size_t) c].isNotEmpty()) cn.setProperty ("nombre", canNombre[(size_t) c], nullptr);
+        cn.setProperty ("icono", canIcono[(size_t) c], nullptr);
+        if (canIcono[(size_t) c] == kIconoDibujo)
+            cn.setProperty ("dibujo", canDibujo[(size_t) c].toString(), nullptr);
+        fx.addChild (cn, -1, nullptr);
+    }
     //  LAS CINCO BANDAS DEL EQ, DISPERSAS Y EN UNA SOLA PROPIEDAD, por lo
     //  mismo que el acorde y el empujon: son diez numeros y casi ningun
     //  proyecto los mueve. «hz:dB;hz:dB;...» y lo que no este vale su defecto,
@@ -13337,6 +13536,26 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 engine.setCanalPan   (c, c < ps.size() ? ps[c].getFloatValue() : 0.0f);
                 engine.setCanalAncho (c, c < as.size() ? as[c].getFloatValue() : 1.0f);
             }
+        }
+
+        //  Y SU NOMBRE E ICONO. Sin hijos, los de siempre: un proyecto de
+        //  antes de esto se abre con sus canales numerados.
+        canalesPorDefecto();
+        for (const auto& cn : fx)
+        {
+            if (! cn.hasType ("CANAL")) continue;
+            const int c = cn.getProperty ("i", -1);
+            if (! juce::isPositiveAndBelow (c, kNumCanales)) continue;
+            canNombre[(size_t) c] = cn.getProperty ("nombre").toString().substring (0, 24);
+            int ico = cn.getProperty ("icono", kIconoNumero);
+            if (ico == kIconoDibujo)
+            {
+                canDibujo[(size_t) c].restoreFromString (cn.getProperty ("dibujo").toString());
+                if (canDibujo[(size_t) c].isEmpty()) ico = kIconoNumero;
+            }
+            else if (ico != kIconoNumero && ! juce::isPositiveAndBelow (ico, (int) Iconos::Id::kNum))
+                ico = kIconoNumero;
+            canIcono[(size_t) c] = ico;
         }
 
         //  ...y el estado del panel XY, UNA vez. La llave del for cerraba ocho
@@ -14462,6 +14681,8 @@ void MainComponent::newProject()
         engine.setCanalGain (c, 1.0f);
         engine.setCanalMute (c, false);
     }
+    //  Y SIN EL NOMBRE NI EL ICONO DEL DE AYER, por lo mismo.
+    canalesPorDefecto();
     ponCanalActual (0);
 
     //  Y LA CURVA DEL EQ VUELVE A SU SITIO. Vaciar la ranura apaga el efecto y
@@ -16840,6 +17061,16 @@ void MainComponent::refreshMixStrip()
                              && (! engine.anyCanalSolo() || engine.getCanalSolo (c));
             f->setAlpha (suena ? 1.0f : 0.45f);
         }
+    }
+    //  Y EL ROTULO DICE CUANTOS PADS TIENE la tira sin nombre: se repinta solo
+    //  el que cambia de cuenta, no los treinta y dos en cada mute.
+    {
+        std::array<int, kNumCanales> n {};
+        for (int p = 0; p < kNumPads; ++p)
+            if (const int k = engine.getPadCanal (p); padHasSample[(size_t) p] && k >= 0 && k < kNumCanales) ++n[(size_t) k];
+        for (int c = 0; c < kNumCanales; ++c)
+            if (auto* r = canRotulos[c]; r != nullptr && r->padsPintados != n[(size_t) c])
+                r->repaint();
     }
 
     const bool any = engine.anySolo();

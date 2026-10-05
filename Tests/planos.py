@@ -114,6 +114,8 @@ NOMBRES = {
     "midf":     ("MIDI · filtro de canal",       "AJUSTES · MIDI, tapa FILTRO"),
     "lang":     ("ASPECTO tras cambiar de idioma", "AJUSTES · ASPECTO, otra lengua"),
     "mixc":     ("MEZCLA · CANALES",             "MEZCLA, pagina CANALES"),
+    "cannom":   ("MEZCLA · nombre de canal",     "MEZCLA · CANALES, tocar el rotulo de la tira"),
+    "cannomd":  ("MEZCLA · dibujar el icono",    "la ficha del nombre, tapa DIBUJAR"),
     "canal":    ("SELECTOR DE CANAL",            "EL PAD · ENVIOS, tapa del canal"),
     "ranura":   ("MENU DE RANURA · vacia",       "cara, tocar una ranura sin efecto"),
     "ranural":  ("MENU DE RANURA · llena",       "cara, mantener una ranura con efecto"),

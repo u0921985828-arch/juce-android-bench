@@ -1102,6 +1102,63 @@ def main():
             malas.append ("en %s el ST del pad 0 dice %s y tiene que decir ST,MO,ST,MO,ST: encendido ST, "
                           "apagado MO, venga de donde venga" % (nombre, rot or "(nada)"))
 
+    # 22. EL NOMBRE Y EL ICONO DE UNA TIRA. Del telefono: «que en el mixer se
+    #     pudiese cambiar los nombres de los canales y que donde aparece el
+    #     numero de canal [...] apretando salga como un pop-up [...] con los
+    #     iconos de los instrumentos [...] reducidos [...] y un marco para
+    #     dibujar el icono que tu quieras y que se transforme». La app lo hace
+    #     por el camino de verdad -un toque por la ventana sobre el rotulo de
+    #     la tira 1, «  bombo » en la caja y GUARDAR, la celda de la familia 3,
+    #     DIBUJAR, un dedo que traza un circulo torcido y abierto, USAR, y la
+    #     ida y vuelta por el estado del proyecto- y aqui se juzga lo que
+    #     quedo. Y el arrastre de la regla 19 sobre el nombre, que ahora cae
+    #     sobre el rotulo, desplaza y NO abre la ficha. Medido en 412x915,
+    #     393x851 y 360x640. Roto -el binario de la tanda anterior-: no hay
+    #     rotulo ni ficha, FALLA. El arrastre se vigila y no se arregla: con
+    #     y sin guarda en el rotulo da 0 en 360x640 -JUCE no da el clic tras
+    #     desplazar-, asi que la guarda no entro.
+    for nombre, rr in (("412x915", r), ("393x851", r393), ("360x640", r360)):
+        if rr is None: continue
+        g = lambda k, d=-1: rr.get (k, d)
+        print ("nombre   en %s: toque abre %d, arrastre abre %d, nombre %s, %d celdas de %d px, icono %d, "
+               "lienzo %d px, USAR sin trazo %d, %d trazo -> %d tramo(s) %d cerrado(s) de %.2f en la rejilla de 24 "
+               "(dentro %d, en la tira %d), ida y vuelta %d, cierra %d"
+               % (nombre, g ("can_toque_abre"), g ("can_arr_abre"), g ("can_nombre", "(nada)"),
+                  g ("can_celdas", 0), g ("can_celda_min"), g ("can_icono_ok"), g ("can_lienzo_lado"),
+                  g ("can_usar_antes"), g ("can_trazos"), g ("can_dibujo_tramos", 0),
+                  g ("can_dibujo_cerrados", 0), float (g ("can_dibujo_lado")), g ("can_dibujo_dentro"),
+                  g ("can_dibujo_usa"), g ("can_ida_vuelta"), g ("can_cierra")))
+        if g ("can_toque_abre") != 1:
+            malas.append ("en %s tocar el rotulo de la tira 1 no abre la ficha del nombre" % nombre)
+        if g ("can_arr_abre") != 0:
+            malas.append ("en %s arrastrar la lista sobre el rotulo abre la ficha (%d): desplazar no es tocar"
+                          % (nombre, g ("can_arr_abre")))
+        if g ("can_nombre", "") != "BOMBO":
+            malas.append ("en %s «  bombo » y GUARDAR deja el nombre %r: tiene que quedar BOMBO"
+                          % (nombre, g ("can_nombre", "")))
+        if g ("can_celdas", 0) != 24 or g ("can_celda_min") < 40:
+            malas.append ("en %s la ficha ensena %d celdas de icono dentro de la tarjeta, la menor de %d px: son "
+                          "las veinticuatro familias y ninguna por debajo del dedo (40)"
+                          % (nombre, g ("can_celdas", 0), g ("can_celda_min")))
+        if g ("can_icono_ok") != 1:
+            malas.append ("en %s tocar la celda de la familia 3 no pone su icono en la tira" % nombre)
+        if g ("can_usar_antes") != 0:
+            malas.append ("en %s USAR esta encendido con el lienzo vacio" % nombre)
+        if g ("can_lienzo_lado") < 120 or g ("can_trazos") != 1:
+            malas.append ("en %s el lienzo mide %d px y recogio %d trazos de un dedo: tiene que ser uno, en un "
+                          "lienzo de 120 o mas" % (nombre, g ("can_lienzo_lado"), g ("can_trazos")))
+        if (g ("can_dibujo_usa") != 1 or g ("can_dibujo_dentro") != 1 or g ("can_dibujo_tramos", 0) != 1
+                or g ("can_dibujo_cerrados", 0) != 1 or float (g ("can_dibujo_lado")) < 18.0):
+            malas.append ("en %s el circulo a mano sale %d tramo(s), %d cerrado(s), de %.2f, dentro %d, en la "
+                          "tira %d: tiene que transformarse en UN tramo cerrado que llene la rejilla de 24 "
+                          "(18 o mas) y quedarse de icono"
+                          % (nombre, g ("can_dibujo_tramos", 0), g ("can_dibujo_cerrados", 0),
+                             float (g ("can_dibujo_lado")), g ("can_dibujo_dentro"), g ("can_dibujo_usa")))
+        if g ("can_ida_vuelta") != 1:
+            malas.append ("en %s el nombre, el icono o el dibujo no vuelven del estado del proyecto" % nombre)
+        if g ("can_cierra") != 1:
+            malas.append ("en %s la equis no cierra la ficha del nombre" % nombre)
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

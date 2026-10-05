@@ -11,6 +11,7 @@
 #include <optional>
 #include "AudioEngine.h"
 #include "FxPresets.h"
+#include "Iconos.h"
 #include "SampleLoader.h"
 #include "WaveformDisplay.h"
 #include "SpectrumDisplay.h"
@@ -3384,6 +3385,110 @@ private:
     //  numero y la cuenta de pads se PINTAN, asi que el pintor necesita saber
     //  donde el maquetado los dejo.
     std::array<int, kNumCanales> canRowX {};
+
+    //  EL NOMBRE Y EL ICONO DE UN CANAL. Del telefono: «que en el mixer se
+    //  pudiese cambiar los nombres de los canales, y que donde aparece el
+    //  numero de canal, apretando, salga un menu en el que puedas cambiarlo
+    //  con los iconos de los instrumentos, reducidos; y un marco para dibujar
+    //  el icono que tu quieras y que se transforme».
+    //
+    //  Un canal es un GRUPO -la bateria, las voces, el bajo- y hasta aqui solo
+    //  sabia decir su numero y cuantos pads le entran. Vacio es «el de
+    //  siempre»: sin nombre la tira dice la cuenta de pads, y sin icono el
+    //  numero. Viven en el proyecto, que es de quien son.
+    static constexpr int kIconoNumero  = -1;     // el chip dice el numero
+    static constexpr int kIconoDibujo  = -2;     // el dibujo a dedo, `canDibujo`
+    std::array<juce::String, kNumCanales> canNombre;
+    std::array<int, kNumCanales>          canIcono {};
+    std::array<juce::Path, kNumCanales>   canDibujo;
+    void canalesPorDefecto();
+    //  EL CHIP Y EL NOMBRE SON UNA TAPA, y no texto pintado sobre la fila:
+    //  apretar es lo que se pide, y lo pintado no se aprieta ni lo ve el banco.
+    //  Se pinta ella -el chip con su icono o su numero, y el nombre- desde el
+    //  mismo pintor que antes lo hacia en la fila. Sin guarda de arrastre: la
+    //  lista se desplaza arrastrando por los nombres (regla 19) y JUCE ya no
+    //  da el clic tras desplazar -medido con y sin guarda, bloque 22-.
+    struct RotuloCanal : public juce::Button
+    {
+        RotuloCanal() : juce::Button ("canal") {}
+        std::function<void (juce::Graphics&, juce::Rectangle<int>, bool)> pinta;
+        int padsPintados = -1;   // la cuenta que se pinto: repintar solo si cambia
+        void paintButton (juce::Graphics& g, bool, bool abajo) override
+        {
+            if (pinta) pinta (g, getLocalBounds(), abajo);
+        }
+    };
+    juce::OwnedArray<RotuloCanal> canRotulos;
+    void pintaRotuloCanal (juce::Graphics& g, int c, juce::Rectangle<int> r, bool abajo);
+    //  El chip de una tira, con su icono o su numero. Tambien lo pinta el
+    //  titulo de la ficha que lo cambia, para que se vea lo que se elige.
+    void pintaChipCanal (juce::Graphics& g, int c, juce::Rectangle<int> chip, bool lleno);
+
+    //  EL LIENZO DEL DIBUJO A DEDO. Guarda los trazos tal y como salen del
+    //  dedo y ENSENA el icono en que se convierten -`Iconos::aIcono`-, que es
+    //  la transformacion que se pidio: se ve al soltar cada trazo.
+    struct LienzoIcono : public juce::Component
+    {
+        std::vector<Iconos::Puntos> trazos;
+        Iconos::Puntos actual;
+        std::function<void()> onCambio;
+        juce::Colour tinta { juce::Colours::black }, fondo { juce::Colours::white };
+        juce::Rectangle<float> cuadro() const
+        {
+            return getLocalBounds().toFloat().withSizeKeepingCentre ((float) juce::jmin (getWidth(), getHeight()),
+                                                                      (float) juce::jmin (getWidth(), getHeight()));
+        }
+        void borra() { trazos.clear(); actual.clear(); repaint(); if (onCambio) onCambio(); }
+        void mouseDown (const juce::MouseEvent& e) override { actual = { e.position }; repaint(); }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (actual.empty() || actual.back().getDistanceFrom (e.position) >= 1.5f) actual.push_back (e.position);
+            repaint();
+        }
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (! actual.empty()) trazos.push_back (actual);
+            actual.clear(); repaint();
+            if (onCambio) onCambio();
+        }
+        void paint (juce::Graphics& g) override
+        {
+            const auto q = cuadro();
+            g.setColour (fondo);
+            g.fillRect (q);
+            g.setColour (tinta.withAlpha (0.25f));
+            g.drawRect (q, 1.0f);
+            //  Lo ya soltado, transformado; lo que el dedo esta trazando, tal
+            //  cual y fino, que es lo que hace que se vea el cambio.
+            Iconos::Trazo t; t.linea = Iconos::aIcono (trazos);
+            if (! t.linea.isEmpty()) Iconos::dibujaTrazo (g, t, q.reduced (q.getWidth() * 0.1f), tinta);
+            if (actual.size() > 1)
+            {
+                juce::Path p; p.startNewSubPath (actual.front());
+                for (const auto& pt : actual) p.lineTo (pt);
+                g.setColour (tinta.withAlpha (0.5f));
+                g.strokePath (p, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+        }
+    };
+
+    //  LA FICHA DEL CANAL: nombre, icono de la tabla o dibujo.
+    Sheet canNomSheet;
+    juce::TextButton canNomCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    juce::TextEditor canNomBox;
+    juce::TextButton canNomGuardarBtn { "GUARDAR" };
+    juce::OwnedArray<juce::TextButton> canIconoBtns;     // las 24 familias
+    juce::TextButton canNumeroBtn  { "NUMERO" };
+    juce::TextButton canDibujarBtn { "DIBUJAR" };
+    LienzoIcono      canLienzo;
+    juce::TextButton canBorrarBtn  { "BORRAR" };
+    juce::TextButton canUsarBtn    { "USAR" };
+    int  canEditado = -1;
+    bool canDibujando = false;
+    juce::Rectangle<int> canNomTituloBanda;
+    void abreCanalNombre (int c);
+    void refrescaCanalNombre();
+    void paintCanalNombreContent (juce::Graphics& g);
 
     //  SIXTEEN STRIPS THAT SCROLL RATHER THAN SIXTEEN STRIPS THAT SHRINK.
     //

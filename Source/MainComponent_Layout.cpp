@@ -1769,6 +1769,92 @@ void MainComponent::resized()
         }
     }
 
+    //  LA FICHA DEL NOMBRE DE UNA TIRA. Ver abreCanalNombre.
+    //
+    //  Cabecera, la fila del nombre con GUARDAR, la rejilla de iconos (o el
+    //  lienzo, que ocupa lo mismo) y la fila de NUMERO y DIBUJAR. Las dos filas
+    //  de tapas se apartan primero y la del medio se queda lo que sobra.
+    if (canEditado >= 0)
+    {
+        //  CUANTAS POR FILA: seis, que es la rejilla pedida -«reducidos»-,
+        //  si la celda llega al dedo y las cuatro filas caben de alto. Si no
+        //  caben -apaisado- ocho o doce, menos filas; y si seis no llegan al
+        //  dedo de ancho -280-, cuatro. Ancho primero: una celda por debajo de
+        //  `Metrics::hit` no es una celda.
+        const auto zonaC = safeArea();
+        const int anchoDentro = anchoTarjeta (zonaC.getWidth()) - 2 * Metrics::margenFichaX;
+        const int topeAlto = altoTarjeta (zonaC);
+        auto pidePara = [] (int f)
+        {
+            return Ficha::cromo + Metrics::hit + Metrics::sm + Metrics::btn + Metrics::sm
+                   + f * Metrics::hit + (f - 1) * Metrics::xs + Metrics::sm + Metrics::btn;
+        };
+        int cols = 0;
+        for (int k : { 6, 8, 12, 4 })
+        {
+            if (anchoDentro / k < Metrics::hit + 2 * Metrics::aireTapaDensa) continue;
+            if (cols == 0 || k > cols) cols = k;      // la mas ancha que llega al dedo, por si nada cabe
+            if (pidePara ((Sintes::kFamilias + k - 1) / k) <= topeAlto) { cols = k; break; }
+        }
+        cols = juce::jmax (4, cols);
+        const int filas = (Sintes::kFamilias + cols - 1) / cols;
+        const int quiere = pidePara (filas);
+        auto inner = sheetFromBottom (canNomSheet, quiere);
+
+        auto titleRow = inner.removeFromTop (Metrics::hit);
+        canNomCloseBtn.setBounds (Lang::takeEnd (titleRow, Metrics::hit)
+                                    .withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        canNomTituloBanda = centraEnRenglon (titleRow.withHeight (Metrics::bandaTitulo));
+        inner.removeFromTop (Metrics::sm);
+
+        {
+            auto filaN = inner.removeFromTop (Metrics::btn);
+            inner.removeFromTop (Metrics::sm);
+            const auto fG = ZatiLookAndFeel::letraDeTapa (
+                                ZatiLookAndFeel::capaDe (juce::Rectangle<float> (
+                                    0.0f, 0.0f, (float) Metrics::btn, (float) Metrics::btn))
+                                .getHeight());
+            const int pideG = juce::jmax (Metrics::hit,
+                                (int) std::ceil (juce::GlyphArrangement::getStringWidth
+                                  (fG, canNomGuardarBtn.getButtonText())) + 2 * Metrics::margenTapa);
+            canNomGuardarBtn.setBounds (Lang::takeEnd (filaN, pideG));
+            Lang::takeEnd (filaN, Metrics::xs);
+            canNomBox.setBounds (filaN);
+        }
+
+        {
+            auto filaB = inner.removeFromBottom (Metrics::btn);
+            inner.removeFromBottom (Metrics::sm);
+            auto& izq = canDibujando ? (juce::Button&) canBorrarBtn : (juce::Button&) canNumeroBtn;
+            auto& der = canDibujando ? (juce::Button&) canUsarBtn   : (juce::Button&) canDibujarBtn;
+            const int w = (filaB.getWidth() - Metrics::xs) / 2;
+            izq.setBounds (Lang::takeStart (filaB, w));
+            Lang::takeStart (filaB, Metrics::xs);
+            der.setBounds (filaB);
+        }
+
+        if (canDibujando)
+        {
+            const int lado = juce::jmin (inner.getWidth(), inner.getHeight());
+            canLienzo.setBounds (inner.withSizeKeepingCentre (lado, lado));
+        }
+        else
+        {
+            const int filaH = juce::jmax (Metrics::hit,
+                                          (inner.getHeight() - (filas - 1) * Metrics::xs) / filas);
+            for (int r = 0; r < filas; ++r)
+            {
+                auto row = inner.removeFromTop (filaH);
+                const int w = row.getWidth() / cols;
+                for (int c = 0; c < cols && r * cols + c < canIconoBtns.size(); ++c)
+                    if (auto* b = canIconoBtns[r * cols + c])
+                        b->setBounds ((c == cols - 1 ? row : Lang::takeStart (row, w))
+                                        .reduced (Metrics::aireTapaDensa, 0));
+                inner.removeFromTop (Metrics::xs);
+            }
+        }
+    }
+
     //  LA FICHA DE UNA BANDA DEL EQ. Pide: dos margenes, la cabecera, el aire,
     //  las filas de chips de TIPO y el mando Q con su lectura.
     if (eqBandaSheet.isVisible())
@@ -5587,7 +5673,7 @@ void MainComponent::resized()
 
                 auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, Metrics::aireTapaDensa);
                 canRowX[(size_t) c] = row.getX();
-                row.removeFromLeft (anchoNombreCanal (columna.getWidth()));
+                canRotulos[c]->setBounds (row.removeFromLeft (anchoNombreCanal (columna.getWidth())));
 
                 //  Y EN EL MISMO ORDEN Y CON EL MISMO HUECO que en la fila de
                 //  un pad: la S en el borde, la M a `halfGap` de ella. Estaba
