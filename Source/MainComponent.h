@@ -3457,7 +3457,7 @@ private:
             g.setColour (fondo);
             g.fillRect (q);
             g.setColour (tinta.withAlpha (0.25f));
-            g.drawRect (q, 1.0f);
+            g.drawRect (q, Metrics::filo);
             //  Lo ya soltado, transformado; lo que el dedo esta trazando, tal
             //  cual y fino, que es lo que hace que se vea el cambio.
             Iconos::Trazo t; t.linea = Iconos::aIcono (trazos);
