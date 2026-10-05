@@ -261,9 +261,13 @@ public:
         //
         //  La union de donde estaba y donde esta: dos columnas como mucho, y
         //  una sola cuando la marca solo se desliza dentro de su paso.
+        //  Y EL PAD ELEGIDO SOLO PINTA EL CANALON: cambiar de pad con la ficha
+        //  abierta repintaba las 256 celdas por dos casillas de color. Ver
+        //  paint, `pad == selPad`.
+        const bool cambiaSel = selPad != prevSelPad;
         const bool soloCabezal = visto && data != nullptr
                               && patLen == prevPatLen && primerPaso == prevPaso
-                              && selPad == prevSelPad && laneBase == prevLaneBase
+                              && laneBase == prevLaneBase
                               && std::memcmp (sombraCeldas.data(), data + off, nCel * sizeof (bool)) == 0
                               && std::memcmp (sombraZati.data(),  zatiOf,   sizeof (sombraZati)) == 0
                               && std::memcmp (sombraCarga.data(), loadedOf, sizeof (sombraCarga)) == 0
@@ -306,6 +310,7 @@ public:
             //  cpu.py mide por RELOJ y por eso no corre en el banco de CI.
             auto zona = antes.getUnion (marcaDe (playing));
             if (! zona.isEmpty()) repaint (zona);
+            if (cambiaSel) repaint (getLocalBounds().withWidth (kGutter + 1));
             return;
         }
 

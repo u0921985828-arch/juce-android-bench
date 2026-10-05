@@ -23,7 +23,7 @@
 #
 #      python3 Tests/cpu.py [segundos]
 # ============================================================================
-import json, os, shutil, subprocess, sys, tempfile
+import json, os, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -156,6 +156,32 @@ TOPE_TELEFONO = 0.5
 MINIMO_CENTINELA = 2000
 MIRADO_CENTINELA = 0.10
 
+#  Y LO QUE CADA TAPA MANDA VOLVER A PINTAR, de la misma corrida.
+#
+#  «El switch de Mo/St va fluido como debe ser, el de M y S no». En el
+#  telefono la cara vive en una imagen y cada pixel pendiente se pinta en
+#  software en el cuadro siguiente: la ventana entera son 47-66 ms. El ST de la
+#  mesa repintaba su tapa -0.0034 de la ventana- y el M y el S la ficha, que
+#  ocupa la ventana entera: 1.0. Cada linea `op` de ZATI_TAPAS dice ahora que
+#  parte de la ventana queda pendiente tras la tapa (`sucio`) y si la ventana
+#  conserva su forma (`sitio`): una tapa EN SU SITIO -un switch, un paso, un
+#  pad- no abre ni cierra nada, y lo que manda repintar tiene que ser lo suyo.
+#
+#  Tres reglas, medidas en 412x915 contra el binario de antes (e35a813):
+#    - M y S de la mesa: la mediana por debajo de TOPE_MS (antes 1.0).
+#    - las tapas de pad y de celda -rotulo numerico- en su sitio, de media por
+#      debajo de TOPE_NUMERO (antes 0.47): un pad tocado debajo de cualquier
+#      ficha repintaba la ficha entera, y luego los dieciseis.
+#    - ninguna tapa en su sitio pide la ventana entera (TOPE_ENTERA) salvo las
+#      que de verdad la cambian entera, escritas abajo con su razon.
+TOPE_MS     = 0.05
+TOPE_NUMERO = 0.30
+TOPE_ENTERA = 0.90
+#  Deshacer y rehacer devuelven el proyecto entero; el aspecto cambia el color
+#  de todo. En los cinco idiomas, que la corrida de tapas pasa por todos.
+ENTERAS_CON_RAZON = re.compile (
+    r"/(DESHACER|REHACER|UNDO|REDO|撤销|重做|تراجع|إعادة|PAPEL|GRAFITO|ACERO|LACA)$")
+
 
 #  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA.
 #
@@ -241,21 +267,68 @@ def centinela():
         out = subprocess.run ([APP], env=env, capture_output=True, text=True,
                               timeout=2400).stdout
     except subprocess.TimeoutExpired:
-        return None, []
+        return None, [], []
     finally:
         shutil.rmtree (casa, ignore_errors=True)
 
-    total, viejas = None, []
+    #  Y las lineas `op` que traen lo que cada tapa deja pendiente. Ver TOPE_MS.
+    total, viejas, ops = None, [], []
     for linea in out.splitlines():
         linea = linea.strip()
-        if not linea.startswith ('{') or '"centinela"' not in linea: continue
+        if not linea.startswith ('{'): continue
+        if '"centinela"' not in linea and '"sucio"' not in linea: continue
         try:
             d = json.loads (linea)
         except Exception:
             continue
         if   d.get ("centinela") == "total": total = d
         elif d.get ("centinela") == "vieja": viejas.append (d)
-    return total, viejas
+        elif "sucio" in d:                   ops.append (d)
+    return total, viejas, ops
+
+
+#  Las tres reglas de TOPE_MS sobre las lineas `op` de la corrida de tapas.
+#  Aparte para poder juzgar con ellas una corrida guardada: asi se probo que
+#  fallan en el binario de antes.
+def juzga_sucio (ops):
+    malas = []
+    print()
+    print ("y lo que cada tapa en su sitio manda volver a pintar, como parte de la ventana")
+    sitio = [o for o in ops if int (o.get ("sitio", 0)) == 1]
+    if len (ops) < MINIMO_CENTINELA:
+        malas.append ("solo %d tapas dicen lo que dejan pendiente y el minimo son %d: la "
+                      "sonda no publica `sucio`" % (len (ops), MINIMO_CENTINELA))
+    else:
+        def mediana (xs):
+            xs = sorted (xs)
+            return xs[len (xs) // 2] if xs else -1.0
+        ms  = [float (o["sucio"]) for o in sitio if re.search (r"^mixc?/(M|S)$", o.get ("que", ""))]
+        num = [float (o["sucio"]) for o in sitio if re.search (r"/\d+$", o.get ("que", ""))]
+        enteras = [o for o in sitio if float (o["sucio"]) >= TOPE_ENTERA
+                   and not ENTERAS_CON_RAZON.search (o.get ("que", ""))]
+        media = sum (float (o["sucio"]) for o in sitio) / max (1, len (sitio))
+        print ("  %d tapas, %d en su sitio; media %.3f de la ventana" % (len (ops), len (sitio), media))
+        print ("  M y S de la mesa: %d, mediana %.4f (tope %.2f)" % (len (ms), mediana (ms), TOPE_MS))
+        print ("  pads y celdas: %d, media %.3f (tope %.2f)"
+               % (len (num), sum (num) / max (1, len (num)), TOPE_NUMERO))
+        print ("  la ventana entera sin razon escrita: %d" % len (enteras))
+        for o in enteras[:12]:
+            print ("    %-28s %.3f" % (o.get ("que"), float (o["sucio"])))
+        if not ms:
+            malas.append ("la corrida de tapas no paso por el M ni el S de la mesa")
+        elif mediana (ms) > TOPE_MS:
+            malas.append ("el M y el S de la mesa mandan repintar %.3f de la ventana (mediana) y "
+                          "el tope es %.2f: el ST de al lado pinta su tapa"
+                          % (mediana (ms), TOPE_MS))
+        if not num:
+            malas.append ("la corrida de tapas no paso por ningun pad")
+        elif sum (num) / len (num) > TOPE_NUMERO:
+            malas.append ("tocar un pad o una celda manda repintar %.3f de la ventana de media y "
+                          "el tope es %.2f" % (sum (num) / len (num), TOPE_NUMERO))
+        if enteras:
+            malas.append ("%d tapas en su sitio mandan repintar la ventana entera (la primera, "
+                          "%s)" % (len (enteras), enteras[0].get ("que")))
+    return malas
 
 
 #  Ventanas repintadas POR CUADRO. Contar LLAMADAS no separa un fotograma de
@@ -455,7 +528,7 @@ def main():
     #  Y TRAS CADA TAPA. Ver MINIMO_CENTINELA.
     print()
     print ("y lo que la cara guardada ensenaria tras cada tapa de la app")
-    total, viejas = centinela()
+    total, viejas, ops = centinela()
     if total is None:
         print ("la sonda ZATI_CENTINELA no contesto")
         malas.append ("la sonda ZATI_CENTINELA no contesto: no hay nada que juzgar")
@@ -484,6 +557,9 @@ def main():
             malas.append ("la comprobacion tras cada tapa mira el %.1f %% de la ventana y el "
                           "suelo es el %.0f %%: cero viejas sin haber mirado"
                           % (mir * 100.0, MIRADO_CENTINELA * 100.0))
+
+        #  Y LO QUE MANDAN REPINTAR. Ver TOPE_MS.
+        malas.extend (juzga_sucio (ops))
 
     #  Y QUE EL VBLANK ESTE VIVO, que es la comprobacion sin la cual todo lo
     #  de arriba puede salir verde con el dibujo cayendose al reloj.

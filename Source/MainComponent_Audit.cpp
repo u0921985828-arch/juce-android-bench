@@ -10349,6 +10349,28 @@ void MainComponent::auditTapas()
             //  la comprobacion de despues mire algo. Fuera del cronometro.
             if (centinela) auditAlDia (escalaVentana);
 
+            //  Y LA FORMA DE LA VENTANA ANTES DE APRETAR: que se ve y donde.
+            //  Una tapa que la deja igual -un switch, un paso, un mando- es una
+            //  tapa EN SU SITIO, y lo que manda volver a pintar tiene que ser
+            //  lo suyo y no la ficha entera. Ver `sucio` mas abajo.
+            const auto forma = [this]
+            {
+                juce::int64 h = 1469598103934665603LL;
+                std::function<void (juce::Component&)> anda = [&] (juce::Component& c)
+                {
+                    if (! c.isVisible()) return;
+                    const auto b = c.getScreenBounds();
+                    for (const juce::int64 v : { (juce::int64) (juce::pointer_sized_int) &c, (juce::int64) b.getX(),
+                                                 (juce::int64) b.getY(), (juce::int64) b.getWidth(),
+                                                 (juce::int64) b.getHeight() })
+                        h = (h ^ v) * 1099511628211LL;
+                    for (auto* k : c.getChildren()) anda (*k);
+                };
+                anda (*this);
+                return h;
+            };
+            const juce::int64 formaAntes = centinela ? forma() : 0;
+
             //  Y CON ETIQUETA EN LA CAJA NEGRA, que es la otra mitad de la
             //  medida: si una tapa cuelga esto de verdad, el vigilante escribe
             //  QUIEN mientras el atasco dura y no despues. Ver Bitacora::Tarea.
@@ -10372,9 +10394,25 @@ void MainComponent::auditTapas()
             ++apretadas;
             if (ms > peorMs) { peorMs = ms; peorQuien = nombreFicha + "/" + quien; }
 
+            //  LO QUE LA TAPA MANDA VOLVER A PINTAR, como parte de la ventana:
+            //  en el telefono cada pixel pendiente se pinta en software en el
+            //  cuadro siguiente, y una ficha entera son decenas de ms -lo que
+            //  separaba el M y el S de la mesa, que repintaban la mesa, del
+            //  ST, que se repinta a si mismo-. Solo con la imagen al dia.
+            juce::String sucio;
+            if (centinela)
+            {
+                juce::int64 area = 0;
+                for (const auto& r : auditSucio (escalaVentana))
+                    area += (juce::int64) r.getWidth() * r.getHeight();
+                const double ventana = (double) getWidth() * (double) getHeight();
+                sucio << ",\"sucio\":" << juce::String (ventana > 0 ? (double) area / ventana : -1.0, 4)
+                      << ",\"sitio\":" << (forma() == formaAntes ? 1 : 0);
+            }
+
             std::cout << "{\"atasco\":\"op\",\"que\":\"" << UiAudit::esc (nombreFicha + "/" + quien)
                       << "\",\"ms\":" << juce::roundToInt (ms)
-                      << ",\"tapa\":1}" << std::endl;
+                      << sucio << ",\"tapa\":1}" << std::endl;
 
             if (centinela)
             {

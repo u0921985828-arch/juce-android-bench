@@ -111,7 +111,11 @@ public:
     }
 
     bool invalidateAll() override                                 { sucio = duena.getLocalBounds(); return true; }
-    bool invalidate (const juce::Rectangle<int>& area) override   { sucio.add (area.getIntersection (duena.getLocalBounds())); return true; }
+    bool invalidate (const juce::Rectangle<int>& area) override
+    {
+        const auto r = area.getIntersection (duena.getLocalBounds());
+        sucio.add (r); return true;
+    }
     void releaseResources() override                              { imagen = {}; }
 
 private:
@@ -1146,7 +1150,9 @@ MainComponent::MainComponent()
                 const int fx = enRanura (f);
                 if (fx < 0) return;                 // ranura vacia: no hay bus
                 engine.setCanalSend (canalActual, fx, (float) sl->getValue());
-                rackSheet.repaint();
+                //  Y nada mas: la ficha no pinta el envio, lo pinta el propio
+                //  deslizador, que ya se repinta solo. Era la ficha entera
+                //  sesenta veces por segundo mientras se arrastra.
             };
             rackSheet.cuerpo.addAndMakeVisible (sl);
             rackSends.add (sl);
@@ -1265,7 +1271,7 @@ MainComponent::MainComponent()
             {
                 instDestPad = bancoDestino() * kPadsPerBank + i;
                 refreshInst();
-                instSheet.repaint();
+                repintaFichaInst();
             };
             instSheet.cuerpo.addAndMakeVisible (b);
             instDestBtns.add (b);
@@ -1284,7 +1290,7 @@ MainComponent::MainComponent()
                 instDestPad = b4 * kPadsPerBank + instDestPad % kPadsPerBank;
                 refreshInst();
                 resized();
-                instSheet.repaint();
+                repintaFichaInst();
             };
             instSheet.cuerpo.addAndMakeVisible (b);
             instBancoBtns.add (b);
@@ -1425,7 +1431,7 @@ MainComponent::MainComponent()
                 if (! padEsInstrumento (vstPad)) return;
                 Sintes::ponValor (padReceta[(size_t) vstPad], i, (float) s->getValue());
                 padRecetaMovida[(size_t) vstPad] = true;
-                vstSheet.repaint();
+                vstSheet.repintaTarjeta();
             };
             s->onDragEnd = [this] { resintetizaInstrumento (vstPad); };
             vstSheet.cuerpo.addAndMakeVisible (*s);
@@ -1896,7 +1902,7 @@ MainComponent::MainComponent()
             //  rota. Ver MediaStore::comparte, que devuelve false ahi.
             if (! MediaStore::comparte (exportUri, exportMime))
                 exportStatus = T ("compartir es del telefono");
-            exportSheet.repaint();
+            exportSheet.repintaTarjeta();
         };
         exportSheet.cuerpo.addAndMakeVisible (exportShareBtn);
         exportShareBtn.setVisible (false);
@@ -1911,7 +1917,7 @@ MainComponent::MainComponent()
         {
             exportOgg = exportFmtBtn.getToggleState();
             exportFmtBtn.setButtonText (exportOgg ? "OGG" : "WAV");
-            exportSheet.repaint();
+            exportSheet.repintaTarjeta();
         };
         exportSheet.cuerpo.addAndMakeVisible (exportFmtBtn);
 
@@ -2557,7 +2563,7 @@ MainComponent::MainComponent()
         seqPrimerCelda = 0;
         resized();
         refreshStepGrid();
-        seqSheet.repaint();   // sheet card itself can grow/shrink with the bank's LEN
+        seqSheet.repintaTarjeta();   // sheet card itself can grow/shrink with the bank's LEN
     };
     seqSheet.addAndMakeVisible (patternSlider);
 
@@ -2599,7 +2605,7 @@ MainComponent::MainComponent()
         engine.setPatternLength (selectedPattern, (int) lengthSlider.getValue());
         resized();
         refreshStepGrid();
-        seqSheet.repaint();   // sheet card grows/shrinks with LEN
+        seqSheet.repintaTarjeta();   // sheet card grows/shrinks with LEN
     };
     seqSheet.addAndMakeVisible (lengthSlider);
 
@@ -3387,7 +3393,7 @@ MainComponent::MainComponent()
         //  dibujada la rampa ancha de antes mientras la voz ya tocaba la
         //  estrecha.
         pushFadesToWaveform();
-        if (padSheet.isVisible()) padSheet.repaint();
+        if (padSheet.isVisible()) padSheet.repintaTarjeta();
     };
 
     //  Tap the wave, hear the wave. On a chopped source the fragment under the
@@ -4877,7 +4883,7 @@ MainComponent::MainComponent()
         refreshModoNota();
         status.setText (nivel16 ? T ("16 NIVELES: PAD %1", juce::String (nivelPad + 1))
                                 : T ("16 NIVELES OFF"), juce::dontSendNotification);
-        repaint();
+        //  Cada pad se repinta solo si cambia de modo. Ver PadButton::setModoNota.
     };
     padSheet.donde().addAndMakeVisible (nivelesButton);
 
@@ -5501,11 +5507,12 @@ void MainComponent::setMacroTouched (int idx, bool touched)
         macroLabelTimer.onFire = [this]
         {
             macroTouched.fill (false);
-            repaint();
+            repaint (bandaMandos());
         };
         macroLabelTimer.startTimer (800);
     }
-    repaint();
+    //  Los rotulos de los tres mandos, que viven en su banda. Ver CacheCara.
+    repaint (bandaMandos());
 }
 
 //  Los cinco nombres de la rejilla. Con T de tresillo, que es como se dice y
@@ -6586,7 +6593,9 @@ void MainComponent::refrescaBandaEq()
             c->setToggleState (t == (int) eqEspejo.tipoDe (b), juce::dontSendNotification);
 
     eqQKnob.setValue (eqEspejo.qDe (b), juce::dontSendNotification);
-    eqBandaSheet.repaint();
+    //  De la ficha solo el titulo -banda y frecuencia-: los chips y el mando
+    //  se repintan solos. Ver Sheet::repintaContenido.
+    if (! eqBandaTituloBanda.isEmpty()) eqBandaSheet.repintaContenido (eqBandaTituloBanda.expanded (Sheet::kOrla));
     eqCurva.repaint();
 }
 
@@ -6596,13 +6605,23 @@ void MainComponent::refrescaBandaEq()
 //  abrir un proyecto y al vaciar.
 void MainComponent::refrescaEq()
 {
+    //  Y LA CURVA SOLO SI CAMBIA. Se llama al cambiar de canal, y elegir un
+    //  pad elige su canal: con los dos canales planos -lo normal- la curva era
+    //  la misma y se repintaba igual, y es una caja grande. Ver CacheCara.
+    bool cambia = false;
     for (int b = 0; b < Eq5::kBands; ++b)
     {
+        const float hz = eqEspejo.freqDe (b), dB = eqEspejo.gainDe (b), q = eqEspejo.qDe (b);
+        const auto  t  = eqEspejo.tipoDe (b);
         eqEspejo.ponBanda (b, engine.getEqFreq (canalActual, b), engine.getEqGain (canalActual, b));
         eqEspejo.ponTipo  (b, engine.getEqTipo (canalActual, b));
         eqEspejo.ponQ     (b, engine.getEqQ (canalActual, b));
+        cambia = cambia || ! juce::exactlyEqual (hz, eqEspejo.freqDe (b))
+                        || ! juce::exactlyEqual (dB, eqEspejo.gainDe (b))
+                        || ! juce::exactlyEqual (q,  eqEspejo.qDe (b))
+                        || t != eqEspejo.tipoDe (b);
     }
-    eqCurva.repaint();
+    if (cambia) eqCurva.repaint();
     if (eqBandaSheet.isVisible()) refrescaBandaEq();
 }
 
@@ -6619,8 +6638,10 @@ void MainComponent::focusFx (int f)
     const bool cambia = platoModo != ModoPlato::fx;
     platoModo = ModoPlato::fx;
     configuraPlato();
-    if (cambia) resized();
-    repaint();
+    //  Si el plato cambia de modo se rehace la cara; si no, lo que cambia es
+    //  la cuna -ver miraCuna- y los mandos, que `configuraPlato` ya repinta.
+    if (cambia) { resized(); repaint(); }
+    else        miraCuna();
 }
 
 // Tap once to take the knobs (switching the effect on if it was off); tap the
@@ -7070,12 +7091,15 @@ void MainComponent::refrescaPlato()
 void MainComponent::abreMenuRanura (int ranura)
 {
     const bool abrir = juce::isPositiveAndBelow (ranura, kNumRanuras);
+    const bool yaAbierto = ranuraSheet.isVisible();
     ranuraEditada = abrir ? ranura : -1;
     ranuraSheet.setVisible (abrir);
 
     if (abrir)
     {
-        ranuraSheet.toFront (false);
+        //  Ya abierto ya esta delante: `toFront` sobre una ficha que no es la
+        //  ultima hija la reordena, y reordenar repinta la ventana entera.
+        if (! yaAbierto) ranuraSheet.toFront (false);
         refrescaMenuRanura();
     }
     else
@@ -7095,7 +7119,11 @@ void MainComponent::abreMenuRanura (int ranura)
     }
 
     resized();
-    repaint();
+    //  CON EL MENU YA ABIERTO, OTRA RANURA ES EL MISMO MENU con otro titulo y
+    //  otras tapas encendidas: la tarjeta y no la ventana. Las tapas de la fila
+    //  se siguen tocando por debajo del velo, y cada una repintaba el telefono.
+    if (abrir && yaAbierto) ranuraSheet.repintaTarjeta();
+    else                    repaint();
 }
 
 void MainComponent::refrescaMenuRanura()
@@ -7272,7 +7300,9 @@ void MainComponent::fxTapped (int f)
         status.setText (T ("%1 OFF - manten pulsado para ajustar sin apagar", fxDefs[f].name),
                         juce::dontSendNotification);
 
-    repaint();
+    //  La tapa se repinta sola y `focusFx` ya repinta lo suyo; el panel XY
+    //  dice si su efecto SUENA.
+    if (xyPanel.isVisible()) xyPanel.repaint();
 }
 
 // --- El panel XY ---------------------------------------------------------
@@ -7435,7 +7465,6 @@ void MainComponent::fxFocusOnly (int f)
     //  Say so: a gesture nobody can see needs to announce what it did, or the
     //  hold reads as a tap that failed.
     status.setText (T ("CTRL -> %1", fxDefs[f].name), juce::dontSendNotification);
-    repaint();
 }
 
 // --- CTRL 1-3 ------------------------------------------------------------
@@ -7826,7 +7855,7 @@ void MainComponent::refrescaFichaMandos()
     }
     mandosPresetsBtn.setVisible (platoModo == ModoPlato::fx);
     resized();
-    mandosSheet.repaint();
+    mandosSheet.repintaTarjeta();
 }
 
 void MainComponent::llevaAlPlato (int i)
@@ -7983,7 +8012,7 @@ void MainComponent::showSetPage (int page)
     else if (onMidi)  refreshMidiDevices();
 
     resized();
-    setSheet.repaint();
+    setSheet.repintaTarjeta();
 }
 
 //  Same rule as the settings card, and for the same reason: the controls of
@@ -8084,7 +8113,7 @@ void MainComponent::showSeqPage (int page)
         sl->setVisible (false);
 
     resized();
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
 }
 
 //  Igual que showSeqPage: escondido, no solo sin colocar. Un control que sigue
@@ -8348,7 +8377,7 @@ void MainComponent::showPadPage (int page)
     resampleButton.setVisible (onRig);
 
     resized();
-    padSheet.repaint();
+    padSheet.repintaTarjeta();
 }
 
 //  Only the sixteen strips of the bank on show exist as far as the layout and
@@ -8984,6 +9013,7 @@ void MainComponent::Sheet::paint (juce::Graphics& g)
     if (pintaTodo) { if (paintContent) paintContent (g); return; }
 
     g.fillAll (juce::Colours::black.withAlpha (0.45f));
+    tarjetaPintada = sheetBounds;
     if (sheetBounds.isEmpty()) return;
 
     //  The card is a printed plate, not a floating dialog: square corners, a
@@ -9310,7 +9340,7 @@ void MainComponent::padClicked (int index)
                                juce::String (index + 1), juce::String (step + 1),
                                juce::String (bank + 1)),
                             juce::dontSendNotification);
-            if (seqSheet.isVisible()) seqSheet.repaint();
+            if (seqSheet.isVisible()) seqSheet.repintaTarjeta();
         }
     }
 
@@ -9451,7 +9481,7 @@ void MainComponent::stepCellToggled (int pad, int celda, bool arrastrando)
     refrescaTiraPaso();
     refreshStepGrid();
     if (! teniaPaso) resized();
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
 }
 
 // Copy the pattern into the flat buffer the grid reads, plus each pad's colour
@@ -9760,7 +9790,14 @@ void MainComponent::selectBank (int bank, int padDestino)
     resized();
     refreshStepGrid();
     refreshMixStrip();
-    repaint();
+    //  Y NO LA CARA ENTERA. Lo que cambia con el banco son tapas -los pads,
+    //  las dos filas de bancos, la rejilla- y se repintan solas; lo pintado
+    //  por la cara que depende de los pads es la tira de fragmentos. Era
+    //  `repaint()`: la ventana entera en software por tocar A, B, C o D.
+    //  Ver CacheCara.
+    repaint (headerArea);
+    //  INSTRUMENTOS lleva la letra del banco en el titulo: la tapaba el repaint().
+    if (instSheet.isVisible()) repintaFichaInst();
 }
 
 void MainComponent::selectPad (int index)
@@ -9818,10 +9855,11 @@ void MainComponent::selectPad (int index)
         const auto frag = padHasSample[(size_t) index] ? Zati::colour (padZati[(size_t) index])
                                                        : ZatiColours::accent;
         for (juce::Slider* k : { &macroCtrl1, &macroCtrl2, &macroCtrl3 })
-        {
-            k->setColour (juce::Slider::rotarySliderFillColourId, frag);
-            k->repaint();
-        }
+            if (k->findColour (juce::Slider::rotarySliderFillColourId) != frag)
+            {
+                k->setColour (juce::Slider::rotarySliderFillColourId, frag);
+                k->repaint();
+            }
     }
     //  EN MODO PAD EL PLATO SIGUE AL PAD ELEGIDO: si no, los tres mandos
     //  moverian el corte del pad de antes con el numero del nuevo en la tapa.
@@ -9829,7 +9867,15 @@ void MainComponent::selectPad (int index)
 
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     repaint (headerArea);          // the fragment strip tracks which zatis are loaded
-    if (padSheet.isVisible()) padSheet.repaint();  // title, zati swatch and card follow the selection
+    //  De la ficha del pad solo cambia lo que pinta con `selectedPad`: el
+    //  titulo y la fila de los zatis -ver paintPadSheetContent-. Lo demas son
+    //  tapas y mandos que `updateControlsFromPad` ya mueve y se repintan
+    //  solos. Ver Sheet::repintaContenido.
+    if (padSheet.isVisible())
+    {
+        padSheet.repintaCabecera();
+        if (! zatiSwatchArea.isEmpty()) padSheet.repintaContenido (zatiSwatchArea.expanded (Sheet::kOrla));
+    }
     //  Y el piano roll, que dibuja las notas de ESTE pad: dejarlo sin avisar
     //  ensena las notas del pad anterior con el nombre del nuevo en la cabecera,
     //  que es la peor de las dos mentiras posibles.
@@ -9840,8 +9886,14 @@ void MainComponent::selectPad (int index)
     if (seqSheet.isVisible())
     {
         refreshStepGrid();      // el carril marcado es el del pad elegido
-        seqSheet.repaint();     // y la cabecera dice de que pad son las notas
+        seqSheet.repintaCabecera();   // y la cabecera dice de que pad son las notas
     }
+    //  Y LAS DOS REJILLAS QUE SE PONEN ENCIMA DE LA FICHA DEL PAD, que se
+    //  titulan «PAD n»: con los pads de debajo tocandose por `onFuera` el
+    //  titulo se quedaba en el de antes. Medido con `ZATI_CENTINELA`: 64 de
+    //  64 toques con la rejilla de canales abierta, 3 px de rotulo viejo.
+    if (canalSheet.isVisible())   canalSheet.repintaCabecera();
+    if (padPickSheet.isVisible()) padPickSheet.repintaCabecera();
     //  Y EL TITULO DE LA FICHA MIDI, que dice de que pad sale el fichero
     //  -`etiquetaPad (selectedPad)`- y nadie lo avisaba: con la tarjeta abierta
     //  los pads de debajo se siguen tocando por `onFuera`, y con la cara en una
@@ -9861,7 +9913,7 @@ void MainComponent::selectPad (int index)
     {
         if (chopHitsFor != selectedPad) refreshChopHits();
         recalculaCortes();
-        refreshChopSheet();
+        refreshChopSheet (true);
     }
     if (padPickAbierto) refrescaPadPicker();
 
@@ -10057,7 +10109,9 @@ void MainComponent::refrescaPadPicker()
         if (auto* t = padPickBankBtns[b])
             t->setToggleState (b == currentBank, juce::dontSendNotification);
 
-    padPickSheet.repaint();
+    //  Las tapas se repintan solas al cambiar de estado o de opacidad; de la
+    //  ficha, la cabecera. Ver Sheet::repintaContenido.
+    padPickSheet.repintaCabecera();
 }
 
 
@@ -10936,7 +10990,8 @@ void MainComponent::rebuildChain()
     for (int i = 0; i < kNumPatterns; ++i)
         if (patternActiveUI[(size_t) i])
             engine.addToChain (i);
-    repaint();
+    //  La cadena se lee en la cabecera de la rejilla, y en ningun sitio mas.
+    if (seqSheet.isVisible()) seqSheet.repintaCabecera();
 }
 
 // Assignment follows cut order by default; this is the spec's manual override,
@@ -10951,8 +11006,11 @@ void MainComponent::setZati (int newZati)
 
     if (auto* p = pads[selectedPad]) p->setZati (z);
     refreshWaveformSegments();
-    repaint();
-    padSheet.repaint();
+    //  La tira de fragmentos de la cabecera y la fila de zatis de la ficha;
+    //  el pad y la onda se repintan solos. Ver Sheet::repintaContenido.
+    repaint (headerArea);
+    if (padSheet.isVisible() && ! zatiSwatchArea.isEmpty())
+        padSheet.repintaContenido (zatiSwatchArea.expanded (Sheet::kOrla));
 
     status.setText (T ("Pad %1 -> zati %2 %3", juce::String (selectedPad + 1),
                        juce::String (z + 1), T (Zati::name (z))),
@@ -11764,7 +11822,7 @@ void MainComponent::pastePattern()
         }
     refreshStepGrid();
     refreshPiano (false);
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     status.setText (T ("Pegado en P%1", juce::String (selectedPattern + 1)),
                     juce::dontSendNotification);
 }
@@ -12032,7 +12090,7 @@ void MainComponent::recalculaCortes()
     if (! chopCortes.empty()) chopCortes[0] = 0;
 }
 
-void MainComponent::refreshChopSheet()
+void MainComponent::refreshChopSheet (bool soloElPad)
 {
     //  El mismo visor que el recorte, en modo marcas. Ver WaveformDisplay::Modo.
     chopVista.setModo (WaveformDisplay::marcas);
@@ -12053,7 +12111,18 @@ void MainComponent::refreshChopSheet()
 
     chopGoButton.setEnabled (can);
     chopGoButton.setButtonText (can ? T ("CORTAR EN %1", juce::String (n)) : T ("CORTAR"));
-    chopSheet.repaint();
+    //  Al cambiar de PAD, de lo pintado solo cambian el titulo y la banda de
+    //  destinos: el visor y la tapa de CORTAR se repintan solos. Era la
+    //  tarjeta entera por cada pad tocado debajo.
+    if (soloElPad && ! chopPlanBanda.isEmpty())
+    {
+        chopSheet.repintaCabecera();
+        chopSheet.repintaContenido (chopPlanBanda.expanded (Sheet::kOrla));
+        return;
+    }
+    //  El cuerpo entero cambia -golpes, destinos, avisos- pero la cara de
+    //  debajo no. Ver Sheet::repintaTarjeta.
+    chopSheet.repintaTarjeta();
 }
 
 void MainComponent::applyAutoChop()
@@ -12431,7 +12500,7 @@ void MainComponent::selectionChanged()
     //  pintor lo leia el solo -`existsAsFile()` mas `getFileName()`- o sea dos
     //  syscalls dentro de `paint`, la misma pregunta escrita dos veces.
     browsePickName = ready ? browser->getSelectedFile (0).getFileName() : juce::String();
-    browseSheet.repaint();                   // the header shows the pick
+    browseSheet.repintaTarjeta();                   // the header shows the pick
 
     //  Audition: one tap loads the file into the pad you are filling AND fires
     //  it, so you choose by ear instead of by filename. CARGAR then just
@@ -13974,7 +14043,7 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
         //  answer to this is almost always the folder, not the app.
         status.setText (T ("NO se pudo guardar en %1", Lang::ltr (folder.getFullPathName())),
                         juce::dontSendNotification);
-        setSheet.repaint();
+        setSheet.repintaTarjeta();
         return;
     }
 
@@ -13985,7 +14054,7 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
                         ? T ("Guardado \"%1\"  [%2 pads]", name, juce::String (written))
                         : T ("Guardado con fallos: %1 pads no se escribieron", juce::String (failed)),
                     juce::dontSendNotification);
-    setSheet.repaint();
+    setSheet.repintaTarjeta();
 }
 
 
@@ -14226,7 +14295,7 @@ void MainComponent::deleteProject (const juce::String& name)
     }
     refreshProjectList();
     status.setText (T ("Borrado \"%1\"", name), juce::dontSendNotification);
-    setSheet.repaint();
+    setSheet.repintaTarjeta();
 }
 
 //  LA CANCION DE UN PROYECTO RECIEN NACIDO: el patron 1 en el primer hueco.
@@ -14529,7 +14598,7 @@ void MainComponent::pegarFila()
 
     refreshStepGrid();
     refreshPiano (false);
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     status.setText (T ("Fila pegada en el pad %1", juce::String (p + 1)), juce::dontSendNotification);
 }
 
@@ -14696,7 +14765,7 @@ void MainComponent::seqPegaSel()
 
     refreshStepGrid();
     refreshPiano (false);
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     resized();
     status.setText (T ("Pegado en P%1", juce::String (b + 1)), juce::dontSendNotification);
 }
@@ -14733,7 +14802,7 @@ void MainComponent::seqBorraSel()
     stepGrid.setSel (seqSel);
     refreshStepGrid();
     refreshPiano (false);
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     resized();      // la tira se va con la banda
     status.setText (cuantos == 1 ? T ("1 paso borrado")
                                  : T ("%1 pasos borrados",
@@ -14796,7 +14865,7 @@ void MainComponent::euclidesPattern (int golpes)
 
     refreshStepGrid();
     refreshPiano (false);
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     status.setText (n == 1 ? T ("1 golpe repartido en %1 pasos", Lang::ltr (juce::String (len)))
                     : n > 0 ? T ("%1 golpes repartidos en %2 pasos",
                                  Lang::ltr (juce::String (n)), Lang::ltr (juce::String (len)))
@@ -14835,7 +14904,7 @@ void MainComponent::humanizePattern()
         }
 
     refreshStepGrid();
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     status.setText (T ("Humanizados %1 golpes", juce::String (tocados)),
                     juce::dontSendNotification);
 }
@@ -14868,7 +14937,7 @@ void MainComponent::rotatePattern (int by)
 
     refreshStepGrid();
     refreshPiano (false);
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     status.setText (by > 0 ? T ("Patron un paso a la derecha")
                            : T ("Patron un paso a la izquierda"),
                     juce::dontSendNotification);
@@ -14904,7 +14973,7 @@ void MainComponent::doublePattern()
     lengthSlider.setValue (len * 2, juce::dontSendNotification);
     resized();
     refreshStepGrid();
-    seqSheet.repaint();
+    seqSheet.repintaTarjeta();
     status.setText (T ("Patron doblado a %1 pasos", juce::String (len * 2)),
                     juce::dontSendNotification);
 }
@@ -16205,7 +16274,11 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
     //  El transporte de esta ficha es seqPlayBtn, que vive en la pagina de la
     //  rejilla: el piano tenia su propio PLAY y era una tapa que hacia lo mismo
     //  en dos paginas de la misma ficha.
-    if (repintarTarjeta) seqSheet.repaint();
+    //  Y de la tarjeta, la cabecera: lo unico que pinta ella y depende de
+    //  esto es el titulo -pad, patron- y la octava del renglon de ayuda. La
+    //  rejilla, las barras y las tapas se repintan solas. Ver
+    //  paintPianoSheetContent y Sheet::repintaContenido.
+    if (repintarTarjeta) seqSheet.repintaCabecera();
 }
 
 
@@ -16738,7 +16811,9 @@ void MainComponent::refreshSong (bool repintarTarjeta)
         songGrid.setAudio (songClipsVista.data(), (int) songClipsVista.size(), -1, mudosAudio);
     }
 
-    if (repintarTarjeta) songSheet.repaint();
+    //  De la tarjeta, la cabecera -titulo y ayuda, que dicen el pincel-: la
+    //  linea de tiempo y las tapas se repintan solas. Ver Sheet::repintaContenido.
+    if (repintarTarjeta) songSheet.repintaCabecera();
 }
 
 
@@ -16784,7 +16859,16 @@ void MainComponent::refreshMixStrip()
     //  preguntaba `anySolo()` -los pads- asi que con un canal en solo y ningun
     //  pad la tapa salia apagada justo cuando hacia falta.
     mixClearSolo.setEnabled (mixPage == mixPageCanales ? engine.anyCanalSolo() : any);
-    mixSheet.repaint();
+    //  Y DE LA FICHA, SOLO EL TITULO, que es lo unico pintado por ella que
+    //  depende de esto -«SOLO ACTIVO», ver paintMixSheetContent-. Lo demas se
+    //  repinta solo: un switch al cambiar de estado, un fader al cambiar de
+    //  opacidad. Era `mixSheet.repaint()`, y la ficha ocupa la ventana
+    //  entera: cada M y cada S de la mesa volvia a pintar el telefono
+    //  entero, la cara de debajo incluida, mientras el ST de al lado se
+    //  pintaba a si mismo. Del telefono: «el de MO/ST va fluido, el de M y
+    //  S no». Y SOLO SI CAMBIA: un M no lo mueve, y la cabecera sola eran
+    //  tres veces lo que pintan la tapa y su fila.
+    if (tituloMesa() != mixTituloPintado) mixSheet.repintaCabecera();
 }
 
 //  EL SWITCH DE ESTEREO LEE EL ANCHO, no al reves: encendido si el pad tiene
@@ -16890,7 +16974,9 @@ void MainComponent::refreshRack()
                                          + T (AudioEngine::sustituye (fx) ? "SUSTITUYE" : "SUMA"));
     }
     refrescaRanuras();      // el canalon de cada fila, con las seis de la cara
-    rackSheet.repaint();
+    //  De la ficha, la cabecera -canal y cuantos pads- y lo demas son tapas
+    //  que se repintan solas. Ver Sheet::repintaContenido.
+    rackSheet.repintaCabecera();
 }
 
 
@@ -17314,6 +17400,9 @@ void MainComponent::aplicaFilasPiano (int filas)
                                  ? T ("2 OCTAVAS") : T ("1 OCTAVA"));
     resized();
     refreshPiano();
+    //  Cambian TODAS las filas, asi que el lienzo entero: lo pintaba de rebote
+    //  el `repaint` de la ficha entera que `refreshPiano` ya no pide.
+    pianoGrid.repaint();
 }
 
 juce::File MainComponent::tourFile()
@@ -17356,7 +17445,7 @@ void MainComponent::showTour (int paso)
     tourNextBtn.setButtonText (tourNextCaption());
     tourSkipBtn.setButtonText (tourSkipCaption());
     resized();
-    tourSheet.repaint();
+    tourSheet.repintaTarjeta();
 }
 
 
@@ -17609,7 +17698,7 @@ void MainComponent::startExport (bool stems)
     {
         exportOk = false;
         exportStatus = T ("no hay nada grabado en %1", exportSourceLabel().toLowerCase());
-        exportSheet.repaint();
+        exportSheet.repintaTarjeta();
         return;
     }
 
@@ -17640,7 +17729,7 @@ void MainComponent::startExport (bool stems)
     exportDirBtn.setVisible (false);
     exportCancelButton.setVisible (true);
     exportJob->startThread (juce::Thread::Priority::normal);
-    exportSheet.repaint();
+    exportSheet.repintaTarjeta();
 }
 
 // ---------------------------------------------------------------------------
@@ -17663,7 +17752,7 @@ void MainComponent::alternaRebotVivo()
     {
         exportOk = false;
         exportStatus = T ("no hay nada grabado en %1", exportSourceLabel().toLowerCase());
-        exportSheet.repaint();
+        exportSheet.repintaTarjeta();
         return;
     }
 
@@ -17700,7 +17789,7 @@ void MainComponent::alternaRebotVivo()
     exportLiveButton.setButtonText (T ("PARAR"));
     exportOk = false;
     exportStatus = T ("grabando en vivo...");
-    exportSheet.repaint();
+    exportSheet.repintaTarjeta();
 }
 
 void MainComponent::terminaRebotVivo()
@@ -17747,7 +17836,7 @@ void MainComponent::terminaRebotVivo()
                                                 exportOgg ? "audio/ogg" : "audio/wav");
         if (ruta.isNotEmpty()) vivoFichero.deleteFile();
     }
-    exportSheet.repaint();
+    exportSheet.repintaTarjeta();
 }
 
 //  DE LA CARPETA DE LA APP A LA MUSICA COMPARTIDA. Ver MediaStore::publicar.
@@ -17853,7 +17942,7 @@ void MainComponent::pollExport()
         if (! (ahora == lastReadout))
         {
             lastReadout = ahora;
-            setSheet.repaint();
+            setSheet.repintaTarjeta();
         }
     }
     if (measuring && ! engine.isProbing()) finishMeasure();
@@ -17876,7 +17965,7 @@ void MainComponent::pollExport()
         //  cerrado. Es el mismo fallo que la rejilla de pasos y el cabezal del
         //  piano, en el unico sitio de la app que dura tanto. La barra de
         //  progreso se sigue moviendo: la pinta `busyBar`, que es suya.
-        if (exportSheet.isVisible()) exportSheet.repaint();
+        if (exportSheet.isVisible()) exportSheet.repintaTarjeta();
         return;
     }
 
@@ -17911,7 +18000,7 @@ void MainComponent::pollExport()
     //  esto la tapa queda visible con los limites vacios, que es exactamente el
     //  fallo del rotulo a 28 px que esta misma ficha ya lleva escrito.
     resized();
-    exportSheet.repaint();
+    exportSheet.repintaTarjeta();
 }
 
 
@@ -18547,7 +18636,7 @@ void MainComponent::startMeasure()
         measuredMs = -1.0f;
         measureNote = T ("midiendo...");
         measureButton.setEnabled (false);
-        setSheet.repaint();
+        setSheet.repintaTarjeta();
         //  The probe has to hear itself, at the clock YOU picked - in ONE
         //  opening and on the opening thread: `setAudioChannels (1, 2)` plus
         //  `keepChosenRate` and `useLowestLatency` were up to three Oboe
@@ -18557,7 +18646,7 @@ void MainComponent::startMeasure()
         {
             measuredOutMs = measuredInMs = 0.0f;   // filled in finishMeasure()
             engine.startLatencyProbe();
-            setSheet.repaint();
+            setSheet.repintaTarjeta();
         });
     };
 
@@ -18567,7 +18656,7 @@ void MainComponent::startMeasure()
         RP::request (RP::recordAudio, [this, begin] (bool granted)
         {
             if (granted) begin();
-            else { measureNote = T ("sin permiso de microfono"); setSheet.repaint(); }
+            else { measureNote = T ("sin permiso de microfono"); setSheet.repintaTarjeta(); }
         });
 }
 
@@ -18640,7 +18729,7 @@ void MainComponent::finishMeasure()
     //  quedaban vacias bajo sus rotulos. Todo lo de arriba lee lo medido y no
     //  el dispositivo, asi que la peticion puede esperar a aqui.
     pideEncargoAudio ([this] { abreCon (0); }, [this] { refreshAudioOptions(); });
-    setSheet.repaint();
+    setSheet.repintaTarjeta();
 }
 
 
@@ -18667,7 +18756,7 @@ void MainComponent::refreshMidiDevices()
 
     midiOutBtn.setButtonText (T ("MANDAR"));
     midiInBtn.setButtonText  (T ("RECIBIR"));
-    setSheet.repaint();
+    setSheet.repintaTarjeta();
 }
 
 //  Abrir y cerrar los aparatos segun las dos tapas. Es el unico sitio que los
@@ -18702,7 +18791,7 @@ void MainComponent::applyMidiChoice()
     }
     else midi.closeInput();
 
-    setSheet.repaint();
+    setSheet.repintaTarjeta();
 }
 
 void MainComponent::refreshAudioOptions()
@@ -18785,7 +18874,7 @@ void MainComponent::refreshAudioOptions()
     }
 
     resized();
-    setSheet.repaint();
+    setSheet.repintaTarjeta();
 }
 
 // Zero means "leave this one alone", so a chip only ever changes its own
@@ -19372,7 +19461,7 @@ void MainComponent::pasoPack (int d)
     instPack = (instPack + d % n + n) % n;
     refreshInst();
     resized();
-    instSheet.repaint();
+    instSheet.repintaTarjeta();
 }
 
 //  SI EL DIBUJO NO CABE EN UNA CELDA, NO LO LLEVA NINGUNA.
@@ -19408,6 +19497,12 @@ void MainComponent::rejillaDeIconos (juce::OwnedArray<juce::TextButton>& celdas,
     if (! todas)
         for (int i = 0; i < cuantas; ++i)
             celdas[i]->getProperties().set ("sinIcono", 1);
+}
+
+void MainComponent::repintaFichaInst()
+{
+    for (auto r : { instTitleArea, instPackArea, instPieArea })
+        if (! r.isEmpty()) instSheet.repintaContenido (r.expanded (Sheet::kOrla));
 }
 
 void MainComponent::refreshInst()
@@ -19520,7 +19615,7 @@ void MainComponent::cargaInstrumento (int idx)
         //  cargar GRAND con un ritmo ya montado.
         selectBank (pad / kPadsPerBank, pad);
         refreshInst();
-        instSheet.repaint();
+        repintaFichaInst();
 
         status.setText (Sintes::nombreDe (fam, 0) + "  "
                             + juce::String::charToString ((juce::juce_wchar) 0x00B7) + "  "
@@ -19990,7 +20085,7 @@ void MainComponent::exportaMidiPatron()
     if (notas.empty())
     {
         midiParte = T ("Ese pad no tiene notas en este patron");
-        midiSheet.repaint();
+        midiSheet.repintaTarjeta();
         return;
     }
 
@@ -20003,7 +20098,7 @@ void MainComponent::exportaMidiPatron()
     if (! MidiArchivo::escribe (destino, notas, engine.getBpm()))
     {
         midiParte = T ("No se pudo escribir en esa carpeta - cambiala en EXPORTAR");
-        midiSheet.repaint();
+        midiSheet.repintaTarjeta();
         return;
     }
 
@@ -20021,7 +20116,7 @@ void MainComponent::exportaMidiPatron()
     //  la ve la prueba, y ademas el orden de las dos mitades lo decide cada
     //  lengua en vez de este renglon.
     midiParte = T ("%1 - %2 notas", nombre, Lang::ltr (juce::String ((int) notas.size())));
-    midiSheet.repaint();
+    midiSheet.repintaTarjeta();
 }
 
 //  Y AL REVES. Con `pushUndo` por delante, que esto SUSTITUYE lo que el pad
@@ -20221,7 +20316,7 @@ void MainComponent::refreshVst()
     vstOctDown.setEnabled (vstTeclado.getBase() > -24);
     vstOctUp  .setEnabled (vstTeclado.getBase() < 12);
     refrescaMandosVst();
-    vstSheet.repaint();
+    vstSheet.repintaTarjeta();
 }
 
 
@@ -20352,7 +20447,6 @@ void MainComponent::toggleRecordArm()
     //  Y la rejilla lo dice: el aviso de que tocar un pad hace otra cosa tiene
     //  que estar donde esta el dedo.
     refrescaRejillaModo();
-    repaint();
 }
 
 

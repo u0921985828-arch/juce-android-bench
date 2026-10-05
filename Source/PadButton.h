@@ -96,7 +96,7 @@ public:
     std::function<void (float vel)> onNotaOn;
     std::function<void()>           onNotaOff;
 
-    void setModoNota (bool b) noexcept { modoNota = b; }
+    void setModoNota (bool b)          { if (modoNota != b) { modoNota = b; repaint(); } }
     bool enModoNota() const noexcept   { return modoNota; }
 
     //  start01/end01 are the pad's own trim window. After an auto-chop all
@@ -143,7 +143,9 @@ public:
     int  getZati() const { return zati; }
     void setSelected (bool s) { if (selected != s) { selected = s; repaint(); } }
     void setPlaying  (bool p) { if (playing  != p) { playing  = p; repaint(); } }
-    void setFlash    (float f) { flash = f; repaint(); }
+    //  Solo si cambia: `refreshPad` lo pide para los 64 al elegir un pad, y
+    //  sin la guarda eran dieciseis tapas repintadas por un toque en una.
+    void setFlash    (float f) { if (! juce::exactlyEqual (flash, f)) { flash = f; repaint(); } }
 
     //  CALLADO POR UN SOLO DE OTRO. Un solo se pone en la mesa, y la mesa tapa
     //  la rejilla: hasta hoy la cara no decia nada de que doce pads estuvieran

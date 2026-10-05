@@ -235,7 +235,15 @@ public:
         const int nueva = juce::jlimit (0, 4, h);
         if (nueva == util) return;
         util = nueva;
-        repaint();
+        //  Solo el marco, que es lo unico que `util` pinta: sus cuatro lados
+        //  con un pixel de mas por el suavizado. El lienzo entero en software
+        //  por cambiar de herramienta era el mismo coste que la cara entera.
+        auto r = getLocalBounds().withTrimmedLeft (kGutter).withTrimmedTop (kRegla);
+        const int g = 3;
+        repaint (r.removeFromTop (g));
+        repaint (r.removeFromBottom (g));
+        repaint (r.removeFromLeft (g));
+        repaint (r.removeFromRight (g));
     }
     int  getHerramienta() const { return util; }
 

@@ -364,6 +364,39 @@ private:
                                : sheetBounds.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
         }
 
+        //  REPINTAR UN TROZO Y NO LA FICHA. La ficha ocupa la ventana entera,
+        //  asi que su `repaint()` invalida tambien la cara de debajo, y con la
+        //  cara en una imagen -ver CacheCara- eso es pintar en software la
+        //  ventana entera por un toque: 47-66 ms a escala de telefono. El ST
+        //  de la mesa iba fluido porque solo se repinta su tapa; M y S no,
+        //  porque `refreshMixStrip` pedia la ficha entera. Estos dos piden lo
+        //  que cambia, en las coordenadas en que se pinta: las del cuerpo si
+        //  la ficha se desplaza.
+        void repintaContenido (juce::Rectangle<int> r) { donde().repaint (r); }
+        //  LA ORLA: lo que el suavizado de un trazo o de un texto pinta fuera
+        //  de su caja. No es aire de maquetado -nada se coloca con ella-, es
+        //  el margen de un repintado parcial para que no quede el borde viejo.
+        static constexpr int kOrla = 2;
+        //  La tarjeta y su sombra, sin el velo: para lo que cambia el cuerpo
+        //  entero de la ficha. La cara de debajo no se toca.
+        //  Y la que se pinto la ultima vez con ella: si la tarjeta crece o
+        //  encoge -la rejilla con el LEN del banco- lo que deja al descubierto
+        //  tambien es suyo.
+        void repintaTarjeta()
+        {
+            if (pintaTodo || sheetBounds.isEmpty()) { repaint(); return; }
+            const auto t = tarjetaPintada.isEmpty() ? sheetBounds : sheetBounds.getUnion (tarjetaPintada);
+            repaint (t.expanded (kOrla).withTrimmedBottom (-7));
+        }
+        juce::Rectangle<int> tarjetaPintada;
+        //  La cabecera entera -titulo y renglon de ayuda- con lo que
+        //  `centraEnRenglon` la puede bajar para centrarla en un dedo.
+        void repintaCabecera()
+        {
+            repintaContenido (areaContenido().removeFromTop (juce::jmax (Metrics::hit, Metrics::bandaTitulo + Metrics::bandaSubtitulo))
+                                             .expanded (kOrla));
+        }
+
         //  UN TOQUE FUERA DE LA TARJETA, ANTES DE CERRAR.
         //
         //  La tarjeta se centra al 78 % para que la maquina se siga viendo por
@@ -2397,7 +2430,10 @@ private:
     void openChopSheet();
     void applyAutoChop();
     juce::Array<int> chopTargets (int slices, bool onlyEmpty) const;
-    void refreshChopSheet();
+    void refreshChopSheet (bool soloElPad = false);
+    //  La banda de «va a pads» del troceado, la que cambia con el pad. La
+    //  publica el pintor -es quien la cuenta- y la lee refreshChopSheet.
+    juce::Rectangle<int> chopPlanBanda;
     //  Two-tap confirmation for the actions that destroy work and cannot be
     //  undone: deleting a project takes its folder off the disk, and starting
     //  a new one empties sixteen pads. The first tap arms the button and says
@@ -3233,6 +3269,12 @@ private:
     void plantaPacksDePrueba();
     void openInstSheet();
     void refreshInst();
+    //  Lo que la ficha de EXTRAS pinta ella y cambia con el destino, el pack o
+    //  la carga: titulo, renglon del pack y pie. Ver Sheet::repintaContenido.
+    void repintaFichaInst();
+    //  El titulo de la mesa, y el que se pinto la ultima vez. Ver refreshMixStrip.
+    juce::String tituloMesa();
+    juce::String mixTituloPintado;
     void pasoPack (int d);
     void cargaInstrumento (int idx);
     //  Y la decision de rejilla: si el nombre no cabe en NINGUNA celda, ninguna

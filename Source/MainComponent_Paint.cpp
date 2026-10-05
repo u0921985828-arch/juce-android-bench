@@ -1097,6 +1097,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     //  old one-tap chop was destructive precisely because it never said this.
     const auto targets = chopTargets (chopSlices, chopOnlyEmpty);
     auto planned = inner.removeFromTop (40);
+    chopPlanBanda = planned;
 
     if (uiSample[(size_t) sp] == nullptr)
     {
@@ -1843,7 +1844,6 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
     //  No lo veia ningun banco: el titulo se PINTA, y las seis reglas de
     //  expo.py recorren el arbol de COMPONENTES. Un rotulo dibujado no es un
     //  componente y por eso llevaba aqui desde el principio.
-    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     {
         const auto caja = antesDe (centraEnRenglon (mixSheet.sheetBounds
                                        .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
@@ -1865,19 +1865,29 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
         //
         //  Y solo en CANALES: en la pagina de PADS cada tira ES un pad, asi que
         //  «cuantos estan fuera» no es una pregunta de esa pantalla.
-        juce::String txt = T ("MIX");
-        if (engine.anySolo()) txt += "  " + dot + "  " + T ("SOLO ACTIVO");
-        if (mixPage == mixPageCanales)
-        {
-            int fuera = 0;
-            for (int p = 0; p < kNumPads; ++p)
-                if (padHasSample[(size_t) p] && ! AudioEngine::tieneCanal (engine.getPadCanal (p)))
-                    ++fuera;
-            if (fuera > 0)
-                txt += "  " + dot + "  " + padsTexto (fuera) + " " + T ("SIN CANAL");
-        }
+        const auto txt = tituloMesa();
+        mixTituloPintado = txt;
         pintaTitulo (g, caja, txt);
     }
+}
+
+//  El titulo de la mesa en un sitio: lo pinta `paintMixSheetContent` y lo
+//  compara `refreshMixStrip`, que solo repinta la cabecera si cambia.
+juce::String MainComponent::tituloMesa()
+{
+    const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+    juce::String txt = T ("MIX");
+    if (engine.anySolo()) txt += "  " + dot + "  " + T ("SOLO ACTIVO");
+    if (mixPage == mixPageCanales)
+    {
+        int fuera = 0;
+        for (int p = 0; p < kNumPads; ++p)
+            if (padHasSample[(size_t) p] && ! AudioEngine::tieneCanal (engine.getPadCanal (p)))
+                ++fuera;
+        if (fuera > 0)
+            txt += "  " + dot + "  " + padsTexto (fuera) + " " + T ("SIN CANAL");
+    }
+    return txt;
 }
 
 // ============================================================================

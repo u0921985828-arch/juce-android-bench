@@ -1320,6 +1320,12 @@ void MainComponent::resized()
                               sheet, Metrics::margenFichaX, Metrics::margenFichaY,
                               (int) s.getProperties()["capa"]);
         s.sheetBounds = sheet;
+        //  Y SI LA TARJETA CAMBIA DE TAMANO, ella y lo que deja al descubierto:
+        //  la ficha ocupa la ventana entera y su `setBounds` no se mueve, asi
+        //  que nadie mas lo avisa. Lo hacia de rebote el `repaint` de la ficha
+        //  entera en cada toque. Medido: 1 OCTAVA en el piano, 14 415 px viejos.
+        if (s.isVisible() && ! s.tarjetaPintada.isEmpty() && s.tarjetaPintada != sheet)
+            s.repintaTarjeta();
         auto dentro = sheet.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
         //  LA QUE NO SE DESPLAZA, EXACTAMENTE COMO ESTABA. Ver Sheet::hazDesplazable.
