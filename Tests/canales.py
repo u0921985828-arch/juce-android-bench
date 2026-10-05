@@ -1085,6 +1085,23 @@ def main():
         malas.append ("con ancho 1 la correlacion L/R de la muestra mono es %.4f y tiene que ser %.2f (±0.05): "
                       "ni dos fuentes ni mono" % (corr1, corrTeor))
 
+    # 21. EL ROTULO DEL ST DICE LA POSICION. Del telefono: «sigue poniendo
+    #     ST, ¿no cambia o que pasa?» y «mo de mono y st de estereo». El
+    #     switch del pad 0 se lee encendido «ST» y apagado «MO», por los dos
+    #     caminos que lo mueven: el toque (`pulsaTapa`: ST -> MO -> ST) y el
+    #     ANCHO de EL PAD a cero y de vuelta (sincronizaMixEstereo: MO ->
+    #     ST). Cinco rotulos y cada uno el de su ancho. Medido en 412x915 y
+    #     393x851: ST,MO,ST,MO,ST. Roto -el binario de la tanda anterior-:
+    #     no publica el rotulo, FALLA.
+    for nombre, rr in (("412x915", r), ("393x851", r393)):
+        if rr is None: continue
+        rot = rr.get ("mesa_st_rotulo", "")
+        print ("rotulo   en %s el ST del pad 0 dice, tocado, tocado, ANCHO a cero y de vuelta: %s"
+               % (nombre, rot or "(nada)"))
+        if rot != "ST,MO,ST,MO,ST":
+            malas.append ("en %s el ST del pad 0 dice %s y tiene que decir ST,MO,ST,MO,ST: encendido ST, "
+                          "apagado MO, venga de donde venga" % (nombre, rot or "(nada)"))
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

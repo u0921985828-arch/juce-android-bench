@@ -6043,6 +6043,9 @@ void MainComponent::auditCanales()
     int mesaPanTinta = -1, mesaHuecos[4] = { -1, -1, -1, -1 }, mesaSw = 0;
     int mesaStCanales = -1, mesaStActivo = -1;
     float mesaStAntes = -1.0f, mesaStDespues = -1.0f, mesaStVuelve = -1.0f;
+    //  Y su rotulo en cada paso: tras el toque que apaga, el que enciende, y
+    //  con el ANCHO de EL PAD a cero y de vuelta a uno (sincronizaMixEstereo).
+    juce::StringArray mesaStRotulo;
     juce::String faderCifra;
     if (auto* f = mixFaders[0])
     {
@@ -6238,10 +6241,22 @@ void MainComponent::auditCanales()
                 mesaStCanales = uiSample[0] != nullptr ? uiSample[0]->buffer.getNumChannels() : 0;
                 mesaStActivo  = st->isEnabled() ? 1 : 0;
                 mesaStAntes   = engine.getPadAncho (0);
+                mesaStRotulo.add (st->getButtonText());
                 pulsaTapa (st);
                 mesaStDespues = engine.getPadAncho (0);
+                mesaStRotulo.add (st->getButtonText());
                 pulsaTapa (st);
                 mesaStVuelve  = engine.getPadAncho (0);
+                mesaStRotulo.add (st->getButtonText());
+                const int sel = selectedPad;
+                const double mando = anchoSlider.getValue(), ancho = padAnchoUI[0];
+                selectedPad = 0;
+                anchoSlider.setValue (0.0, juce::sendNotificationSync);
+                mesaStRotulo.add (st->getButtonText());
+                anchoSlider.setValue (ancho, juce::sendNotificationSync);
+                mesaStRotulo.add (st->getButtonText());
+                selectedPad = sel;
+                anchoSlider.setValue (mando, juce::dontSendNotification);
             }
         }
         faderTinta = cuenta (0.0, false);
@@ -6624,6 +6639,7 @@ void MainComponent::auditCanales()
               << ",\"mesa_st_antes\":" << juce::String (mesaStAntes, 2)
               << ",\"mesa_st_despues\":" << juce::String (mesaStDespues, 2)
               << ",\"mesa_st_vuelve\":" << juce::String (mesaStVuelve, 2)
+              << ",\"mesa_st_rotulo\":\"" << mesaStRotulo.joinIntoString (",") << "\""
               << ",\"mesa_fila\":" << mesaFila << ",\"mesa_sobra\":" << mesaSobra
               << ",\"mesa_vista_alto\":" << mesaVistaAlto << ",\"mesa_filas_alto\":" << mesaFilasAlto
               << ",\"mesa_vista\":" << mesaVista << ",\"mesa_filas\":" << mesaFilas

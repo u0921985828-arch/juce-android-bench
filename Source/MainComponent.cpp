@@ -3542,6 +3542,11 @@ MainComponent::MainComponent()
         //  lado que abrir, y del telefono llego «no se si funciona muy bien»,
         //  «con una mono, todas son mono». Ahora apagado es mono y encendido
         //  es el lado fabricado al ancho que tenga.
+        //
+        //  Y EL ROTULO DICE LA POSICION: «ST» encendido y «MO» apagado. Del
+        //  telefono: «sigue poniendo ST, ¿no cambia o que pasa?» y «mo de
+        //  mono y st de estereo». Lo pone `sincronizaMixEstereo`, la unica
+        //  que escribe el switch, tambien tras el toque.
         auto* st = new juce::TextButton ("ST");
         styleButton (*st, kStepOff);
         st->setClickingTogglesState (true);
@@ -3557,9 +3562,11 @@ MainComponent::MainComponent()
             padAnchoUI[(size_t) i] = ancho;
             engine.setPadAncho (i, ancho);
             if (i == selectedPad) anchoSlider.setValue (ancho, juce::dontSendNotification);
+            sincronizaMixEstereo (i);
         };
         mixRows.addAndMakeVisible (st);
         mixEstereos.add (st);
+        sincronizaMixEstereo (i);
     }
     //  Y LAS DIECISEIS TIRAS DE CANAL, en el mismo Viewport y con la misma
     //  forma de fila: color, numero, fader, `M` y cuantos pads le entran. Sin
@@ -16789,7 +16796,11 @@ void MainComponent::sincronizaMixEstereo (int pad)
 {
     if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
     if (auto* st = mixEstereos[pad])
-        st->setToggleState (padAnchoUI[(size_t) pad] > 0.0f, juce::dontSendNotification);
+    {
+        const bool estereo = padAnchoUI[(size_t) pad] > 0.0f;
+        st->setToggleState (estereo, juce::dontSendNotification);
+        st->setButtonText (estereo ? "ST" : "MO");
+    }
 }
 
 //  DE LOS CLIPS DEL MODELO A LA TABLA DEL MOTOR.
