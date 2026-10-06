@@ -332,12 +332,17 @@ public:
         //  mismo 0.92 sobre el mismo fragmento es un numero claro sobre un
         //  color claro. textOn elige el lado que contrasta y el alfa se queda
         //  diciendo lo que decia: cuanto pesa, no de que color es.
-        juce::Colour idxCol = ZatiColours::textOn (base).withAlpha (loaded ? 0.92f : 0.72f);
+        //  Y LO QUE HAY DEBAJO ES EL CUERPO SOBRE EL PLATO, no el cuerpo solo:
+        //  cargado va al 62 %, y textOn medido contra un color a medias
+        //  elegia tinta oscura sobre un rojo que en pantalla es #933C36 -1,7:1
+        //  en la feria (J3)-. Se mide contra el color opaco que se ve.
+        const juce::Colour fondo = ZatiColours::plate.overlaidWith (base);
+        juce::Colour idxCol = ZatiColours::textOn (fondo).withAlpha (loaded ? 1.0f : 0.72f);
         //  inkDim on a 30% fragment fill measured 3.25-4.02:1 across the eight
         //  colours — under the 4.5 needed for 9px text on every one of them.
         //  Ink at 0.75 clears it on the worst (5.84:1) and still reads as
         //  secondary against the pad's own numeral.
-        juce::Colour nmCol  = ZatiColours::textOn (base).withAlpha (loaded ? 0.75f : 0.60f);
+        juce::Colour nmCol  = ZatiColours::textOn (fondo);
         juce::Colour sparkCol = loaded ? frag.darker (0.35f)
                                        : ZatiColours::textOn (base).withAlpha (0.30f);
         bool onAccent = false;
@@ -412,13 +417,39 @@ public:
         PadArt::numero (g, r, index + 1, idxCol, 1.0f);
 
         // Name (mono) bottom.
+        //  UNA FRANJA BAJO EL NOMBRE, de lo justo para leerlo. En amarillo,
+        //  verde y turquesa el cuerpo es un tono medio y ni la tinta ni la
+        //  crema llegaban a 4,5:1 (feria J3: HAT 2,6, CONGA 2,4). En vez de
+        //  oscurecer el pad entero -el color es como se encuentra un sonido- se
+        //  hunde solo el renglon del nombre, y lo justo: hasta que una de las
+        //  dos tintas pase de 4,5:1 contra lo que queda debajo.
+        const auto rNombre = r.reduced (10.0f, 7.0f).removeFromBottom (12.0f);
+        if (loaded && ! onAccent && padName.isNotEmpty())
+        {
+            const auto bajo = ZatiColours::plate.overlaidWith (base);
+            float k = 0.0f;
+            //  Contra la mejor de las dos tintas: cual es la clara depende de
+            //  la carcasa -en las oscuras `ink` es la crema-.
+            auto mejor = [] (juce::Colour c) { return juce::jmax (ZatiColours::contrastRatio (ZatiColours::ink, c),
+                                                                  ZatiColours::contrastRatio (ZatiColours::inkLight, c)); };
+            while (k < 1.0f && mejor (bajo.interpolatedWith (ZatiColours::plate, k)) < 4.8f)
+                k += 0.05f;
+            if (k > 0.0f)
+            {
+                g.setColour (ZatiColours::plate.withAlpha (juce::jmin (1.0f, k)));
+                g.fillRect (r.reduced (Metrics::filo + 1.0f, 0.0f)
+                             .withTop (rNombre.getY() - 4.0f)
+                             .withBottom (r.getBottom() - Metrics::filo - 1.0f));
+                nmCol = ZatiColours::textOn (bajo.interpolatedWith (ZatiColours::plate, k));
+            }
+        }
         g.setColour (nmCol);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta).withExtraKerningFactor (0.06f));
         //  Nothing where there is nothing. An em dash on every empty tile was
         //  sixteen marks that carried no information: the tile already says it
         //  is empty by having no waveform and no name.
         g.drawText (loaded ? padName.toUpperCase() : juce::String(),
-                    r.reduced (10.0f, 7.0f).removeFromBottom (12.0f), juce::Justification::bottomLeft, true);
+                    rNombre, juce::Justification::bottomLeft, true);
 
         // Border, then focus. A loaded pad's border is its zati; focus is a
         // second, achromatic ring outside it, so selection never overwrites

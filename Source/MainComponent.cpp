@@ -893,7 +893,7 @@ MainComponent::MainComponent()
             const char* kCuenta[] = { "OFF", "1", "2" };
             for (int i = 0; i < 3; ++i)
             {
-                auto* b = new juce::TextButton (kCuenta[i]);
+                auto* b = new juce::TextButton (i == 0 ? T ("off").toUpperCase() : juce::String (kCuenta[i]));
                 styleButton (*b, kStepOff);
                 litAccent (*b);
                 b->setClickingTogglesState (true);
@@ -1752,7 +1752,7 @@ MainComponent::MainComponent()
         //  three chips, one lit, and picking one repaints the whole machine.
         for (int i = 0; i < 4; ++i)
         {
-            auto* b = new juce::TextButton (ZatiColours::skinName (i));
+            auto* b = new juce::TextButton (T (ZatiColours::skinName (i)));
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -1979,6 +1979,12 @@ MainComponent::MainComponent()
         exportLiveButton.onClick = [this] { alternaRebotVivo(); };
         exportSheet.cuerpo.addAndMakeVisible (exportLiveButton);
 
+        styleButton (exportFuenteBtn, kKey);
+        exportFuenteBtn.setClickingTogglesState (true);
+        exportFuenteBtn.onClick = [this] { ponModoCancion (exportFuenteBtn.getToggleState()); };
+        fuenteTapa (exportFuenteBtn, engine.isSongMode());
+        exportSheet.cuerpo.addAndMakeVisible (exportFuenteBtn);
+
         styleButton (exportStemsButton, kKey);
         exportStemsButton.onClick = [this] { startExport (true); };
         exportSheet.cuerpo.addAndMakeVisible (exportStemsButton);
@@ -2059,6 +2065,8 @@ MainComponent::MainComponent()
           | juce::FileBrowserComponent::filenameBoxIsReadOnly,   // no keyboard on mobile
             start, browseFilter.get(), nullptr);
         browser->addListener (this);
+        browser->setFilenameBoxLabel (T ("nombre:"));
+        browserRootChanged (start);
         //  JUCE's default row is about 22px — half a comfortable touch target.
         //  Choosing a sample is the one thing you do before anything else, so
         //  it should not be the fiddliest tap in the app.
@@ -2214,7 +2222,18 @@ MainComponent::MainComponent()
     addAndMakeVisible (loadButton);
 
     styleButton (testButton, kKey);
-    testButton.onClick = [this] { engine.postTestTone(); status.setText (T ("Tono de prueba"), juce::dontSendNotification); };
+    //  Sin salida no hay tono que oir, y decir «Tono de prueba» es mentir
+    //  (feria, J4: TEST sin dispositivo «funciona»).
+    testButton.onClick = [this]
+    {
+        if (dispositivo() == nullptr)
+        {
+            status.setText (T ("Sin dispositivo de audio: no puede sonar"), juce::dontSendNotification);
+            return;
+        }
+        engine.postTestTone();
+        status.setText (T ("Tono de prueba"), juce::dontSendNotification);
+    };
     setSheet.cuerpo.addAndMakeVisible (testButton);
 
     styleButton (recButton, kKey);
@@ -4818,8 +4837,11 @@ MainComponent::MainComponent()
             //  Al pasar a momentaneo con el dedo levantado, el efecto no puede
             //  quedarse colgado sonando: el modo cambia lo que significa
             //  SOLTAR, y ahora mismo esta soltado.
-            if (! xyLatch && ! xyPad.isTouched() && fxEncendido (xyFx))
+            if (! xyLatch && ! xyPad.isTouched() && xyLoEncendio && fxEncendido (xyFx))
+            {
                 setFxEnabled (xyFx, false);
+                xyLoEncendio = false;
+            }
             status.setText (xyLatch ? T ("XY fijo - se queda donde lo dejes")
                                     : T ("XY momentaneo - suena mientras tocas"),
                             juce::dontSendNotification);
@@ -5073,6 +5095,13 @@ MainComponent::MainComponent()
         //  moverse la aguja de un medidor.
         startTimer (dev.relojMs);
     }
+
+    //  Ver `OidoDeToques`: cada dedo que se levanta deja el estado encargado.
+    oidoDeToques.alSoltar = [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; };
+    juce::Desktop::getInstance().addGlobalMouseListener (&oidoDeToques);
+
+    //  Ver textoInvalidoConserva: todos los mandos de la cara y de las fichas.
+    textoInvalidoConserva (*this);
 
     //  Y EL DIBUJO, AL RITMO DE LA PANTALLA. Se engancha DESPUES de que la
     //  cara exista y no en la lista de inicializacion: `VBlankAttachment`
@@ -6888,12 +6917,41 @@ void MainComponent::ponEnRanura (int ranura, int fx)
         //
         //  Solo si NO tiene: un pad que ya vive en el canal cuatro no se muda
         //  al que estes mirando, que seria decidir por quien toca.
+        //
+        //  Y SI NINGUN PAD TIENE CANAL TODAVIA, ENTRAN TODOS. Es como nace la
+        //  app, y en la feria (J1, J2, J5) el primer efecto se lo llevaba solo
+        //  el pad elegido: la reverb de J1 no llego al fichero y el DRV de J2
+        //  no toco el bombo. Mientras nadie ha repartido pads, el canal donde
+        //  cae el primer efecto hace de master; en cuanto hay reparto, se
+        //  respeta y solo entra el elegido. Y se DICE, en la linea de estado y
+        //  en la costura EFECTOS, que nombra el canal y cuantos pads lleva.
         if (selectedPad >= 0 && ! AudioEngine::tieneCanal (engine.getPadCanal (selectedPad)))
         {
+            bool alguno = false;
+            for (int i = 0; i < kNumPads && ! alguno; ++i)
+                alguno = AudioEngine::tieneCanal (engine.getPadCanal (i));
             pushUndo (T ("CANAL"));
-            engine.setPadCanal (selectedPad, (int) c);
+            if (alguno)
+            {
+                engine.setPadCanal (selectedPad, (int) c);
+                if (auto* b = pads[selectedPad]) b->repaint();
+                status.setText (T ("%1 en CANAL %2: entra el pad %3", fxDefs[fx].name,
+                                   juce::String ((int) c + 1).paddedLeft ('0', 2),
+                                   juce::String (selectedPad + 1).paddedLeft ('0', 2)),
+                                juce::dontSendNotification);
+            }
+            else
+            {
+                for (int i = 0; i < kNumPads; ++i)
+                    engine.setPadCanal (i, (int) c);
+                for (auto* b : pads) if (b != nullptr) b->repaint();
+                status.setText (T ("%1 en CANAL %2: entran los %3 pads", fxDefs[fx].name,
+                                   juce::String ((int) c + 1).paddedLeft ('0', 2),
+                                   juce::String (kNumPads)),
+                                juce::dontSendNotification);
+            }
             refreshMixStrip();
-            if (auto* b = pads[selectedPad]) b->repaint();
+            repaint();
         }
     }
 
@@ -7428,7 +7486,8 @@ void MainComponent::toggleXyPanel()
 {
     if (xyPanel.isVisible())
     {
-        if (! xyLatch && ! xyWasOn && fxEncendido (xyFx)) setFxEnabled (xyFx, false);
+        if (! xyLatch && xyLoEncendio && fxEncendido (xyFx)) setFxEnabled (xyFx, false);
+        xyLoEncendio = false;
         xyPad.setTouched (false);
         xyPanel.setVisible (false);
         xyButton.setToggleState (false, juce::dontSendNotification);
@@ -7454,8 +7513,9 @@ void MainComponent::selectXyFx (int f)
     //  dejaria abierto para siempre: el dedo que lo encendio ya no va a
     //  levantarse sobre EL. Se apaga al salir de el, no al entrar en el
     //  siguiente, que es cuando todavia se sabe cual era.
-    if (! xyLatch && f != xyFx && ! xyPad.isTouched() && fxEncendido (xyFx))
+    if (! xyLatch && f != xyFx && ! xyPad.isTouched() && xyLoEncendio && fxEncendido (xyFx))
         setFxEnabled (xyFx, false);
+    if (f != xyFx) xyLoEncendio = false;
 
     xyFx = f;
     //  La luz va a la RANURA donde vive ese tipo, igual que en la cara. Un
@@ -7503,19 +7563,19 @@ void MainComponent::xyTouched (bool down)
     //  en la cara. Lo que cambia entre los dos modos es lo que hace SOLTAR.
     if (xyLatch)
     {
-        if (down && ! fxEncendido (xyFx)) setFxEnabled (xyFx, true);
+        if (down && ! fxEncendido (xyFx)) { setFxEnabled (xyFx, true); xyLoEncendio = true; }
         refreshXyPad();
         return;
     }
 
     if (down)
     {
-        xyWasOn = fxEncendido (xyFx);
-        if (! xyWasOn) setFxEnabled (xyFx, true);
+        if (! fxEncendido (xyFx)) { setFxEnabled (xyFx, true); xyLoEncendio = true; }
     }
-    else if (! xyWasOn)
+    else if (xyLoEncendio)
     {
         setFxEnabled (xyFx, false);
+        xyLoEncendio = false;
     }
     refreshXyPad();
 }
@@ -8012,7 +8072,23 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
     //  vacio -ningun punto cae «dentro», asi que `Sheet::mouseDown` no llega a
     //  preguntar- y que `onDismiss` sea nulo. El comentario mandaba a buscar
     //  una condicion que no existe, que es lo que se le reprocha a un manual.
-    s.onFuera = [this] (juce::Point<int> p) { return tocaPadDetras (p); };
+    //
+    //  Y LOS BOTONES QUE ASOMAN, igual que los pads: el toque cierra la ficha
+    //  Y hace lo suyo. Antes solo cerraba, y la accion se perdia (feria, J4
+    //  M9: AJUSTES sobre la ficha PAD, DESHACER sobre SEC).
+    s.onFuera = [this] (juce::Point<int> p)
+    {
+        if (tocaPadDetras (p)) return true;
+        for (auto* c : getChildren())
+            if (auto* b = dynamic_cast<juce::Button*> (c))
+                if (b->isVisible() && b->isEnabled() && b->getBounds().contains (p))
+                {
+                    closeAllSheets();
+                    b->triggerClick();
+                    return true;
+                }
+        return false;
+    };
 
     resized();
     repaint();
@@ -8674,6 +8750,34 @@ void MainComponent::apuntaApertura (Sheet& s)
     UiAudit::apertura (s.nombre, deDonde, (int) s.getProperties()["capa"]);
 }
 
+void MainComponent::browserRootChanged (const juce::File& raiz)
+{
+    if (browser != nullptr)
+        for (auto* c : browser->getChildren())
+            if (auto* caja = dynamic_cast<juce::ComboBox*> (c))
+                caja->setText (rutaCorta (raiz), juce::dontSendNotification);
+}
+
+bool MainComponent::cierraLoDeArriba()
+{
+    if (presetEditado >= 0)       { abreMenuPresets (-1); return true; }
+    if (ranuraEditada >= 0)       { abreMenuRanura (-1);  return true; }
+    if (mandosSheet.isVisible())  { abreFichaMandos (-1); return true; }
+    if (canEditado >= 0)          { abreCanalNombre (-1); return true; }
+    if (padPickAbierto)           { abrePadPicker (false);   return true; }
+    if (canalPickAbierto)         { abreCanalPicker (false); return true; }
+    if (tourSheet.isVisible())    { tourSkipBtn.triggerClick(); return true; }
+
+    for (auto* c : getChildren())
+        if (auto* f = dynamic_cast<Sheet*> (c); f != nullptr && f->isVisible())
+        {
+            closeAllSheets();
+            return true;
+        }
+    if (xyPanel.isVisible())      { toggleXyPanel(); return true; }
+    return false;
+}
+
 void MainComponent::closeAllSheets()
 {
     disarmConfirm();   // an armed button must not survive its own sheet closing
@@ -8719,8 +8823,9 @@ void MainComponent::closeAllSheets()
     //  - tocando fuera, o con la tecla de cerrar - se lleva el panel por
     //  delante sin que llegue nunca el mouseUp. Sin esto te quedas con un
     //  delive abierto sobre el master y sin panel con el que quitarlo.
-    if (xyPanel.isVisible() && ! xyLatch && ! xyWasOn && fxEncendido (xyFx))
+    if (xyPanel.isVisible() && ! xyLatch && xyLoEncendio && fxEncendido (xyFx))
         setFxEnabled (xyFx, false);
+    xyLoEncendio = false;
     xyPad.setTouched (false);
     xyPanel.setVisible (false);
     xyButton.setToggleState (false, juce::dontSendNotification);
@@ -8731,6 +8836,8 @@ void MainComponent::closeAllSheets()
 
 MainComponent::~MainComponent()
 {
+    juce::Desktop::getInstance().removeGlobalMouseListener (&oidoDeToques);
+
     //  EL PUENTE MIDI SE CIERRA ANTES QUE NADA, y no es una precaucion: es un
     //  uso despues de liberar, todas las veces, con la salida encendida.
     //
@@ -8984,6 +9091,8 @@ void MainComponent::ponModoCancion (bool on)
         b->setToggleState (on, juce::dontSendNotification);
         modoTapa (*b, on);
     }
+    exportFuenteBtn.setToggleState (on, juce::dontSendNotification);
+    fuenteTapa (exportFuenteBtn, on);
     status.setText (on ? T ("PLAY toca la cancion") : T ("PLAY toca el patron / la cadena"),
                     juce::dontSendNotification);
 
@@ -9751,7 +9860,7 @@ void MainComponent::refreshPadArt (int index)
         p->setTitle ("Pad " + juce::String (index + 1));
         p->setDescription (padName[(size_t) index].isNotEmpty()
                                ? padName[(size_t) index]
-                               : juce::String ("vacio"));
+                               : T ("vacio"));
     }
 }
 
@@ -10932,7 +11041,7 @@ void MainComponent::stepFabricaJob()
             //  la fabrica entraba con la afinacion, el filtro y el choke del
             //  sonido que hubiera, y el instrumento nuevo sonaba como el viejo.
             ponPadPorDefecto (dst);
-            assignSampleToPad (dst, sb, Kits::table()[src].name);
+            assignSampleToPad (dst, sb, Kits::table()[src].name, false);
             //  Y SE MARCA DE FABRICA, DESPUES: `assignSampleToPad` lo borra
             //  porque es el embudo de todo lo que entra en un pad, asi que
             //  quien sabe que esto es la fabrica es esta funcion. Es lo que
@@ -11162,6 +11271,10 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     //  instrumento, el remuestreo y la toma- siguen haciendo lo mismo.
     if (seleccionar)
         selectPad (index);
+    //  Y si el que llega es el que ya esta elegido, su cara se pone al dia: la
+    //  reposicion y la fabrica ya no eligen, y el elegido carga despues.
+    else if (index == selectedPad)
+        waveform.setSample (uiSample[(size_t) index]);
 }
 
 void MainComponent::rebuildChain()
@@ -11560,7 +11673,14 @@ void MainComponent::retranslateUi()
     //  guarda que ya lleva la del microfono.
     exportLiveButton  .setButtonText (T (vivoJob != nullptr ? "PARAR" : "EN VIVO"));
     exportShareBtn    .setButtonText (T ("COMPARTIR"));
+    fuenteTapa (exportFuenteBtn, engine.isSongMode());
     exportCancelButton.setButtonText (T ("CANCELAR"));
+    //  Las carcasas y el «no» de la cuenta, que se pintaban crudos: PAPEL en
+    //  chino y OFF en castellano (feria, J1 y J3).
+    for (int i = 0; i < skinButtons.size(); ++i)
+        skinButtons[i]->setButtonText (T (ZatiColours::skinName (i)));
+    if (! cuentaButtons.isEmpty())
+        cuentaButtons[0]->setButtonText (T ("off").toUpperCase());
 
     rackButton   .setButtonText (T ("RACK"));
     mixClearSolo .setButtonText (T ("SIN SOLO"));
@@ -12829,6 +12949,10 @@ juce::ValueTree MainComponent::captureState() const
     //  significaba entonces.
     s.setProperty ("paso", engine.pasoUnidades(), nullptr);
     s.setProperty ("bpm", bpmSlider.getValue(), nullptr);
+    //  EL PAD ELEGIDO, que no se guardaba: tras reabrir, SEC y el tour salian
+    //  en el pad 64 -el ultimo en cargarse se elegia a si mismo- (feria, J1 y
+    //  J3). Los que se cargan ya no se eligen, y este vuelve.
+    s.setProperty ("selectedPad", selectedPad, nullptr);
     //  The skin is deliberately NOT captured: it belongs to the person, not
     //  to the song. Old projects that carry one are simply ignored.
     s.setProperty ("focusedFx", focusedFx, nullptr);
@@ -14165,7 +14289,8 @@ void MainComponent::applyState (const juce::ValueTree& s)
         sincronizaMixEstereo (i);
     }
     refreshMixStrip();
-    selectPad (juce::jmax (0, selectedPad));
+    selectedPad = juce::jlimit (0, kNumPads - 1, (int) s.getProperty ("selectedPad", 0));
+    selectPad (selectedPad);
     for (int i = 0; i < kNumPads; ++i) refreshPad (i);
     resized();
     repaint();
@@ -14263,7 +14388,7 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
     {
         //  Nothing was saved. Say so and say WHERE it tried, because the
         //  answer to this is almost always the folder, not the app.
-        status.setText (T ("NO se pudo guardar en %1", Lang::ltr (folder.getFullPathName())),
+        status.setText (T ("NO se pudo guardar en %1", Lang::ltr (rutaCorta (folder))),
                         juce::dontSendNotification);
         setSheet.repintaTarjeta();
         return;
@@ -14387,7 +14512,7 @@ juce::String MainComponent::lineaDeContinuidad (int anchoDisponible,
     };
 
     juce::String linea = currentProject.isNotEmpty() ? currentProject.toUpperCase()
-                                                     : T ("SIN GUARDAR");
+                                                     : T ("BORRADOR");
 
     const juce::String sep = juce::String::fromUTF8 ("  \xc2\xb7  ");
 
@@ -14508,7 +14633,7 @@ juce::Font MainComponent::fuenteContinuidad()
     return ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f);
 }
 
-void MainComponent::deleteProject (const juce::String& name)
+void MainComponent::deleteProject (juce::String name)
 {
     ProjectStore::folderFor (name).deleteRecursively();
     if (currentProject == name)
@@ -17956,6 +18081,7 @@ void MainComponent::startExport (bool stems)
     exportMasterButton.setVisible (false);
     exportStemsButton.setVisible (false);
     exportLiveButton.setVisible (false);
+    exportFuenteBtn.setVisible (false);
     exportShareBtn.setVisible (false);
     exportFmtBtn.setVisible (false);
     //  Y CAMBIAR, que a mitad de un rebote dejaria las pistas repartidas en dos
@@ -18137,6 +18263,8 @@ void MainComponent::openExportSheet()
     exportUri.clear();
     exportMime.clear();
     exportShareBtn.setVisible (false);
+    exportFuenteBtn.setToggleState (engine.isSongMode(), juce::dontSendNotification);
+    fuenteTapa (exportFuenteBtn, engine.isSongMode());
     openSheet (exportSheet, setButton);
 }
 
@@ -18224,6 +18352,7 @@ void MainComponent::pollExport()
     exportMasterButton.setVisible (true);
     exportStemsButton.setVisible (true);
     exportLiveButton.setVisible (true);
+    exportFuenteBtn.setVisible (true);
     exportShareBtn.setVisible (exportUri.isNotEmpty());
     exportFmtBtn.setVisible (true);
     exportDirBtn.setVisible (true);
@@ -21029,7 +21158,7 @@ void MainComponent::stepPadJob()
         const int fuente = padJob->source[(size_t) i];
         if (fuente >= 0 && fuente < i && uiSample[(size_t) fuente] != nullptr)
         {
-            assignSampleToPad (i, uiSample[(size_t) fuente], padName[(size_t) i]);
+            assignSampleToPad (i, uiSample[(size_t) fuente], padName[(size_t) i], false);
             ++padJob->restored;
             continue;
         }
@@ -21056,7 +21185,7 @@ void MainComponent::stepPadJob()
             assignSampleToPad (i, sb, padJob->deSintesis[(size_t) i]
                                         ? Sintes::nombreDe (receta / Sintes::kPresets,
                                                             receta % Sintes::kPresets)
-                                        : padName[(size_t) i]);
+                                        : padName[(size_t) i], false);
             ++padJob->restored;
         }
         else if (padJob->clearMissing)
@@ -21976,6 +22105,8 @@ void MainComponent::timerCallback()
     //  after you left the app, fight whatever took it, and hand appResumed a
     //  device it did not open.
     reviveSalida (dt);
+    cristal.ponSinSalida (dispositivo() == nullptr);
+    cristal.ponRecorte (engine.tomaRecorte(), dt);
 
     //  ...and from then on, every couple of seconds, hand the live pads to the
     //  writer. With nothing changed this is sixteen pointer comparisons.
@@ -21985,6 +22116,16 @@ void MainComponent::timerCallback()
     //  sesion se sincronizaba cada 1.1 s en un movil bueno y cada 3.3 en uno de
     //  gama basica — y desde que el reloj no es el que dibuja, un tick ya no
     //  dura ni siquiera lo que diga la tabla.
+    //  Y UN MOMENTO DESPUES DEL ULTIMO TOQUE, el estado entero. Ver
+    //  `OidoDeToques`.
+    if (estadoTrasToqueMs > 0.0 && (estadoTrasToqueMs -= dt) <= 0.0)
+    {
+        estadoTrasToqueMs = -1.0;
+        sessionStateMs = 0.0;
+        const Bitacora::Tarea marca ("guardar/tras-toque");
+        session.pideEstado (textoSesion());
+    }
+
     if ((sessionSyncMs += dt) >= kSyncSesionMs)
     {
         sessionSyncMs = 0.0;
@@ -22020,8 +22161,14 @@ void MainComponent::timerCallback()
     //  segundos de verdad — estaba en `confirmTicks = 50`, con el comentario
     //  «~3 s at the 60 ms UI timer» al lado, que en un movil de gama alta son
     //  1.65 s y en uno de gama basica cinco.
+    //  Y LO DICE: en la feria (J4, fotos 29-33) el segundo toque llego tarde
+    //  tres veces, el boton se volvio a armar cada vez y nadie supo por que
+    //  no borraba. Caducar sin decirlo parece un boton roto.
     if (confirmPending != nullptr && (confirmMs -= dt) <= 0.0)
+    {
         disarmConfirm();
+        status.setText (T ("Sin confirmar: no se ha hecho nada"), juce::dontSendNotification);
+    }
 
     //  Y SI NO HAY VBLANK, EL DIBUJO SE CAE AQUI. Un peer que no entrega
     //  vblanks -o una ventana que todavia no tiene pantalla- dejaria la cara

@@ -111,6 +111,42 @@ public:
 
     ~Exporter() override { stopThread (4000); }
 
+    //  LO QUE SE ANUNCIA Y LO QUE SE ESCRIBE, SACADO DEL MISMO SITIO.
+    //
+    //  La ficha decia «10.7 s · 4 compases» y el fichero media 13.7: la cola
+    //  -tres segundos con reverb, dos sin nada- se sumaba al cuerpo CON EL
+    //  SECUENCIADOR EN MARCHA, asi que no era una cola sino el patron otra vez,
+    //  cortado a mitad de compas y con un clic al final (feria 2026-10, J1, J2
+    //  y J5: -23 dBFS en los ultimos 5 ms). Ahora el cuerpo son los compases
+    //  exactos, en la cola el secuenciador esta PARADO y solo suenan las voces
+    //  y los efectos que ya venian, y los ultimos 20 ms bajan a cero. La ficha
+    //  pinta este mismo plan, asi que lo anunciado y el fichero no pueden
+    //  volver a separarse.
+    struct Plan
+    {
+        int pasos = 0, pasosCompas = 16;
+        double cuerpo = 0.0, cola = 0.0;
+        juce::int64 cuerpoN = 0, colaN = 0;
+        double total() const noexcept { return cuerpo + cola; }
+    };
+    //  Sin efectos con cola, medio segundo: lo que tarda en apagarse el
+    //  ultimo golpe sin que el fichero lo corte.
+    static constexpr double kColaMin = 0.5;
+    static constexpr double kFundido = 0.020;
+
+    static Plan planDe (const AudioEngine& e, double sr)
+    {
+        Plan p;
+        p.pasos       = e.lengthInSteps();
+        p.pasosCompas = juce::jmax (1, e.pasosPorCompas());
+        const double sps = (60.0 / juce::jmax (20.0, e.getBpm())) * (double) e.getStepBeats();
+        p.cuerpo  = sps * (double) p.pasos;
+        p.cola    = juce::jmax (kColaMin, e.getFxTailSeconds());
+        p.cuerpoN = (juce::int64) std::llround (p.cuerpo * sr);
+        p.colaN   = (juce::int64) std::llround (p.cola * sr);
+        return p;
+    }
+
     // --- Read by the UI timer while the job runs -------------------------
     std::atomic<float> progress { 0.0f };     // 0..1 over all passes
     std::atomic<int>   passDone { 0 };
@@ -142,16 +178,15 @@ public:
         //  el fichero se reservaba con la mitad del largo y la exportacion
         //  cortaba la cancion por la mitad sin decir nada. Con 1/32 sobraba el
         //  doble de silencio al final.
-        const double secPerStep = (60.0 / juce::jmax (20.0, live.getBpm()))
-                                * (double) live.getStepBeats();
-        const juce::int64 bodyLen = (juce::int64) (secPerStep * (double) steps * sampleRate);
-        const juce::int64 tailLen = (juce::int64) (juce::jmax (2.0, live.getFxTailSeconds()) * sampleRate);
-        const juce::int64 totalLen = bodyLen + tailLen;
+        //  Y la cola, del plan que tambien pinta la ficha. Ver `Plan`.
+        const auto plan = planDe (live, sampleRate);
+        bodyLen = plan.cuerpoN;
+        const juce::int64 totalLen = plan.cuerpoN + plan.colaN;
 
         if (! dir.createDirectory())
         {
             resultOk = false;
-            resultText = T ("No se pudo crear %1", dir.getFullPathName());
+            resultText = T ("No se pudo crear %1", dir.getFileName());
             finished.store (true, std::memory_order_release);
             return;
         }
@@ -161,13 +196,18 @@ public:
         float peak = 0.0f;
         if (! renderPass (-1, totalLen, 1.0f, nullptr, &peak, 0)) return;   // cancelled
 
-        const float gain = (peak > 1.0f) ? (0.999f / peak) : 1.0f;
+        //  EL TECHO ES -1 dBFS Y NO 0. Con 0.999 el pico de muestra cabia y el
+        //  de verdad -entre muestras, el que reconstruye el DAC o un MP3- llegaba
+        //  a 0,0 dBTP (feria, J2). Un decibelio es el margen que piden las
+        //  tiendas, y se baja a el lo que haga falta y se dice cuanto.
+        constexpr float kTecho = 0.8912509f;      // -1 dBFS
+        const float gain = (peak > kTecho) ? (kTecho / peak) : 1.0f;
         passDone.store (1, std::memory_order_relaxed);
 
         // --- Pass 2: the master, written as it renders. --------------------
         Bitacora::paso ("exportar/master");
         auto masterFile = uniqueFile (base + extension());
-        if (! writeRender (masterFile, -1, totalLen, gain, 1))
+        if (writeRender (masterFile, -1, totalLen, gain, 1) == Fallo)
         {
             if (threadShouldExit()) return;      // writeRender ya dejo el parte
             resultOk = false;
@@ -179,6 +219,7 @@ public:
         progress.store (2.0f / (float) totalPasses, std::memory_order_relaxed);
 
         int written = 1;
+        int mudas = 0;
         int pasadas = 2;
 
         // --- Remaining passes: one stem per loaded pad. -------------------
@@ -202,8 +243,13 @@ public:
                 }
                 auto f = uniqueFile (base + "_" + juce::String (p + 1).paddedLeft ('0', 2)
                                           + "_" + label + extension());
-                if (writeRender (f, p, totalLen, gain, pasadas))
-                    ++written;
+                //  UNA PISTA MUDA NO SE QUEDA EN LA CARPETA. Una fabrica llena
+                //  los 64 pads y suenan doce: eran 52 ficheros de silencio
+                //  digital, 69 MB (feria 2026-10, J2). Se escribe al vuelo y
+                //  se borra si no paso de -100 dBFS.
+                const auto r = writeRender (f, p, totalLen, gain, pasadas);
+                if (r == Escrita)   ++written;
+                else if (r == Muda) ++mudas;
                 else if (threadShouldExit())
                     return;
 
@@ -232,7 +278,11 @@ public:
                      + (gain < 1.0f
                           ? " " + T ("(bajado %1 dB para no saturar)",
                                      juce::String (-juce::Decibels::gainToDecibels (gain), 1))
+                          : juce::String())
+                     + (mudas > 0
+                          ? " " + T ("(%1 pads mudos sin fichero)", juce::String (mudas))
                           : juce::String());
+        pistasMudas = mudas;
         Bitacora::paso ("exportar/hecho");
         progress.store (1.0f, std::memory_order_relaxed);
         finished.store (true, std::memory_order_release);
@@ -242,13 +292,15 @@ private:
     //  Abre el fichero y renderiza DENTRO de el: una pasada, un WAV, memoria
     //  constante. Devuelve false si no se pudo escribir o si se cancelo - las
     //  dos se distinguen mirando threadShouldExit, que es lo que hace run().
-    bool writeRender (const juce::File& f, int soloPad, juce::int64 totalLen,
-                      float gain, int pasada)
+    enum Resultado { Escrita, Muda, Fallo };
+
+    Resultado writeRender (const juce::File& f, int soloPad, juce::int64 totalLen,
+                           float gain, int pasada)
     {
         f.deleteFile();
         auto stream = f.createOutputStream();
         if (stream == nullptr || ! stream->openedOk())
-            return false;
+            return Fallo;
 
         //  El escritor, segun el formato. Vorbis no tiene "bits por muestra":
         //  el 24 se ignora y lo que manda es el indice de calidad, y 5 de 10 es
@@ -260,17 +312,24 @@ private:
         std::unique_ptr<juce::OutputStream> flujo (std::move (stream));
         auto writer = fmt->createWriterFor (flujo, opcionesDeEscritor (sampleRate, ogg, metadatos (soloPad)));
         if (writer == nullptr)
-            return false;
+            return Fallo;
 
-        if (! renderPass (soloPad, totalLen, gain, writer.get(), nullptr, pasada))
+        float pico = 0.0f;
+        if (! renderPass (soloPad, totalLen, gain, writer.get(), &pico, pasada))
         {
             //  Un rebote a medias no se queda en la carpeta pareciendo un
             //  fichero bueno: el escritor se cierra y el fichero se borra.
             writer.reset();
             f.deleteFile();
-            return false;
+            return Fallo;
         }
-        return true;
+        if (soloPad >= 0 && pico < 1.0e-5f)
+        {
+            writer.reset();
+            f.deleteFile();
+            return Muda;
+        }
+        return Escrita;
     }
 
     // Renders the whole arrangement once. `soloPad` < 0 means the full mix;
@@ -321,6 +380,7 @@ private:
         }
 
         off.setPlaying (true);
+        bool parado = false;
 
         //  EL UNICO buffer del rebote, y mide un bloque. Ver la cabecera: el
         //  que media la cancion entera es el que cerraba la app.
@@ -337,7 +397,32 @@ private:
             }
 
             const int n = (int) juce::jmin ((juce::int64) kBlock, totalLen - pos);
-            off.renderNextBlock (trozo, 0, n);
+
+            //  EL SECUENCIADOR PARA EN LA RAYA DEL COMPAS, a la muestra. Lo
+            //  que sigue es la cola: las voces y los efectos que ya sonaban,
+            //  por el mismo camino que un STOP en vivo.
+            if (! parado && pos + n > bodyLen)
+            {
+                const int n1 = (int) juce::jmax ((juce::int64) 0, bodyLen - pos);
+                if (n1 > 0) off.renderNextBlock (trozo, 0, n1);
+                off.setPlaying (false);
+                parado = true;
+                if (n > n1) off.renderNextBlock (trozo, n1, n - n1);
+            }
+            else
+                off.renderNextBlock (trozo, 0, n);
+
+            //  Y LOS ULTIMOS 20 ms A CERO: el fichero no acaba en un clic.
+            const juce::int64 fadeN = juce::jmin (totalLen - bodyLen,
+                                                  (juce::int64) (kFundido * sampleRate));
+            const juce::int64 desde = totalLen - fadeN;
+            if (fadeN > 0 && pos + n > desde)
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    auto* d = trozo.getWritePointer (ch);
+                    for (int i = (int) juce::jmax ((juce::int64) 0, desde - pos); i < n; ++i)
+                        d[i] *= 1.0f - (float) (pos + i - desde + 1) / (float) fadeN;
+                }
 
             if (peakOut != nullptr)
                 for (int ch = 0; ch < 2; ++ch)
@@ -444,6 +529,10 @@ private:
     static constexpr int kBlock = 512;
 
     AudioEngine& live;
+    juce::int64 bodyLen = 0;     // muestras de compases; lo pone run() del plan
+public:
+    int pistasMudas = 0;         // banco: pistas que no llegaron a fichero
+private:
     PadSamples   pads;
     PadNames     padNames;
     juce::File   dir;

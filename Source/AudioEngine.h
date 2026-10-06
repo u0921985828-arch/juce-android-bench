@@ -1085,6 +1085,13 @@ public:
     //  compensa de verdad, que es lo que su propio comentario dice que hace.
     void setSafetyLimiter (bool on) noexcept { safetyLimiter.store (on, std::memory_order_relaxed); }
 
+    //  Y LO QUE APRIETA SE VE. El limitador aplastaba sin decirlo: en la
+    //  feria (J2) +16 dB nominales salian +0,5 en el kick y nadie sabia
+    //  donde se habian quedado. El hilo de audio deja el peor recorte desde
+    //  la ultima lectura -cuantas veces mas grande entraba que salia- y la
+    //  pantalla lo recoge y lo escribe en dB. Uno es «no ha tocado nada».
+    float tomaRecorte() noexcept { return limRecorte.exchange (1.0f, std::memory_order_relaxed); }
+
     //  EL MASTER SON DOS COSAS Y NO UNA, y mezclarlas es un fallo con forma de
     //  simplificacion.
     //
@@ -2694,6 +2701,13 @@ private:
     //  second one is audio-thread only, so it is a plain float.
     std::atomic<float> masterTarget { 1.0f };
     std::atomic<float> masterUser   { 1.0f };
+    std::atomic<float> limRecorte   { 1.0f };
+    void notaRecorte (float r) noexcept
+    {
+        if (r <= 1.0f) return;
+        float v = limRecorte.load (std::memory_order_relaxed);
+        while (r > v && ! limRecorte.compare_exchange_weak (v, r, std::memory_order_relaxed)) {}
+    }
     std::atomic<bool>  ducked       { false };
     void refreshMasterTarget() noexcept
     {

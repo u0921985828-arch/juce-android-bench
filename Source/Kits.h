@@ -438,7 +438,7 @@ namespace Kits
             //  eso una maraca y un siseo median 0.998.
             { "SHAKE",  grain,   6200.0f, 0.04768f, 1400.0f, 0.0f, 0, 0.0f },
             { "CONGA",  skin,     245.0f, 0.02212f, 0.22f, 0.24f, 0, 0.0f },
-            { "COWBEL", metal,      2.4f, 0.28f, 2400.0f, 3.0f },
+            { "COWBELL", metal,     2.4f, 0.28f, 2400.0f, 3.0f },
             { "TAMB",   grain,   5200.0f, 0.05137f, 620.0f, 1.60f, 0, 0.0f },
             { "SPLASH", metal,      1.3f, 1.15f, 5200.0f, 0.8f, 1, 0.0f },
 

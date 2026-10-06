@@ -113,7 +113,7 @@ void MainComponent::paint (juce::Graphics& g)
         rule (rx0, rx1, y, 0.16f);
         rule (x0 + tw + gap, s.getRight() - 10.0f, y, 0.16f);
 
-        g.setColour (ZatiColours::ink.withAlpha (0.42f));
+        g.setColour (ZatiColours::ink.withAlpha (0.75f));
         g.drawText (t, (int) x0 - 1, (int) (y - 5.0f), (int) tw + 3, 11,
                     juce::Justification::centred);
 
@@ -206,9 +206,18 @@ void MainComponent::paint (juce::Graphics& g)
     //  fila debajo y PADS al reves. Es la queja, con su cifra.
     juce::Range<float> bandaEfectos;
     if (! fxRowArea.isEmpty())
-        bandaEfectos = engraveIn (T ("EFECTOS"), fxSeamTop,
+    {
+        //  Feria J1/J2/J5: el efecto suena en un CANAL y nada lo decia, y la
+        //  reverb de J1 no llego al fichero. La costura nombra el canal de la
+        //  fila y cuantos pads entran en el; con cero, el efecto no suena.
+        int entran = 0;
+        for (int i = 0; i < kNumPads; ++i)
+            entran += engine.getPadCanal (i) == canalActual ? 1 : 0;
+        const auto pads = entran == 1 ? T ("1 PAD") : T ("%1 PADS", Lang::ltr (juce::String (entran)));
+        bandaEfectos = engraveIn (T ("EFECTOS · CANAL %1 · %2", Lang::ltr (juce::String (canalActual + 1).paddedLeft ('0', 2)), pads), fxSeamTop,
                                   fxRowArea.getY() + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()),
                                   faceColumn);
+    }
 
     if (! padPlateArea.isEmpty())
     {
@@ -499,7 +508,7 @@ void MainComponent::paint (juce::Graphics& g)
                 const auto fuenteMeta = fuenteContinuidad();
                 const auto texto = lineaDeContinuidad (nameW, fuenteMeta);
 
-                g.setColour (ZatiColours::ink.withAlpha (named ? 0.55f : 0.28f));
+                g.setColour (ZatiColours::ink.withAlpha (named ? 0.85f : 0.70f));   // feria J3: 0.55 y 0.28 median 2,9 y 1,8:1
                 g.setFont (fuenteMeta);
 
                 //  APUNTADO, que es lo que no estaba. Esta linea se dibuja con
@@ -1193,8 +1202,10 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     // What is going to be rendered, and how long it will be. Stated before
     // you press, not after: a bounce is the one action here you cannot undo
     // by tapping again.
-    const int steps = engine.lengthInSteps();
-    const double secs = steps * (60.0 / juce::jmax (20.0, engine.getBpm())) * 0.25;
+    //  EL MISMO PLAN QUE ESCRIBE EL FICHERO. Ver Exporter::Plan.
+    const auto plan = Exporter::planDe (engine, 48000.0);
+    const int steps = plan.pasos;
+    const int compases = juce::jmax (1, (steps + plan.pasosCompas - 1) / plan.pasosCompas);
     int loaded = 0;
     for (auto& s : uiSample) if (s != nullptr) ++loaded;
 
@@ -1210,10 +1221,12 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     };
 
     line (T ("fuente"), exportSourceLabel(), ZatiColours::ink);
-    line (T ("duracion"), steps > 0 ? Lang::ltr (juce::String (secs, 1) + " s") + "  ·  "
-                                        + (steps / 16 == 1
+    line (T ("duracion"), steps > 0 ? Lang::ltr (juce::String (plan.cuerpo, 1) + " s") + " "
+                                        + T ("+ %1 s de cola", Lang::ltr (juce::String (plan.cola, 1)))
+                                        + "  ·  "
+                                        + (compases == 1
                                                ? T ("1 compas")
-                                               : T ("%1 compases", Lang::ltr (juce::String (steps / 16))))
+                                               : T ("%1 compases", Lang::ltr (juce::String (compases))))
                                     : T ("vacio"),
           steps > 0 ? ZatiColours::ink : ZatiColours::red);
     line (T ("pistas"), loaded == 1 ? T ("1 pad con muestra")
@@ -1712,7 +1725,7 @@ void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
     //  posiciones que dejo resized(), que es de donde salen todas las medidas
     //  de esta cara.
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-    g.setColour (ZatiColours::textOn (ZatiColours::chassisTop).withAlpha (0.55f));
+    g.setColour (ZatiColours::textOn (ZatiColours::chassisTop).withAlpha (0.80f));
 
     auto label = [&g] (juce::Rectangle<int> ctrl, const juce::String& text)
     {
@@ -1732,7 +1745,7 @@ void MainComponent::paintMidiPage (juce::Graphics& g, juce::Rectangle<int> area)
 
     //  Y la unica cifra que hace falta: sin ella hay que adivinar por que el
     //  modulo de al lado toca la nota equivocada.
-    g.setColour (ZatiColours::textOn (ZatiColours::chassisTop).withAlpha (0.55f));
+    g.setColour (ZatiColours::textOn (ZatiColours::chassisTop).withAlpha (0.80f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
     //  Y DICE EL MAPA QUE ESTA PUESTO, no uno de los dos. Este renglon contaba
     //  el de PADS siempre, y con TECLADO elegido diria justo lo contrario de
@@ -2532,8 +2545,8 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
         //  ruta condensada no se lee mejor que una cortada: se lee peor que
         //  las dos. `drawText` con elipsis corta por el final y deja los
         //  glifos a su tamano.
-        apunta (g, r, Lang::ltr (raizCache.getFullPathName()), "dato", 0.0f, 1, 1.0f);
-        g.drawText (Lang::ltr (raizCache.getFullPathName()), r, Lang::start(), true);
+        apunta (g, r, Lang::ltr (rutaCorta (raizCache)), "dato", 0.0f, 1, 1.0f);
+        g.drawText (Lang::ltr (rutaCorta (raizCache)), r, Lang::start(), true);
     }
 }
 
@@ -2960,9 +2973,9 @@ void MainComponent::paintSongSheetContent (juce::Graphics& g)
 
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.10f));
-    const juce::String hint = songBrush == 0 ? "toca un bloque para borrarlo"
-                            : songBrush < 0  ? "toca un compas para soltar el sonido"
-                                             : "toca un compas para poner el patron";
+    const juce::String hint = songBrush == 0 ? T ("toca un bloque para borrarlo")
+                            : songBrush < 0  ? T ("toca un compas para soltar el sonido")
+                                             : T ("toca un compas para poner el patron");
     //  The close button lives in this same row, so the hint has to stop short
     //  of it - right-aligning into the full width ran the sentence underneath
     //  the X and off the card. Fitted, so a longer wording shrinks instead of
@@ -3034,9 +3047,21 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     {
         const int d = 26;
         juce::Rectangle<int> chapa (d, d);
-        if (foco.getY() - d - 6 >= todo.getY())        chapa.setPosition (foco.getX() - 2, foco.getY() - d - 6);
-        else if (foco.getBottom() + d + 6 <= todo.getBottom()) chapa.setPosition (foco.getX() - 2, foco.getBottom() + 6);
-        else                                            chapa.setPosition (foco.getX() + 6, foco.getY() + 6);
+        //  Arriba, abajo, a la izquierda o a la derecha; NUNCA dentro, que es
+        //  lo que hacia el ultimo recurso y tapaba el control (feria, J3). Si
+        //  no cabe en ningun lado, en la esquina del muelle.
+        const auto libre = [&] (juce::Rectangle<int> c)
+        { return todo.contains (c) && ! c.intersects (tourDock); };
+        const juce::Rectangle<int> sitios[] = {
+            chapa.withPosition (foco.getX() - 2, foco.getY() - d - 6),
+            chapa.withPosition (foco.getX() - 2, foco.getBottom() + 6),
+            chapa.withPosition (foco.getX() - d - 6, foco.getY()),
+            chapa.withPosition (foco.getRight() + 6, foco.getY()) };
+        bool puesta = false;
+        for (auto& c : sitios)
+            if (libre (c)) { chapa = c; puesta = true; break; }
+        if (! puesta)
+            chapa.setPosition (tourDock.getRight() - d - 6, tourDock.getY() + 6);
 
         g.setColour (ZatiColours::accent);
         g.fillEllipse (chapa.toFloat());

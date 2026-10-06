@@ -616,6 +616,11 @@ public:
                     {
                         c2->auditGuardado();
                     }
+                    //  LA FERIA, HALLAZGO POR HALLAZGO. Ver Tests/feria.py.
+                    else if (UiAudit::env ("ZATI_FERIA").isNotEmpty())
+                    {
+                        c2->auditFeria();
+                    }
                     //  LAS DOS SELECCIONES DE RANGO, en una sola corrida. Ver
                     //  Tests/sel.py y auditSelecciones.
                     else if (UiAudit::env ("ZATI_SEL").isNotEmpty())
@@ -1008,6 +1013,13 @@ public:
     //  Android calls these from the activity's onPause/onResume. Without them
     //  the audio stream, the microphone and the unsaved session all survived
     //  into the background, where none of the three does anything useful.
+    //  ATRAS cierra la ficha de arriba antes que la app. Ver cierraLoDeArriba.
+    bool backButtonPressed() override
+    {
+        if (auto* c = content()) return c->cierraLoDeArriba();
+        return false;
+    }
+
     void suspended() override   { if (auto* c = content()) c->appSuspended(); }
     void resumed()   override   { if (auto* c = content()) c->appResumed(); }
 
@@ -1032,6 +1044,16 @@ public:
            #endif
 
             setVisible (true);
+        }
+
+        //  Y ESCAPE, lo mismo. Llega aqui subiendo desde lo que tenga el foco,
+        //  o directo cuando no lo tiene nadie, que es lo normal en esta app.
+        bool keyPressed (const juce::KeyPress& k) override
+        {
+            if (k == juce::KeyPress::escapeKey)
+                if (auto* c = dynamic_cast<MainComponent*> (getContentComponent()))
+                    return c->cierraLoDeArriba();
+            return DocumentWindow::keyPressed (k);
         }
 
         void closeButtonPressed() override

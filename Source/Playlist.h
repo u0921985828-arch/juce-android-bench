@@ -276,7 +276,7 @@ public:
 
     int pasoPegado (int x) const noexcept
     {
-        const int u = juce::jmax (1, divisionPaso());
+        const int u = juce::jmax (1, pasosCompas);
         return (pasoDeX (x) / u) * u;
     }
 
@@ -880,7 +880,12 @@ public:
         const float barW  = (float) (r.getWidth() - gutter) / (float) barsView;
         if (barW <= 0.0f || laneH <= 0.0f) return;
         const int pc   = juce::jmax (1, pasosCompas);
-        const int u    = juce::jmax (1, divisionPaso());
+        //  UN BLOQUE DE PATRON CAE EN COMPAS. Pegaba a la division que se
+        //  dibuja -un pulso en un telefono- y en la feria (J5) los bloques
+        //  quedaban a un tiempo del compas sin que se viera. Las rayas siguen
+        //  saliendo de `divisionPaso`; los clips de audio, que si se colocan
+        //  fino, tambien.
+        const int u    = pc;
         const int lane = juce::jlimit (0, kLanes - 1, (int) ((float) (e.y - r.getY()) / laneH));
         //  DOS CIFRAS Y NO UNA: donde esta el dedo y donde se SUELTA, por lo
         //  mismo que en los clips. El dedo sin pegar decide que hay debajo;

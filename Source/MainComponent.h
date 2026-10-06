@@ -326,6 +326,10 @@ private:
             cuerpo.capa = (int) getProperties()["capa"];
             vista.setViewedComponent (&cuerpo, false);
             vista.setScrollBarsShown (false, false);
+            //  Y SE ARRASTRA CON CUALQUIER DEDO. Por defecto JUCE solo arrastra
+            //  con toque, y raton, emulador o lapiz flotando no movian EXTRAS
+            //  (feria, J3). Los mandos llevan su setViewportIgnoreDragFlag.
+            vista.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::all);
             addAndMakeVisible (vista);
             barra.ponEje (true);
             barra.ponHaciaAbajo (true);
@@ -1232,7 +1236,10 @@ private:
     void applyState (const juce::ValueTree& state);
     void saveProject (const juce::String& name);
     void loadProject (const juce::String& name);
-    void deleteProject (const juce::String& name);
+    //  Por valor: el nombre llega de projModel.names, y refreshProjectList
+    //  rehace ese array a mitad del borrado. Con referencia, el T("Borrado %1")
+    //  de despues leia memoria liberada (ASan, heap-use-after-free, feria B1).
+    void deleteProject (juce::String name);
     //  EL ANCHO DE UNA TARJETA Y EL DE SU INTERIOR, en un sitio.
     //
     //  El 0.92 estaba escrito SEIS veces -y cuatro de ellas partiendo de
@@ -1509,6 +1516,10 @@ private:
     //  texto y una cuarta palabra le quita ancho a las tres que ya estan
     //  medidas.
     juce::TextButton exportLiveButton { "EN VIVO" };
+    //  QUE SE EXPORTA, elegido en la ficha y no en la pagina CANCION: el modo
+    //  solo cambiaba con CICLO/ARREGLO y nadie lo encontraba (feria 2026-10,
+    //  J5). Es el mismo estado que el modo de PLAY; ver `ponModoCancion`.
+    juce::TextButton exportFuenteBtn { "PATRON" };
     //  COMPARTIR comparte fila con EN VIVO y solo aparece cuando hay un
     //  `content://` que mandar. Fila propia no cabia: la ficha ya pide
     //  Metrics::hit*4 + btn*2 y en 915x412 la tarjeta da 370 px para 432
@@ -1884,6 +1895,10 @@ private:
     //  Extra height handed to every seam between sections, computed once
     //  per layout out of whatever the square pad grid did not need.
     int layoutAir = 0;
+    //  Alto de la linea de estado: 16 donde no cabe mas y el dedo donde el
+    //  cristal lo puede pagar, porque DESHACER y REHACER viven en ella. Ver
+    //  resized().
+    int statusH = ZatiLookAndFeel::kStatus;
 
     //  Top of each seam that carries an engraved name, so paint() can centre
     //  the lettering in the gap instead of hanging it off the section below.
@@ -2024,6 +2039,13 @@ public:
     void appSuspended();
     void appResumed();
 
+    //  ESCAPE Y LA TECLA ATRAS cierran lo de arriba, una capa por pulsacion:
+    //  primero lo que flota (selector, menu, nombre), luego la ficha. Devuelve
+    //  false si no habia nada que cerrar, y entonces ATRAS en Android sale de
+    //  la app como siempre. Antes no habia ni keyPressed ni backButtonPressed
+    //  y en la feria (J3, J4) Escape no cerraba nada.
+    bool cierraLoDeArriba();
+
     //  Open a sheet by name, for the self-measuring run (see UiAudit.h). The
     //  audit has to reach the sheets - most of the interface lives in them -
     //  and clicking synthetic mouse events at guessed coordinates is exactly
@@ -2094,6 +2116,7 @@ public:
     void auditRevive();
     //  Banco: guardar sin huecos. Ver Tests/guardado.py.
     void auditGuardado();
+    void auditFeria();
 
     //  Y LA PUERTA DEL BANCO A LA FABRICA. Casi todas las entradas de `ZATI_*`
     //  miden sobre la fabrica ya puesta, y desde que se rinde fuera del hilo de
@@ -2206,6 +2229,23 @@ private:
     double sessionSyncMs  = 0.0;
     double sessionStateMs = 0.0;
 
+    //  GUARDAR TRAS TOCAR. El estado entero iba al disco cada veinte segundos
+    //  y en onPause, y nada mas: un tempo escrito o un FINO puesto y la app
+    //  cerrada sin pausa -una caida, un proceso muerto- volvia con el valor de
+    //  antes aunque se esperaran ocho segundos (feria 2026-10, J4 G1 y G2).
+    //  Cada toque que se suelta deja el estado encargado para un momento
+    //  despues, cuando el dedo ya no esta: el coste -5 ms de captura y 1 de
+    //  XML en el escritorio- cae una vez por gesto y nunca durante un arrastre,
+    //  y si nada cambio el escritor ni escribe (SessionKeeper, 8.4).
+    struct OidoDeToques : juce::MouseListener
+    {
+        std::function<void()> alSoltar;
+        void mouseUp (const juce::MouseEvent&) override { if (alSoltar) alSoltar(); }
+    };
+    OidoDeToques oidoDeToques;
+    double estadoTrasToqueMs = -1.0;
+    static constexpr double kEstadoTrasToqueMs = 1500.0;
+
     //  Android arbitrates the speaker between apps. Without asking for the
     //  focus we play over calls and can be silenced without ever being told.
     AudioFocus audioFocus { *this };
@@ -2261,7 +2301,7 @@ private:
     //  Y las tres del reloj, que estaban contadas en ticks por la misma razon.
     static constexpr double kSyncSesionMs   = 2000.0;   // los pads al escritor
     static constexpr double kEstadoSesionMs = 20000.0;  // y el estado entero
-    static constexpr double kConfirmMs      = 3000.0;   // un SEGURO? sin contestar
+    static constexpr double kConfirmMs      = 5000.0;   // un SEGURO? sin contestar
     static constexpr double kContinuidadMs  = 250.0;    // mirar la linea de continuidad
     //  CUANTO DURA EL «A SALVO» de la banda de continuidad. Ver
     //  `lineaDeContinuidad`: es un estado binario y no un contador, asi que
@@ -2286,7 +2326,9 @@ private:
     void selectionChanged() override;
     void fileClicked (const juce::File&, const juce::MouseEvent&) override {}
     void fileDoubleClicked (const juce::File& f) override;
-    void browserRootChanged (const juce::File&) override {}
+    //  La caja de la ruta del navegador dice la ruta corta. JUCE escribe la
+    //  entera justo antes de avisar, asi que aqui se pisa. Ver rutaCorta.
+    void browserRootChanged (const juce::File& raiz) override;
 
     //  EL FILTRO PREGUNTA POR EL MODO, y por eso no es un `WildcardFileFilter`
     //  a secas: la lista tiene que enseñar muestras cuando se busca un sonido y
@@ -2442,7 +2484,7 @@ private:
     //  Two-tap confirmation for the actions that destroy work and cannot be
     //  undone: deleting a project takes its folder off the disk, and starting
     //  a new one empties sixteen pads. The first tap arms the button and says
-    //  so; the second does it; three seconds of not deciding disarms it.
+    //  so; the second does it; five seconds of not deciding disarms it, and says so.
     //  Cheaper than a sheet, and a sheet would be the third one deep here.
     bool armConfirm (juce::TextButton& b, const juce::String& armedText = "SEGURO?");
     void disarmConfirm();
@@ -2679,7 +2721,11 @@ private:
     juce::TextButton xyCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     int  xyFx = 0;                 // el efecto que el panel esta tocando
     bool xyLatch = false;          // false = momentaneo (entra al tocar, sale al soltar)
-    bool xyWasOn = false;          // como estaba el efecto antes de apoyar el dedo
+    //  Solo se apaga lo que encendio el XY. Antes era `xyWasOn`, como estaba el
+    //  efecto al apoyar el dedo, y cerrar el panel o cambiar de modo leian ese
+    //  valor viejo -o ni lo miraban- y apagaban un DRV encendido desde la cara
+    //  (feria, J5: «se me apago solo»).
+    bool xyLoEncendio = false;
     void selectXyFx (int f);
     void toggleXyPanel();
     void xyMoved (float x, float y);

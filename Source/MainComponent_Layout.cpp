@@ -431,6 +431,7 @@ void MainComponent::resized()
     //  PADS y la tira del paso: sube a cuarenta donde el cristal puede pagarlo
     //  sin bajar de SU suelo, y se queda en veintiseis donde no.
     int moduleH = ZatiLookAndFeel::kModule;
+    statusH = ZatiLookAndFeel::kStatus;
     //  Y SI APAISADO LAS DOS BANDAS CABEN EN UN RENGLON, que hasta ahora se
     //  daba por hecho.
     //
@@ -637,7 +638,19 @@ void MainComponent::resized()
             belowScreen = belowScreenCon (moduleH);
         }
 
-        const int freeH = area.getHeight() - aboveScreen - belowScreen - bottomStrip - bodyNeed;
+        //  Y LA LINEA DE ESTADO AL DEDO, con la misma pregunta. DESHACER y
+        //  REHACER viven en ella y median 96x16: en la feria (J3) eran los
+        //  toques mas pequeños de la cara y los que se fallaban -de seis
+        //  DESHACER se recupero uno-. De pie y solo si el cristal sigue en su
+        //  suelo despues de pagarlo; donde no, se queda en dieciseis.
+        statusH = ZatiLookAndFeel::kStatus;
+        if (! wideFace
+            && area.getHeight() - aboveScreen - belowScreen - bottomStrip - bodyNeed
+                 - (Metrics::hit - ZatiLookAndFeel::kStatus) >= kMinScreen)
+            statusH = Metrics::hit;
+
+        const int freeH = area.getHeight() - aboveScreen - belowScreen - bottomStrip - bodyNeed
+                        - (statusH - ZatiLookAndFeel::kStatus);
 
         layoutAir = (freeH > kMinScreen)
                       ? juce::jlimit (0, kAirMax, (freeH - kMinScreen) / (kSeams + 2))
@@ -901,16 +914,23 @@ void MainComponent::resized()
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
     // an undoable action announces itself where the result was reported.
     {
-        auto strip = area.removeFromBottom (ZatiLookAndFeel::kStatus);
+        auto strip = area.removeFromBottom (statusH);
         //  ...and the pads do not sit on the sentence. Metrics::sm is the floor
         //  that guarantees it; anything this band was holding above that floor
         //  has gone to the PADS seam, where four controls were living in 22 px.
         area.removeFromBottom (juce::jmax (Metrics::xs,
                                            ZatiLookAndFeel::kAir + layoutAir - padBottomGive));
-        if (undoButton.isVisible())
-            undoButton.setBounds (strip.removeFromRight (96).reduced (Metrics::aireTapa, 0));
-        if (redoButton.isVisible())
-            redoButton.setBounds (strip.removeFromRight (96).reduced (Metrics::aireTapa, 0));
+        //  CADA UNO EN SU SITIO. Se colocaban los visibles desde la derecha, y
+        //  al aparecer REHACER el DESHACER saltaba un hueco: en la feria (J4) de
+        //  seis toques en DESHACER se recupero uno, el resto cayo en REHACER.
+        //  Con cualquiera de los dos a la vista se reservan los dos huecos.
+        if (undoButton.isVisible() || redoButton.isVisible())
+        {
+            auto huecoRedo = strip.removeFromRight (96);
+            auto huecoUndo = strip.removeFromRight (96);
+            undoButton.setBounds (huecoUndo.reduced (Metrics::aireTapa, 0));
+            redoButton.setBounds (huecoRedo.reduced (Metrics::aireTapa, 0));
+        }
         status.setBounds (strip);
     }
     area.removeFromBottom (Metrics::sm);
@@ -1304,7 +1324,14 @@ void MainComponent::resized()
         //  nueve reglas ven el sintoma y solo cuando lo que se cae es medible.
         //  Ver UiAudit::tarjeta.
         const int w = anchoTarjeta (full.getWidth());
-        auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre());
+        //  CON EL BORDE DE ARRIBA QUIETO. Centrada, una pagina mas alta subia
+        //  la tarjeta entera y las pestanas con ella: en la feria (J1-J4) la
+        //  rejilla de SEC subia unos 150 px tras el primer toque y los toques
+        //  siguientes caian en otra pista, y las pestanas de AJUSTES cambiaban
+        //  de altura. El techo es el de la tarjeta mas alta posible; lo que
+        //  crece o mengua es solo el borde de abajo.
+        auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre())
+                         .withY (full.getCentreY() - altoTarjeta (full) / 2);
         //  Y LO QUE QUEDA VER DEBAJO, apuntado con el rectangulo YA colocado y
         //  no con la formula: el tope de pie se deriva de que asome un pad
         //  entero -y desde `onFuera` esos pads se tocan- asi que quien lo
@@ -3655,8 +3682,10 @@ void MainComponent::resized()
             //  la fila es de UNA tapa mientras no haya rebote publicado y de dos
             //  justo despues: el reparto se pide por lo que se ve, no por lo
             //  declarado.
-            juce::TextButton* lb[2] = { &exportLiveButton, &exportShareBtn };
-            const int cuantas = exportShareBtn.isVisible() ? 2 : 1;
+            //  Y LA FUENTE DELANTE: PATRON o CANCION, elegida aqui mismo
+            //  (feria 2026-10, J5). Comparte la fila y no pide altura.
+            juce::TextButton* lb[3] = { &exportFuenteBtn, &exportLiveButton, &exportShareBtn };
+            const int cuantas = exportShareBtn.isVisible() ? 3 : 2;
             if (! exportShareBtn.isVisible()) exportShareBtn.setBounds ({});
             layoutModuleBar (fila, lb, 0, cuantas);
         }
@@ -3678,7 +3707,7 @@ void MainComponent::resized()
         //  es una forma de exportar, es no hacerlo.
         {
             auto fila = row;
-            for (auto* b : { (juce::Component*) &exportLiveButton })
+            for (auto* b : { (juce::Component*) &exportLiveButton, (juce::Component*) &exportFuenteBtn })
                 if (b->isVisible() && ! b->getBounds().isEmpty())
                     fila = fila.getUnion (b->getBounds());
             if (! fila.isEmpty()) exportGrupos.add (fila);
@@ -6019,8 +6048,13 @@ void MainComponent::resized()
         //  Y SOLO SI HAY PASO TOCADO. Sin paso elegido estos mandos no tienen
         //  sobre que actuar - es lo que decia el renglon del pie, "toca un paso
         //  para editarlo" - asi que ensenarlos es ensenar controles muertos.
+        //
+        //  PERO EN LA REJILLA SE RESERVA SIEMPRE. Aparecer con el primer toque
+        //  encogia los carriles y subia la rejilla bajo el dedo: en la feria
+        //  (J2, J4) el segundo toque y los siguientes caian en otra pista, 13
+        //  pasos y un ritmo entero. Sin paso elegido la tira esta, apagada.
         const bool pasoAqui = (selectedStep >= 0);
-        if (pasoAqui)
+        if (pasoAqui || onGrid)
         {
             const int base = wideFace ? 0 : bandH + costeBarra + bandH;
             auto cabe = [&] (int filas)
@@ -8065,6 +8099,15 @@ void MainComponent::resized()
         //  del hueco, asi que un foco que se sale deja el borde de abajo sin
         //  pintar y el anillo cortado por el filo de la pantalla.
         tourFoco = tourFoco.getIntersection (getLocalBounds());
+        //  Y A LO QUE SE VE DE UNA FICHA QUE SE DESPLAZA: la ventana entera no
+        //  basta, la lista de EXTRAS sigue mas alla del borde de su tarjeta y el
+        //  paso 15 marcaba fuera de ella (feria, J3).
+        for (auto* c : getChildren())
+            if (auto* f = dynamic_cast<Sheet*> (c);
+                f != nullptr && f != &tourSheet && f->isVisible() && f->desplazable
+                && f->sheetBounds.intersects (tourFoco))
+                tourFoco = tourFoco.getIntersection (f->getLocalArea (&f->vista, f->vista.getLocalBounds())
+                                                         + f->getPosition());
         UiAudit::tourFocoW = tourFoco.getWidth();
         UiAudit::tourFocoH = tourFoco.getHeight();
         //  Y DONDE quedo. Ver UiAudit::tourFocoX: el tamano solo no ve un

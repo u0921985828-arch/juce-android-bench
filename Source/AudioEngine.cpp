@@ -3988,6 +3988,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         constexpr float thresh = 0.944f;      // -0.5 dBFS
         const int  guardCh = juce::jmin (2, out.getNumChannels());
         const bool limit   = safetyLimiter.load (std::memory_order_relaxed);
+        float recorte = 1.0f;     // cuanto mas grande entra que sale, el peor del bloque
         for (int ch = 0; ch < guardCh; ++ch)
         {
             float* w = out.getWritePointer (ch, startSample);
@@ -4016,9 +4017,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     const float sign = (v < 0.0f) ? -1.0f : 1.0f;
                     const float over = (v * sign - thresh) / (1.0f - thresh);
                     w[i] = sign * (thresh + (1.0f - thresh) * fastTanh (over));
+                    recorte = juce::jmax (recorte, v / w[i]);
                 }
             }
         }
+        notaRecorte (recorte);
     }
 
     //  5e-vivo. EL REBOTE EN VIVO, en el MISMO sitio que el remuestreo y por
@@ -4187,6 +4190,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             const bool limitar = safetyLimiter.load (std::memory_order_relaxed);
 
             float gain = masterGain;
+            float recorte = 1.0f;
             for (int i = 0; i < numSamples; ++i)
             {
                 gain += (target - gain) * k;
@@ -4197,12 +4201,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     {
                         const float sign = (v < 0.0f) ? -1.0f : 1.0f;
                         const float over = (v * sign - techo) / (1.0f - techo);
+                        const float antes = v;
                         v = sign * (techo + (1.0f - techo) * fastTanh (over));
+                        recorte = juce::jmax (recorte, antes / v);
                     }
                     w[ch][i] = v;
                 }
             }
             masterGain = gain;
+            notaRecorte (recorte);
         }
     }
 

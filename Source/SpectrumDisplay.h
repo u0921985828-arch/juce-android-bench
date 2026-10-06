@@ -31,6 +31,32 @@ class SpectrumDisplay : public juce::Component
 public:
     SpectrumDisplay() = default;
 
+    //  SIN SALIDA, A LA VISTA. Sin dispositivo el reloj del secuenciador no
+    //  corre -cuelga del callback de audio- y PLAY no hacia nada que se viera
+    //  (feria, J1: fotos identicas pixel a pixel). La pantalla lo dice donde
+    //  se mira el nivel.
+    void ponSinSalida (bool b) { if (b != sinSalida) { sinSalida = b; repaint(); } }
+    bool haySinSalida() const noexcept { return sinSalida; }
+
+    //  EL LIMITADOR, A LA VISTA. `ratio` es lo que dejo el motor desde la
+    //  lectura anterior (AudioEngine::tomaRecorte): uno si no apreto. Se
+    //  queda segundo y medio, como el pico retenido, para que se lea.
+    void ponRecorte (float ratio, double dtMs)
+    {
+        if (ratio > 1.0012f)                       // mas de 0,01 dB
+        {
+            const float db = juce::Decibels::gainToDecibels (ratio);
+            if (recorteMs <= 0.0 || db > recorteDb) { recorteDb = db; repaint(); }
+            recorteMs = 1500.0;
+        }
+        else if (recorteMs > 0.0 && (recorteMs -= dtMs) <= 0.0)
+        {
+            recorteDb = 0.0f;
+            repaint();
+        }
+    }
+    float recorteVisible() const noexcept { return recorteMs > 0.0 ? recorteDb : 0.0f; }
+
     //  `dtMs` SON LOS MILISEGUNDOS DE VERDAD desde el cuadro anterior, y no un
     //  parametro de mas: las tres constantes de aqui abajo estaban escritas por
     //  TICK y documentadas contra treinta cuadros por segundo, que es lo que
@@ -282,8 +308,22 @@ public:
         //  clipado, quieres enterarte aunque estuvieras mirando los pads.
         g.setColour (clipMs > 0.0 ? ZatiColours::red : ZatiColours::lcdDim);
         g.drawText (Lang::ltr (holdDb()), top, Lang::start (juce::Justification::topRight));
-        g.setColour (ZatiColours::lcdDim);
-        g.drawText (T ("OUT") + " " + Lang::ltr (peakDb()), top, Lang::start (juce::Justification::top));
+        if (sinSalida)
+        {
+            g.setColour (ZatiColours::red);
+            g.drawText (T ("SIN AUDIO"), top, Lang::start (juce::Justification::top));
+        }
+        else
+        {
+            g.setColour (ZatiColours::lcdDim);
+            g.drawText (T ("OUT") + " " + Lang::ltr (peakDb()), top, Lang::start (juce::Justification::top));
+            if (recorteMs > 0.0)
+            {
+                g.setColour (ZatiColours::accent);
+                g.drawText ("LIM " + Lang::ltr ("-" + juce::String (recorteDb, 1) + " dB"), top,
+                            juce::Justification::centredTop);
+            }
+        }
 
         //  Waveform area: everything between the readout and the meter band.
         auto wave = b.reduced (8.0f, 0.0f);
@@ -580,6 +620,9 @@ public:
     }
 
 private:
+    bool sinSalida = false;
+    float  recorteDb = 0.0f;
+    double recorteMs = 0.0;
     juce::String holdDb() const
     {
         if (hold < 0.0005f) return {};

@@ -120,6 +120,38 @@ def main():
             if not r[i].strip():
                 bad.append ("fila %r sin %s" % (r[0], lg))
 
+    #  EL CASTELLANO TAMBIEN LLEVA TILDES.
+    #
+    #  La CLAVE se escribe sin tildes a proposito -es un identificador y vive
+    #  en el codigo-, pero una celda `es` vacia significa «la clave ya lo dice
+    #  en castellano», y eso dejo la app entera diciendo «telefono», «senala»,
+    #  «cancion», «ATRAS», «MANTEN» y «ESPANOL»: unas doscientas cincuenta filas
+    #  en las que la clave hacia de texto sin que nadie lo decidiera. El ingles,
+    #  el chino y el arabe tenian su celda; el castellano se quedaba con la
+    #  forma de identificador.
+    #
+    #  Se mira lo que SALE en castellano -la celda `es` si la hay, y si no la
+    #  clave sin su `|contexto`- contra palabras que SIN tilde no existen. Solo
+    #  palabras sin otra lectura: «mas», «esta», «aun», «solo», «como»,
+    #  «donde», «cuanto», «fabrica» o «ultimo» son correctas sin tilde en otra
+    #  frase, y una regla que acierta a medias acaba con una lista de
+    #  excepciones que nadie mantiene.
+    sin_tilde = """
+        cancion patron sesion telefono microfono metronomo senala senalar
+        ensena ensenar ensenamelo aqui alli ahi tambien numero pagina menu
+        automatizacion pulsacion saturacion modulacion duracion afinacion
+        repeticion maquina musica capitulo capitulos compas vacio vacia atras
+        manten dinamica nucleos bufer espanol tamano pestana dieciseis guia
+        demas reves rapido rapida minimo maximo movil basica acustica lapiz
+        organos acordeon sintesis ambar indice razon ningun
+    """.split()
+    sin_tilde_re = re.compile (r"(?<![\w])(" + "|".join (sin_tilde) + r")(?![\w])", re.I)
+    for r in rows:
+        es = r[1] if r[1] else r[0].split ("|")[0]
+        for m in sin_tilde_re.finditer (es):
+            bad.append ("fila %r: «%s» sin tilde en castellano (pon la celda es)"
+                        % (r[0], m.group (1)))
+
     code = ""
     for f in sorted (glob.glob (os.path.join (SRC, "*.cpp")) + glob.glob (os.path.join (SRC, "*.h"))):
         code += joined_literals (sin_comentarios (open (f, encoding="utf8").read()))

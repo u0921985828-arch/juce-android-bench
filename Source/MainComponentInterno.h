@@ -634,6 +634,56 @@ b.getProperties().set ("icono", (int) (cancion ? Iconos::Id::cancion : Iconos::I
 b.repaint();
 }
 
+//  La tapa de la fuente en EXPORTAR: dice lo que se va a escribir, con las
+//  palabras de la linea «fuente» de la propia ficha.
+//  LA RUTA COMO LA LEE UNA PERSONA: desde su carpeta personal, «~/Music/ZATI»,
+//  y no «/tmp/claude-0/…» o «/storage/emulated/0/…» enteras (feria, J1, J3 y
+//  J5). Fuera de casa se queda con las dos ultimas carpetas.
+inline juce::String rutaCorta (const juce::File& f)
+{
+    const auto casa = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    if (f == casa) return "~";
+    if (f.isAChildOf (casa)) return "~/" + f.getRelativePathFrom (casa);
+    const auto padre = f.getParentDirectory();
+    return (padre.getFileName().isNotEmpty() ? juce::String::fromUTF8 ("…/") + padre.getFileName() + "/" : juce::String ("/"))
+           + f.getFileName();
+}
+
+//  TEXTO QUE NO ES UN NUMERO NO MUEVE EL MANDO. JUCE lee «abc» como 0 y lo
+//  recorta al minimo: en la feria (J4) un tempo escrito mal se quedaba en 60.
+//  Sin una cifra, y si no es la palabra de uno de los dos extremos -«off»,
+//  «-inf»-, el valor se queda donde estaba. Se envuelve el lector que el
+//  mando ya tuviera, asi que los que leen sus propias unidades siguen igual.
+inline void textoInvalidoConserva (juce::Component& raiz)
+{
+    for (auto* c : raiz.getChildren())
+    {
+        if (auto* sl = dynamic_cast<juce::Slider*> (c))
+        {
+            auto previo = sl->valueFromTextFunction;
+            sl->valueFromTextFunction = [sl, previo] (const juce::String& t)
+            {
+                const auto u = t.trim();
+                const bool cifra = u.containsAnyOf ("0123456789");
+                const bool extremo = u.equalsIgnoreCase (sl->getTextFromValue (sl->getMinimum()).trim())
+                                  || u.equalsIgnoreCase (sl->getTextFromValue (sl->getMaximum()).trim());
+                if (! cifra && ! extremo)
+                    return sl->getValue();
+                if (previo) return previo (t);
+                return u.initialSectionContainingOnly ("0123456789.,-+").replaceCharacter (',', '.').getDoubleValue();
+            };
+        }
+        textoInvalidoConserva (*c);
+    }
+}
+
+inline void fuenteTapa (juce::TextButton& b, bool cancion)
+{
+b.setButtonText (T (cancion ? "SONG" : "PATRON"));
+b.getProperties().set ("icono", (int) (cancion ? Iconos::Id::cancion : Iconos::Id::patron));
+b.repaint();
+}
+
 inline void transporte (juce::TextButton& b, bool rodando)
 {
 b.setButtonText (rodando ? T ("STOP") : T ("PLAY"));

@@ -18,7 +18,7 @@ namespace
         // --- The face ------------------------------------------------------
         { "PADS",           "",         "PADS",       "音垫",       "باد" },
         { "SEC",            "",         "SEQ",        "音序",       "تتابع" },
-        { "SONG",           "CANCION",  "SONG",       "歌曲",       "أغنية" },
+        { "SONG",           "CANCIÓN",  "SONG",       "歌曲",       "أغنية" },
         { "MIX",            "MEZCLA",   "MIX",        "混音",       "مزج" },
         { "SET",            "AJUSTES",  "SETUP",      "设置",       "إعداد" },
         { "LOAD",           "CARGAR",   "LOAD",       "载入",       "تحميل" },
@@ -38,7 +38,7 @@ namespace
           "Pads respond to how hard you hit them",
           "打击力度感应已启用",
           "الوسادات تستجيب لقوة الضغط" },
-        { "Sesion recuperada  [%1 sin audio]", "",
+        { "Sesion recuperada  [%1 sin audio]", "Sesión recuperada  [%1 sin audio]",
           "Session recovered  [%1 without audio]",
           "会话已恢复  [%1 个缺少音频]",
           "استُعيدت الجلسة  [%1 بلا صوت]" },
@@ -64,7 +64,7 @@ namespace
         //  una se quedaria la otra. Lo que nombra la clave es lo que la palabra
         //  DICE, no quien la usa.
         { "MOVIMIENTO",         "",  "MOTION",    "动效",   "الحركة" },
-        { "SI|chip",            "",  "ON",        "开",     "تشغيل" },
+        { "SI|chip",            "SÍ",  "ON",        "开",     "تشغيل" },
         { "NO|chip",            "",  "OFF",       "关",     "إيقاف" },
         //  EL MONITOR: oirte por los cascos mientras grabas. Rotulo de seccion
         //  en AJUSTES - AUDIO, al lado de CUENTA. Ver AudioEngine::setMonitor.
@@ -79,12 +79,12 @@ namespace
                                      "监听需要耳机", "المراقبة تحتاج سماعات" },
         { "La cara se mueve",   "",  "The face moves", "界面会动",
                                      "الواجهة تتحرك" },
-        { "La cara esta quieta","",  "The face is still", "界面静止",
+        { "La cara esta quieta","La cara está quieta",  "The face is still", "界面静止",
                                      "الواجهة ساكنة" },
         //  DIECISEIS NIVELES: el pad elegido tocado a dieciseis fuerzas.
         { "16 NIVELES",         "",  "16 LEVELS", "16级",   "16 مستوى" },
         { "16 NIVELES: PAD %1", "",  "16 LEVELS: PAD %1", "16级: 音垫 %1", "16 مستوى: باد %1" },
-        { "16 NIVELES OFF",     "",  "16 LEVELS OFF", "16级 关闭", "16 مستوى مغلق" },
+        { "16 NIVELES OFF",     "16 NIVELES apagado",  "16 LEVELS OFF", "16级 关闭", "16 مستوى مغلق" },
         { "PAD %1 - nivel %2",  "",  "PAD %1 - level %2", "音垫 %1 - 级 %2", "باد %1 - مستوى %2" },
         //  VOLVER lleva clave propia y no reaprovecha ATRAS por la misma razon
         //  por la que TOUR ATRAS la lleva: ATRAS es la herramienta que desplaza
@@ -113,7 +113,7 @@ namespace
         { "BAJOS",       "",  "BASSES",     "贝斯",   "باس" },
         { "SUBS",        "",  "SUB BASS",   "超低音", "سب باس" },
         { "PIANO ELEC",  "",  "E.PIANO",    "电钢琴", "بيانو كهربائي" },
-        { "ORGANOS",     "",  "ORGANS",     "风琴",   "أرغن" },
+        { "ORGANOS",     "ÓRGANOS",  "ORGANS",     "风琴",   "أرغن" },
         { "CUERDAS",     "",  "STRINGS",    "弦乐",   "وتريات" },
         { "COLCHONES",   "",  "SYNTH PAD",  "铺底",   "خلفيات" },
         { "PLUCKS",      "",  "PLUCK SYN",  "拨弦",   "نقر" },
@@ -132,10 +132,10 @@ namespace
         { "FM",          "",  "FM",         "调频",   "إف إم" },
         { "SYNC",        "",  "SYNC",       "同步",   "مزامنة" },
         { "PIANOS",      "",  "PIANOS",     "钢琴",   "بيانو" },
-        { "ACORDEON",    "",  "ACCORDION",  "手风琴", "أكورديون" },
+        { "ACORDEON",    "ACORDEÓN",  "ACCORDION",  "手风琴", "أكورديون" },
         { "SITAR",       "",  "SITAR",      "西塔琴", "سيتار" },
         { "CELLOS",      "",  "CELLOS",     "大提琴", "تشيلو" },
-        { "CANAS",       "",  "REEDS",      "簧管",   "مزامير" },
+        { "CANAS",       "CAÑAS",  "REEDS",      "簧管",   "مزامير" },
         { "TUBOS",       "",  "PIPES",      "管风琴", "أنابيب" },
         //  Y el nombre del pack, que tampoco se traduce por lo mismo que ZATI:
         //  es como se llama, no lo que es.
@@ -148,8 +148,18 @@ namespace
           "Tap a preset. Play it with the PIANO.",
           "点击预设。用钢琴卷帘演奏。",
           "المس إعدادا مسبقا. يعزف بالبيانو." },
-        { "CARCASA",            "",  "CHASSIS",   "外壳",   "الهيكل" },
-        { "MANTEN UN PAD",      "",  "HOLD A PAD",
+        { "CARCASA",            "",  "SKIN",      "外壳",   "الهيكل" },
+        //  Los nombres de las cuatro carcasas, para las tapas de CARCASA en
+        //  AJUSTES - ASPECTO. La clave es lo que devuelve
+        //  `ZatiColours::skinName`, en el mismo orden que alli.
+        { "PAPEL",              "",  "PAPER",     "纸",     "ورق" },
+        { "GRAFITO",            "",  "GRAPHITE",  "石墨",   "غرافيت" },
+        { "ACERO",              "",  "STEEL",     "钢",     "فولاذ" },
+        { "LACA",               "",  "LACQUER",   "漆",     "ورنيش" },
+        //  El rotulo del campo del nombre en el selector de ficheros, en lugar
+        //  del «file:» que pone JUCE.
+        { "nombre:",            "",  "name:",     "名称：", "الاسم:" },
+        { "MANTEN UN PAD",      "MANTÉN UN PAD",  "HOLD A PAD",
                                      "长按音垫", "اضغط بادًا مطولًا" },
         //  «SIN SONAR» ERA VERDAD Y DEJO DE SERLO, y la fila se quedo.
         //
@@ -165,19 +175,19 @@ namespace
                                      "plays, and opens its settings",
                                      "发声并打开它的设置",
                                      "يعزف ويفتح إعداداته" },
-        { "MANTEN UN EFECTO",   "",  "HOLD AN EFFECT",
+        { "MANTEN UN EFECTO",   "MANTÉN UN EFECTO",  "HOLD AN EFFECT",
                                      "长按效果", "اضغط مؤثرًا مطولًا" },
         { "coge los mandos sin apagarlo", "",
                                      "takes the knobs without switching it off",
                                      "接管旋钮而不关闭它",
                                      "يأخذ المقابض دون إيقافه" },
-        { "MANTEN CARGAR",      "",  "HOLD LOAD",
+        { "MANTEN CARGAR",      "MANTÉN CARGAR",  "HOLD LOAD",
                                      "长按载入", "اضغط تحميل مطولًا" },
         { "abre la biblioteca en el pad elegido", "",
                                      "opens the library on the selected pad",
                                      "在所选音垫上打开素材库",
                                      "يفتح المكتبة على الباد المحدد" },
-        { "MANTEN PLAY",        "",  "HOLD PLAY",
+        { "MANTEN PLAY",        "MANTÉN PLAY",  "HOLD PLAY",
                                      "长按播放", "اضغط تشغيل مطولًا" },
         //  Y «TODO LO QUE SUENE» TAMPOCO ERA VERDAD. `postPanic` mata las
         //  VOCES (`AudioEngine.cpp`, `for (auto& v : voices) v.kill()`), y el
@@ -195,7 +205,7 @@ namespace
         //  BANK». El gesto mueve `selectedPattern` por `patternSlider`, o sea
         //  el PATRON; un banco es otra cosa y en esta app son A B C D. El chino
         //  y el arabe ya decian patron.
-        { "cambia de patron",   "",  "changes pattern",
+        { "cambia de patron",   "cambia de patrón",  "changes pattern",
                                      "切换乐句", "يغيّر النمط" },
         //  Y LOS DOS QUE FALTABAN. Esta pagina existe para que un gesto que no
         //  deja marca en la cara se pueda descubrir sin tocarlo por casualidad,
@@ -203,15 +213,15 @@ namespace
         //  los solos y AUTO mantenido vacia la automatizacion. Las dos son
         //  «mantener para deshacer lo que no se deshace tocando otra vez», que
         //  es la mitad de por que la lista existe.
-        { "MANTEN SOLO",        "",  "HOLD SOLO",
+        { "MANTEN SOLO",        "MANTÉN SOLO",  "HOLD SOLO",
                                      "长按独奏", "اضغط منفرد مطولًا" },
         { "quita todos los solos", "",
                                      "clears every solo",
                                      "清除所有独奏",
                                      "يمسح كل العزلات" },
-        { "MANTEN AUTO",        "",  "HOLD AUTO",
+        { "MANTEN AUTO",        "MANTÉN AUTO",  "HOLD AUTO",
                                      "长按自动化", "اضغط أتمتة مطولًا" },
-        { "vacia la automatizacion", "",
+        { "vacia la automatizacion", "vacía la automatización",
                                      "empties the automation",
                                      "清空自动化",
                                      "يفرغ الأتمتة" },
@@ -221,7 +231,7 @@ namespace
         //  canalon de una fila del rack- es un gesto que no deja marca en la
         //  cara, que es exactamente para lo que esta pagina existe: sin fila
         //  aqui, la unica forma de encontrarlo es tropezarse con el.
-        { "MANTEN UNA RANURA DEL RACK", "", "HOLD A RACK SLOT",
+        { "MANTEN UNA RANURA DEL RACK", "MANTÉN UNA RANURA DEL RACK", "HOLD A RACK SLOT",
                                      "长按机架槽位", "اضغط خانة الراك مطولًا" },
         { "abre los presets de ese efecto", "",
                                      "opens that effect's presets",
@@ -246,11 +256,11 @@ namespace
           "Turning down for a system alert",
           "系统提示音，暂时降低音量",
           "خفض الصوت مؤقتًا لتنبيه من النظام" },
-        { "%1 OFF - manten pulsado para ajustar sin apagar", "",
+        { "%1 OFF - manten pulsado para ajustar sin apagar", "%1 apagado - mantén pulsado para ajustar sin apagar",
           "%1 OFF - hold to tune it without switching it off",
           "%1 已关闭 - 长按可在不关闭的情况下调节",
           "%1 متوقف - اضغط مطولًا للضبط دون الإيقاف" },
-        { "TEST",           "",         "TEST",       "测试",       "اختبار" },
+        { "TEST",           "PRUEBA",         "TEST",       "测试",       "اختبار" },
         { "MEDIR",          "",         "MEASURE",    "测量",       "قياس" },
         { "CUADRAR",        "",         "QUANT",      "对齐",       "ضبط" },   // abreviado: QUANTISE no cabe en la tapa del Fold
         { "Los pads suenan cuadrados al paso", "", "pads now land on the step",
@@ -258,13 +268,13 @@ namespace
         { "Los pads suenan cuando los tocas", "", "pads sound the moment you hit them",
                                         "音垫在触碰瞬间发声", "الوسادات تصدر عند اللمس" },
         { "elige uno de la lista", "",   "pick one from the list", "从列表中选一个", "اختر واحدًا من القائمة" },
-        { "OUT",            "",         "OUT",        "输出",       "خرج" },
+        { "OUT",            "SALIDA",         "OUT",        "输出",       "خرج" },
 
         // --- PADS sheet ----------------------------------------------------
         { "SONIDO",         "",         "SOUND",      "声音",       "الصوت" },
         { "RECORTE",        "",         "TRIM",       "裁剪",       "القص" },
         { "EL PAD",         "",         "THE PAD",    "此音垫", "الباد" },
-        { "PITCH",          "",         "PITCH",      "音高",       "الطبقة" },
+        { "PITCH",          "AFINAR",         "PITCH",      "音高",       "الطبقة" },
         { "FINO",           "",         "FINE",       "微调",       "دقيق" },
         //  Era VOLUME y ahora es GANANCIA, porque el mando dejo de ser una
         //  proporcion de 0 a 100 y paso a ser decibelios con +12 de margen.
@@ -272,7 +282,7 @@ namespace
         { "NORMALIZAR",     "",         "NORMALIZE",  "标准化",     "توحيد" },
         { "El pad %1 no tiene sonido", "", "pad %1 has no sound",
                                         "音垫 %1 没有声音", "الباد %1 بلا صوت" },
-        { "El recorte esta en silencio", "", "the trimmed part is silent",
+        { "El recorte esta en silencio", "El recorte está en silencio", "the trimmed part is silent",
                                         "所裁剪的部分是静音的", "الجزء المقصوص صامت" },
         { "Pico a -0.3 dBFS con %1", "", "peak at -0.3 dBFS with %1",
                                         "峰值 -0.3 dBFS，增益 %1", "الذروة عند -0.3 ديسيبل بـ %1" },
@@ -282,15 +292,15 @@ namespace
         { "decibelios",     "",         "decibels",   "分贝",       "ديسيبل" },
         { "PAN",            "",         "PAN",        "声像",       "الاتزان" },
         { "ATTACK",         "ATAQUE",   "ATTACK",     "起音",       "الهجوم" },
-        { "RELEASE",        "CAIDA",    "RELEASE",    "释音",       "التلاشي" },
-        { "CHOKE",          "",         "CHOKE",      "组切",       "الخنق" },
+        { "RELEASE",        "CAÍDA",    "RELEASE",    "释音",       "التلاشي" },
+        { "CHOKE",          "GRUPO",         "CHOKE",      "组切",       "الخنق" },
         { "CORTE|filtro",   "",         "CUTOFF",     "截止",       "القطع" },
-        { "COMO",           "",         "HOW",        "方式",       "الطريقة" },
+        { "COMO",           "CÓMO",         "HOW",        "方式",       "الطريقة" },
         { "IGUALES",        "",         "EVEN",       "均分",       "متساوٍ" },
         { "GOLPES",         "",         "HITS",       "打点",       "الضربات" },
         { "TROZOS (como mucho)", "",    "SLICES (max)", "片段（最多）", "مقاطع (بحد أقصى)" },
         { "%1 golpes encontrados", "",  "%1 hits found", "找到 %1 个打点", "عُثر على %1 ضربة" },
-        { "no hay golpes que separar aqui", "",
+        { "no hay golpes que separar aqui", "no hay golpes que separar aquí",
           "no separate hits in here", "这里没有可分离的打点",
           "لا توجد ضربات منفصلة هنا" },
         { "Cortado en %1 golpes - DESHACER para volver", "",
@@ -302,26 +312,26 @@ namespace
         { "SUAVE OUT",      "",         "FADE OUT",   "淡出",       "تلاشٍ خارج" },
         { "SECO",           "",         "HARD",       "硬切",       "حاد" },
         { "DOBLAR",         "",         "DOUBLE",     "加倍",       "مضاعفة" },
-        { "Cancion doblada a %1 compases", "",
+        { "Cancion doblada a %1 compases", "Canción doblada a %1 compases",
           "Song doubled to %1 bars", "歌曲已加倍为 %1 小节",
           "تضاعفت الأغنية إلى %1 مازورة" },
-        { "La cancion ya no cabe doblada", "",
+        { "La cancion ya no cabe doblada", "La canción ya no cabe doblada",
           "The song will not fit doubled", "歌曲加倍后放不下",
           "الأغنية لا تتسع بعد المضاعفة" },
         //  Las tres herramientas del patron, en la pagina PASO. Ver patLeftBtn.
         { "DESPLAZAR",      "",         "NUDGE",      "位移",       "إزاحة" },
-        { "ATRAS",          "",         "BACK",       "前移",       "للخلف" },
+        { "ATRAS",          "ATRÁS",         "BACK",       "前移",       "للخلف" },
         { "ADELANTE",       "",         "FWD",        "后移",       "للأمام" },
-        { "Patron un paso a la derecha", "",
+        { "Patron un paso a la derecha", "Patrón un paso a la derecha",
           "Pattern nudged one step right", "图案右移一步",
           "أُزيح النمط خطوة إلى اليمين" },
-        { "Patron un paso a la izquierda", "",
+        { "Patron un paso a la izquierda", "Patrón un paso a la izquierda",
           "Pattern nudged one step left", "图案左移一步",
           "أُزيح النمط خطوة إلى اليسار" },
-        { "Patron doblado a %1 pasos", "",
+        { "Patron doblado a %1 pasos", "Patrón doblado a %1 pasos",
           "Pattern doubled to %1 steps", "图案已加倍为 %1 步",
           "تضاعف النمط إلى %1 خطوة" },
-        { "El patron ya no cabe doblado", "",
+        { "El patron ya no cabe doblado", "El patrón ya no cabe doblado",
           "The pattern will not fit doubled", "图案加倍后放不下",
           "النمط لا يتسع بعد المضاعفة" },
         //  Las herramientas de arreglo de la ficha CANCION. Ver songCursor.
@@ -337,7 +347,7 @@ namespace
         { "Humanizados %1 golpes", "",
           "Humanised %1 hits", "已人性化 %1 个打点",
           "أُنسنت %1 ضربة" },
-        { "La vista sigue al compas que suena", "",
+        { "La vista sigue al compas que suena", "La vista sigue al compás que suena",
           "The view follows the playing bar", "视图跟随播放的小节",
           "العرض يتبع المازورة التي تُعزف" },
         { "La vista se queda donde la dejes", "",
@@ -345,16 +355,16 @@ namespace
           "يبقى العرض حيث تتركه" },
         { "OCTAVA",         "",         "OCTAVE",     "八度",       "أوكتاف" },
         { "PAD",            "",         "PAD",        "音垫",       "باد" },
-        { "La vez anterior se cerro en: %1", "",
+        { "La vez anterior se cerro en: %1", "La vez anterior se cerró en: %1",
           "Last time it closed at: %1", "上次在此处关闭：%1",
           "أُغلق آخر مرة عند: %1" },
-        { "La vez anterior se paro: %1", "",
+        { "La vez anterior se paro: %1", "La vez anterior se paró: %1",
           "Last time it froze: %1", "上次卡住：%1",
           "توقف آخر مرة: %1" },
-        { "Android la cerro la vez anterior: %1", "",
+        { "Android la cerro la vez anterior: %1", "Android la cerró la vez anterior: %1",
           "Android closed it last time: %1", "上次被安卓关闭：%1",
           "أغلقه أندرويد آخر مرة: %1" },
-        { "toca el teclado para oir, la rejilla para escribir", "",
+        { "toca el teclado para oir, la rejilla para escribir", "toca el teclado para oír, la rejilla para escribir",
           "tap the keys to hear, the grid to write",
           "点击琴键试听，点击网格书写",
           "المس المفاتيح للسماع والشبكة للكتابة" },
@@ -365,44 +375,44 @@ namespace
         { "Bloque de %1 compases", "",
           "Block is %1 bars", "块为 %1 小节",
           "الكتلة %1 مازورة" },
-        { "No hay ningun bloque en este compas", "",
+        { "No hay ningun bloque en este compas", "No hay ningún bloque en este compás",
           "There is no block on this bar", "此小节没有块",
           "لا توجد كتلة في هذه المازورة" },
         { "El bloque no puede medir eso", "",
           "The block cannot be that long", "块无法达到该长度",
           "لا يمكن للكتلة أن تبلغ ذلك" },
-        { "El compas siguiente ya esta ocupado", "",
+        { "El compas siguiente ya esta ocupado", "El compás siguiente ya está ocupado",
           "The next bar is already taken", "下一小节已被占用",
           "المازورة التالية مشغولة" },
         //  El rotulo del deshacer, que no es ninguna tapa: la barra de estado
         //  dice "Deshecho: MOVER" y esa palabra tambien se lee.
         { "MOVER",          "",         "MOVE",       "移动",       "نقل" },
-        { "Compas movido al %1", "",
+        { "Compas movido al %1", "Compás movido al %1",
           "Bar moved to %1", "小节已移到 %1",
           "نُقلت المازورة إلى %1" },
-        { "El compas ya esta en el borde", "",
+        { "El compas ya esta en el borde", "El compás ya está en el borde",
           "The bar is already at the edge", "小节已在边缘",
           "المازورة عند الحافة بالفعل" },
         { "QUITAR",         "",         "REMOVE",     "删除",       "حذف" },
-        { "Compas metido en %1", "",
+        { "Compas metido en %1", "Compás metido en %1",
           "Bar inserted at %1", "已在 %1 插入小节",
           "أُدرجت مازورة عند %1" },
-        { "Compas %1 quitado", "",
+        { "Compas %1 quitado", "Compás %1 quitado",
           "Bar %1 removed", "已删除第 %1 小节",
           "حُذفت المازورة %1" },
-        { "Compas %1 copiado", "",
+        { "Compas %1 copiado", "Compás %1 copiado",
           "Bar %1 copied", "已复制第 %1 小节",
           "نُسخت المازورة %1" },
-        { "Pegado en el compas %1", "",
+        { "Pegado en el compas %1", "Pegado en el compás %1",
           "Pasted at bar %1", "已粘贴到第 %1 小节",
           "لُصق عند المازورة %1" },
-        { "No hay ningun compas copiado", "",
+        { "No hay ningun compas copiado", "No hay ningún compás copiado",
           "No bar has been copied", "尚未复制任何小节",
           "لم تُنسخ أي مازورة" },
-        { "La cancion ya esta en su maximo", "",
+        { "La cancion ya esta en su maximo", "La canción ya está en su máximo",
           "The song is already at its maximum", "歌曲已达最大长度",
           "الأغنية بلغت حدها الأقصى" },
-        { "Una cancion no puede quedarse sin compases", "",
+        { "Una cancion no puede quedarse sin compases", "Una canción no puede quedarse sin compases",
           "A song cannot be left with no bars", "歌曲不能没有小节",
           "لا يمكن أن تبقى الأغنية بلا مازورات" },
         { "Bucle en los compases %1 a %2", "",
@@ -417,12 +427,12 @@ namespace
         { "Carril %1 suena", "",
           "Lane %1 unmuted", "轨道 %1 已取消静音",
           "المسار %1 يعمل" },
-        { "Audio entrecortado - buffer a %1 muestras", "",
+        { "Audio entrecortado - buffer a %1 muestras", "Audio entrecortado - búfer a %1 muestras",
           "Audio glitching - buffer raised to %1 samples", "音频断续 - 缓冲区提高到 %1 采样",
           "صوت متقطع - رفع المخزن إلى %1 عينة" },
         //  Y LA VUELTA, que hasta hoy no existia: el buffer subia y no bajaba
         //  nunca. Ver checkXRuns.
-        { "Audio limpio - buffer a %1 muestras", "",
+        { "Audio limpio - buffer a %1 muestras", "Audio limpio - búfer a %1 muestras",
           "Audio clean - buffer lowered to %1 samples", "音频干净 - 缓冲区降到 %1 采样",
           "صوت نظيف - خفض المخزن إلى %1 عينة" },
         { "MODO",           "",         "MODE",       "模式",       "الوضع" },
@@ -440,7 +450,7 @@ namespace
         //  Los rotulos de la segunda pagina de la ficha del pad.
         { "CORTE",          "",         "CUT",        "切断",       "القطع" },
         { "FUENTE",         "",         "SOURCE",     "来源",       "المصدر" },
-        { "Envio a %1",     "",         "Send to %1", "发送到 %1",  "إرسال إلى %1" },
+        { "Envio a %1",     "Envío a %1",         "Send to %1", "发送到 %1",  "إرسال إلى %1" },
         { "QUITAR RUIDO",   "",         "DENOISE",    "降噪",       "تنقية" },
         //  RECORTAR: tira lo que queda fuera de las asas y deja el trozo.
         //  Verbo y no sustantivo, como las demas de esta fila -REV, BUCLE-, y
@@ -486,16 +496,20 @@ namespace
           "%1 个文件，%2 秒", "%1 ملفات، %2 ثانية" },
         { "(bajado %1 dB para no saturar)", "", "(lowered %1 dB to avoid clipping)",
           "（降低 %1 dB 以避免削波）", "(خُفض %1 ديسيبل لتفادي القص)" },
+        //  Las pistas de los pads que no suenan no se escriben (feria
+        //  2026-10, J2: 52 ficheros de silencio), y el parte lo dice.
+        { "(%1 pads mudos sin fichero)", "", "(%1 silent pads skipped)",
+          "（跳过 %1 个无声音垫）", "(تُخطي %1 باد صامت)" },
         { "Quitando ruido...", "",      "removing noise...",
                                         "正在降噪...", "جارٍ إزالة الضجيج..." },
-        { "El pad cambio mientras se limpiaba", "", "the pad changed while it was being cleaned",
+        { "El pad cambio mientras se limpiaba", "El pad cambió mientras se limpiaba", "the pad changed while it was being cleaned",
                                         "清理期间该音垫已更改", "تغيّر الباد أثناء التنقية" },
         // --- El manual, dentro de la app -----------------------------------
         //  EL NUMERO SE INTERPOLA. La fila decia «ocho» en los cuatro idiomas
         //  con una tabla de diez capitulos: una cifra escrita dentro de una
         //  frase traducida es la unica constante que no se puede contrastar
         //  leyendo el codigo. Ver paintManualSheetContent.
-        { "lo que hay que saber, en %1 capitulos", "",
+        { "lo que hay que saber, en %1 capitulos", "lo que hay que saber, en %1 capítulos",
           "what you need to know, in %1 chapters",
           "%1 章要点", "ما يلزم معرفته، في %1 فصول" },
         { "EMPEZAR", "",
@@ -504,13 +518,13 @@ namespace
         { "CARGAR y luego un pad abre la biblioteca en ese pad", "",
           "LOAD then a pad opens the library on that pad",
           "先按载入再按音垫，即在该音垫上打开素材库", "اضغط تحميل ثم بادًا لفتح المكتبة على ذلك الباد" },
-        { "Un toque toca; una pulsacion larga configura", "",
+        { "Un toque toca; una pulsacion larga configura", "Un toque toca; una pulsación larga configura",
           "a tap plays; a long press configures",
           "轻触发声，长按设置", "النقر يعزف، والضغط المطول يضبط" },
         //  La misma correccion que la fila de GESTOS, y en la misma tanda: el
         //  manual y la ficha decian los dos «sin sonar» y el pad dispara al
         //  apoyar. Dos sitios con la misma frase falsa son dos sitios.
-        { "Manten un pad para abrir su ficha: el golpe suena igual", "",
+        { "Manten un pad para abrir su ficha: el golpe suena igual", "Mantén un pad para abrir su ficha: el golpe suena igual",
           "hold a pad to open its settings: the hit still sounds",
           "长按音垫打开其设置：这一击仍会发声", "اضغط بادًا مطولًا لفتح إعداداته: تُسمع الضربة كذلك" },
         //  Y LA EXCEPCION SE RETIRA, porque dejo de haberla. Esta linea decia
@@ -528,7 +542,7 @@ namespace
         { "PADS Y BANCOS", "",
           "PADS AND BANKS",
           "音垫与音库", "الوسادات والبنوك" },
-        { "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando", "",
+        { "Cuatro bancos de dieciseis pads: los otros 48 siguen sonando", "Cuatro bancos de dieciséis pads: los otros 48 siguen sonando",
           "four banks of sixteen: the other 48 keep sounding",
           "四个音库各十六个音垫，其余 48 个继续发声", "أربعة بنوك من ستة عشر: الباقي 48 يستمر في الصوت" },
         //  ESTA LINEA PROMETIA UN GESTO QUE NO EXISTE. `PadButton::mouseDrag`
@@ -538,7 +552,7 @@ namespace
         { "Toca A, B, C o D para cambiar de banco", "",
           "tap A, B, C or D to change bank",
           "点击 A、B、C 或 D 切换音库", "المس A أو B أو C أو D لتغيير البنك" },
-        { "El color de un pad lo acompana en la onda y en la rejilla", "",
+        { "El color de un pad lo acompana en la onda y en la rejilla", "El color de un pad lo acompaña en la onda y en la rejilla",
           "a pad's colour follows it into the wave and the grid",
           "音垫的颜色会带到波形与网格中", "لون الباد يرافقه في الموجة والشبكة" },
         { "CARGAR KIT reparte una carpeta entera por los pads", "",
@@ -551,19 +565,19 @@ namespace
         { "Arrastra las asas para mover el inicio y el fin", "",
           "drag the handles to move start and end",
           "拖动手柄可移动起点和终点", "اسحب المقبضين لتحريك البداية والنهاية" },
-        { "Toca la onda en medio y suena desde ahi", "",
+        { "Toca la onda en medio y suena desde ahi", "Toca la onda en medio y suena desde ahí",
           "tap the wave in open water and it plays from there",
           "轻触波形中部即从该处播放", "انقر وسط الموجة ليعزف من هناك" },
         { "Pellizca para ampliar hasta x64; arrastra para mover la vista", "",
           "pinch to zoom up to x64; drag to move the view",
           "双指捏合可放大至 x64，拖动可移动视图", "اقرص للتكبير حتى x64، واسحب لتحريك العرض" },
-        { "El zoom se centra en el recorte, no en donde estas mirando", "",
+        { "El zoom se centra en el recorte, no en donde estas mirando", "El zoom se centra en el recorte, no en donde estás mirando",
           "zoom centres on the trim, not on where you were looking",
           "缩放以裁剪区为中心，而非当前视野", "التكبير يتمركز على القص لا على موضع نظرك" },
         { "SONIDO DEL PAD", "",
           "THE PAD'S SOUND",
           "音垫的声音", "صوت الباد" },
-        { "CINTA afina cambiando la duracion; TONO la mantiene", "",
+        { "CINTA afina cambiando la duracion; TONO la mantiene", "CINTA afina cambiando la duración; TONO la mantiene",
           "TAPE tunes by changing the length; TONE keeps it",
           "磁带模式改变时长来变调，变调模式保持时长", "الشريط يغيّر المدة عند التنغيم، والنغمة تحافظ عليها" },
         { "La ganancia va en decibelios, de -60 a +12", "",
@@ -572,7 +586,7 @@ namespace
         { "NORMALIZAR deja el pico del recorte en -0.3 dBFS", "",
           "NORMALIZE puts the trim's peak at -0.3 dBFS",
           "标准化把裁剪区峰值置于 -0.3 dBFS", "التوحيد يضع ذروة القص عند -0.3 ديسيبل" },
-        { "QUITAR RUIDO saca el siseo y devuelve el nivel que se llevo", "",
+        { "QUITAR RUIDO saca el siseo y devuelve el nivel que se llevo", "QUITAR RUIDO saca el siseo y devuelve el nivel que se llevó",
           "DENOISE removes hiss and gives back the level it took",
           "降噪去除嘶声并还回被削减的电平",
           "إزالة الضجيج تزيل الهسهسة وتعيد المستوى الذي أخذته" },
@@ -601,7 +615,7 @@ namespace
           "drag along the piano ruler to grab a whole span; a tap sets the cursor where paste lands",
           "沿钢琴卷帘标尺拖动可整段选取；轻触放置粘贴光标",
           "اسحب على مسطرة البيانو لتحديد مقطع كامل؛ ونقرة تضع المؤشر حيث يُلصق" },
-        { "Pellizca el piano para ver de medio compas a cuatro", "",
+        { "Pellizca el piano para ver de medio compas a cuatro", "Pellizca el piano para ver de medio compás a cuatro",
           "pinch the piano to see from half a bar to four",
           "双指捏合钢琴卷帘，可从半小节看到四小节",
           "اقرص البيانو لترى من نصف مازورة إلى أربع" },
@@ -609,7 +623,7 @@ namespace
           "INSTRUMENTS puts a synth on whichever pad you pick",
           "“乐器”会把一台合成器装进你选定的音垫",
           "تضع الآلات مركبا صوتيا في الباد الذي تختاره" },
-        { "Su ficha trae los dieciseis presets y un teclado para probarlos", "",
+        { "Su ficha trae los dieciseis presets y un teclado para probarlos", "Su ficha trae los dieciséis presets y un teclado para probarlos",
           "Its panel holds the sixteen presets and a keyboard to try them",
           "其面板提供十六个预设和一个试听键盘",
           "لوحتها تضم الإعدادات الستة عشر ولوحة مفاتيح لتجربتها" },
@@ -647,22 +661,22 @@ namespace
         { "Un proyecto lleva sus muestras dentro y se puede mover entero", "",
           "a project carries its samples inside and moves whole",
           "项目自带素材，可整体移动", "المشروع يحمل عيّناته بداخله ويُنقل كاملًا" },
-        { "La sesion se recupera sola al abrir la app", "",
+        { "La sesion se recupera sola al abrir la app", "La sesión se recupera sola al abrir la app",
           "the session comes back on its own when you open the app",
           "打开应用时会自动恢复会话", "تعود الجلسة وحدها عند فتح التطبيق" },
-        { "MASTER es lo que oyes; PISTAS son los stems que suman a el", "",
+        { "MASTER es lo que oyes; PISTAS son los stems que suman a el", "MASTER es lo que oyes; PISTAS son los stems que suman a él",
           "MASTER is what you hear; STEMS sum back to it",
           "主输出即所听；分轨相加还原主输出", "الماستر ما تسمعه، والمسارات تجمع إليه" },
         //  El tercer modo de EXPORTAR. Ver RebotVivo en Exporter.h: MASTER y
         //  PISTAS son offline -un motor clonado- y esto suena mientras escribe.
-        { "EN VIVO graba lo que suena mientras suena, con su cuenta atras", "",
+        { "EN VIVO graba lo que suena mientras suena, con su cuenta atras", "EN VIVO graba lo que suena mientras suena, con su cuenta atrás",
           "LIVE records what sounds while it sounds, with its count-in",
           "实时：一边播放一边录，带预备拍",
           "مباشر: يسجل ما يُسمع أثناء سماعه، مع العد التنازلي" },
-        { "Deshacer y rehacer, dieciseis pasos", "",
+        { "Deshacer y rehacer, dieciseis pasos", "Deshacer y rehacer, dieciséis pasos",
           "undo and redo, sixteen steps",
           "撤销与重做，十六步", "تراجع وإعادة، ست عشرة خطوة" },
-        { "El pad 1 es la nota 36, y de ahi hacia arriba", "",
+        { "El pad 1 es la nota 36, y de ahi hacia arriba", "El pad 1 es la nota 36, y de ahí hacia arriba",
           "pad 1 is note 36, and up from there",
           "音垫 1 是音符 36，依次向上",
           "الباد 1 هو النوتة 36، وصعودًا من هناك" },
@@ -670,7 +684,7 @@ namespace
           "RECEIVE lets a keyboard fire the pads",
           "接收让键盘触发音垫",
           "استقبال يتيح للوحة مفاتيح تشغيل الوسادات" },
-        { "El secuenciador manda tambien, no solo tus dedos", "",
+        { "El secuenciador manda tambien, no solo tus dedos", "El secuenciador manda también, no solo tus dedos",
           "the sequencer sends too, not just your fingers",
           "音序器也会发送，不只是你的手指",
           "المتتابع يرسل أيضًا، وليس أصابعك فقط" },
@@ -680,14 +694,14 @@ namespace
         { "Mira la ganancia del pad y si hay un SOLO puesto en otro", "",
           "check the pad's gain, and whether another pad is SOLO",
           "检查该音垫增益，以及是否有其他音垫处于独奏", "افحص كسب الباد وهل هناك باد آخر منفرد" },
-        { "Mira el envio de su CANAL al efecto que estas oyendo", "",
+        { "Mira el envio de su CANAL al efecto que estas oyendo", "Mira el envío de su CANAL al efecto que estás oyendo",
           "check its CHANNEL send to the effect you are listening to",
           "检查其通道到当前所听效果的发送量",
           "افحص إرسال قناته إلى المؤثر الذي تسمعه" },
-        { "Si la onda no reacciona estas ampliado: toca la tapa del medio", "",
+        { "Si la onda no reacciona estas ampliado: toca la tapa del medio", "Si la onda no reacciona estás ampliado: toca la tapa del medio",
           "if the wave will not move you are zoomed in: tap the middle cap",
           "若波形无反应说明已放大：按中间的键", "إن لم تستجب الموجة فأنت مكبّر: انقر المفتاح الأوسط" },
-        { "AJUSTES > AUDIO ensena la latencia y el tamano de bloque", "",
+        { "AJUSTES > AUDIO ensena la latencia y el tamano de bloque", "AJUSTES > AUDIO enseña la latencia y el tamaño de bloque",
           "SETUP > AUDIO shows the latency and the block size",
           "设置 > 音频 显示延迟与缓冲大小", "إعداد < الصوت يعرض الكمون وحجم الكتلة" },
         //  La barra de trabajo: tres palabras y ningun punto suspensivo, que
@@ -700,9 +714,9 @@ namespace
         //  LAS CUATRO CATEGORIAS DE LA LISTA DE INSTRUMENTOS. Ver
         //  `Sintes::ordenDeMenu`: cuatro grupos de cuatro, por fuente.
         { "EXTRAS",         "",         "EXTRAS",     "附加",       "إضافات" },
-        { "SINTESIS",       "",         "SYNTH",      "合成",       "توليف" },
+        { "SINTESIS",       "SÍNTESIS",         "SYNTH",      "合成",       "توليف" },
         { "TECLAS",         "",         "KEYS",       "键盘",       "مفاتيح" },
-        { "ARCO Y PUA",     "",         "BOW & PICK", "弓与拨",     "قوس وريشة" },
+        { "ARCO Y PUA",     "ARCO Y PÚA",         "BOW & PICK", "弓与拨",     "قوس وريشة" },
         { "SOPLO Y METAL",  "",         "WIND & BRASS", "管与铜",   "نفخ ونحاس" },
         //  LAS SEIS FAMILIAS DEL BANCO DE EFECTOS. Ver `MainComponent::
         //  ordenFx`: seis grupos de cinco, por lo que le HACEN al sonido.
@@ -712,10 +726,10 @@ namespace
         //  pop-up de efectos por categorias o secciones como esta el de los
         //  instrumentos", y no hubo que inventar el reparto: estaba escrito.
         { "FILTRO",         "",         "FILTER",     "滤波",       "مرشح" },
-        { "SATURACION",     "",         "DRIVE",      "失真",       "تشبع" },
-        { "MODULACION",     "",         "MODULATION", "调制",       "تضمين" },
+        { "SATURACION",     "SATURACIÓN",         "DRIVE",      "失真",       "تشبع" },
+        { "MODULACION",     "MODULACIÓN",         "MODULATION", "调制",       "تضمين" },
         { "ESPACIO",        "",         "SPACE",      "空间",       "فضاء" },
-        { "DINAMICA",       "",         "DYNAMICS",   "动态",       "ديناميك" },
+        { "DINAMICA",       "DINÁMICA",         "DYNAMICS",   "动态",       "ديناميك" },
         { "TIEMPO",         "",         "TIME",       "时间",       "زمن" },
         { "REJILLA",        "",         "GRID",       "网格",       "الشبكة" },
         //  EL CUADRADITO, Y NO «UN PASO»: desde que la rejilla es una vista, el
@@ -735,12 +749,12 @@ namespace
         //  patron -un compas con el paso mas fino-, asi que lo que no cabe es
         //  un patron de varios compases mezclando recto y tresillo. Antes se
         //  resolvia tirando lo que sobraba, en silencio.
-        { "%1 pediria %2 pasos y la maquina guarda %3", "",
+        { "%1 pediria %2 pasos y la maquina guarda %3", "%1 pediría %2 pasos y la máquina guarda %3",
                                         "%1 would need %2 steps and the machine holds %3",
                                         "%1 需要 %2 步，而机器只存 %3",
                                         "%1 يحتاج %2 خطوة والجهاز يحفظ %3" },
         { "Rejilla",        "",         "Grid",       "网格",       "الشبكة" },
-        { "cuanto dura un paso", "",    "how long a step lasts",
+        { "cuanto dura un paso", "cuánto dura un paso",    "how long a step lasts",
                                         "每一步的时值", "مدة الخطوة الواحدة" },
         { "AUTO CHOP",      "",         "AUTO CHOP",  "切片",       "تقطيع" },
         { "GRABAR MIC",     "",         "MIC REC",    "录音",       "ميكروفون" },
@@ -750,7 +764,7 @@ namespace
         //  parece es como sale mal en las otras tres.
         { "GRABAR",         "",         "RECORD",     "录制",       "تسجيل" },
         { "CLIC",           "",         "CLICK",      "节拍",       "نقرة" },
-        { "Cuenta atras: la toma entra en el compas", "",
+        { "Cuenta atras: la toma entra en el compas", "Cuenta atrás: la toma entra en el compás",
           "Count-in: the take starts on the bar", "预备拍：从小节开始录制",
           "\xd8\xaa\xd9\x86\xd8\xa7\xd8\xb2\xd9\x84\xd9\x8a: \xd9\x8a\xd8\xa8\xd8\xaf\xd8\xa3 \xd8\xa7\xd9\x84\xd8\xaa\xd8\xb3\xd8\xac\xd9\x8a\xd9\x84 \xd9\x85\xd8\xb9 \xd8\xa7\xd9\x84\xd9\x85\xd9\x8a\xd8\xb2\xd8\xa7\xd9\x86" },
         { "REMUESTREAR",    "",         "RESAMPLE",   "重采样",     "إعادة" },
@@ -761,24 +775,24 @@ namespace
         { "Nada que remuestrear", "",   "Nothing to resample",
                                         "没有可重采样的内容", "لا شيء لإعادة أخذه" },
         { "PARAR",          "",         "STOP",       "停止",       "إيقاف" },
-        { "OIR",            "",         "HEAR",       "试听",       "استمع" },
+        { "OIR",            "OÍR",         "HEAR",       "试听",       "استمع" },
         { "CARGAR KIT",     "",         "LOAD KIT",   "载入套件",   "تحميل طقم" },
         { "MASTER = un WAV con lo que oyes.  PISTAS = el master mas un WAV "
-          "por pad, para mezclar fuera.", "",
+          "por pad, para mezclar fuera.", "MASTER = un WAV con lo que oyes.  PISTAS = el master más un WAV por pad, para mezclar fuera.",
           "MASTER = one WAV of what you hear.  TRACKS = the master plus one "
           "WAV per pad, to mix elsewhere.",
           "主控 = 你听到的一个 WAV。分轨 = 主控加上每个音垫一个 WAV，便于外部混音。",
           "ماستر = ملف WAV واحد لما تسمعه. المسارات = الماستر بالإضافة إلى ملف "
           "WAV لكل باد، للمزج خارجًا." },
-        { "SOBRESCRIBIR %1?", "",       "OVERWRITE %1?", "覆盖 %1？", "استبدال %1؟" },
+        { "SOBRESCRIBIR %1?", "¿SOBRESCRIBIR %1?",       "OVERWRITE %1?", "覆盖 %1？", "استبدال %1؟" },
         { "No hay audio en esta carpeta", "", "no audio in this folder",
                                         "此文件夹没有音频", "لا صوت في هذا المجلد" },
         { "Kit de %1 sonidos en el banco %2", "", "kit of %1 sounds into bank %2",
                                         "%1 个声音已载入 %2 库", "طقم من %1 صوت في بنك %2" },
         { "PAD %1",         "",         "PAD %1",     "音垫 %1",    "باد %1" },
-        { "TRIM",           "",         "TRIM",       "裁剪",       "قص" },
+        { "TRIM",           "RECORTE",         "TRIM",       "裁剪",       "قص" },
         { "MONO",           "",         "MONO",       "单声道", "أحادي" },
-        { "STEREO",         "",         "STEREO",     "立体声", "ستيريو" },
+        { "STEREO",         "ESTÉREO",         "STEREO",     "立体声", "ستيريو" },
         { "TAP A PAD TO LOAD ITS WAVEFORM", "TOCA UN PAD PARA VER SU ONDA",
                                         "TAP A PAD TO LOAD ITS WAVEFORM",
                                         "点一个音垫看它的波形",
@@ -787,26 +801,26 @@ namespace
         // --- Zati colours --------------------------------------------------
         { "ROJO",           "",         "RED",        "红",         "أحمر" },
         { "NARANJA",        "",         "ORANGE",     "橙",         "برتقالي" },
-        { "AMBAR",          "",         "AMBER",      "琥珀",       "كهرماني" },
+        { "AMBAR",          "ÁMBAR",         "AMBER",      "琥珀",       "كهرماني" },
         { "VERDE",          "",         "GREEN",      "绿",         "أخضر" },
         { "TURQUESA",       "",         "TURQUOISE",  "青",         "فيروزي" },
         { "AZUL",           "",         "BLUE",       "蓝",         "أزرق" },
         { "VIOLETA",        "",         "VIOLET",     "紫",         "بنفسجي" },
         { "MAGENTA",        "",         "MAGENTA",    "洋红",       "أرجواني" },
-        { "off",            "",         "off",        "关",         "مغلق" },
+        { "off",            "no",         "off",        "关",         "مغلق" },
         //  La vista previa del troceado cuando el pad no tiene sonido: sin
         //  esto, la unica ficha que se abre vacia lo decia en ingles.
         { "sin muestra",    "",         "no sample",  "无采样",     "لا توجد عينة" },
         //  La vista previa del troceado, cuando se intenta anadir una marca mas
         //  que pads libres hay: una marca de mas seria un trozo que se dibuja y
         //  no llega a ningun sitio.
-        { "No caben mas trozos", "",     "No room for more slices",
+        { "No caben mas trozos", "No caben más trozos",     "No room for more slices",
                                         "放不下更多切片", "لا مساحة لمزيد من المقاطع" },
 
         // --- Ficha XY (superficie de directo) ------------------------------
         { "XY",             "",         "XY",         "XY",         "XY" },
         { "FIJO",           "",         "LATCH",      "锁定",       "تثبيت" },
-        { "MOMENTANEO",     "",         "MOMENTARY",  "瞬时",       "لحظي" },
+        { "MOMENTANEO",     "MOMENTÁNEO",         "MOMENTARY",  "瞬时",       "لحظي" },
         { "SUENA",          "",         "LIVE",       "响着",       "يعمل" },
         { "EN ESPERA",      "",         "STANDBY",    "待命",       "بالانتظار" },
         { "se queda donde lo dejes", "", "stays where you leave it",
@@ -815,7 +829,7 @@ namespace
                                                       "触摸进入，松开退出", "يدخل باللمس ويخرج بالرفع" },
         { "XY fijo - se queda donde lo dejes", "", "XY latch - stays where you leave it",
                                                       "XY 锁定 - 停在你放开的位置", "XY تثبيت - يبقى حيث تتركه" },
-        { "XY momentaneo - suena mientras tocas", "", "XY momentary - sounds while you touch",
+        { "XY momentaneo - suena mientras tocas", "XY momentáneo - suena mientras tocas", "XY momentary - sounds while you touch",
                                                       "XY 瞬时 - 触摸时发声", "XY لحظي - يعمل أثناء اللمس" },
         // --- Los parametros de los efectos ----------------------------
         //  No pasaban por T(): dieciocho rotulos en la cara de la maquina, en
@@ -826,8 +840,8 @@ namespace
         { "BARRIDO",        "",         "SWEEP",      "扫频",       "مسح" },
         { "fuera",          "",         "off",        "关闭",       "خارج" },
         { "RESO",           "",         "RESO",       "共振",       "رنين" },
-        { "FREQ",           "",         "FREQ",       "频率",       "تردد" },
-        { "DRIVE",          "",         "DRIVE",      "驱动",       "إشباع" },
+        { "FREQ",           "FREC",         "FREQ",       "频率",       "تردد" },
+        { "DRIVE",          "SATURA",         "DRIVE",      "驱动",       "إشباع" },
         //  TONE, que llevaba desde que existe DRV sin fila. Pasa por T() como
         //  todos los parametros -`fxDefs[f].param[pi]`- y `T()` cae a la clave
         //  cuando no la encuentra, asi que CTRL 2 de DRV decia «TONE» en las
@@ -842,11 +856,11 @@ namespace
         //  contrasta por el volcado y no por los literales.
         { "TONO|fb",        "TONO",     "TONE",       "音色",       "نغمة" },
         { "ATAQUE|x",       "ATAQUE",   "ATTACK",     "起音",       "هجوم" },
-        { "CAIDA|x",        "CAIDA",    "RELEASE",    "释放",       "تحرير" },
+        { "CAIDA|x",        "CAÍDA",    "RELEASE",    "释放",       "تحرير" },
         { "CENTRO|x",       "CENTRO",   "CENTER",     "中心",       "مركز" },
         { "RECORRIDO|x",    "RECORRIDO","SWEEP",      "幅度",       "مدى" },
         { "RANGO|x",        "RANGO",    "RANGE",      "范围",       "نطاق" },
-        { "RAPIDO|x",       "RAPIDO",   "FAST",       "快",         "سريع" },
+        { "RAPIDO|x",       "RÁPIDO",   "FAST",       "快",         "سريع" },
         { "LENTO|x",        "LENTO",    "SLOW",       "慢",         "بطيء" },
         { "Q|wah",          "Q",        "Q",          "Q",          "Q" },
         { "GRAVES|x",       "GRAVES",   "LOW CUT",    "低切",       "قطع منخفض" },
@@ -855,19 +869,19 @@ namespace
         { "MANDO %1",       "",         "KNOB %1",    "旋钮 %1",    "مقبض %1" },
         { "LIBRE",          "",         "FREE",       "自由",       "حر" },
         { "MANDOS",         "",         "KNOBS",      "旋钮",       "مقابض" },
-        { "GUIA",           "",         "GUIDE",      "指南",       "الدليل" },
-        { "ENSENAMELO",     "",         "SHOW ME",    "演示",       "أرني" },
+        { "GUIA",           "GUÍA",         "GUIDE",      "指南",       "الدليل" },
+        { "ENSENAMELO",     "ENSÉÑAMELO",         "SHOW ME",    "演示",       "أرني" },
         { "RECORRER TODO",  "",         "SHOW ALL",   "全部演示",   "اعرض الكل" },
-        { "Ocho patrones; la cadena decide en que orden suenan y QUITAR CADENA la vacia", "",
+        { "Ocho patrones; la cadena decide en que orden suenan y QUITAR CADENA la vacia", "Ocho patrones; la cadena decide en qué orden suenan y QUITAR CADENA la vacía",
           "Eight patterns; the chain decides their order and CLEAR CHAIN empties it",
           "八个乐句；链决定播放顺序，清除链接将其清空", "ثمانية أنماط؛ السلسلة تحدد ترتيبها و«مسح السلسلة» يفرغها" },
-        { "ATRAS y ADELANTE corren el patron un paso; COPIAR FILA y PEGAR FILA llevan un pad a otro", "",
+        { "ATRAS y ADELANTE corren el patron un paso; COPIAR FILA y PEGAR FILA llevan un pad a otro", "ATRÁS y ADELANTE corren el patrón un paso; COPIAR FILA y PEGAR FILA llevan un pad a otro",
           "BACK and FWD shift the pattern one step; COPY ROW and PASTE ROW carry one pad to another",
           "前移和后移将乐句移动一步；复制该行与粘贴该行把一个音垫搬到另一个", "«للخلف» و«للأمام» تزيحان النمط خطوة؛ «نسخ الصف» و«لصق الصف» تنقلان بادًا إلى آخر" },
-        { "SEL marca un tramo; en el PIANO, LAPIZ escribe, GOMA borra y PAD - y PAD + cambian de pad", "",
+        { "SEL marca un tramo; en el PIANO, LAPIZ escribe, GOMA borra y PAD - y PAD + cambian de pad", "SEL marca un tramo; en el PIANO, LÁPIZ escribe, GOMA borra y PAD - y PAD + cambian de pad",
           "SEL marks a span; in the PIANO, PENCIL writes, ERASE deletes and PAD - and PAD + change pad",
           "选择标出一段；在钢琴中，铅笔写入，橡皮删除，PAD - 与 PAD + 切换音垫", "«تحديد» يعلّم مقطعًا؛ في البيانو «قلم» يكتب و«ممحاة» تمسح وPAD - وPAD + تبدّلان الباد" },
-        { "OIR toca el pad tal y como esta, desde cualquier pagina de su ficha", "",
+        { "OIR toca el pad tal y como esta, desde cualquier pagina de su ficha", "OÍR toca el pad tal y como está, desde cualquier página de su ficha",
           "HEAR plays the pad as it is, from any page of its sheet",
           "试听按当前状态播放音垫，在其面板的任一页均可", "«استمع» يعزف الباد كما هو، من أي صفحة في بطاقته" },
         { "CORTAR lo parte en trozos IGUALES o por GOLPES; RESPETAR PADS CON SONIDO no pisa los llenos", "",
@@ -879,20 +893,20 @@ namespace
         { "SIN CANAL saca el pad de la mesa: va derecho al maestro, sin fader ni efectos", "",
           "NO CHANNEL takes the pad off the mixer: straight to the master, no fader, no effects",
           "无通道让音垫离开调音台：直通总线，不经推子与效果", "«بلا قناة» يُخرج الباد من المازج: يذهب مباشرة إلى الرئيسي بلا مزلاج ولا مؤثرات" },
-        { "CICLO, en la cara, repite el patron; tocala y pasa a ARREGLO, que toca la cancion", "",
+        { "CICLO, en la cara, repite el patron; tocala y pasa a ARREGLO, que toca la cancion", "CICLO, en la cara, repite el patrón; tócala y pasa a ARREGLO, que toca la canción",
           "CYCLE, on the face, loops the pattern; tap it and it turns to ARRANGE, which plays the song",
           "主界面上的循环会重复乐句；点按后变为编排，播放整首歌曲", "«دورة» في الواجهة تكرر النمط؛ المسها فتصير «ترتيب» وتعزف الأغنية" },
-        { "MANDAR, en AJUSTES > MIDI, envia las notas de lo que suena a otro aparato", "",
+        { "MANDAR, en AJUSTES > MIDI, envia las notas de lo que suena a otro aparato", "MANDAR, en AJUSTES > MIDI, envía las notas de lo que suena a otro aparato",
           "SEND, in SETUP > MIDI, sends the notes of what is playing to another device",
           "设置 > MIDI 中的发送会把正在播放的音符传给另一台设备", "«إرسال» في إعداد > ميدي يبعث نغمات ما يُعزف إلى جهاز آخر" },
-        { "TEST da un tono de prueba; la cuenta atras antes de grabar va de OFF a dos compases", "",
+        { "TEST da un tono de prueba; la cuenta atras antes de grabar va de OFF a dos compases", "PRUEBA da un tono de prueba; la cuenta atrás antes de grabar va de OFF a dos compases",
           "TEST plays a test tone; the count-in before recording goes from OFF to two bars",
           "测试会播放测试音；录音前的预备拍可设为 OFF 到两小节", "«اختبار» يطلق نغمة تجريبية؛ العد التنازلي قبل التسجيل من OFF إلى مازورتين" },
-        { "Esta GUIA y los GESTOS viven en AJUSTES > AYUDA", "",
+        { "Esta GUIA y los GESTOS viven en AJUSTES > AYUDA", "Esta GUÍA y los GESTOS viven en AJUSTES > AYUDA",
           "This GUIDE and the GESTURES live in SETUP > HELP",
           "本指南与手势位于 设置 > 帮助", "هذا الدليل والإيماءات في إعداد > مساعدة" },
         { "TOCA UN MANDO PARA LLEVARLO AL PLATO", "", "TAP A KNOB TO PUT IT ON THE PLATE", "点按旋钮放到面板上", "المس مقبضًا لوضعه على اللوحة" },
-        { "%1 efectos por canal; el menu de la ranura los ordena por familias", "",
+        { "%1 efectos por canal; el menu de la ranura los ordena por familias", "%1 efectos por canal; el menú de la ranura los ordena por familias",
           "%1 effects per channel; the slot menu sorts them by family",
           "每个通道 %1 个效果；插槽菜单按类别排列",
           "%1 مؤثرًا لكل قناة؛ قائمة الخانة ترتبها حسب العائلة" },
@@ -900,23 +914,23 @@ namespace
           "%2 channels, and each carries its %1 effects, reverb included",
           "%2 个通道，每个都有自己的 %1 个效果，包括混响",
           "%2 قناة، ولكل منها %1 مؤثرًا، بما فيها الصدى" },
-        { "ABRIR y NUEVO avisan antes de tirar lo que no esta guardado", "",
+        { "ABRIR y NUEVO avisan antes de tirar lo que no esta guardado", "ABRIR y NUEVO avisan antes de tirar lo que no está guardado",
           "OPEN and NEW warn you before throwing away anything unsaved",
           "打开和新建会在丢弃未保存内容前提醒你",
           "فتح وجديد ينبهانك قبل التخلي عما لم يُحفظ" },
-        { "AUTOMATIZACION", "",
+        { "AUTOMATIZACION", "AUTOMATIZACIÓN",
           "AUTOMATION",
           "自动化",
           "الأتمتة" },
-        { "Arma AUTO y pon la cancion en marcha: lo que muevas se escribe en su paso", "",
+        { "Arma AUTO y pon la cancion en marcha: lo que muevas se escribe en su paso", "Arma AUTO y pon la canción en marcha: lo que muevas se escribe en su paso",
           "Arm AUTO and start the song: whatever you move is written at its step",
           "开启 AUTO 并播放歌曲：你调节的内容会写在对应的步上",
           "فعّل AUTO وشغّل الأغنية: كل ما تحركه يُكتب في خطوته" },
-        { "Arma AUTO, pon la cancion en marcha y mueve un mando: queda escrito en su paso. Parar desarma, y mantener AUTO la vacia.", "",
+        { "Arma AUTO, pon la cancion en marcha y mueve un mando: queda escrito en su paso. Parar desarma, y mantener AUTO la vacia.", "Arma AUTO, pon la canción en marcha y mueve un mando: queda escrito en su paso. Parar desarma, y mantener AUTO la vacía.",
           "Arm AUTO, start the song and move a knob: it is written at its step. Stopping disarms, and holding AUTO clears it.",
           "开启 AUTO，播放歌曲并转动旋钮：它会写在对应的步上。停止即解除，长按 AUTO 清空。",
           "فعّل AUTO وشغّل الأغنية وحرّك مقبضًا: يُكتب في خطوته. الإيقاف يلغي التفعيل، والضغط المطوّل على AUTO يفرغها." },
-        { "BOMBEO agacha a los demas pads cuando este suena; CHOKE hace que uno calle a otro", "",
+        { "BOMBEO agacha a los demas pads cuando este suena; CHOKE hace que uno calle a otro", "BOMBEO agacha a los demás pads cuando este suena; GRUPO hace que uno calle a otro",
           "PUMP ducks the other pads while this one plays; CHOKE lets one pad silence another",
           "泵压让此音垫发声时压低其他音垫；CHOKE 让一个音垫截断另一个",
           "الضخ يخفض بقية البادات حين يعزف هذا؛ والخنق يجعل بادًا يُسكت آخر" },
@@ -924,19 +938,19 @@ namespace
           "DELETE removes a project from the list",
           "删除会把项目从列表中移除",
           "حذف يزيل مشروعًا من القائمة" },
-        { "CANCION", "",
+        { "CANCION", "CANCIÓN",
           "SONG",
           "歌曲",
           "الأغنية" },
-        { "CINTA o TONO, ganancia, filtro y envolvente. REV lo toca al reves, AUTOCUT corta su golpe anterior y BOMBEO agacha a los demas cuando suena.", "",
+        { "CINTA o TONO, ganancia, filtro y envolvente. REV lo toca al reves, AUTOCUT corta su golpe anterior y BOMBEO agacha a los demas cuando suena.", "CINTA o TONO, ganancia, filtro y envolvente. REV lo toca al revés, AUTOCUT corta su golpe anterior y BOMBEO agacha a los demás cuando suena.",
           "TAPE or PITCH, gain, filter and envelope. REV plays it backwards, AUTOCUT cuts its previous hit and PUMP ducks the rest while it plays.",
           "磁带或音高、增益、滤波与包络。REV 倒放，AUTOCUT 截断它的上一次触发，泵压在它发声时压低其他音垫。",
           "شريط أو نغمة، الكسب والمرشح والغلاف. REV يعزفه معكوسًا، وAUTOCUT يقطع ضربته السابقة، والضخ يخفض البقية حين يعزف." },
-        { "CLIC, en la vista de audio de la CANCION, es el metronomo", "",
+        { "CLIC, en la vista de audio de la CANCION, es el metronomo", "CLIC, en la vista de audio de la CANCIÓN, es el metrónomo",
           "CLICK, in the SONG audio view, is the metronome",
           "歌曲音频视图中的 CLICK 就是节拍器",
           "النقرة، في عرض الصوت للأغنية، هي المسرّع" },
-        { "COMPARTIR, en EXPORTAR, manda el ultimo rebote a otra app", "",
+        { "COMPARTIR, en EXPORTAR, manda el ultimo rebote a otra app", "COMPARTIR, en EXPORTAR, manda el último rebote a otra app",
           "SHARE, in EXPORT, sends the last bounce to another app",
           "导出中的分享会把最近一次导出发送到其他应用",
           "مشاركة، في التصدير، ترسل آخر تصدير إلى تطبيق آخر" },
@@ -956,7 +970,7 @@ namespace
           "THE TEMPO",
           "速度",
           "الإيقاع" },
-        { "ENSENAMELO, en cada capitulo de esta guia, lo vuelve a senalar", "",
+        { "ENSENAMELO, en cada capitulo de esta guia, lo vuelve a senalar", "ENSÉÑAMELO, en cada capítulo de esta guía, lo vuelve a señalar",
           "SHOW ME, in every chapter of this guide, points it out again",
           "本指南每一章的「演示」会再次指给你看",
           "أرني، في كل فصل من هذا الدليل، يشير إليه من جديد" },
@@ -964,11 +978,11 @@ namespace
           "The EQ has five bands: drag a node, or hold it to open its band",
           "EQ 有五个频段：拖动节点，或长按打开该频段",
           "للمعادل خمس نطاقات: اسحب عقدة، أو اضغط عليها مطولًا لفتح نطاقها" },
-        { "El idioma y las cuatro carcasas. Y la GUIA, que cuenta todo esto con calma y lo vuelve a ensenar capitulo a capitulo.", "",
+        { "El idioma y las cuatro carcasas. Y la GUIA, que cuenta todo esto con calma y lo vuelve a ensenar capitulo a capitulo.", "El idioma y las cuatro carcasas. Y la GUÍA, que cuenta todo esto con calma y lo vuelve a enseñar capítulo a capítulo.",
           "The language and the four skins. And the GUIDE, which tells all this calmly and shows it again chapter by chapter.",
           "语言和四种外壳。还有指南，它会从容地讲解这一切，并逐章再演示一遍。",
           "اللغة والأغلفة الأربعة. والدليل، الذي يشرح كل هذا بهدوء ويعيد عرضه فصلًا فصلًا." },
-        { "GRABAR MIC hace lo mismo con el microfono desde la ficha", "",
+        { "GRABAR MIC hace lo mismo con el microfono desde la ficha", "GRABAR MIC hace lo mismo con el micrófono desde la ficha",
           "REC MIC does the same with the microphone from the card",
           "录麦克风在卡片里对麦克风做同样的事",
           "تسجيل الميكروفون يفعل الشيء نفسه بالميكروفون من البطاقة" },
@@ -988,7 +1002,7 @@ namespace
           "SAVE puts the project, samples included, in the library",
           "保存会把项目连同采样放进资料库",
           "حفظ يضع المشروع مع عيناته في المكتبة" },
-        { "GUARDAR mete el proyecto con sus muestras. ABRIR y NUEVO avisan antes de tirar lo que no esta guardado.", "",
+        { "GUARDAR mete el proyecto con sus muestras. ABRIR y NUEVO avisan antes de tirar lo que no esta guardado.", "GUARDAR mete el proyecto con sus muestras. ABRIR y NUEVO avisan antes de tirar lo que no está guardado.",
           "SAVE stores the project with its samples. OPEN and NEW warn you before throwing away anything unsaved.",
           "保存会连同采样存下项目。打开和新建会在丢弃未保存内容前提醒你。",
           "حفظ يخزن المشروع مع عيناته. فتح وجديد ينبهانك قبل التخلي عما لم يُحفظ." },
@@ -1004,7 +1018,7 @@ namespace
           "Latency, block size and MEASURE, which really measures it. QUANTIZE puts your hits on the grid.",
           "延迟、缓冲块和测量，它会真实地测出延迟。量化会把你的敲击对齐到网格。",
           "الكمون والكتلة وقياس، الذي يقيسه فعلًا. التكميم يضع ضرباتك على الشبكة." },
-        { "La mesa tiene los PADS y %2 CANALES: cada pad entra en uno, y cada canal lleva sus %1 efectos, la reverb incluida. El RACK dice cuanto de cada canal pasa por cada uno, y cuales sustituyen y cuales suman.", "",
+        { "La mesa tiene los PADS y %2 CANALES: cada pad entra en uno, y cada canal lleva sus %1 efectos, la reverb incluida. El RACK dice cuanto de cada canal pasa por cada uno, y cuales sustituyen y cuales suman.", "La mesa tiene los PADS y %2 CANALES: cada pad entra en uno, y cada canal lleva sus %1 efectos, la reverb incluida. El RACK dice cuánto de cada canal pasa por cada uno, y cuáles sustituyen y cuáles suman.",
           "The mixer has the PADS and %2 CHANNELS: each pad goes into one, and each channel carries its %1 effects, reverb included. The RACK says how much of each channel goes through each one, and which replace and which add.",
           "调音台有音垫和 %2 个通道：每个音垫进入一个通道，每个通道都有自己的 %1 个效果，包括混响。机架决定每个通道有多少经过每个效果，以及哪些替换、哪些叠加。",
           "للمازج البادات و%2 قناة: كل باد يدخل في واحدة، ولكل قناة %1 مؤثرًا بما فيها الصدى. والرف يحدد كم يمر من كل قناة عبر كل مؤثر، وأيها يستبدل وأيها يضيف." },
@@ -1036,19 +1050,19 @@ namespace
           "MIXER AND CHANNELS",
           "调音台与通道",
           "المازج والقنوات" },
-        { "Manten AUTO para vaciar la automatizacion", "",
+        { "Manten AUTO para vaciar la automatizacion", "Mantén AUTO para vaciar la automatización",
           "Hold AUTO to clear the automation",
           "长按 AUTO 清空自动化",
           "اضغط مطولًا على AUTO لإفراغ الأتمتة" },
-        { "Manten un mando del plato y salen todos los del efecto, con su SYNC y sus PRESETS. Toca uno y se queda en ese mando del plato.", "",
+        { "Manten un mando del plato y salen todos los del efecto, con su SYNC y sus PRESETS. Toca uno y se queda en ese mando del plato.", "Mantén un mando del plato y salen todos los del efecto, con su SYNC y sus PRESETS. Toca uno y se queda en ese mando del plato.",
           "Hold a plate knob and all of the effect's knobs appear, with its SYNC and PRESETS. Tap one and it stays on that plate knob.",
           "长按面板上的旋钮，效果的所有旋钮都会出现，还有 SYNC 和预设。点按其中一个，它就留在那个面板旋钮上。",
           "اضغط مطولًا على مقبض في اللوحة فتظهر كل مقابض المؤثر مع المزامنة والإعدادات. المس واحدًا فيبقى على ذلك المقبض." },
-        { "Manten un mando del plato: salen todos, con SYNC y PRESETS, y el que toques se queda", "",
+        { "Manten un mando del plato: salen todos, con SYNC y PRESETS, y el que toques se queda", "Mantén un mando del plato: salen todos, con SYNC y PRESETS, y el que toques se queda",
           "Hold a plate knob: all of them appear, with SYNC and PRESETS, and the one you tap stays",
           "长按面板旋钮：全部旋钮连同 SYNC 和预设都会出现，点按的那个会留下",
           "اضغط مطولًا على مقبض في اللوحة: تظهر كلها مع المزامنة والإعدادات، والذي تلمسه يبقى" },
-        { "PRESETS trae los de fabrica y guarda los tuyos", "",
+        { "PRESETS trae los de fabrica y guarda los tuyos", "PRESETS trae los de fábrica y guarda los tuyos",
           "PRESETS brings the factory ones and saves yours",
           "预设提供出厂预设，也能保存你自己的",
           "الإعدادات تجلب إعدادات المصنع وتحفظ إعداداتك" },
@@ -1056,19 +1070,19 @@ namespace
           "Stopping disarms, so a good take is not erased by accident",
           "停止即解除，以免误删一次好的录制",
           "الإيقاف يلغي التفعيل، كي لا تُمحى تسجيلة جيدة دون قصد" },
-        { "REC graba lo que oye el microfono en el pad elegido", "",
+        { "REC graba lo que oye el microfono en el pad elegido", "REC graba lo que oye el micrófono en el pad elegido",
           "REC records what the microphone hears onto the chosen pad",
           "REC 把麦克风听到的声音录到所选音垫",
           "REC يسجل ما يسمعه الميكروفون في الباد المختار" },
-        { "REMUESTREAR, en la ficha del pad, graba a un pad lo que suena la maquina", "",
+        { "REMUESTREAR, en la ficha del pad, graba a un pad lo que suena la maquina", "REMUESTREAR, en la ficha del pad, graba a un pad lo que suena la máquina",
           "RESAMPLE, in the pad card, records what the machine plays onto a pad",
           "音垫卡片里的重采样会把机器正在播放的声音录到一个音垫",
           "إعادة الأخذ، في بطاقة الباد، تسجل ما تعزفه الآلة في باد" },
-        { "REV lo toca al reves; AUTOCUT corta su golpe anterior", "",
+        { "REV lo toca al reves; AUTOCUT corta su golpe anterior", "REV lo toca al revés; AUTOCUT corta su golpe anterior",
           "REV plays it backwards; AUTOCUT cuts its previous hit",
           "REV 倒放；AUTOCUT 截断它的上一次触发",
           "REV يعزفه معكوسًا؛ وAUTOCUT يقطع ضربته السابقة" },
-        { "TAP marca el tempo tocando al ritmo. En la vista de audio de la CANCION, CLIC pone el metronomo mientras grabas.", "",
+        { "TAP marca el tempo tocando al ritmo. En la vista de audio de la CANCION, CLIC pone el metronomo mientras grabas.", "TAP marca el tempo tocando al ritmo. En la vista de audio de la CANCIÓN, CLIC pone el metrónomo mientras grabas.",
           "TAP sets the tempo as you tap along. In the SONG audio view, CLICK turns on the metronome while you record.",
           "TAP 跟着节奏点按来设定速度。在歌曲的音频视图中，CLICK 会在录音时开启节拍器。",
           "TAP يضبط الإيقاع بالنقر مع الإيقاع. في عرض الصوت للأغنية، النقرة تشغل المسرّع أثناء التسجيل." },
@@ -1080,7 +1094,7 @@ namespace
           "Tap the effect's name on the plate and the three knobs move to the chosen pad",
           "点按面板上的效果名称，三个旋钮就转到所选音垫",
           "المس اسم المؤثر في اللوحة فتنتقل المقابض الثلاثة إلى الباد المختار" },
-        { "Un evento por paso y por mando, y el ultimo gana", "",
+        { "Un evento por paso y por mando, y el ultimo gana", "Un evento por paso y por mando, y el último gana",
           "One event per step and per knob, and the last one wins",
           "每步每个旋钮一个事件，以最后一个为准",
           "حدث واحد لكل خطوة ولكل مقبض، والأخير هو الذي يبقى" },
@@ -1092,12 +1106,12 @@ namespace
           "A wired keyboard plays the pads, and what plays goes out as notes to another device.",
           "有线键盘可以演奏音垫，正在播放的内容会作为音符发送到其他设备。",
           "لوحة مفاتيح موصولة بسلك تعزف البادات، وما يعزف يخرج نغمات إلى جهاز آخر." },
-        { "TIME",           "",         "TIME",       "时间",       "زمن" },
-        { "FBK",            "",         "FBK",        "反馈",       "ارتجاع" },
+        { "TIME",           "TIEMPO",         "TIME",       "时间",       "زمن" },
+        { "FBK",            "REALIM",         "FBK",        "反馈",       "ارتجاع" },
         { "BITS",           "",         "BITS",       "位深",       "بِتّات" },
-        { "RATE",           "",         "RATE",       "采样率",     "معدل" },
-        { "SIZE",           "",         "SIZE",       "空间",       "حجم" },
-        { "DAMP",           "",         "DAMP",       "阻尼",       "تخميد" },
+        { "RATE",           "MUESTREO",         "RATE",       "采样率",     "معدل" },
+        { "SIZE",           "TAMAÑO",         "SIZE",       "空间",       "حجم" },
+        { "DAMP",           "AMORT.",         "DAMP",       "阻尼",       "تخميد" },
         { "PREVIO",         "",         "PREDELAY",   "预延迟",     "تأخير أولي" },
         { "VOCAL",          "",         "VOWEL",      "元音",       "حرف علة" },
         { "PLIEGUE",        "",         "FOLD",       "折叠",       "طي" },
@@ -1162,21 +1176,21 @@ namespace
     { "ALIENTO|ins",           "",           "BREATH",       "气息",           "نفَس" },
     { "ANCHO|ins",           "",           "WIDTH",        "宽度",          "عرض" },
     { "ARCO|ins",            "",           "BOW",          "弓压",          "قوس" },
-    { "ARMONICO|ins",        "",           "HARM",         "泛音",          "توافقي" },
+    { "ARMONICO|ins",        "ARMÓNICO",           "HARM",         "泛音",          "توافقي" },
     { "ATAQUE|ins",          "",           "ATTACK",       "起音",          "هجوم" },
     { "BALANCE|ins",         "",           "BALANCE",      "平衡",          "توازن" },
     { "BARRIDO|ins",           "",           "SWEEP",        "扫频",           "مسح" },
     { "BRILLO|ins",          "",           "TONE",         "亮度",          "سطوع" },
-    { "CAIDA|ins",           "",           "DECAY",        "衰减",          "تلاشٍ" },
+    { "CAIDA|ins",           "CAÍDA",           "DECAY",        "衰减",          "تلاشٍ" },
     { "CAE EN|ins",          "",           "DECAY TO",     "衰减至",         "يتلاشى إلى" },
-    { "CAIDA ENV|ins",       "",           "DECAY",        "包络衰减",        "تلاشي الغلاف" },
-    { "CAIDA TONO|ins",      "",           "PITCH DEC",    "音高衰减",        "تلاشي النغمة" },
+    { "CAIDA ENV|ins",       "CAÍDA ENV",           "DECAY",        "包络衰减",        "تلاشي الغلاف" },
+    { "CAIDA TONO|ins",      "CAÍDA TONO",           "PITCH DEC",    "音高衰减",        "تلاشي النغمة" },
     { "CAJA|ins",              "",           "BOARD",        "音板",           "لوح" },
     { "CENTRO|ins",          "",           "CENTRE",       "中心",          "مركز" },
     { "CHIFF|ins",             "",           "CHIFF",        "气声",           "نفخة" },
     { "CIERRE|ins",            "",           "CLOSE",        "闭合",           "إغلاق" },
     { "CRIN|ins",              "",           "HAIR",         "弓毛",           "شعر" },
-    { "CUANTOS|ins",         "",           "COUNT",        "数量",          "عدد" },
+    { "CUANTOS|ins",         "CUÁNTOS",           "COUNT",        "数量",          "عدد" },
     { "CUERPO|ins",          "",           "BODY",         "共鸣",          "جسم" },
     { "DEDO|ins",            "",           "PLUCK",        "拨弦",          "نقر" },
     { "DESAFINE|ins",        "",           "DETUNE",       "失谐",          "إزاحة" },
@@ -1189,10 +1203,10 @@ namespace
     { "GEMELA|ins",            "",           "TWIN",         "双弦",           "توأم" },
     { "GOLPE|ins",           "",           "STRIKE",       "敲击",          "ضربة" },
     { "IMPARES|ins",         "",           "ODD",          "奇次",          "فردي" },
-    { "INARMONICO|ins",      "",           "INHARM",       "非谐",          "لاتوافقي" },
+    { "INARMONICO|ins",      "INARMÓNICO",           "INHARM",       "非谐",          "لاتوافقي" },
     { "INCLINA|ins",         "",           "TILT",         "倾斜",          "ميل" },
-    { "INDICE|ins",          "",           "INDEX",        "指数",          "مؤشر" },
-    { "LENGUETA|ins",          "",           "REED",         "簧片",           "ريشة" },
+    { "INDICE|ins",          "ÍNDICE",           "INDEX",        "指数",          "مؤشر" },
+    { "LENGUETA|ins",          "LENGÜETA",           "REED",         "簧片",           "ريشة" },
     { "LESLIE|ins",          "",           "LESLIE",       "旋转",          "ليزلي" },
     { "MARTILLO|ins",        "",           "HAMMER",       "音锤",          "مطرقة" },
     { "MEZCLA|ins",            "",           "MIXTURE",      "混合",           "مزيج" },
@@ -1203,23 +1217,23 @@ namespace
     { "PARCIAL 2|ins",       "",           "PART 2",       "分音 2",        "جزئي 2" },
     { "PASO ALTO|ins",       "",           "HI PASS",      "高通",          "تمرير عال" },
     { "PERCU|ins",           "",           "PERC",         "打击",          "طرق" },
-    { "PERDIDA|ins",         "",           "LOSS",         "损耗",          "فقد" },
+    { "PERDIDA|ins",         "PÉRDIDA",           "LOSS",         "损耗",          "فقد" },
     { "PROFUNDO|ins",        "",           "DEPTH",        "深度",          "عمق" },
     { "PULSO|ins",           "",           "PULSE",        "脉宽",          "نبضة" },
     { "Q|ins",               "",           "Q",            "Q",           "Q" },
     { "QUINTA|ins",            "",           "FIFTH",        "五度",           "خامسة" },
-    { "RAZON|ins",           "",           "RATIO",        "比率",          "نسبة" },
-    { "RAZON 1|ins",         "",           "RATIO 1",      "比率 1",        "نسبة 1" },
-    { "RAZON 2|ins",         "",           "RATIO 2",      "比率 2",        "نسبة 2" },
-    { "RAZON A|ins",           "",           "RATIO A",      "比率 A",         "نسبة أ" },
-    { "RAZON B|ins",           "",           "RATIO B",      "比率 B",         "نسبة ب" },
+    { "RAZON|ins",           "RAZÓN",           "RATIO",        "比率",          "نسبة" },
+    { "RAZON 1|ins",         "RAZÓN 1",           "RATIO 1",      "比率 1",        "نسبة 1" },
+    { "RAZON 2|ins",         "RAZÓN 2",           "RATIO 2",      "比率 2",        "نسبة 2" },
+    { "RAZON A|ins",           "RAZÓN A",           "RATIO A",      "比率 A",         "نسبة أ" },
+    { "RAZON B|ins",           "RAZÓN B",           "RATIO B",      "比率 B",         "نسبة ب" },
     { "REALIMENTA|ins",        "",           "FEEDBACK",     "反馈",           "تغذية" },
     { "RESO|ins",            "",           "RESO",         "共振",          "رنين" },
     { "RUIDO|ins",           "",           "NOISE",        "噪声",          "ضجيج" },
     { "SATURA|ins",          "",           "DRIVE",        "驱动",          "إشباع" },
     { "SENS|ins",            "",           "SENS",         "力度灵敏",        "حساسية" },
-    { "SIMPATICAS|ins",        "",           "SYMPATH",      "共鸣弦",          "متعاطفة" },
-    { "SOSTEN|ins",          "",           "SUSTAIN",      "延音",          "استمرار" },
+    { "SIMPATICAS|ins",        "SIMPÁTICAS",           "SYMPATH",      "共鸣弦",          "متعاطفة" },
+    { "SOSTEN|ins",          "SOSTÉN",           "SUSTAIN",      "延音",          "استمرار" },
     { "SOBREPASO|ins",       "",           "OVERSHOOT",    "超冲",          "تجاوز" },
     { "SOPLO|ins",           "",           "BLOW",         "气流",          "نفخ" },
     { "SUB|ins",             "",           "SUB",          "超低",          "تحت" },
@@ -1237,14 +1251,14 @@ namespace
         //  cuatro lenguas se dice igual y es la abreviatura que cualquier
         //  aparato usa para la automatizacion, como MIDI o XY.
         { "AUTO",           "",         "AUTO",       "AUTO",       "AUTO" },
-        { "AUTO grabando - manten pulsado para borrar", "",
+        { "AUTO grabando - manten pulsado para borrar", "AUTO grabando - mantén pulsado para borrar",
           "AUTO recording - hold to clear",
           "AUTO 录制中 - 长按清除",
           "AUTO يسجل - اضغط مطولا للمسح" },
         { "AUTO: %1 eventos", "",       "AUTO: %1 events",
                                                       "AUTO：%1 个事件",
                                                                   "AUTO: %1 حدث" },
-        { "AUTO vacio",     "",         "AUTO cleared", "AUTO 已清空", "AUTO فارغ" },
+        { "AUTO vacio",     "AUTO vacío",         "AUTO cleared", "AUTO 已清空", "AUTO فارغ" },
         { "AUTO lleno: %1 eventos", "", "AUTO full: %1 events",
                                                       "AUTO 已满：%1 个事件",
                                                                   "AUTO ممتلئ: %1 حدث" },
@@ -1263,7 +1277,7 @@ namespace
                                                                   "المس خطوة في صفحة الخطوات لتحريرها" },
         { "editando el paso %1", "",    "editing step %1",
                                                       "正在编辑第 %1 步", "تحرير الخطوة %1" },
-        { "PATRON",         "",         "PATTERN",    "乐句",       "نمط" },
+        { "PATRON",         "PATRÓN",         "PATTERN",    "乐句",       "نمط" },
         { "LARGO",          "",         "LENGTH",     "长度",       "الطول" },
         { "CADENA",         "",         "CHAIN",      "链接",       "سلسلة" },
         { "NOTA DEL PASO",  "",         "STEP NOTE",  "该步音符", "نغمة الخطوة" },
@@ -1279,7 +1293,7 @@ namespace
           "Pad %1 row copied", "已复制音垫 %1 的行", "تم نسخ صف الباد %1" },
         { "Fila pegada en el pad %1", "",
           "Row pasted into pad %1", "已粘贴到音垫 %1", "تم لصق الصف في الباد %1" },
-        { "LAPIZ",          "",         "PENCIL",     "铅笔",       "قلم" },
+        { "LAPIZ",          "LÁPIZ",         "PENCIL",     "铅笔",       "قلم" },
         { "GOMA",           "",         "ERASE",      "橡皮",       "ممحاة" },
         { "TIJERAS",        "",         "CUT",        "剪刀",       "مقص" },
         { "LUPA",           "",         "ZOOM",       "缩放",       "تكبير" },
@@ -1296,7 +1310,7 @@ namespace
         { "Tramo cortado", "",
           "Range cut", "区段已剪切", "تم قص المقطع" },
         { "CLIP",           "",         "CLIP",       "片段",       "مقطع" },
-        { "Fila vacia",     "",         "Row cleared", "该行已清空", "تم مسح الصف" },
+        { "Fila vacia",     "Fila vacía",         "Row cleared", "该行已清空", "تم مسح الصف" },
         { "%1 golpes repartidos en %2 pasos", "",
           "%1 hits spread over %2 steps", "%1 个音符分布在 %2 步中",
           "%1 ضربات موزعة على %2 خطوة" },
@@ -1324,15 +1338,15 @@ namespace
         { "LA REJILLA DE PASOS", "",    "THE STEP GRID", "步进网格", "شبكة الخطوات" },
         { "LO QUE HACE UN PASO", "",    "WHAT A STEP DOES", "每一步的作用", "ما تفعله الخطوة" },
         { "EL PIANO",       "",         "THE PIANO",  "钢琴",       "البيانو" },
-        { "EL PATRON ENTERO", "",       "THE WHOLE PATTERN", "整个图案", "النمط كله" },
+        { "EL PATRON ENTERO", "EL PATRÓN ENTERO",       "THE WHOLE PATTERN", "整个图案", "النمط كله" },
         { "DENTRO DE UN PAD", "",       "INSIDE A PAD", "音垫内部", "داخل الباد" },
         { "LA MESA Y EL RACK", "",      "MIXER AND RACK", "混音台与机架", "المازج والرف" },
-        { "LA CANCION",     "",         "THE SONG",   "歌曲",       "الأغنية" },
-        { "SACARLO DE AQUI", "",        "TAKE IT OUT", "导出成品", "أخرجه من هنا" },
-        { "Y LO DEMAS",     "",         "AND THE REST", "其余部分", "وما تبقى" },
+        { "LA CANCION",     "LA CANCIÓN",         "THE SONG",   "歌曲",       "الأغنية" },
+        { "SACARLO DE AQUI", "SACARLO DE AQUÍ",        "TAKE IT OUT", "导出成品", "أخرجه من هنا" },
+        { "Y LO DEMAS",     "Y LO DEMÁS",         "AND THE REST", "其余部分", "وما تبقى" },
 
         { "Un sampler entero en el telefono. Este recorrido senala cada pieza en su "
-          "sitio; se salta cuando quieras y se vuelve a abrir desde AJUSTES.", "",
+          "sitio; se salta cuando quieras y se vuelve a abrir desde AJUSTES.", "Un sampler entero en el teléfono. Este recorrido señala cada pieza en su sitio; se salta cuando quieras y se vuelve a abrir desde AJUSTES.",
           "A whole sampler on your phone. This tour points at each piece where it "
           "actually is; skip it whenever you like and reopen it from SETTINGS.",
           "手机上的完整采样器。本导览会逐一指出每个部件的实际位置；可随时跳过，也可在设置中重新打开。",
@@ -1340,14 +1354,14 @@ namespace
           "تخطَّها متى شئت وأعد فتحها من الإعدادات." },
 
         { "Dieciseis a la vista. Toca uno y suena; mantenlo pulsado y se abre todo "
-          "lo que se le puede hacer.", "",
+          "lo que se le puede hacer.", "Dieciséis a la vista. Toca uno y suena; mantenlo pulsado y se abre todo lo que se le puede hacer.",
           "Sixteen on screen. Tap one and it sounds; hold it and everything you can "
           "do to it opens up.",
           "屏幕上十六个。轻触即发声；长按可打开该音垫的全部设置。",
           "ستة عشر على الشاشة. المس واحدًا فيصدر صوتًا؛ واستمر بالضغط ليفتح كل ما يمكن فعله به." },
 
         { "A, B, C y D: sesenta y cuatro pads en total. La rejilla ensena uno y "
-          "los otros tres siguen sonando.", "",
+          "los otros tres siguen sonando.", "A, B, C y D: sesenta y cuatro pads en total. La rejilla enseña uno y los otros tres siguen sonando.",
           "A, B, C and D: sixty-four pads in all. The grid shows one and the other "
           "three keep playing.",
           "A、B、C、D 共六十四个音垫。网格只显示一组，其余三组照常发声。",
@@ -1360,7 +1374,7 @@ namespace
         //  ninguna regla lo viera. Los quince pasos llegan por INDICE.
         { "CARGAR trae un fichero a un pad. REC graba lo que oiga el microfono. "
           "PLAY pone en marcha el patron. Con esto ya se toca: EMPEZAR cierra "
-          "esto y VER MAS sigue con el secuenciador, los efectos y lo demas.", "",
+          "esto y VER MAS sigue con el secuenciador, los efectos y lo demas.", "CARGAR trae un fichero a un pad. REC graba lo que oiga el micrófono. PLAY pone en marcha el patrón. Con esto ya se toca: EMPEZAR cierra esto y VER MÁS sigue con el secuenciador, los efectos y lo demás.",
           "LOAD brings a file into a pad. REC records whatever the microphone "
           "hears. PLAY starts the pattern. That is enough to play: START closes "
           "this and MORE goes on with the sequencer, the effects and the rest.",
@@ -1374,7 +1388,7 @@ namespace
         //  que entra: se dice lo que la fila ES y no cuantos hay dentro.
         { "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
           "y lo abre. Son del CANAL en el que este el pad que tengas elegido: "
-          "cambiar de pad cambia la fila.", "",
+          "cambiar de pad cambia la fila.", "Seis ranuras y un menú de efectos para llenarlas. Una vacía pone «+» y lo abre. Son del CANAL en el que esté el pad que tengas elegido: cambiar de pad cambia la fila.",
           "Six slots and a menu of effects to fill them. An empty one shows «+» "
           "and opens it. They belong to the CHANNEL the pad you picked is in: "
           "changing pad changes the row.",
@@ -1384,7 +1398,7 @@ namespace
           "للقناة التي فيها الباد المختار: تغيير الباد يغير الصف." },
 
         { "Dieciseis pasos por dieciseis pads. Toca una casilla y ese pad suena "
-          "ahi; arrastra el dedo para escribir varias seguidas.", "",
+          "ahi; arrastra el dedo para escribir varias seguidas.", "Dieciséis pasos por dieciséis pads. Toca una casilla y ese pad suena ahí; arrastra el dedo para escribir varias seguidas.",
           "Sixteen steps by sixteen pads. Tap a cell and that pad plays there; "
           "drag your finger to write several in a row.",
           "十六步乘十六个音垫。点触格子即让该音垫在此发声；拖动手指可连续写入多个。",
@@ -1392,7 +1406,7 @@ namespace
           "واسحب إصبعك لكتابة عدة خانات متتالية." },
 
         { "Con un paso tocado aparecen debajo sus mandos: nota, fuerza, "
-          "repeticion, filtro y los cuatro bloqueos.", "",
+          "repeticion, filtro y los cuatro bloqueos.", "Con un paso tocado aparecen debajo sus mandos: nota, fuerza, repetición, filtro y los cuatro bloqueos.",
           "With a step selected its controls appear underneath: note, velocity, "
           "roll, filter and the four p-locks.",
           "选中某一步后，其参数会出现在下方：音高、力度、连打、滤波与四项参数锁定。",
@@ -1401,7 +1415,7 @@ namespace
         { "La misma musica por tono en vez de por pasos. Varias notas en una "
           "columna son un acorde, y arrastrando se estira lo que dura cada una. "
           "La regla de arriba coge un tramo entero y un toque en ella marca donde "
-          "pega; pellizca para ver de medio compas a cuatro.", "",
+          "pega; pellizca para ver de medio compas a cuatro.", "La misma música por tono en vez de por pasos. Varias notas en una columna son un acorde, y arrastrando se estira lo que dura cada una. La regla de arriba coge un tramo entero y un toque en ella marca donde pega; pellizca para ver de medio compás a cuatro.",
           "The same music by pitch instead of by step. Several notes in one column "
           "make a chord, and dragging stretches how long each one lasts. The ruler "
           "on top grabs a whole span and a tap on it marks where paste lands; pinch "
@@ -1413,7 +1427,7 @@ namespace
           "تعلّم موضع اللصق؛ اقرص لترى من نصف مازورة إلى أربع." },
 
         { "Aqui vive lo que le pasa al patron entero: cadena, desplazar, doblar, "
-          "humanizar, copiar y pegar, swing y rejilla.", "",
+          "humanizar, copiar y pegar, swing y rejilla.", "Aquí vive lo que le pasa al patrón entero: cadena, desplazar, doblar, humanizar, copiar y pegar, swing y rejilla.",
           "This is where whatever happens to the whole pattern lives: chain, nudge, "
           "double, humanise, copy and paste, swing and grid.",
           "这里是作用于整个图案的操作：链接、位移、加倍、人性化、复制粘贴、摇摆与网格。",
@@ -1437,7 +1451,7 @@ namespace
           "يشغلها: يُقسّم بالمقص ويُنسخ نصفه." },
 
         { "La mezcla entera o una pista por pad, en WAV o en OGG, y a la carpeta "
-          "que tu elijas.", "",
+          "que tu elijas.", "La mezcla entera o una pista por pad, en WAV o en OGG, y a la carpeta que tú elijas.",
           "The whole mix or one track per pad, as WAV or OGG, and into whichever "
           "folder you choose.",
           "可导出整体混音或每个音垫一条分轨，格式为 WAV 或 OGG，并写入你选择的文件夹。",
@@ -1458,7 +1472,7 @@ namespace
         { "Esa carpeta no deja escribir - prueba otra", "",
           "That folder will not accept a write - try another",
           "该文件夹不可写，请换一个", "هذا المجلد لا يقبل الكتابة - جرّب غيره" },
-        { "El rebote caera en %1", "",
+        { "El rebote caera en %1", "El rebote caerá en %1",
           "The bounce will land in %1",
           "导出将写入 %1", "سيقع التصدير في %1" },
         //  Las dos hermanas, de la misma tanda: ver ProjectStore::Carpeta.
@@ -1485,32 +1499,32 @@ namespace
         //  EMPEZAR es el titulo del primer capitulo del manual. Una clave que
         //  se reaprovecha por parecerse en espanol sale mal en las otras tres.
         { "TOUR",           "",         "TOUR",       "导览",       "جولة" },
-        { "TOUR ATRAS",     "ATRAS",    "BACK",       "返回",       "رجوع" },
+        { "TOUR ATRAS",     "ATRÁS",    "BACK",       "返回",       "رجوع" },
         { "SALTAR",         "",         "SKIP",       "跳过",       "تخطٍ" },
         { "SIGUIENTE",      "",         "NEXT",       "下一步",     "التالي" },
         { "TOUR EMPEZAR",   "EMPEZAR",  "START",      "开始",       "ابدأ" },
         //  LA PUERTA A LOS ONCE QUE QUEDAN. Clave propia, como ATRAS y
         //  EMPEZAR y por lo mismo: «VER MAS» suelto se reaprovecharia el dia
         //  que otra pantalla necesite decir lo mismo con otro sentido.
-        { "TOUR VER MAS",   "VER MAS",  "MORE",       "了解更多",   "المزيد" },
+        { "TOUR VER MAS",   "VER MÁS",  "MORE",       "了解更多",   "المزيد" },
         { "SESENTA Y CUATRO PADS", "",
           "SIXTY-FOUR PADS",
           "六十四个音垫", "أربعة وستون بادًا" },
         { "METE UN SONIDO", "",
           "GET A SOUND IN",
           "载入声音", "أدخل صوتًا" },
-        { "ESCRIBE UN PATRON", "",
+        { "ESCRIBE UN PATRON", "ESCRIBE UN PATRÓN",
           "WRITE A PATTERN",
           "编写图案", "اكتب نمطًا" },
         { "MOLDEA EL SONIDO", "",
           "SHAPE THE SOUND",
           "塑造声音", "شكّل الصوت" },
-        { "SACALO DE AQUI", "",
+        { "SACALO DE AQUI", "SÁCALO DE AQUÍ",
           "TAKE IT OUT",
           "导出成品", "أخرجه من هنا" },
         { "Dieciseis a la vista y cuatro bancos: A, B, C y D. La rejilla ensena "
           "uno y los otros tres siguen sonando. Toca uno y suena; mantenlo "
-          "pulsado y se abre lo que se le puede hacer.", "",
+          "pulsado y se abre lo que se le puede hacer.", "Dieciséis a la vista y cuatro bancos: A, B, C y D. La rejilla enseña uno y los otros tres siguen sonando. Toca uno y suena; mantenlo pulsado y se abre lo que se le puede hacer.",
           "Sixteen on screen and four banks: A, B, C and D. The grid shows one "
           "and the other three keep playing. Tap one and it sounds; hold it and "
           "everything you can do to it opens up.",
@@ -1522,7 +1536,7 @@ namespace
         { "CARGAR trae un fichero, GRABAR toma lo que oiga el microfono y "
           "FABRICA rellena los 64 con sonidos que se sintetizan aqui dentro, "
           "sin ocupar sitio. AUTO CHOP parte un break por sus golpes y lo "
-          "reparte por los pads.", "",
+          "reparte por los pads.", "CARGAR trae un fichero, GRABAR toma lo que oiga el micrófono y FÁBRICA rellena los 64 con sonidos que se sintetizan aquí dentro, sin ocupar sitio. AUTO CHOP parte un break por sus golpes y lo reparte por los pads.",
           "LOAD brings in a file, REC takes whatever the microphone hears, and "
           "FACTORY fills all 64 with sounds synthesised in here, taking up no "
           "space at all. AUTO CHOP splits a break at its hits and spreads it "
@@ -1535,7 +1549,7 @@ namespace
         { "En SEC la rejilla son dieciseis pasos por dieciseis pads: toca una "
           "casilla y suena ahi. Con un paso tocado aparecen debajo sus mandos "
           "- nota, fuerza, repeticion, filtro y los bloqueos. Y en PIANO se "
-          "escribe por tono, con notas que duran lo que quieras.", "",
+          "escribe por tono, con notas que duran lo que quieras.", "En SEC la rejilla son dieciséis pasos por dieciséis pads: toca una casilla y suena ahí. Con un paso tocado aparecen debajo sus mandos - nota, fuerza, repetición, filtro y los bloqueos. Y en PIANO se escribe por tono, con notas que duran lo que quieras.",
           "In SEQ the grid is sixteen steps by sixteen pads: tap a cell and it "
           "plays there. With a step selected its controls appear underneath - "
           "note, velocity, roll, filter and the p-locks. And PIANO writes by "
@@ -1549,7 +1563,7 @@ namespace
         { "Cada pad tiene su filtro y su recorte. Los efectos son de un CANAL: "
           "el pad elige el suyo en sus ajustes, y cambiar de pad cambia la fila "
           "de efectos de la cara. Cuanto pasa por cada uno se pone en el RACK. "
-          "La ficha XY mueve dos a la vez con el dedo.", "",
+          "La ficha XY mueve dos a la vez con el dedo.", "Cada pad tiene su filtro y su recorte. Los efectos son de un CANAL: el pad elige el suyo en sus ajustes, y cambiar de pad cambia la fila de efectos de la cara. Cuánto pasa por cada uno se pone en el RACK. La ficha XY mueve dos a la vez con el dedo.",
           "Every pad has its own filter and its own trim. The effects belong "
           "to a CHANNEL: a pad picks its own in its settings, and changing pad "
           "changes the effect row on the front. How much goes through each one "
@@ -1563,7 +1577,7 @@ namespace
           "«الرف». وبطاقة XY تحرك اثنين منها معًا بإصبع واحد." },
         { "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. "
           "El proyecto se guarda solo, y en AJUSTES estan el idioma, las cuatro "
-          "carcasas y el MANUAL, que cuenta todo esto con calma.", "",
+          "carcasas y el MANUAL, que cuenta todo esto con calma.", "EXPORTAR saca la mezcla entera o una pista por pad, en WAV o en OGG. El proyecto se guarda solo, y en AJUSTES están el idioma, las cuatro carcasas y el MANUAL, que cuenta todo esto con calma.",
           "EXPORT writes out the whole mix or one track per pad, as WAV or OGG. "
           "The project saves itself, and SETTINGS holds the language, the four "
           "chassis and the MANUAL, which tells all of this properly.",
@@ -1573,7 +1587,7 @@ namespace
           "والمشروع يحفظ نفسه، وفي «الإعدادات» تجد اللغة والهياكل الأربعة "
           "و«الدليل» الذي يشرح هذا كله على مهل." },
         { "recto",          "",         "straight",   "平直",       "مستقيم" },
-        { "COMPAS",         "",         "BAR",        "小节",       "مازورة" },
+        { "COMPAS",         "COMPÁS",         "BAR",        "小节",       "مازورة" },
         { "TEMPO",          "",         "TEMPO",      "速度",       "الإيقاع" },
         { "TAP",            "",         "TAP",        "打点",       "نقر" },
         { "BANCO",          "",         "BANK",       "乐句库",     "بنك" },
@@ -1589,8 +1603,8 @@ namespace
         //  La cuenta atras antes de grabar, en compases. Rotulo de seccion en
         //  AJUSTES - AUDIO, al lado de BUFER y RELOJ.
         { "CUENTA",         "",         "COUNT",      "预备拍",      "العد" },
-        { "Sin cuenta atras", "",       "No count-in","无预备拍",    "بدون عد تنازلي" },
-        { "Cuenta atras: %1", "",       "Count-in: %1","预备拍：%1",  "العد التنازلي: %1" },
+        { "Sin cuenta atras", "Sin cuenta atrás",       "No count-in","无预备拍",    "بدون عد تنازلي" },
+        { "Cuenta atras: %1", "Cuenta atrás: %1",       "Count-in: %1","预备拍：%1",  "العد التنازلي: %1" },
         //  EL BANCO DONDE CAEN LAS TOMAS, la tercera fila de la misma pregunta.
         //  La letra del banco viaja como argumento y no se traduce: son las
         //  mismas cuatro que la fila de bancos de la cara.
@@ -1598,7 +1612,7 @@ namespace
         { "Banco de tomas %1", "",      "Takes bank %1","录音音库 %1", "بنك التسجيلات %1" },
         { "Las tomas van al banco %1", "", "Takes go to bank %1", "录音进入音库 %1", "تذهب التسجيلات إلى البنك %1" },
         { "La toma va al pad %1", "",   "The take goes to pad %1", "录音将进入音垫 %1", "سيذهب التسجيل إلى الباد %1" },
-        { "El banco de tomas esta lleno: vacia un pad o elige otro", "",
+        { "El banco de tomas esta lleno: vacia un pad o elige otro", "El banco de tomas está lleno: vacía un pad o elige otro",
                                         "The takes bank is full: clear a pad or pick another",
                                         "录音音库已满：请清空一个音垫或选择其他音库",
                                         "بنك التسجيلات ممتلئ: أفرغ بادًا أو اختر بنكًا آخر" },
@@ -1665,8 +1679,8 @@ namespace
         //  corta a proposito: comparte fila con nueve tapas mas y esa fila ya
         //  se parte en dos en media pantalla.
         { "SEL",            "",         "SEL",        "选择",       "تحديد" },
-        { "1/2 COMPAS",     "",         "1/2 BAR",    "半小节",      "نصف مازورة" },
-        { "1 COMPAS",       "",         "1 BAR",      "1 小节",      "مازورة" },
+        { "1/2 COMPAS",     "1/2 COMPÁS",         "1/2 BAR",    "半小节",      "نصف مازورة" },
+        { "1 COMPAS",       "1 COMPÁS",         "1 BAR",      "1 小节",      "مازورة" },
         { "2 COMPASES",     "",         "2 BARS",     "2 小节",      "مازورتان" },
         { "4 COMPASES",     "",         "4 BARS",     "4 小节",      "4 مازورات" },
         { "%1 notas copiadas", "",      "%1 notes copied", "已复制 %1 个音符",
@@ -1725,16 +1739,16 @@ namespace
         { "CORTAR",         "",         "CHOP",       "切片",       "قطّع" },
         { "CORTAR EN %1",   "",         "CHOP INTO %1","切成 %1 片", "قطّع إلى %1" },
         { "Busca donde empieza cada golpe y corta ahi, no a intervalos iguales. El pad de origen se queda con el primero.",
-          "",
+          "Busca dónde empieza cada golpe y corta ahí, no a intervalos iguales. El pad de origen se queda con el primero.",
           "Finds where each hit starts and cuts there, not at even intervals. The source pad keeps the first one.",
           "找出每个打点的起始并在那里切分，而不是等分。源音垫保留第一段。",
           "يبحث عن بداية كل ضربة ويقطع هناك، لا على فترات متساوية. يحتفظ الباد الأصلي بالأول." },
         { "Parte este sample en trozos iguales y los reparte por los pads. El pad de origen se queda con el primero.",
-          "", "Cuts this sample into equal pieces and spreads them over the pads. The source pad keeps the first one.",
+          "Parte esta muestra en trozos iguales y los reparte por los pads. El pad de origen se queda con el primero.", "Cuts this sample into equal pieces and spreads them over the pads. The source pad keeps the first one.",
           "把这个采样切成等分的几段，分配到各个音垫。原音垫保留第一段。",
           "يقطّع هذه العينة إلى أجزاء متساوية ويوزّعها على الوسائد، ويحتفظ الباد الأصلي بالجزء الأول." },
         { "va a pads: %1",  "",         "goes to pads: %1", "分配到音垫：%1", "إلى الباد: %1" },
-        { "no pisa ningun pad con sonido", "", "does not overwrite any pad that has sound",
+        { "no pisa ningun pad con sonido", "no pisa ningún pad con sonido", "does not overwrite any pad that has sound",
                                         "不会覆盖任何有声音的音垫",
                                         "لن يطمس أي باد فيه صوت" },
         { "PISA %1 pads con sonido", "", "OVERWRITES %1 pads that have sound",
@@ -1752,7 +1766,7 @@ namespace
         { "Cortado en %1 trozos - DESHACER para volver", "", "Chopped into %1 - UNDO to go back",
                                         "已切成 %1 段 — 可以撤销",
                                         "قُطّع إلى %1 — تراجع للعودة" },
-        { "Cortado en %1 (no cabian %2) - DESHACER para volver", "",
+        { "Cortado en %1 (no cabian %2) - DESHACER para volver", "Cortado en %1 (no cabían %2) - DESHACER para volver",
           "Chopped into %1 (%2 did not fit) - UNDO to go back",
           "已切成 %1 段（%2 段放不下）— 可以撤销",
           "قُطّع إلى %1 (لم تتسع %2) — تراجع للعودة" },
@@ -1765,8 +1779,12 @@ namespace
         { "BORRAR",         "",         "DELETE",     "删除",       "حذف" },
         { "EXPORTAR",       "",         "EXPORT",     "导出",       "تصدير" },
         { "CONTROL",        "",         "CONTROL",    "控制",       "تحكم" },
-        { "SIN GUARDAR",    "",         "UNSAVED",    "未保存",     "غير محفوظ" },
-        //  El companero del de arriba en la banda de continuidad: «SIN GUARDAR»
+        //  «BORRADOR» y no «SIN GUARDAR»: junto a «A SALVO» la banda decia
+        //  a la vez que no estaba guardado y que si (feria 2026-10, J1 J3 J4).
+        //  Lo que es verdad es que no tiene nombre y que no se va a perder.
+        { "BORRADOR",       "",         "DRAFT",      "草稿",       "مسودة" },
+        { "Sin confirmar: no se ha hecho nada", "", "Not confirmed: nothing was done", "未确认：没有执行任何操作", "لم يُؤكَّد: لم يُنفَّذ شيء" },
+        //  El companero del de arriba en la banda de continuidad: «BORRADOR»
         //  dice que no hay proyecto y «A SALVO» que aun asi no vas a perder
         //  nada. Los dos juntos son la frase entera.
         { "A SALVO",        "",         "SAFE",       "已保存",     "محفوظ" },
@@ -1781,11 +1799,11 @@ namespace
         { "AHORA|cont",     "",         "JUST NOW",   "刚刚",       "الآن" },
         { "HACE %1 H|cont", "",         "%1 H AGO",   "%1 小时前",  "قبل %1 س" },
         { "HACE %1 D|cont", "",         "%1 D AGO",   "%1 天前",    "قبل %1 ي" },
-        { "BORRA TODO?",    "",         "ERASE ALL?", "全部清空？", "مسح الكل؟" },
+        { "BORRA TODO?",    "¿BORRA TODO?",         "ERASE ALL?", "全部清空？", "مسح الكل؟" },
         //  El aviso de ABRIR, que nombra el proyecto que va a entrar: la tapa
         //  armada tiene que decir QUE abre, como la de BORRAR dice que borra.
-        { "ABRIR %1?",      "",         "OPEN %1?",   "打开 %1？", "فتح %1؟" },
-        { "BORRAR %1?",     "",         "DELETE %1?", "删除 %1？", "حذف %1؟" },
+        { "ABRIR %1?",      "¿ABRIR %1?",         "OPEN %1?",   "打开 %1？", "فتح %1؟" },
+        { "BORRAR %1?",     "¿BORRAR %1?",         "DELETE %1?", "删除 %1？", "حذف %1؟" },
         { "sin proyectos - GUARDAR crea el primero", "", "no projects - SAVE makes the first one",
                                         "没有工程 — 保存即可新建",
                                         "لا توجد مشاريع — احفظ لإنشاء الأول" },
@@ -1822,22 +1840,22 @@ namespace
         //  de lo que costo ATRAS y EMPEZAR en el tour, donde la palabra
         //  espanola coincidia y el sentido no.
         { "IMPORTAR",       "",         "IMPORT",     "导入",       "استيراد" },
-        { "PATRON %1",      "",         "PATTERN %1", "音型 %1",    "نمط %1" },
+        { "PATRON %1",      "PATRÓN %1",         "PATTERN %1", "音型 %1",    "نمط %1" },
         { "El do central es la nota del pad, y un paso es una semicorchea", "",
                                         "Middle C is the pad's own note, and one step is a sixteenth",
                                         "中央 C 就是音垫本身的音高，一步为十六分音符",
                                         "دو الوسطى هي نوتة الباد نفسها، والخطوة سُداسية عشرية" },
         { "%1 - %2 notas",  "",         "%1 - %2 notes", "%1 — %2 个音符", "%1 — %2 نوتة" },
         { "%1 fuera",       "",         "%1 left out", "%1 个放不下", "%1 لم تتسع" },
-        { "Ese pad no tiene notas en este patron", "",
+        { "Ese pad no tiene notas en este patron", "Ese pad no tiene notas en este patrón",
                                         "That pad has no notes in this pattern",
                                         "该音垫在此音型中没有音符",
                                         "لا نوتات لهذا الباد في هذا النمط" },
-        { "No se pudo escribir en esa carpeta - cambiala en EXPORTAR", "",
+        { "No se pudo escribir en esa carpeta - cambiala en EXPORTAR", "No se pudo escribir en esa carpeta - cámbiala en EXPORTAR",
                                         "Could not write into that folder - change it in EXPORT",
                                         "无法写入该文件夹 — 请在导出中更改",
                                         "تعذّرت الكتابة في هذا المجلد — غيّره في تصدير" },
-        { "Ese fichero no trae notas que quepan en el patron", "",
+        { "Ese fichero no trae notas que quepan en el patron", "Ese fichero no trae notas que quepan en el patrón",
                                         "That file has no notes that fit in the pattern",
                                         "该文件没有能放进音型的音符",
                                         "لا يحمل هذا الملف نوتات تتسع في النمط" },
@@ -1847,7 +1865,7 @@ namespace
         { "RECIBIR",        "",         "RECEIVE",    "接收",       "استقبال" },
         { "nada enchufado", "",         "nothing plugged in", "未连接设备", "لا شيء موصول" },
         { "No se pudo abrir %1", "",    "Could not open %1", "无法打开 %1", "تعذّر فتح %1" },
-        { "El pad 1 es la nota %1, y de ahi hacia arriba. Canal %2.", "",
+        { "El pad 1 es la nota %1, y de ahi hacia arriba. Canal %2.", "El pad 1 es la nota %1, y de ahí hacia arriba. Canal %2.",
           "Pad 1 is note %1, and up from there. Channel %2.",
           "音垫 1 是音符 %1，依次向上。通道 %2。",
           "الباد 1 هو النوتة %1، وصعودًا من هناك. القناة %2." },
@@ -1865,21 +1883,21 @@ namespace
                                         "MIDI: keyboard on the chosen pad",
                                         "MIDI：键盘弹奏所选音垫",
                                         "ميدي: لوحة مفاتيح على الباد المختار" },
-        { "El teclado toca el pad elegido. La nota %1 suena a su afinacion.", "",
+        { "El teclado toca el pad elegido. La nota %1 suena a su afinacion.", "El teclado toca el pad elegido. La nota %1 suena a su afinación.",
           "The keyboard plays the chosen pad. Note %1 sounds at its own pitch.",
           "键盘演奏所选音垫。音符 %1 按其自身音高发声。",
           "تعزف لوحة المفاتيح الباد المختار. النوتة %1 تُسمع بدرجتها." },
 
         { "CARPETA",        "",         "FOLDER",     "文件夹",     "المجلد" },
         { "NOMBRE",         "",         "NAME",       "名称",       "الاسم" },
-        { "Sobrescribir \"%1\"?", "",  "Overwrite \"%1\"?", "覆盖“%1”？", "استبدال \"%1\"؟" },
+        { "Sobrescribir \"%1\"?", "¿Sobrescribir \"%1\"?",  "Overwrite \"%1\"?", "覆盖“%1”？", "استبدال \"%1\"؟" },
         { "Escribe un nombre para el proyecto", "", "Type a name for the project",
                                         "给工程取个名字",
                                         "اكتب اسمًا للمشروع" },
         //  Los rotulos de la barra de carga. Van aqui, con los del proyecto,
         //  porque nombran el mismo trabajo: los tres son 64 ficheros.
         { "Iniciando",      "",         "Starting up", "正在启动",   "جارٍ البدء" },
-        { "Recuperando sesion", "",     "Restoring session", "正在恢复会话", "جارٍ استعادة الجلسة" },
+        { "Recuperando sesion", "Recuperando sesión",     "Restoring session", "正在恢复会话", "جارٍ استعادة الجلسة" },
         { "Preparando sonidos", "",    "Preparing sounds",  "正在准备音色", "جارٍ تحضير الأصوات" },
         //  El renglon de atascos de AJUSTES · AUDIO. Ver Bitacora::Vigilante.
         { "atasco", "",                "stall",             "卡顿", "تجمّد" },
@@ -1888,12 +1906,12 @@ namespace
         { "Abriendo proyecto", "",      "Opening project",   "正在打开工程", "جارٍ فتح المشروع" },
         { "Guardando proyecto", "",     "Saving project",    "正在保存工程", "جارٍ حفظ المشروع" },
         { "Espera a que termine %1", "", "Wait until %1 finishes", "请等待%1结束", "انتظر حتى ينتهي %1" },
-        { "Sesion recuperada - %1", "", "Session restored - %1", "会话已恢复 — %1", "استُعيدت الجلسة — %1" },
-        { "Sesion recuperada", "", "Session restored", "会话已恢复", "استُعيدت الجلسة" },
+        { "Sesion recuperada - %1", "Sesión recuperada - %1", "Session restored - %1", "会话已恢复 — %1", "استُعيدت الجلسة — %1" },
+        { "Sesion recuperada", "Sesión recuperada", "Session restored", "会话已恢复", "استُعيدت الجلسة" },
 
         // --- Browser -------------------------------------------------------
         // --- Los sonidos de fabrica (Kits.h) --------------------------------
-        { "FABRICA",        "",         "FACTORY",    "内置",       "المصنع" },
+        { "FABRICA",        "FÁBRICA",         "FACTORY",    "内置",       "المصنع" },
 
         // --- INSTRUMENTOS: el contenido descargable (Instrumentos.h) --------
         //  La tapa que decia FABRICA lleva ahora al catalogo, donde la fabrica
@@ -1912,15 +1930,15 @@ namespace
           "Tap one and its 16 presets go to bank %1. Whatever was there is lost.",
           "轻触其中一个，它的 16 个预设会进入库 %1。原有内容将丢失。",
           "المس واحدًا فتنتقل إعداداته الـ 16 إلى البنك %1. ويضيع ما كان فيه." },
-        { "Este pack no esta comprado.", "",
+        { "Este pack no esta comprado.", "Este pack no está comprado.",
           "This pack has not been purchased.", "此音色包尚未购买。",
           "لم يتم شراء هذه الحزمة." },
-        { "%1 no esta comprado", "",
+        { "%1 no esta comprado", "%1 no está comprado",
           "%1 has not been purchased", "%1 尚未购买",
           "%1 غير مشترى" },
         { "Banco %1: %2",   "",         "Bank %1: %2", "库 %1：%2",  "البنك %1: %2" },
-        { "ACUSTICA",       "",         "ACOUSTIC",   "原声",       "أكوستيك" },
-        { "MAQUINA",        "",         "MACHINE",    "机器",       "آلة" },
+        { "ACUSTICA",       "ACÚSTICA",         "ACOUSTIC",   "原声",       "أكوستيك" },
+        { "MAQUINA",        "MÁQUINA",         "MACHINE",    "机器",       "آلة" },
         { "TEXTURA",        "",         "TEXTURE",    "质感",       "نسيج" },
         { "TONOS",          "",         "TONES",      "音调",       "نغمات" },
         { "CARGAR EN PAD %1", "",       "LOAD INTO PAD %1", "载入音垫 %1", "تحميل في باد %1" },
@@ -1937,7 +1955,7 @@ namespace
         //  esta persona, y al lado de FABRICA -que son los de la casa- la
         //  palabra sola no distingue nada.
         { "MIS KITS",       "",         "MY KITS",    "我的套件",   "أطقمي" },
-        { "Aun no has guardado ningun kit", "",
+        { "Aun no has guardado ningun kit", "Aún no has guardado ningún kit",
           "No kits saved yet", "还没有保存任何套件", "لم تحفظ أي طقم بعد" },
         { "Cargando pad %1...", "",     "Loading pad %1...", "正在载入音垫 %1…", "جارٍ تحميل باد %1…" },
         { "Pad %1 cargado  [%2]", "",   "Pad %1 loaded  [%2]", "音垫 %1 已载入 [%2]", "تم تحميل باد %1 [%2]" },
@@ -1950,14 +1968,14 @@ namespace
 
         // --- Status line ---------------------------------------------------
         { "Toca un pad para sonar", "", "Tap a pad to play it", "点音垫即可发声", "المس بادًا ليصدر صوتًا" },
-        { "LOAD armado - toca un pad para cargarlo", "", "LOAD armed - tap a pad to load it",
+        { "LOAD armado - toca un pad para cargarlo", "CARGAR listo: toca un pad para cargarlo", "LOAD armed - tap a pad to load it",
                                         "已开启载入 — 点一个音垫来载入",
                                         "وضع التحميل — المس بادًا لتحميله" },
-        { "Pad vacio - pulsa LOAD y toca el pad para cargarlo", "",
+        { "Pad vacio - pulsa LOAD y toca el pad para cargarlo", "Pad vacío - pulsa CARGAR y toca el pad para cargarlo",
           "Empty pad - press LOAD and tap the pad to load it",
           "空音垫 — 先按载入，再点这个音垫",
           "باد فارغ — اضغط تحميل ثم المس الباد" },
-        { "REC: toca pads para grabarlos en el patron", "", "REC: tap pads to write them into the pattern",
+        { "REC: toca pads para grabarlos en el patron", "REC: toca pads para grabarlos en el patrón", "REC: tap pads to write them into the pattern",
                                         "录音：点音垫就会写进乐句",
                                         "تسجيل: المس الباد لتُكتب في النمط" },
         { "REC apagado",    "",         "REC off",    "录音已关", "التسجيل متوقف" },
@@ -1969,9 +1987,9 @@ namespace
                                         "جارٍ تسجيل باد %1  %2s / %3s" },
         { "Grabando pad %1  %2s", "",   "Recording pad %1  %2s", "正在录音垫 %1  %2s", "جارٍ تسجيل باد %1  %2s" },
         { "Grabado en el pad %1  [%2s]", "", "Recorded into pad %1  [%2s]", "已录入音垫 %1 [%2s]", "سُجّل في باد %1 [%2s]" },
-        { "No se grabo nada", "",       "Nothing was recorded", "什么都没录到", "لم يُسجّل شيء" },
-        { "sin permiso de microfono", "", "no microphone permission", "没有麦克风权限", "لا يوجد إذن للميكروفون" },
-        { "Sin permiso de microfono: no puedo grabar", "", "No microphone permission: I cannot record",
+        { "No se grabo nada", "No se grabó nada",       "Nothing was recorded", "什么都没录到", "لم يُسجّل شيء" },
+        { "sin permiso de microfono", "sin permiso de micrófono", "no microphone permission", "没有麦克风权限", "لا يوجد إذن للميكروفون" },
+        { "Sin permiso de microfono: no puedo grabar", "Sin permiso de micrófono: no puedo grabar", "No microphone permission: I cannot record",
                                         "没有麦克风权限：无法录音",
                                         "لا يوجد إذن للميكروفون: لا أستطيع التسجيل" },
         { "Audio cedido a otra app", "", "Audio handed to another app", "音频已交给其他应用", "أُعطي الصوت لتطبيق آخر" },
@@ -1981,8 +1999,13 @@ namespace
         { "Deshecho: %1",   "",         "Undone: %1", "已撤销：%1", "تم التراجع: %1" },
         { "Rehecho: %1",    "",         "Redone: %1", "已重做：%1", "تمت الإعادة: %1" },
         { "auto chop",      "",         "auto chop",  "自动切片", "تقطيع تلقائي" },
-        { "vaciar patron",  "",         "clear pattern", "清空乐句", "تفريغ النمط" },
+        { "vaciar patron",  "vaciar patrón",         "clear pattern", "清空乐句", "تفريغ النمط" },
         { "Tono de prueba", "",         "Test tone",  "测试音",  "نغمة اختبار" },
+        { "Sin dispositivo de audio: no puede sonar", "", "No audio device: nothing can sound", "没有音频设备：无法发声", "لا يوجد جهاز صوت: لا يمكن أن يصدر صوت" },
+        { "SIN AUDIO", "", "NO AUDIO", "无音频", "لا صوت" },
+        { "%1 en CANAL %2: entra el pad %3", "", "%1 on CHANNEL %2: pad %3 joins", "%1 在通道 %2：加入打击垫 %3", "%1 في القناة %2: ينضم اللوح %3" },
+        { "%1 en CANAL %2: entran los %3 pads", "", "%1 on CHANNEL %2: all %3 pads join", "%1 在通道 %2：全部 %3 个打击垫加入", "%1 في القناة %2: تنضم كل الألواح %3" },
+        { "EFECTOS · CANAL %1 · %2", "", "EFFECTS · CHANNEL %1 · %2", "效果 · 通道 %1 · %2", "مؤثرات · قناة %1 · %2" },
         { "Pad %1 -> zati %2 %3", "",   "Pad %1 -> zati %2 %3", "音垫 %1 → zati %2 %3", "باد %1 ← zati %2 %3" },
 
         // --- MIX / RACK / SONG ---------------------------------------------
@@ -2001,36 +2024,38 @@ namespace
         { "CANAL %1",       "",         "CHANNEL %1", "通道 %1",    "قناة %1" },
         //  LA FICHA DEL CANAL: su nombre, su icono o un dibujo a dedo.
         { "ICONO",          "",         "ICON",       "图标",       "أيقونة" },
-        { "NUMERO",         "",         "NUMBER",     "编号",       "الرقم" },
+        { "NUMERO",         "NÚMERO",         "NUMBER",     "编号",       "الرقم" },
         { "DIBUJAR",        "",         "DRAW",       "绘制",       "ارسم" },
         { "USAR",           "",         "USE",        "使用",       "استخدم" },
         { "%1 PADS",        "",         "%1 PADS",    "%1 音垫",    "%1 باد" },
         { "1 PAD",          "",         "1 PAD",      "1 音垫",     "باد واحد" },
-        { "cuanto de este canal pasa por cada efecto", "",
+        { "cuanto de este canal pasa por cada efecto", "cuánto de este canal pasa por cada efecto",
                                         "how much of this channel goes through each effect",
                                                       "该通道有多少经过每个效果",
                                                       "مقدار ما يمر من هذه القناة عبر كل تأثير" },
         { "SIN SOLO",       "",         "NO SOLO",    "取消独奏", "إلغاء الإفراد" },
         { "SOLO ACTIVO",    "",         "SOLO ACTIVE","独奏中",  "إفراد فعّال" },
-        //  SOLO DESDE LA CARA. La palabra es la misma en las cuatro lenguas
-        //  del sector -es la que lleva escrita cualquier mesa- asi que va en
-        //  UNTRANSLATED_OK; lo que si se dice en cada lengua son las frases.
-        { "SOLO",           "",         "SOLO",       "SOLO",     "SOLO" },
+        //  SOLO DESDE LA CARA. En castellano y en ingles la palabra es la
+        //  misma -es la que lleva escrita cualquier mesa- y va en
+        //  UNTRANSLATED_OK; en chino y en arabe no lo es, y una tapa en latino
+        //  en medio de una cara traducida se lee como un olvido. Son las mismas
+        //  palabras que ya usaban MANTEN SOLO y las frases de abajo.
+        { "SOLO",           "",         "SOLO",       "独奏",     "منفرد" },
         //  QUE SE VA A DESHACER. Solo para el lector de pantalla: en la tapa
         //  no cabe -96 px clavados- y en el renglon de estado ya lo dice la
         //  frase que deja la accion.
         { "DESHACER %1",    "",         "UNDO %1",    "撤销 %1",  "تراجع %1" },
         { "REHACER %1",     "",         "REDO %1",    "重做 %1",  "إعادة %1" },
-        { "SOLO: toca pads para aislarlos - manten SOLO para quitarlos todos", "",
+        { "SOLO: toca pads para aislarlos - manten SOLO para quitarlos todos", "SOLO: toca pads para aislarlos - mantén SOLO para quitarlos todos",
                                         "SOLO: tap pads to isolate them - hold SOLO to clear",
-                                        "SOLO：点击音垫以独奏，长按 SOLO 全部取消",
-                                        "SOLO: انقر الباد للإفراد - اضغط مطولاً على SOLO للمسح" },
-        { "SOLO apagado",   "",         "SOLO off",   "SOLO 已关闭", "تم إيقاف SOLO" },
+                                        "独奏：点击音垫以独奏，长按独奏全部取消",
+                                        "منفرد: انقر الباد للإفراد - اضغط مطولاً على منفرد للمسح" },
+        { "SOLO apagado",   "",         "SOLO off",   "独奏已关闭", "تم إيقاف الإفراد" },
         { "SOLO pad %1",    "",         "SOLO pad %1","独奏音垫 %1", "إفراد الباد %1" },
         { "SOLO fuera del pad %1", "",  "SOLO off pad %1", "取消独奏音垫 %1",
                                         "إلغاء إفراد الباد %1" },
         { "Sin solos",      "",         "No solos",   "没有独奏",   "لا إفراد" },
-        { "Pad vacio - no hay nada que aislar", "",
+        { "Pad vacio - no hay nada que aislar", "Pad vacío - no hay nada que aislar",
                                         "Empty pad - nothing to isolate",
                                         "空音垫 — 没有可独奏的内容",
                                         "باد فارغ — لا شيء لإفراده" },
@@ -2039,7 +2064,7 @@ namespace
         //  QUITA senal seca. «Pasa por» es verdad en los dos, y cual de las dos
         //  cosas es cada fila lo dice el fader dibujado. Ver
         //  ZatiLookAndFeel::drawLinearSlider y AudioEngine::sustituye.
-        { "cuanto de este pad pasa por cada efecto", "", "how much of this pad goes through each effect",
+        { "cuanto de este pad pasa por cada efecto", "cuánto de este pad pasa por cada efecto", "how much of this pad goes through each effect",
                                         "这个音垫经过每个效果的量",
                                         "مقدار ما يمر من هذا الباد عبر كل مؤثر" },
         //  LAS DOS FAMILIAS, en palabras, para quien no ve la pantalla. Claves
@@ -2048,7 +2073,7 @@ namespace
         //  en las otras tres, que es lo que costo ATRAS y EMPEZAR en el tour.
         { "SUSTITUYE",      "",         "REPLACES",   "替换",       "يستبدل" },
         { "SUMA",           "",         "ADDS",       "叠加",       "يضيف" },
-        { "VACIA",          "",         "EMPTY",      "空",         "فارغ" },
+        { "VACIA",          "VACÍA",         "EMPTY",      "空",         "فارغ" },
         { "SONIDO|cancion", "SONIDO",   "ONE SHOT",   "单音",       "لقطة" },
         //  LAS DOS DE LA TAPA DE MODO, con clave propia. La de CANCION vivia
         //  en la clave «CANCION» a secas y en espanol coincidia con la
@@ -2092,15 +2117,15 @@ namespace
         //  separa por la palabra, que es lo que se lee primero.
         { "MODO CANCION|modo", "ARREGLO", "ARRANGE",    "编排",     "ترتيب" },
         { "MODO PATRON|modo",  "CICLO",   "CYCLE",      "循环",     "دورة" },
-        { "toca un compas para poner el patron", "", "tap a bar to place the pattern",
+        { "toca un compas para poner el patron", "toca un compás para poner el patrón", "tap a bar to place the pattern",
                                         "点一个小节放置乐句",
                                         "المس مازورة لوضع النمط" },
-        { "toca un compas para soltar el sonido", "", "tap a bar to drop the sound",
+        { "toca un compas para soltar el sonido", "toca un compás para soltar el sonido", "tap a bar to drop the sound",
                                         "点一个小节放置声音",
                                         "المس مازورة لإسقاط الصوت" },
         { "toca un bloque para borrarlo", "", "tap a block to erase it", "点块即可删除", "المس كتلة لمسحها" },
-        { "PLAY toca la cancion", "",   "PLAY plays the song", "播放键播放整首歌", "زر التشغيل يشغّل الأغنية" },
-        { "PLAY toca el patron / la cadena", "", "PLAY plays the pattern / the chain",
+        { "PLAY toca la cancion", "PLAY toca la canción",   "PLAY plays the song", "播放键播放整首歌", "زر التشغيل يشغّل الأغنية" },
+        { "PLAY toca el patron / la cadena", "PLAY toca el patrón / la cadena", "PLAY plays the pattern / the chain",
                                         "播放键播放乐句或链接",
                                         "زر التشغيل يشغّل النمط أو السلسلة" },
 
@@ -2118,11 +2143,11 @@ namespace
         //  LAS DOS DEL NAVEGADOR VACIO. Ver refrescaBrowseVacio: dos tercios
         //  de ficha en negro y ni una linea se leen como que la app no cargo.
         { "prueba en otra carpeta", "", "try another folder", "请试其他文件夹", "جرّب مجلدًا آخر" },
-        { "vacia, pero vale",      "", "empty, but it works", "为空，但可用", "فارغ، لكنه يعمل" },
+        { "vacia, pero vale",      "vacía, pero vale", "empty, but it works", "为空，但可用", "فارغ، لكنه يعمل" },
         { "toca una ranura de la cara para poner uno", "",
           "tap a slot on the machine to add one", "点击面板上的插槽来添加", "المس فتحة في الواجهة لإضافة واحد" },
         { "COMPARTIR",      "",         "SHARE",      "分享",        "مشاركة" },
-        { "compartir es del telefono", "", "sharing is a phone thing", "分享需要手机", "المشاركة من الهاتف" },
+        { "compartir es del telefono", "compartir es del teléfono", "sharing is a phone thing", "分享需要手机", "المشاركة من الهاتف" },
         { "grabando en vivo...", "",    "recording live...", "正在实时录制…",
                                         "جارٍ التسجيل المباشر…" },
         { "En vivo: %1",    "",         "Live: %1",   "实时：%1",     "مباشر: %1" },
@@ -2142,7 +2167,10 @@ namespace
 
         // --- Export panel --------------------------------------------------
         { "fuente",         "",         "source",     "来源",       "المصدر" },
-        { "duracion",       "",         "length",     "时长",       "المدة" },
+        { "duracion",       "duración",         "length",     "时长",       "المدة" },
+        //  La cola va dicha aparte: el fichero mide cuerpo + cola y la ficha
+        //  lo anuncia igual (feria 2026-10, J1 y J2).
+        { "+ %1 s de cola", "",         "+ %1 s tail", "+ %1 秒尾音", "+ ذيل %1 ث" },
         { "pistas",         "",         "tracks",     "轨道",       "المسارات" },
         //  Y ESTA FILA LA COMPARTE `lengthSlider`, que desde que la rejilla
         //  es una vista dice el largo del patron en compases y no en pasos
@@ -2151,12 +2179,12 @@ namespace
         //  duplicada, la segunda no se usa nunca». T() busca por la cadena
         //  en espanol, asi que una fila sirve a los dos sitios.
         { "%1 compases",    "",         "%1 bars",    "%1 小节",    "%1 مازورة" },
-        { "1 compas",       "",         "1 bar",      "1 小节",     "مازورة واحدة" },
-        { "vacio",          "",         "empty",      "空",         "فارغ" },
+        { "1 compas",       "1 compás",         "1 bar",      "1 小节",     "مازورة واحدة" },
+        { "vacio",          "vacío",         "empty",      "空",         "فارغ" },
         { "%1 pads con muestra", "",    "%1 pads with a sample", "%1 个音垫有采样", "%1 باد فيها عينة" },
         { "1 pad con muestra", "",      "1 pad with a sample", "1 个音垫有采样", "باد واحد فيه عينة" },
         { "CADENA (%1 patrones)", "",   "CHAIN (%1 patterns)", "链接（%1 个乐句）", "سلسلة (%1 نمط)" },
-        { "PATRON P%1",     "",         "PATTERN P%1","乐句 P%1",   "نمط P%1" },
+        { "PATRON P%1",     "PATRÓN P%1",         "PATTERN P%1","乐句 P%1",   "نمط P%1" },
         { "no hay nada grabado en %1", "", "there is nothing recorded in %1",
                                         "%1 里没有录到任何东西",
                                         "لا يوجد شيء مسجّل في %1" },
@@ -2167,12 +2195,12 @@ namespace
         { "Volumen",        "",         "Volume",     "音量",       "المستوى" },
         { "Paneo",          "",         "Pan",        "声像",       "الاتزان" },
         { "Ataque",         "",         "Attack",     "起音",       "الهجوم" },
-        { "Caida",          "",         "Release",    "释音",       "التلاشي" },
+        { "Caida",          "Caída",         "Release",    "释音",       "التلاشي" },
         { "Inicio",         "",         "Start",      "起点",       "البداية" },
         { "Fin",            "",         "End",        "终点",       "النهاية" },
-        { "Choke",          "",         "Choke",      "组切",       "الخنق" },
+        { "Choke",          "Grupo",         "Choke",      "组切",       "الخنق" },
         { "Tempo|nombre",   "Tempo",    "Tempo",      "速度",       "الإيقاع" },
-        { "Patron",         "",         "Pattern",    "乐句",       "نمط" },
+        { "Patron",         "Patrón",         "Pattern",    "乐句",       "نمط" },
         { "Nota",           "",         "Note",       "音符",       "نغمة" },
         { "Compases",       "",         "Bars",       "小节数",     "عدد المازورات" },
         { "Control %1",     "",         "Control %1", "控制 %1",    "تحكم %1" },
@@ -2190,7 +2218,7 @@ namespace
         { "Silencio canal %1", "",    "Mute channel %1", "通道 %1 静音", "كتم القناة %1" },
         { "Solo canal %1", "",    "Solo channel %1", "通道 %1 独奏", "منفرد القناة %1" },
         { "semitonos",      "",         "semitones",  "半音",       "أنصاف نغمات" },
-        { "centesimas",     "",         "cents",      "音分",       "سنتات" },
+        { "centesimas",     "centésimas",         "cents",      "音分",       "سنتات" },
         { "del pad",        "",         "of the pad", "音垫的",     "للباد" },
         { "milisegundos",   "",         "milliseconds", "毫秒",     "مللي ثانية" },
         { "recorte",        "",         "trim",       "裁剪",       "القص" },
@@ -2198,7 +2226,7 @@ namespace
         { "pulsos por minuto", "",      "beats per minute", "每分钟拍数", "نبضة في الدقيقة" },
         { "del secuenciador", "",       "of the sequencer", "音序器的", "للمتتابع" },
         { "del paso",       "",         "of the step","该步的",     "للخطوة" },
-        { "del patron",     "",         "of the pattern", "乐句的", "للنمط" },
+        { "del patron",     "del patrón",         "of the pattern", "乐句的", "للنمط" },
         { "del efecto",     "",         "of the effect", "效果的",  "للمؤثر" },
         { "del mezclador",  "",         "of the mixer","混音器的",  "للخلاط" },
 
@@ -2222,40 +2250,40 @@ namespace
         { "SILENCIAR",      "",         "MUTE",       "静音",       "كتم" },
         { "Bloque en silencio", "",     "Block muted","块已静音",   "تم كتم المقطع" },
         { "Bloque suena",   "",         "Block plays","块发声",     "المقطع يعمل" },
-        { "BUFER",          "",         "BUFFER",     "缓冲",       "المخزن" },
+        { "BUFER",          "BÚFER",         "BUFFER",     "缓冲",       "المخزن" },
         { "RELOJ",          "",         "CLOCK",      "时钟",       "الساعة" },
         { "IDIOMA",         "",         "LANGUAGE",   "语言",       "اللغة" },
         { "EQUIPO",         "",         "DEVICE",     "设备",       "الجهاز" },
         { "muestras",       "",         "samples",    "采样",       "عينة" },
-        { "%1 nucleos",     "",         "%1 cores",   "%1 核",      "%1 أنوية" },
+        { "%1 nucleos",     "%1 núcleos",         "%1 cores",   "%1 核",      "%1 أنوية" },
         { "%1 voces",       "",         "%1 voices",  "%1 复音",    "%1 صوتًا" },
-        { "basica",         "",         "entry",      "入门",       "أساسي" },
+        { "basica",         "básica",         "entry",      "入门",       "أساسي" },
         { "media",          "",         "mid",        "中端",       "متوسط" },
         { "alta",           "",         "high",       "高端",       "عالٍ" },
         { "muy alta",       "",         "flagship",   "旗舰",       "رائد" },
         { "sin dispositivo de audio", "", "no audio device", "没有音频设备", "لا يوجد جهاز صوت" },
         { "ruta",           "",         "path",       "通路",       "المسار" },
         { "reloj",          "",         "clock",      "时钟",       "الساعة" },
-        { "bufer",          "",         "buffer",     "缓冲",       "المخزن" },
+        { "bufer",          "búfer",         "buffer",     "缓冲",       "المخزن" },
         { "salida",         "",         "output",     "输出",       "الخرج" },
         { "medido",         "",         "measured",   "实测",       "المقاس" },
         { "mmap",           "",         "mmap",       "mmap",       "mmap" },
-        { "via",            "",         "via",        "通过",       "عبر" },
+        { "via",            "vía",         "via",        "通过",       "عبر" },
         { "excl",           "",         "excl",       "独占",       "حصري" },
-        { "rafaga, el minimo", "",      "burst, the minimum", "突发，最小值", "الدفعة، الحد الأدنى" },
-        { "rafaga %1",      "",         "burst %1",   "突发 %1",    "دفعة %1" },
-        { "rapida",         "",         "fast",       "快",         "سريع" },
+        { "rafaga, el minimo", "ráfaga, el mínimo",      "burst, the minimum", "突发，最小值", "الدفعة، الحد الأدنى" },
+        { "rafaga %1",      "ráfaga %1",         "burst %1",   "突发 %1",    "دفعة %1" },
+        { "rapida",         "rápida",         "fast",       "快",         "سريع" },
         { "aceptable",      "",         "acceptable", "可接受",  "مقبول" },
         { "LENTA",          "",         "SLOW",       "慢",         "بطيء" },
-        { "de esos, %1 ms son el bufer", "", "of that, %1 ms is the buffer",
+        { "de esos, %1 ms son el bufer", "de esos, %1 ms son el búfer", "of that, %1 ms is the buffer",
                                         "其中 %1 毫秒是缓冲",
                                         "منها %1 مللي ثانية للمخزن" },
-        { "baja el bufer",  "",         "lower the buffer", "把缓冲调小", "قلّل المخزن" },
-        { "el resto es el mezclador de Android, sin MMAP en este movil", "",
+        { "baja el bufer",  "baja el búfer",         "lower the buffer", "把缓冲调小", "قلّل المخزن" },
+        { "el resto es el mezclador de Android, sin MMAP en este movil", "el resto es el mezclador de Android, sin MMAP en este móvil",
           "the rest is Android's mixer, no MMAP on this phone",
           "其余是 Android 的混音器，这台手机没有 MMAP",
           "الباقي هو خلاط أندرويد، بلا MMAP في هذا الهاتف" },
-        { "el resto es el telefono, no lo pone nadie mas bajo", "",
+        { "el resto es el telefono, no lo pone nadie mas bajo", "el resto es el teléfono, no lo pone nadie más bajo",
           "the rest is the phone, and nobody gets it lower",
           "其余是手机本身，谁也降不下来",
           "الباقي من الهاتف نفسه، ولا أحد يخفضه أكثر" },
@@ -2269,8 +2297,8 @@ namespace
                                         "مشترك %1 — ولا حتى %2" },
         { "MEZCLADOR",      "",         "MIXER",      "混音器",  "الخلاط" },
         { "compartida",     "",         "shared",     "共享",       "مشترك" },
-        { "no abrio",       "",         "did not open", "没有打开", "لم يُفتح" },
-        { "no arranco",     "",         "did not start", "没有启动", "لم يبدأ" },
+        { "no abrio",       "no abrió",         "did not open", "没有打开", "لم يُفتح" },
+        { "no arranco",     "no arrancó",         "did not start", "没有启动", "لم يبدأ" },
         { "libre",          "",         "any",        "任意",       "أي" },
         { "intentos",       "",         "attempts",   "尝试",       "المحاولات" },
         { "MMAP",           "",         "MMAP",       "MMAP",       "MMAP" },
@@ -2286,11 +2314,11 @@ namespace
                                         "只演奏时是 %1 毫秒",
                                         "عند العزف فقط: %1 مللي" },
         { "midiendo...",    "",         "measuring...", "正在测量…", "جارٍ القياس…" },
-        { "MEDIR emite un click y lo escucha con el micro", "",
+        { "MEDIR emite un click y lo escucha con el micro", "MEDIR emite un clic y lo escucha con el micro",
           "MEASURE plays a click and listens for it with the mic",
           "测量会发出一个声音并用麦克风听回来",
           "القياس يطلق نقرة ويلتقطها بالميكروفون" },
-        { "no oi el click - sube el volumen y no tapes el micro", "",
+        { "no oi el click - sube el volumen y no tapes el micro", "no oí el clic - sube el volumen y no tapes el micro",
           "I did not hear the click - turn the volume up and do not cover the mic",
           "没听到声音 — 请调高音量并不要挡住麦克风",
           "لم أسمع النقرة — ارفع الصوت ولا تغطّ الميكروفون" },
@@ -2334,7 +2362,7 @@ const char* Lang::nativeName (Id id)
         case ar: return "العربية";
         case es:
         case numLanguages:
-        default: return "ESPANOL";
+        default: return "ESPAÑOL";
     }
 }
 

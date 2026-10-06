@@ -1988,25 +1988,63 @@ void MainComponent::auditExport()
         publicaBloques();
     }
 
-    for (int ronda = 0; ronda < (largo ? 1 : 3); ++ronda)
+    for (int ronda = 0; ronda < (largo ? 1 : 4); ++ronda)
     {
         const bool pistas = (ronda == 1);
+        //  Y UNA CUARTA A TOPE: master a +12 y los cuatro pads a +12, que es
+        //  lo que hizo J2 en la feria. Sin ella el techo no se pone a prueba -
+        //  el patron normal sale a -11 dBFS y no hay nada que bajar.
+        const bool fuerte = (ronda == 3);
+        if (fuerte)
+        {
+            engine.setMasterUser (AudioEngine::kMasterMaxGain);
+            for (int p = 0; p < 4; ++p) engine.setPadGain (p, 4.0f);
+        }
         //  Y la tercera ronda en OGG, que es otro escritor y otro fichero: sin
         //  medirlo, "exportar comprimido" es una tapa que cambia un rotulo.
         const bool comprimido = (ronda == 2);
-        Exporter job (engine, uiSample, padName, dir, comprimido ? "BANCOOGG" : "BANCO",
+        //  En su carpeta, que el WAV que se lea sea el de esta ronda.
+        const auto donde = fuerte ? ProjectStore::exports().getChildFile ("BANCO_EXPORT_FUERTE") : dir;
+        if (fuerte) donde.deleteRecursively();
+        Exporter job (engine, uiSample, padName, donde, comprimido ? "BANCOOGG" : "BANCO",
                       pistas, 48000.0, comprimido);
         const double t0 = juce::Time::getMillisecondCounterHiRes();
         job.run();                       // en ESTE hilo: el banco no espera a nadie
         const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
 
         juce::Array<juce::File> hechos;
-        dir.findChildFiles (hechos, juce::File::findFiles, false, comprimido ? "*.ogg" : "*.wav");
+        donde.findChildFiles (hechos, juce::File::findFiles, false, comprimido ? "*.ogg" : "*.wav");
         juce::int64 bytes = 0;
         for (auto& f : hechos) bytes += f.getSize();
 
-        std::cout << "{\"export\":\"" << (comprimido ? "ogg" : pistas ? "pistas" : "master")
+        //  LO QUE DICE LA FICHA CONTRA LO QUE TRAE EL FICHERO (feria, J1 J2
+        //  J5): duracion del master contra el plan, pico contra el techo de
+        //  -1 dBFS y lo que queda en los ultimos 5 ms, que era el clic.
+        double segundos = 0.0, anunciado = Exporter::planDe (engine, 48000.0).total();
+        float picoDb = -200.0f, finalDb = -200.0f;
+        if (! comprimido && ! pistas)
+        {
+            juce::AudioFormatManager fm; fm.registerBasicFormats();
+            for (auto& f : hechos)
+                if (std::unique_ptr<juce::AudioFormatReader> r { fm.createReaderFor (f) })
+                {
+                    segundos = (double) r->lengthInSamples / r->sampleRate;
+                    juce::AudioBuffer<float> b ((int) r->numChannels, (int) r->lengthInSamples);
+                    r->read (&b, 0, b.getNumSamples(), 0, true, true);
+                    picoDb = juce::Decibels::gainToDecibels (b.getMagnitude (0, b.getNumSamples()), -200.0f);
+                    const int cola = juce::jmin (b.getNumSamples(), (int) (0.005 * r->sampleRate));
+                    finalDb = juce::Decibels::gainToDecibels (b.getMagnitude (b.getNumSamples() - cola, cola), -200.0f);
+                    break;
+                }
+        }
+
+        std::cout << "{\"export\":\"" << (fuerte ? "fuerte" : comprimido ? "ogg" : pistas ? "pistas" : "master")
                   << "\",\"pads\":" << cargados
+                  << ",\"mudas\":" << job.pistasMudas
+                  << ",\"segundos\":" << segundos
+                  << ",\"anunciado\":" << anunciado
+                  << ",\"pico_db\":" << picoDb
+                  << ",\"final_db\":" << finalDb
                   << ",\"ok\":" << (job.resultOk ? 1 : 0)
                   << ",\"ficheros\":" << hechos.size()
                   << ",\"bytes\":" << bytes
@@ -11709,4 +11747,218 @@ int MainComponent::auditCaraVieja (float esc, juce::Rectangle<int>& caja, juce::
         if (quien.isEmpty()) quien = "MainComponent";   // lo pinta la cara misma
     }
     return distintos;
+}
+
+// ============================================================================
+//  LA FERIA, HALLAZGO POR HALLAZGO. Ver Tests/feria.py.
+//
+//  Los jueces de la feria (2026-10) jugaron sin saber nada de la app y
+//  escribieron lo que les fallo. Cada bloque de aqui es uno de esos fallos
+//  medido por el camino que tomo el juez, con un control al lado cuando el
+//  arreglo podria pasar la medida por otra puerta.
+void MainComponent::auditFeria()
+{
+    loadFactoryKits();
+    {
+        const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+        while ((fabricaJob != nullptr || ! fabricaCola.empty())
+               && juce::Time::getMillisecondCounter() < tope)
+        {
+            stepFabricaJob();
+            if (fabricaJob != nullptr) juce::Thread::sleep (2);
+        }
+    }
+    canalActual = 0;
+    auto enCanal = [this] (int c) { int n = 0; for (int i = 0; i < kNumPads; ++i) n += engine.getPadCanal (i) == c ? 1 : 0; return n; };
+    auto sinReparto = [this] { for (int i = 0; i < kNumPads; ++i) engine.setPadCanal (i, AudioEngine::kSinCanal); };
+
+    //  a. EL PRIMER EFECTO SIN REPARTO SE LO LLEVAN TODOS (J1, J2, J5); con
+    //     reparto, solo el pad elegido.
+    sinReparto();
+    selectPad (5);
+    ponEnRanura (0, AudioEngine::kFxDly);
+    const int ruteoTodos = enCanal (0);
+    sinReparto();
+    engine.setPadCanal (0, 0);
+    selectPad (7);
+    ponEnRanura (1, kFxEq);
+    const int ruteoUno = enCanal (0);
+    const int ruteoElegido = engine.getPadCanal (7) == 0 ? 1 : 0;
+
+    //  b. EL XY NO APAGA LO QUE ENCENDIO LA PERSONA (J3).
+    xyLatch = false;
+    xyLoEncendio = false;
+    selectXyFx (AudioEngine::kFxDly);
+    setFxEnabled (AudioEngine::kFxDly, true);
+    xyTouched (true);  xyTouched (false);
+    const int xySigue = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
+    setFxEnabled (AudioEngine::kFxDly, false);
+    xyTouched (true);
+    const int xyEntra = fxEncendido (AudioEngine::kFxDly) ? 1 : 0;
+    xyTouched (false);
+    const int xySale = fxEncendido (AudioEngine::kFxDly) ? 0 : 1;
+
+    //  c. DESHACER NO SE MUEVE CUANDO APARECE REHACER (J3).
+    closeAllSheets();
+    redoButton.setVisible (true);   resized();
+    const auto undoCon = undoButton.getBounds();
+    redoButton.setVisible (false);  resized();
+    const auto undoSin = undoButton.getBounds();
+
+    //  d. LA REJILLA NO SALTA AL PRIMER TOQUE (J2, fotos 03 -> 04).
+    showSeqPage (seqPageGrid);
+    openSheet (seqSheet, secButton);
+    selectedStep = -1;  resized();
+    const auto gridSin = stepGrid.getBounds();
+    selectedStep = 0;   resized();
+    const auto gridCon = stepGrid.getBounds();
+    selectedStep = -1;
+    closeAllSheets();
+
+    //  e. EL PAD ELEGIDO VUELVE CON EL ESTADO (J4: SEC abria otro pad).
+    selectPad (9);
+    const auto foto = captureState();
+    selectPad (2);
+    applyState (foto);
+    const int padVuelve = selectedPad;
+
+    //  f. TEXTO QUE NO ES UN NUMERO NO MUEVE EL MANDO (J4: «abc» daba 0).
+    bpmSlider.setValue (127.0, juce::dontSendNotification);
+    const double bpmBasura = bpmSlider.getValueFromText ("abc");
+    const double bpmVacio  = bpmSlider.getValueFromText ("");
+    const double bpmCifra  = bpmSlider.getValueFromText ("90");
+    masterFader.setValue (0.5, juce::dontSendNotification);
+    const double masterBasura = masterFader.getValueFromText ("abc");
+
+    //  g. EL SEGURO? QUE CADUCA LO DICE (J4, fotos 29-33).
+    armConfirm (projDeleteButton, "BANCO?");
+    confirmMs = 1.0;
+    relojUltimoMs = juce::Time::getMillisecondCounterHiRes() - 100.0;
+    timerCallback();
+    const int caducaDesarma = confirmPending == nullptr ? 1 : 0;
+    const int caducaDice = status.getText() == T ("Sin confirmar: no se ha hecho nada") ? 1 : 0;
+
+    //  h. ATRAS CIERRA LO DE ARRIBA Y LUEGO NO HACE NADA (J3).
+    closeAllSheets();
+    openSheet (setSheet, setButton);
+    const int atras1 = cierraLoDeArriba() ? 1 : 0;
+    const int atras2 = cierraLoDeArriba() ? 1 : 0;
+    const int atrasCerro = setSheet.isVisible() ? 0 : 1;
+
+    //  i. EL LIMITADOR SE VE (J2: subio todo a +12 y nada lo dijo).
+    const int sinAparato = dispositivo() == nullptr ? 1 : 0;
+    engine.setMasterUser (AudioEngine::kMasterMaxGain);
+    for (int p = 0; p < 4; ++p) engine.setPadGain (p, 4.0f);
+    float recorte = 1.0f;
+    engine.tomaRecorte();
+    for (int k = 0; k < 24; ++k)
+    {
+        if (k % 6 == 0) for (int p = 0; p < 4; ++p) engine.postNoteOn (p, 1.0f);
+        bombeaAudioDePrueba();
+        recorte = juce::jmax (recorte, engine.tomaRecorte());
+    }
+    cristal.ponRecorte (recorte, 16.0);
+    const float limDb = cristal.recorteVisible();
+    engine.setMasterUser (1.0f);
+    for (int p = 0; p < 4; ++p) engine.setPadGain (p, 1.0f);
+
+    //  j. BORRAR OTRO PROYECTO CON UNO ABIERTO NO TIRA LA APP (B1, J4).
+    auto acaba = [this]
+    {
+        const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+        while ((padSaveJob != nullptr || padJob != nullptr) && juce::Time::getMillisecondCounter() < tope)
+        {
+            if (padSaveJob != nullptr) stepPadSaveJob();
+            if (padJob != nullptr)     stepPadJob();
+            juce::Thread::sleep (1);
+        }
+    };
+    saveProject ("FERIA_UNO");  acaba();
+    saveProject ("FERIA_DOS");  acaba();
+    loadProject ("FERIA_DOS");  acaba();
+    refreshProjectList();
+    const int filaUno = projModel.names.indexOf ("FERIA_UNO");
+    int borraFuera = 0, borraDice = 0, borraAbierto = 0;
+    if (filaUno >= 0)
+    {
+        projList.selectRow (filaUno);
+        disarmConfirm();
+        projDeleteButton.onClick();
+        projDeleteButton.onClick();
+        borraFuera   = ProjectStore::folderFor ("FERIA_UNO").exists() ? 0 : 1;
+        borraDice    = status.getText().contains ("FERIA_UNO") ? 1 : 0;
+        borraAbierto = currentProject == "FERIA_DOS" ? 1 : 0;
+    }
+
+    //  k. UN CAMBIO SE GUARDA AL SOLTAR, NO A LOS 20 s (J4 espero 8 s).
+    auto bpmEnDisco = [this]
+    {
+        session.flush (30000);
+        if (auto xml = juce::parseXML (SessionKeeper::stateFile()))
+        {
+            const auto v = juce::ValueTree::fromXml (*xml);
+            if (v.hasProperty ("bpm")) return (double) v.getProperty ("bpm");
+            for (int i = 0; i < v.getNumChildren(); ++i)
+                if (v.getChild (i).hasProperty ("bpm")) return (double) v.getChild (i).getProperty ("bpm");
+        }
+        return -1.0;
+    };
+    auto avanza = [this] (double ms)
+    {
+        for (double t = 0.0; t < ms; t += 200.0)
+        {
+            relojUltimoMs = juce::Time::getMillisecondCounterHiRes() - 200.0;
+            timerCallback();
+        }
+    };
+    //  Los pads limpios primero: `sync` lleva el estado consigo cuando un pad
+    //  cambio, y con la fabrica recien cargada eso pasaria la medida por otra
+    //  puerta. El control de abajo -sin soltar- lo comprueba.
+    session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
+    bpmSlider.setValue (120.0, juce::sendNotification);
+    session.writeState (captureState(), currentProject);
+    const double bpmAntes = bpmEnDisco();
+    bpmSlider.setValue (131.0, juce::sendNotification);
+    avanza (2000.0);
+    const double bpmSinSoltar = bpmEnDisco();
+    if (oidoDeToques.alSoltar) oidoDeToques.alSoltar();
+    avanza (2000.0);
+    const double bpmTrasSoltar = bpmEnDisco();
+
+    auto caja = [] (juce::Rectangle<int> r)
+    { return "[" + juce::String (r.getX()) + "," + juce::String (r.getY()) + ","
+                 + juce::String (r.getWidth()) + "," + juce::String (r.getHeight()) + "]"; };
+
+    std::cout << "{\"feria\":1"
+              << ",\"ruteo_todos\":" << ruteoTodos
+              << ",\"ruteo_uno\":" << ruteoUno
+              << ",\"ruteo_elegido\":" << ruteoElegido
+              << ",\"xy_sigue\":" << xySigue
+              << ",\"xy_entra\":" << xyEntra
+              << ",\"xy_sale\":" << xySale
+              << ",\"undo_con\":" << caja (undoCon)
+              << ",\"undo_sin\":" << caja (undoSin)
+              << ",\"grid_sin\":" << caja (gridSin)
+              << ",\"grid_con\":" << caja (gridCon)
+              << ",\"pad_vuelve\":" << padVuelve
+              << ",\"bpm_basura\":" << bpmBasura
+              << ",\"bpm_vacio\":" << bpmVacio
+              << ",\"bpm_cifra\":" << bpmCifra
+              << ",\"master_basura\":" << masterBasura
+              << ",\"caduca_desarma\":" << caducaDesarma
+              << ",\"caduca_dice\":" << caducaDice
+              << ",\"atras1\":" << atras1
+              << ",\"atras2\":" << atras2
+              << ",\"atras_cerro\":" << atrasCerro
+              << ",\"sin_aparato\":" << sinAparato
+              << ",\"recorte\":" << recorte
+              << ",\"lim_db\":" << limDb
+              << ",\"fila_uno\":" << filaUno
+              << ",\"borra_fuera\":" << borraFuera
+              << ",\"borra_dice\":" << borraDice
+              << ",\"borra_abierto\":" << borraAbierto
+              << ",\"bpm_antes\":" << bpmAntes
+              << ",\"bpm_sin_soltar\":" << bpmSinSoltar
+              << ",\"bpm_tras_soltar\":" << bpmTrasSoltar
+              << "}" << std::endl;
 }

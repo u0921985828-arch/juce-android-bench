@@ -159,8 +159,25 @@ def main():
     #  eso lo cazan los bytes: cuarenta copias del mismo pad pesan lo mismo que
     #  cuarenta pads distintos, asi que aqui se comprueba la CUENTA y el peso
     #  total lo comprueba el de master.
-    juzga ("pistas", p.get ("ok") == 1 and p.get ("ficheros", 0) >= p.get ("pads", 0),
-           "%s ficheros para %s pads con muestra" % (p.get ("ficheros", "?"), p.get ("pads", "?")))
+    #  Y LAS MUDAS CUENTAN: desde la feria (J2, 52 ficheros de silencio) una
+    #  pista que no pasa de -100 dBFS no se queda en la carpeta, asi que cada
+    #  pad con muestra es un fichero O una muda declarada en el parte.
+    juzga ("pistas", p.get ("ok") == 1
+                     and p.get ("ficheros", 0) + p.get ("mudas", 0) >= p.get ("pads", 0)
+                     and p.get ("mudas", 0) > 0,
+           "%s ficheros y %s mudas para %s pads con muestra"
+             % (p.get ("ficheros", "?"), p.get ("mudas", "?"), p.get ("pads", "?")))
+
+    #  LO QUE DICE LA FICHA ES LO QUE TRAE EL FICHERO (feria, J1 J2 J5: decia
+    #  10,7 s y entregaba 13,7, con un clic de -23 dBFS en los ultimos 5 ms y
+    #  el pico real en 0,0 dBTP).
+    juzga ("duracion", abs (m.get ("segundos", 0) - m.get ("anunciado", -1)) < 0.01,
+           "%.3f s en el fichero, %.3f s anunciados" % (m.get ("segundos", 0), m.get ("anunciado", 0)))
+    f = filas.get ("fuerte", {})
+    juzga ("techo", -1.5 < f.get ("pico_db", 0) <= -0.99 and "bajado" in f.get ("parte", ""),
+           "a tope: pico %.2f dBFS (techo -1), parte \"%s\"" % (f.get ("pico_db", 0), f.get ("parte", "")))
+    juzga ("final", m.get ("final_db", 0) < -60,
+           "ultimos 5 ms a %.1f dBFS" % m.get ("final_db", 0))
 
     o = filas.get ("ogg", {})
     razon = (m.get ("bytes", 1) / max (1, o.get ("bytes", 1))) if o else 0
