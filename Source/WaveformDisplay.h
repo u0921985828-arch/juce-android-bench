@@ -498,7 +498,7 @@ public:
         // Waveform region (between readout rows).
         auto wave = b.reduced (10.0f, 0.0f);
         wave.removeFromTop (22.0f);
-        wave.removeFromBottom (20.0f);
+        wave.removeFromBottom ((float) kPie);
         const float midY = wave.getCentreY();
         const float h    = wave.getHeight() * 0.5f - 2.0f;
         const int   W    = mins.size();
@@ -818,11 +818,15 @@ public:
         panned   = false;
     }
 
+    //  LA FRANJA DE ABAJO -el rotulo TRIM y la regla-, para quien pone cosas
+    //  encima de la onda: las tapas del zoom tapaban "TRIM 0.00 -> 1.00".
+    static constexpr int kPie = 20;
+
     juce::Rectangle<float> waveArea() const
     {
         auto w = getLocalBounds().toFloat().reduced (10.0f, 0.0f);
         w.removeFromTop (22.0f);
-        w.removeFromBottom (20.0f);
+        w.removeFromBottom ((float) kPie);
         return w;
     }
     //  Pantalla -> fichero y fichero -> pantalla. Las dos pasan por la vista,

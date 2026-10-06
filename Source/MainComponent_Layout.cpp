@@ -1882,6 +1882,11 @@ void MainComponent::resized()
         //  que quede.
         auto qRow = inner.removeFromBottom (juce::jmin (ZatiLookAndFeel::kKnobRow, inner.getHeight() / 2));
         inner.removeFromBottom (Metrics::sm);
+        //  El nombre ANCHO se pinta `kKnobNameGap` POR ENCIMA del mando, asi
+        //  que su sitio sale de la fila y no del aire de arriba: sin esto caia
+        //  a 2 px de PASO ALTO y PASO BAJO (foto 393x851). Es la misma cuenta
+        //  que la celda de mandos de la ficha del pad, unas lineas mas abajo.
+        qRow.removeFromTop (ZatiLookAndFeel::kKnobName + ZatiLookAndFeel::kKnobNameGap);
         eqQKnob.setBounds (qRow.withSizeKeepingCentre (juce::jmin (qRow.getWidth(), 120),
                                                        qRow.getHeight()));
 
@@ -2638,7 +2643,15 @@ void MainComponent::resized()
         padSectionArea[1] = {};
         padSectionArea[2] = {};
 
-        const int labelW = ZatiLookAndFeel::kTrimLabel;
+        {
+            const auto f = ZatiColours::monoFont (Metrics::fLabel, true).withExtraKerningFactor (0.06f);
+            int ancho = 0;
+            for (auto* s : { &startSlider, &endSlider, &fadeInSlider, &fadeOutSlider })
+                if (const char* t = claveDeMando (*s))
+                    ancho = juce::jmax (ancho, juce::roundToInt (juce::GlyphArrangement::getStringWidth (f, T (t))) + 6);
+            trimLabelW = juce::jlimit (ZatiLookAndFeel::kTrimLabel, juce::jmax (ZatiLookAndFeel::kTrimLabel, inner.getWidth() / 3), ancho);
+        }
+        const int labelW = trimLabelW;
         auto ctrlRow = [&inner, labelW] (int h) { auto r = inner.removeFromTop (h); r.removeFromLeft (labelW); return r; };
         startSlider.setBounds (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::xs);
         endSlider.setBounds   (ctrlRow (ZatiLookAndFeel::kTrimRow)); inner.removeFromTop (Metrics::xs);
@@ -2709,6 +2722,9 @@ void MainComponent::resized()
             //  40 encima de 56 no son un zoom, son una barra tapando lo unico
             //  que se estaba mirando - y colocadas donde no caben, salen a
             //  altura cero, que es un control que no se puede pulsar.
+            //  Y por ENCIMA de la franja del rotulo TRIM: pegadas al fondo de
+            //  la onda tapaban "TRIM 0.00 -> 1.00" y la regla (foto 393x851).
+            inner.removeFromBottom (WaveformDisplay::kPie);
             const bool room = inner.getHeight() >= 2 * Metrics::hit;
             juce::TextButton* zb[3] = { &zoomOutButton, &zoomFitButton, &zoomInButton };
             for (auto* b : zb) b->setVisible (room);
@@ -7750,6 +7766,7 @@ void MainComponent::resized()
             if (seqCadenaAqui)
             {
                 nameBand (colA, "CADENA");
+                const int idxCadena = seqLabelBands.size() - 1;
                 {
                     //  Y EN DOS FILAS DE CUATRO DONDE OCHO NO CABEN A DEDO, la
                     //  misma cuenta que la paleta de CANCION y el selector del
@@ -7758,6 +7775,14 @@ void MainComponent::resized()
                     //  24. No hay reparto que arregle eso; hay que doblar.
                     //  Con el aire de la tapa dentro: se reducen dos por lado.
                     const int porFila = (colA.getWidth() / kNumPatterns - 4 >= Metrics::hit) ? kNumPatterns : 4;
+                    //  Y EL PANEL ABARCA LAS FILAS Y EL QUITAR CADENA, como el de
+                    //  PATRON: con `filas` en uno se pintaba detras de 1-4 y la
+                    //  fila 5-8 y QUITAR CADENA quedaban fuera de su propio
+                    //  grupo (foto 393x851). Entre fila y fila va halfGap y antes
+                    //  del QUITAR, xs: los dos miden 4, la cuenta del panel.
+                    static_assert (Metrics::xs == Metrics::halfGap, "el panel de CADENA cuenta halfGap entre filas");
+                    if (juce::isPositiveAndBelow (idxCadena, seqLabelBands.size()))
+                        seqLabelBands.getReference (idxCadena).filas = (kNumPatterns + porFila - 1) / porFila + 1;
                     for (int f = 0; f * porFila < kNumPatterns; ++f)
                     {
                         auto row = colA.removeFromTop (Metrics::hit);

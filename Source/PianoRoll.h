@@ -409,8 +409,10 @@ public:
                                             "F#", "G", "G#", "A", "A#", "B" };
         const int n = ((semi % 12) + 12) % 12;
         const int oct = (int) std::floor ((double) semi / 12.0);
-        return juce::String (kNombres[n]) + (oct == 0 ? juce::String()
-                                                      : juce::String (oct > 0 ? "+" : "") + juce::String (oct));
+        //  Y EL DO DE LA RAIZ DICE SU CERO. Sin numero salia «C» a secas, la
+        //  misma letra que una blanca, y la columna leia «C» arriba y «C-1»
+        //  abajo: la referencia se veia solo en un DO de cada dos.
+        return juce::String (kNombres[n]) + (oct > 0 ? "+" : "") + juce::String (oct);
     }
 
     void paint (juce::Graphics& g) override

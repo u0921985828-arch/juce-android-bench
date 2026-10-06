@@ -547,7 +547,7 @@ namespace AudioPath
         return T ("EXCLUSIVA")
                  + (f.usage == kUsageGame ? " · game" : "")
                  + (f.useI16 ? " · 16b" : "")
-                 + (f.burst > 0 ? " · burst " + juce::String (f.burst) : juce::String());
+                 + (f.burst > 0 ? juce::String::fromUTF8 (" · burst ") + juce::String (f.burst) : juce::String());
     }
 
     //  QUE SE PIDIO EN UN INTENTO, y que contesto. Dos funciones y no una
@@ -570,7 +570,7 @@ namespace AudioPath
 
         return (t.exclusiva ? T ("EXCLUSIVA")
                             : T ("compartida") + " " + (t.mmap ? T ("MMAP") : T ("MEZCLADOR")))
-             + (t.burst > 0 ? " · " + juce::String (t.burst) : juce::String());
+             + (t.burst > 0 ? juce::String::fromUTF8 (" · ") + juce::String (t.burst) : juce::String());
     }
 }
 

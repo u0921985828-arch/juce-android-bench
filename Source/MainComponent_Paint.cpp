@@ -1046,7 +1046,9 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
     pintaTitulo (g, titleRow,
-                 T ("AUTO CHOP") + "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1))
+                 //  Sin «PAD nn»: el numero ya lo lleva la tapa del selector, a
+                 //  su lado en este renglon (decia «PAD 61» y luego «61»).
+                 T ("AUTO CHOP")
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase()
                                                      : juce::String()), "titulo", true);
 
@@ -1073,7 +1075,9 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     inner.removeFromTop (Metrics::sm);
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
-    pintaTitulo (g, inner.removeFromTop (Metrics::bandaSubtitulo), T ("COMO"), "seccion");
+    //  Con la sangria del panel, como la maqueta: sin ella COMO y TROZOS
+    //  nacian en el filo de su placa y no a plomo con sus tapas.
+    pintaTitulo (g, inner.removeFromTop (Metrics::bandaSubtitulo).reduced (Metrics::panelSangria, 0), T ("COMO"), "seccion");
     inner.removeFromTop (Metrics::hit + Metrics::sm);
 
     g.setColour (ZatiColours::ink.withAlpha (0.75f));
@@ -1086,7 +1090,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     //  `pintaTitulo` el dia que tuvo un segundo cliente.
     {
         const auto tTrozos = chopByHits ? T ("TROZOS (como mucho)") : T ("TROZOS");
-        const auto banda   = inner.removeFromTop (Metrics::bandaSubtitulo);
+        const auto banda   = inner.removeFromTop (Metrics::bandaSubtitulo).reduced (Metrics::panelSangria, 0);
         apunta (g, banda, tTrozos, "capitulo");
         g.drawText (tTrozos, banda, Lang::start());
     }
@@ -1810,9 +1814,13 @@ void MainComponent::paintCanalNombreContent (juce::Graphics& g)
         || ! juce::isPositiveAndBelow (canEditado, kNumCanales)) return;
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
     g.setFont (ZatiColours::labelFont (Metrics::fLabel, 0.14f));
+    //  Dibujando, el titulo SIGUE diciendo de que canal es, en mayusculas como
+    //  todas las fichas: «Dibuja con el dedo» perdia el canal y era el unico
+    //  titulo en minusculas de la app. El lienzo ya dice que se dibuja.
+    const auto tituloCanal = T ("CANAL %1", Lang::ltr (juce::String (canEditado + 1)));
     pintaTitulo (g, canNomTituloBanda,
-                 canDibujando ? T ("Dibuja con el dedo")
-                              : T ("CANAL %1", Lang::ltr (juce::String (canEditado + 1))),
+                 canDibujando ? tituloCanal + " " + juce::String::fromUTF8 ("\xc2\xb7") + " " + T ("DIBUJAR")
+                              : tituloCanal,
                  "titulo", true);
 }
 
@@ -2190,7 +2198,9 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
     //  is long enough that shrinking will not save it, and a sentence cut off
     //  mid-letter reads as a bug where "..." reads as a long name.
     pintaTitulo (g, padTitleRow,
-                 T ("PAD %1", juce::String (sp + 1))
+                 //  «PAD» sin el numero: lo lleva la tapa del selector de al lado,
+                 //  y el renglon decia «PAD 64 · ARP» y luego «64».
+                 T ("PAD")
                 + (padName[(size_t) sp].isNotEmpty() ? "  " + dot + "  " + padName[(size_t) sp].toUpperCase() : juce::String()), "titulo", true);
 
     //  ...y los grupos, HUNDIDOS y debajo de todo lo demas. Los titulos de
@@ -2295,8 +2305,8 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
                 if (const char* t = claveDeMando (s))
                 {
                     auto r = s.getBounds();
-                    g.drawText (T (t), r.getX() - (ZatiLookAndFeel::kTrimLabel + 2), r.getY(),
-                                ZatiLookAndFeel::kTrimLabel - 4, r.getHeight(), Lang::start());
+                    g.drawText (T (t), r.getX() - (trimLabelW + 2), r.getY(),
+                                trimLabelW - 4, r.getHeight(), Lang::start());
                 }
             };
             lab (startSlider); lab (endSlider);
@@ -2421,8 +2431,8 @@ void MainComponent::paintPianoSheetContent (juce::Graphics& g)
     //  donde no quepa no cuesta un pixel.
     const juce::String tPiano = campoAcampo (g.getCurrentFont(), titulo.getWidth(),
                                              T ("PIANO"),
-                                             { "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1)),
-                                               "  " + dot + "  P" + juce::String (selectedPattern + 1),
+                                             //  Sin «PAD nn», que es la tapa del selector de al lado.
+                                             { "  " + dot + "  P" + juce::String (selectedPattern + 1),
                                                padName[(size_t) sp].isNotEmpty()
                                                    ? "   " + padName[(size_t) sp] : juce::String() },
                                              0.85f);
@@ -2667,9 +2677,10 @@ void MainComponent::paintSeqSheetContent (juce::Graphics& g)
     //  PATRON, que es lo unico que dice donde estas. Ver campoAcampo.
     const juce::String t = campoAcampo (g.getCurrentFont(), tituloRow.getWidth(),
                                         T (seqPage == seqPageStep ? "PATRON" : "PASOS"),
-                                        { "  " + dot + "  " + T ("PAD %1", juce::String (sp + 1)),
-                                          padName[(size_t) sp].isNotEmpty()
-                                              ? "   " + padName[(size_t) sp] : juce::String(),
+                                        //  Sin «PAD nn»: lo dice la tapa del selector, en este
+                                        //  mismo renglon (salia «PASOS · PAD 62» y luego «62»).
+                                        { padName[(size_t) sp].isNotEmpty()
+                                              ? "  " + dot + "  " + padName[(size_t) sp] : juce::String(),
                                           "   " + dot + "   P" + juce::String (selectedPattern + 1) },
                                         0.85f);
 

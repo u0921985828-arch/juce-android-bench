@@ -88,6 +88,20 @@ def literales_en_T (text):
         i = j + 1
     return out
 
+_VISTOS = collections.Counter()
+
+def _linea (f, lit):
+    """La linea del literal en el fichero de verdad: `joined_literals` se come
+    los saltos y la cuenta sobre el texto unido sale corrida. Se cuenta la
+    aparicion -el tercer « · » de un fichero es el tercero que se encuentra-."""
+    trozo = '"' + lit[:12] + ('"' if len (lit) <= 12 else "")
+    n = _VISTOS[(f, trozo)]; _VISTOS[(f, trozo)] += 1
+    for i, l in enumerate (open (f, encoding="utf8"), 1):
+        c = l.split ("//")[0].count (trozo)
+        if n < c: return i
+        n -= c
+    return 0
+
 def main():
     lang = joined_literals (open (os.path.join (SRC, "Lang.cpp"), encoding="utf8").read())
     blk  = lang[lang.index ("const Row kTable[]"):]
@@ -238,6 +252,59 @@ def main():
         if n in familias and n != f:
             bad.append ("el sonido %s de %s se llama como la familia %s" % (n, f, n))
     print ("%d familias y %d sonidos, un nombre cada uno" % (len (familias), len (tapas)))
+
+    #  NINGUN LITERAL CON LETRAS FUERA DE ASCII ENTRA POR `String (const char*)`.
+    #
+    #  Ese constructor lee cada byte como un caracter -es CharPointer_ASCII,
+    #  ver juce_String.cpp-, asi que el «+» del paso LOS EFECTOS de la guia
+    #  salia «Â«+Â»» en pantalla, y en ingles, chino y arabe salia ESO MISMO en
+    #  espanol: la clave mal leida ya no es la de la tabla -que si se lee con
+    #  fromUTF8- y la busqueda falla. Lo vio una foto, no un banco. Se admite
+    #  el literal que va derecho a `fromUTF8 (`, a `CharPointer_UTF8 (` o a
+    #  `T (` -que tiene su sobrecarga de `const char*` que lee UTF-8-, y los
+    #  pasos de la guia, que llegan a `T` por `guiaTexto (const char*)`.
+    #  La tabla de Lang.cpp no entra: se lee con fromUTF8 fila a fila.
+    sobrecarga = re.search (r"\bT\s*\(\s*const\s+char\s*\*",
+                            open (os.path.join (SRC, "Lang.h"), encoding="utf8").read())
+    crudos = 0
+    for f in sorted (glob.glob (os.path.join (SRC, "*.cpp")) + glob.glob (os.path.join (SRC, "*.h"))):
+        txt = joined_literals (sin_comentarios (open (f, encoding="utf8").read()))
+        libres = []
+        if f.endswith ("Lang.cpp"):
+            a = txt.index ("const Row kTable[]"); libres.append ((a, txt.index ("\n    };", a)))
+        #  `Lang::nativeName` devuelve `const char*` y su unico cliente lo
+        #  lee con fromUTF8 (la fila de idioma de ASPECTO).
+        for m in re.finditer (r"const char\*\s*Lang::nativeName[^{]*\{", txt):
+            libres.append ((m.end(), txt.index ("\n}", m.end())))
+        for m in (re.finditer (r"cuerpos\s*\[[^\]]*\]\s*=\s*\{", txt) if sobrecarga else ()):
+            libres.append ((m.end(), txt.index ("};", m.end())))
+        for m in re.finditer (r'"((?:[^"\\\n]|\\.)*)"', txt):
+            if all (ord (c) < 128 for c in m.group (1)): continue
+            if any (a <= m.start() < b for a, b in libres): continue
+            antes   = txt[:m.start()].rstrip()
+            despues = txt[m.end():].lstrip()
+            if re.search (r"(fromUTF8|CharPointer_UTF8)\s*\($", antes): continue
+            if sobrecarga and re.search (r"\bT\s*\($", antes): continue
+            #  Pegado A LA DERECHA de un String va por `+=`, que si lee UTF-8:
+            #  `s + " · "` y `s << " · "` estan bien. A la IZQUIERDA no:
+            #  `" · " + s` construye primero el String con los bytes.
+            #  Y la suma va de izquierda a derecha: en `s + " · " + t` el
+            #  literal se suma a `s`, ya String.
+            if re.search (r"(\+|<<|\+=)$", antes): continue
+            #  Una rama de ternario hereda el sitio del parentesis que la abre.
+            if antes.endswith (("?", ":")) and not despues.startswith ("+"):
+                prof, k = 0, len (antes) - 1
+                while k >= 0:
+                    if antes[k] == ")": prof += 1
+                    elif antes[k] == "(":
+                        if prof == 0: break
+                        prof -= 1
+                    k -= 1
+                if re.search (r"(\+|<<)$", antes[:max (k, 0)].rstrip()): continue
+            crudos += 1
+            bad.append ("%s:%d literal fuera de ASCII leido como bytes (sale con Â): %r"
+                        % (os.path.basename (f), _linea (f, m.group (1)), m.group (1)[:50]))
+    print ("literales fuera de ASCII sin pasar por UTF-8: %d" % crudos)
 
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)

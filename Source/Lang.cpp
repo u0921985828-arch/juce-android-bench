@@ -2004,7 +2004,6 @@ namespace
         { "NUMERO",         "",         "NUMBER",     "编号",       "الرقم" },
         { "DIBUJAR",        "",         "DRAW",       "绘制",       "ارسم" },
         { "USAR",           "",         "USE",        "使用",       "استخدم" },
-        { "Dibuja con el dedo",  "",    "Draw with your finger", "用手指绘制", "ارسم بإصبعك" },
         { "%1 PADS",        "",         "%1 PADS",    "%1 音垫",    "%1 باد" },
         { "1 PAD",          "",         "1 PAD",      "1 音垫",     "باد واحد" },
         { "cuanto de este canal pasa por cada efecto", "",

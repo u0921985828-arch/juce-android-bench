@@ -1069,6 +1069,10 @@ private:
     //  ahi actua sobre el paso que se acaba de tocar.
     struct SeqLabel { juce::Rectangle<int> band; juce::String key; int filas = 1; int grupo = 0; };
     juce::Array<SeqLabel> seqLabelBands;
+    //  LA COLUMNA DEL NOMBRE EN RECORTE, medida por el texto. Era kTrimLabel
+    //  fijo -64- y «SUAVE OUT» salia «SUAVE O…» en 393x851. La pone la
+    //  maqueta y la lee el pintor: los dos con la misma cifra.
+    int trimLabelW = ZatiLookAndFeel::kTrimLabel;
 
     //  EL PANEL DE UN GRUPO, en UN sitio y con cuatro clientes.
     //

@@ -118,3 +118,15 @@ juce::String T (const juce::String& key, const juce::String& a1);
 juce::String T (const juce::String& key, const juce::String& a1, const juce::String& a2);
 juce::String T (const juce::String& key, const juce::String& a1,
                 const juce::String& a2, const juce::String& a3);
+
+//  Y LA CLAVE ESCRITA EN EL FUENTE SE LEE COMO UTF-8. Sin esto un literal pasa
+//  por `String (const char*)`, que lee cada byte como un caracter: el «+» de la
+//  guia salia «Â«+Â»» y, con la clave ya distinta de la de la tabla, tambien en
+//  espanol en los otros tres idiomas. Ver Tests/lang.py.
+inline juce::String T (const char* key)                          { return T (juce::String::fromUTF8 (key)); }
+inline juce::String T (const char* key, const juce::String& a1)  { return T (juce::String::fromUTF8 (key), a1); }
+inline juce::String T (const char* key, const juce::String& a1, const juce::String& a2)
+                                                                 { return T (juce::String::fromUTF8 (key), a1, a2); }
+inline juce::String T (const char* key, const juce::String& a1,
+                       const juce::String& a2, const juce::String& a3)
+                                                                 { return T (juce::String::fromUTF8 (key), a1, a2, a3); }

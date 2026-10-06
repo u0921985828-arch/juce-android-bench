@@ -154,7 +154,8 @@ def _norm (t):
 def _corre (env_extra, size="412x915"):
     casa = tempfile.mkdtemp (prefix="zati-guia-")
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_SIZE=size,
-                ZATI_LANG="es", DISPLAY=PANTALLA, **env_extra)
+                ZATI_LANG="es", DISPLAY=PANTALLA)
+    env.update (env_extra)
     try:
         return subprocess.run ([APP], env=env, capture_output=True,
                                timeout=300).stdout.decode ("utf8", "replace")
@@ -261,6 +262,37 @@ def guia (malas):
            % (len (COBERTURA), len (contadas), len (faltan)))
     for t, fs in sorted (faltan.items()):
         malas.append ("la tapa %s (%s) no sale en la guia" % (t, ", ".join (sorted (fs))))
+
+    #  6. LA GUIA SE LEE EN LOS CUATRO IDIOMAS, sin bytes sueltos.
+    #
+    #  El paso LOS EFECTOS decia «Â«+Â»» en pantalla: su clave entraba por
+    #  `String (const char*)`, que lee cada byte como un caracter, y con la
+    #  clave ya distinta de la de la tabla la busqueda fallaba y en ingles,
+    #  chino y arabe salia ESO, en espanol. Lo vio una foto y no un banco,
+    #  porque todo lo de arriba lee la guia en espanol. Ahora se pide en los
+    #  cuatro: ni una secuencia de UTF-8 leido como Latin-1, y ni un paso que
+    #  fuera del espanol diga lo mismo que en espanol.
+    roto = re.compile ("[\u00c2\u00c3][\u0080-\u00bf]")
+    porIdioma = {"es": {p["n"]: p["texto"] for p in pasos}}
+    with cf.ThreadPoolExecutor (3) as ex:
+        for lg, out in zip (("en", "zh", "ar"), ex.map (
+                lambda lg: _corre ({"ZATI_GUIA": "1", "ZATI_OPEN": "", "ZATI_LANG": lg}),
+                ("en", "zh", "ar"))):
+            porIdioma[lg] = {d["n"]: d["texto"] for d in _json (out) if d.get ("guia") == "paso"}
+    rotos = iguales = 0
+    for lg, ps in porIdioma.items():
+        if len (ps) != cif["pasos"]:
+            malas.append ("la guia en %s da %d pasos de %d" % (lg, len (ps), cif["pasos"]))
+        for n, t in sorted (ps.items()):
+            if roto.search (t):
+                rotos += 1
+                malas.append ("el paso %d en %s sale con bytes sueltos: %r"
+                              % (n, lg, roto.search (t).group (0)))
+            if lg != "es" and t == porIdioma["es"].get (n):
+                iguales += 1
+                malas.append ("el paso %d sale en espanol en %s" % (n, lg))
+    print ("guia en 4 idiomas: %d pasos con bytes sueltos, %d sin traducir"
+           % (rotos, iguales))
     print()
 
 
