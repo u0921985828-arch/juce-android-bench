@@ -16,6 +16,7 @@
 #   f. TEXTO BASURA no mueve el mando: «abc» y vacio dejan el valor (J4).
 #   g. EL SEGURO? que caduca desarma y lo dice (J4, fotos 29-33).
 #   h. ATRAS cierra lo de arriba y despues no hace nada (J3).
+#   l. UN BOTON QUE ASOMA bajo una ficha la cierra y hace lo suyo (J4 M9).
 #   i. EL LIMITADOR se ve: master +12 y pads x4 escriben LIM en el cristal (J2).
 #   j. BORRAR otro proyecto con uno abierto no tira la app (B1, J4). Con
 #      ZATI_FERIA_APP apuntando al binario ASan, ademas, cero errores.
@@ -83,6 +84,9 @@ def main():
     regla ("atras", r["atras1"] == 1 and r["atras2"] == 0 and r["atras_cerro"] == 1,
            "atras con SET abierto %d y cerrado %d; despues %d"
            % (r["atras1"], r["atras_cerro"], r["atras2"]))
+    regla ("asoma", r["asoma_undo"] == 1 and r["asoma_cierra"] == 1 and r["asoma_deshace"] == 1,
+           "DESHACER asoma bajo SEC %d; tocarlo cierra %d y deshace %d"
+           % (r["asoma_undo"], r["asoma_cierra"], r["asoma_deshace"]))
     regla ("lim", r["sin_aparato"] == 1 and r["recorte"] > 1.0012 and r["lim_db"] > 0.01,
            "recorte %.3f (sin aparato %d), el cristal dice LIM -%.1f dB"
            % (r["recorte"], r["sin_aparato"], r["lim_db"]))

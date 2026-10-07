@@ -3989,6 +3989,7 @@ private:
     static FxDef::Spec specExtra (int f, int pi);
     static const char* nombreExtra (int f, int pi);
     static const char* nombreParam (int f, int pi);
+    static const char* nombreLargoFx (int f);
 
     //  LOS VEINTICUATRO, POR TIPO Y NO POR ETAPA.
     //
@@ -4652,7 +4653,7 @@ private:
     //  used to invent "PROYECTO N" with no way to say otherwise, so every save
     //  was a new near-duplicate and none of them was called what you wanted.
     juce::TextEditor     projNameBox;
-    juce::Rectangle<int> projNameRowArea, projPathRowArea;
+    juce::Rectangle<int> projNameRowArea, projPathRowArea, projSubArea;
     juce::Rectangle<int> zatiSwatchArea;
     //  The three group headers of the PADS sheet, placed in resized() and
     //  drawn in paintPadSheetContent: a sheet with eleven controls on it needs

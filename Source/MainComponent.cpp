@@ -6018,6 +6018,50 @@ const char* MainComponent::nombreExtra (int f, int pi)
 
 //  EL NOMBRE DE CUALQUIERA DE LOS OCHO, que es lo que ensena la lista del
 //  plato cuando se elige que mueve un mando.
+//  EL NOMBRE ENTERO DE CADA EFECTO. Las tapas dicen FLT, DRV, REV porque en
+//  una ranura de 55 px no cabe mas, y en la feria (veredicto, 4) nadie supo
+//  que era un FLD ni un DUC. La costura de CONTROL y la linea de estado los
+//  dicen enteros; la clave es la de la tabla de lenguas.
+const char* MainComponent::nombreLargoFx (int f)
+{
+    static constexpr std::pair<const char*, const char*> largos[] = {
+        { "FLT", "FILTRO" },
+        { "HPF", "PASO ALTO" },
+        { "DRV", "DISTORSION" },
+        { "DLY", "RETARDO" },
+        { "BIT", "REDUCTOR DE BITS" },
+        { "REV", "REVERB" },
+        { "EQ", "ECUALIZADOR" },
+        { "CMP", "COMPRESOR" },
+        { "GTE", "PUERTA" },
+        { "DSS", "DE-ESSER" },
+        { "LIM", "LIMITADOR" },
+        { "CHO", "CORO" },
+        { "FLA", "FLANGER" },
+        { "PHA", "PHASER" },
+        { "TRM", "TREMOLO" },
+        { "RNG", "MODULADOR ANILLO" },
+        { "PIT", "TRANSPOSITOR" },
+        { "WID", "ANCHURA" },
+        { "EXC", "EXCITADOR" },
+        { "TRN", "TRANSITORIOS" },
+        { "FRZ", "CONGELAR" },
+        { "WAH", "WAH" },
+        { "OCT", "OCTAVADOR" },
+        { "AMB", "AMBIENTE" },
+        { "FRM", "FORMANTE" },
+        { "FLD", "PLEGADOR" },
+        { "ROT", "ROTATIVO" },
+        { "PNG", "PING-PONG" },
+        { "DUC", "ATENUADOR" },
+        { "REP", "REPETIDOR" }
+    };
+    const char* c = juce::isPositiveAndBelow (f, kNumFx) ? fxDefs[f].name : "";
+    for (const auto& l : largos)
+        if (std::strcmp (l.first, c) == 0) return l.second;
+    return c;
+}
+
 const char* MainComponent::nombreParam (int f, int pi)
 {
     if (! juce::isPositiveAndBelow (f, kNumFx)) return "";
@@ -6648,7 +6692,7 @@ void MainComponent::setFxEnabled (int f, bool on)
     //  lado-, pero «ON» y «OFF» si. El banco no podia verlo hasta que hubo una
     //  ficha que enciende un efecto al abrirse: `EQ ON identical in es and en`,
     //  catorce veces.
-    status.setText (juce::String (fxDefs[f].name) + " " + T (on ? "ENCENDIDO" : "APAGADO"),
+    status.setText (T (nombreLargoFx (f)) + " " + T (on ? "ENCENDIDO" : "APAGADO"),
                     juce::dontSendNotification);
 }
 
@@ -6935,7 +6979,7 @@ void MainComponent::ponEnRanura (int ranura, int fx)
             {
                 engine.setPadCanal (selectedPad, (int) c);
                 if (auto* b = pads[selectedPad]) b->repaint();
-                status.setText (T ("%1 en CANAL %2: entra el pad %3", fxDefs[fx].name,
+                status.setText (T ("%1 en CANAL %2: entra el pad %3", T (nombreLargoFx (fx)),
                                    juce::String ((int) c + 1).paddedLeft ('0', 2),
                                    juce::String (selectedPad + 1).paddedLeft ('0', 2)),
                                 juce::dontSendNotification);
@@ -6945,7 +6989,7 @@ void MainComponent::ponEnRanura (int ranura, int fx)
                 for (int i = 0; i < kNumPads; ++i)
                     engine.setPadCanal (i, (int) c);
                 for (auto* b : pads) if (b != nullptr) b->repaint();
-                status.setText (T ("%1 en CANAL %2: entran los %3 pads", fxDefs[fx].name,
+                status.setText (T ("%1 en CANAL %2: entran los %3 pads", T (nombreLargoFx (fx)),
                                    juce::String ((int) c + 1).paddedLeft ('0', 2),
                                    juce::String (kNumPads)),
                                 juce::dontSendNotification);
@@ -7171,7 +7215,7 @@ void MainComponent::refrescaRanuras()
             //  se anuncia como «boton» seis veces seguidas, que es lo que la
             //  tanda de la feria subio del 18 % al 79 %.
             m->setTitle (fx < 0 ? T ("VACIA")
-                                : juce::String (fxDefs[fx].name) + " "
+                                : T (nombreLargoFx (fx)) + " "
                                   + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
                                   + T (fxEncendido (fx) ? "ENCENDIDO" : "APAGADO"));
         }
@@ -8084,7 +8128,9 @@ void MainComponent::openSheet (Sheet& s, juce::TextButton& toggle)
                 if (b->isVisible() && b->isEnabled() && b->getBounds().contains (p))
                 {
                     closeAllSheets();
-                    b->triggerClick();
+                    //  En el acto y no con `triggerClick`, que lo deja en el
+                    //  buzon: ver `pulsaTapa`. Asi el banco lo puede medir.
+                    pulsaTapa (b);
                     return true;
                 }
         return false;
@@ -21356,7 +21402,9 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
         status.setText (T ("La vez anterior se paro: %1", Lang::ltr (Bitacora::atascoPrevio)),
                         juce::dontSendNotification);
     else if (Bitacora::previa.isNotEmpty())
-        status.setText (T ("La vez anterior se cerro en: %1", Bitacora::previa),
+        //  En palabras primero (feria J4: «se cerro en: audio/abrir» era jerga) y
+        //  la tarea detras, que es lo que hace falta para arreglarlo.
+        status.setText (T ("No se cerro bien la ultima vez: %1", Bitacora::previa),
                         juce::dontSendNotification);
 }
 

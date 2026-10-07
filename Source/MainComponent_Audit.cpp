@@ -11845,6 +11845,21 @@ void MainComponent::auditFeria()
     const int atras2 = cierraLoDeArriba() ? 1 : 0;
     const int atrasCerro = setSheet.isVisible() ? 0 : 1;
 
+    //  l. UN BOTON QUE ASOMA HACE LO SUYO (J4 M9: DESHACER sobre SEC solo
+    //     cerraba la ficha). DESHACER vive en la linea de estado, fuera de la
+    //     tarjeta: el toque por `onFuera` cierra la ficha Y deshace.
+    pushUndo ("FERIA");
+    showSeqPage (seqPageGrid);
+    openSheet (seqSheet, secButton);
+    resized();
+    const auto dondeUndo = undoButton.getBounds().getCentre();
+    const int asomaUndo = undoButton.isVisible() && ! seqSheet.sheetBounds.contains (dondeUndo) ? 1 : 0;
+    const auto pilaAntes = undoStack.size();
+    if (asomaUndo && seqSheet.onFuera) seqSheet.onFuera (dondeUndo);
+    const int asomaCierra = seqSheet.isVisible() ? 0 : 1;
+    const int asomaDeshace = undoStack.size() < pilaAntes ? 1 : 0;
+    closeAllSheets();
+
     //  i. EL LIMITADOR SE VE (J2: subio todo a +12 y nada lo dijo).
     const int sinAparato = dispositivo() == nullptr ? 1 : 0;
     engine.setMasterUser (AudioEngine::kMasterMaxGain);
@@ -11950,6 +11965,9 @@ void MainComponent::auditFeria()
               << ",\"atras1\":" << atras1
               << ",\"atras2\":" << atras2
               << ",\"atras_cerro\":" << atrasCerro
+              << ",\"asoma_undo\":" << asomaUndo
+              << ",\"asoma_cierra\":" << asomaCierra
+              << ",\"asoma_deshace\":" << asomaDeshace
               << ",\"sin_aparato\":" << sinAparato
               << ",\"recorte\":" << recorte
               << ",\"lim_db\":" << limDb

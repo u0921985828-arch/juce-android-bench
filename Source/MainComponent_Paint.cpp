@@ -187,7 +187,11 @@ void MainComponent::paint (juce::Graphics& g)
     //  labelled LOAD, REC and PLAY. resized() reserves the seam height for
     //  these, so they can never land on the section above.
     if (! ctrlPlateArea.isEmpty())
-        engraveIn (T ("CONTROL"), ctrlSeamTop, ctrlPlateArea.getY(), faceColumn);
+        //  Y CON EL NOMBRE ENTERO DEL EFECTO que gobiernan: ver nombreLargoFx.
+        engraveIn (platoModo == ModoPlato::fx && fxEstaPuesto (focusedFx)
+                       ? T ("CONTROL · %1", T (nombreLargoFx (focusedFx)))
+                       : T ("CONTROL"),
+                   ctrlSeamTop, ctrlPlateArea.getY(), faceColumn);
 
     //  ...Y CONTRA LO QUE SE PINTA, NO CONTRA LO QUE SE RESERVO.
     //
@@ -213,8 +217,8 @@ void MainComponent::paint (juce::Graphics& g)
         int entran = 0;
         for (int i = 0; i < kNumPads; ++i)
             entran += engine.getPadCanal (i) == canalActual ? 1 : 0;
-        const auto pads = entran == 1 ? T ("1 PAD") : T ("%1 PADS", Lang::ltr (juce::String (entran)));
-        bandaEfectos = engraveIn (T ("EFECTOS · CANAL %1 · %2", Lang::ltr (juce::String (canalActual + 1).paddedLeft ('0', 2)), pads), fxSeamTop,
+        const auto cuantos = entran == 1 ? T ("1 PAD") : T ("%1 PADS", Lang::ltr (juce::String (entran)));
+        bandaEfectos = engraveIn (T ("EFECTOS · CANAL %1 · %2", Lang::ltr (juce::String (canalActual + 1).paddedLeft ('0', 2)), cuantos), fxSeamTop,
                                   fxRowArea.getY() + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()),
                                   faceColumn);
     }
@@ -871,8 +875,18 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
     //  buys nothing.
     g.setColour (ZatiColours::inkDim);
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.12f));
+    //  SIN APARATO LA FILA NO SE QUEDA MUDA. Las fichas del bufer y del reloj
+    //  salen del dispositivo, y sin el la fila era un rotulo y nada al lado:
+    //  la feria (J4 M11) lo leyo como un control roto. Se dice por que.
+    auto sinFichas = [&] (juce::Rectangle<int> r, bool vacia)
+    {
+        if (! vacia) return;
+        Lang::takeStart (r, Metrics::canalonSeccion + Metrics::xs);
+        pintaTitulo (g, r, T ("SIN AUDIO"), "seccion", false, 0.75f);
+    };
     if (! bufRowArea.isEmpty())
-        { auto r = bufRowArea;  pintaTitulo (g,  Lang::takeStart (r, Metrics::canalonSeccion), T ("BUFER"), "seccion", false, 0.75f); }
+        { auto r = bufRowArea;  pintaTitulo (g,  Lang::takeStart (r, Metrics::canalonSeccion), T ("BUFER"), "seccion", false, 0.75f);
+          sinFichas (bufRowArea, bufButtons.isEmpty()); }
         if (! cuentaRowArea.isEmpty())
         { auto r = cuentaRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("CUENTA"), "seccion", false, 0.75f); }
         if (! monRowArea.isEmpty())
@@ -880,7 +894,8 @@ void MainComponent::paintAudioSheetContent (juce::Graphics& g)
         if (! tomasRowArea.isEmpty())
         { auto r = tomasRowArea; pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("TOMAS"), "seccion", false, 0.75f); }
     if (! rateRowArea.isEmpty())
-        { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, Metrics::canalonSeccion), T ("RELOJ"), "seccion", false, 0.75f); }
+        { auto r = rateRowArea; pintaTitulo (g,  Lang::takeStart (r, Metrics::canalonSeccion), T ("RELOJ"), "seccion", false, 0.75f);
+          sinFichas (rateRowArea, rateButtons.isEmpty()); }
 }
 
 // Sheet header: which pad is being filled and what is currently picked.
@@ -2498,8 +2513,8 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     //  collapsed the row to nothing and the subtitle vanished entirely. Por
     //  `antesDe`, que es quien tiene esa regla: el lado lo dice la TAPA y no el
     //  idioma.
-    auto subRow = antesDe (centraEnRenglon (inner.removeFromTop (Metrics::bandaSubtitulo), Metrics::bandaTitulo + Metrics::bandaSubtitulo),
-                           setCloseButton);
+    //  Donde lo dejo el maquetado: bajo las pestanas. Ver projSubArea.
+    auto subRow = projSubArea;
     const auto subProj = currentProject.isNotEmpty()
                              ? T ("abierto: %1", currentProject)
                              : (projModel.names.isEmpty()

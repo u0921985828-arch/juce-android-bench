@@ -3084,7 +3084,6 @@ void MainComponent::resized()
         //  pixeles menos de tarjeta.
         inner.removeFromTop (Metrics::bandaTitulo);
 
-        if (onProj) inner.removeFromTop (Metrics::bandaSubtitulo);   // painted: which project
         inner.removeFromTop (Metrics::sm);
 
         //  The tab row, directly under the title on both pages so it does not
@@ -3145,6 +3144,11 @@ void MainComponent::resized()
             //  un hueco.
             filaDeIconos (tb, 5);
             inner.removeFromTop (Metrics::sm);
+            //  Y EL RENGLON DE QUE PROYECTO, DEBAJO DE LAS PESTANAS y no encima:
+            //  encima solo existia en PROYECTOS y bajaba la fila 18 px al
+            //  cambiar de pagina (feria J3, «las pestanas cambian de altura»).
+            projSubArea = {};
+            if (onProj) projSubArea = inner.removeFromTop (Metrics::bandaSubtitulo);
 
             //  LOS GRUPOS DE ESTA FICHA. Ver el mismo bloque en EL PAD: se
             //  apuntan mientras se reparte el alto, con las coordenadas que la
