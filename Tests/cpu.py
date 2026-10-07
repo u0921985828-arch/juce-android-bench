@@ -178,9 +178,14 @@ TOPE_MS     = 0.05
 TOPE_NUMERO = 0.30
 TOPE_ENTERA = 0.90
 #  Deshacer y rehacer devuelven el proyecto entero; el aspecto cambia el color
-#  de todo. En los cinco idiomas, que la corrida de tapas pasa por todos.
+#  de todo. En los cinco idiomas, que la corrida de tapas pasa por todos: las
+#  carcasas solo estaban en castellano, y en cuanto las pestanas de AJUSTES
+#  dejaron de cambiar de altura (feria, J3) las cuatro en arabe pasaron a estar
+#  «en su sitio» y a contar.
 ENTERAS_CON_RAZON = re.compile (
-    r"/(DESHACER|REHACER|UNDO|REDO|撤销|重做|تراجع|إعادة|PAPEL|GRAFITO|ACERO|LACA)$")
+    r"/(DESHACER|REHACER|UNDO|REDO|撤销|重做|تراجع|إعادة"
+    r"|PAPEL|GRAFITO|ACERO|LACA|PAPER|GRAPHITE|STEEL|LACQUER|纸|石墨|钢|漆"
+    r"|ورق|غرافيت|فولاذ|ورنيش)$")
 
 
 #  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA.

@@ -186,12 +186,16 @@ void MainComponent::paint (juce::Graphics& g)
     //  it is by being a screen, and the transport keys say it by being
     //  labelled LOAD, REC and PLAY. resized() reserves the seam height for
     //  these, so they can never land on the section above.
+    //  Y LAS DOS COSTURAS CON DATOS se apuntan: ver miraCosturas.
+    cajaCosturaCtrl = cajaCosturaFx = {};
     if (! ctrlPlateArea.isEmpty())
+    {
         //  Y CON EL NOMBRE ENTERO DEL EFECTO que gobiernan: ver nombreLargoFx.
-        engraveIn (platoModo == ModoPlato::fx && fxEstaPuesto (focusedFx)
-                       ? T ("CONTROL · %1", T (nombreLargoFx (focusedFx)))
-                       : T ("CONTROL"),
-                   ctrlSeamTop, ctrlPlateArea.getY(), faceColumn);
+        const auto b = engraveIn (textoCosturaControl(), ctrlSeamTop, ctrlPlateArea.getY(), faceColumn);
+        cajaCosturaCtrl = juce::Rectangle<int> (0, ctrlSeamTop, getWidth(), ctrlPlateArea.getY() - ctrlSeamTop)
+                              .getUnion (juce::Rectangle<float> (0.0f, b.getStart(), (float) getWidth(), b.getLength())
+                                             .expanded (0.0f, 2.0f).getSmallestIntegerContainer());
+    }
 
     //  ...Y CONTRA LO QUE SE PINTA, NO CONTRA LO QUE SE RESERVO.
     //
@@ -211,16 +215,13 @@ void MainComponent::paint (juce::Graphics& g)
     juce::Range<float> bandaEfectos;
     if (! fxRowArea.isEmpty())
     {
-        //  Feria J1/J2/J5: el efecto suena en un CANAL y nada lo decia, y la
-        //  reverb de J1 no llego al fichero. La costura nombra el canal de la
-        //  fila y cuantos pads entran en el; con cero, el efecto no suena.
-        int entran = 0;
-        for (int i = 0; i < kNumPads; ++i)
-            entran += engine.getPadCanal (i) == canalActual ? 1 : 0;
-        const auto cuantos = entran == 1 ? T ("1 PAD") : T ("%1 PADS", Lang::ltr (juce::String (entran)));
-        bandaEfectos = engraveIn (T ("EFECTOS · CANAL %1 · %2", Lang::ltr (juce::String (canalActual + 1).paddedLeft ('0', 2)), cuantos), fxSeamTop,
+        //  Con el canal y los pads que entran: ver textoCosturaEfectos.
+        bandaEfectos = engraveIn (textoCosturaEfectos(), fxSeamTop,
                                   fxRowArea.getY() + ZatiLookAndFeel::aireTapaVertical (fxRowArea.getHeight()),
                                   faceColumn);
+        cajaCosturaFx = juce::Rectangle<int> (0, fxSeamTop, getWidth(), fxRowArea.getY() - fxSeamTop)
+                            .getUnion (juce::Rectangle<float> (0.0f, bandaEfectos.getStart(), (float) getWidth(), bandaEfectos.getLength())
+                                           .expanded (0.0f, 2.0f).getSmallestIntegerContainer());
     }
 
     if (! padPlateArea.isEmpty())

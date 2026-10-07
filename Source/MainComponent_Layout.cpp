@@ -924,14 +924,22 @@ void MainComponent::resized()
         //  al aparecer REHACER el DESHACER saltaba un hueco: en la feria (J4) de
         //  seis toques en DESHACER se recupero uno, el resto cayo en REHACER.
         //  Con cualquiera de los dos a la vista se reservan los dos huecos.
+        //  Y AL PRINCIPIO DE LA FILA, no al final: reservar los dos a la
+        //  derecha dejaba la frase en 163 px en 393x851 y en 50 en 280x653, y
+        //  «RETARDO en CANAL 01: entran los 64 pads» salia cortada (expo.py,
+        //  TRUNC). Con DESHACER clavado al principio y REHACER detras, el que
+        //  no se mueve es el que mas se toca, y la frase solo pierde el hueco
+        //  de REHACER cuando REHACER existe.
         if (undoButton.isVisible() || redoButton.isVisible())
         {
-            auto huecoRedo = strip.removeFromRight (96);
-            auto huecoUndo = strip.removeFromRight (96);
-            undoButton.setBounds (huecoUndo.reduced (Metrics::aireTapa, 0));
-            redoButton.setBounds (huecoRedo.reduced (Metrics::aireTapa, 0));
+            undoButton.setBounds (Lang::takeStart (strip, 96).reduced (Metrics::aireTapa, 0));
+            if (redoButton.isVisible())
+                redoButton.setBounds (Lang::takeStart (strip, 96).reduced (Metrics::aireTapa, 0));
+            else
+                redoButton.setBounds ({});
         }
         status.setBounds (strip);
+        eligeEstado();
     }
     area.removeFromBottom (Metrics::sm);
 
@@ -3148,7 +3156,13 @@ void MainComponent::resized()
             //  encima solo existia en PROYECTOS y bajaba la fila 18 px al
             //  cambiar de pagina (feria J3, «las pestanas cambian de altura»).
             projSubArea = {};
-            if (onProj) projSubArea = inner.removeFromTop (Metrics::bandaSubtitulo);
+            //  Y CON SU AIRE: el panel del nombre sale `panelAireY` por arriba y
+            //  pisaba el renglon (expo.py, PEGADO -2 px en 360x640).
+            if (onProj)
+            {
+                projSubArea = inner.removeFromTop (Metrics::bandaSubtitulo);
+                inner.removeFromTop (Metrics::sm);
+            }
 
             //  LOS GRUPOS DE ESTA FICHA. Ver el mismo bloque en EL PAD: se
             //  apuntan mientras se reparte el alto, con las coordenadas que la

@@ -2021,6 +2021,7 @@ namespace
         { "Sin dispositivo de audio: no puede sonar", "", "No audio device: nothing can sound", "没有音频设备：无法发声", "لا يوجد جهاز صوت: لا يمكن أن يصدر صوت" },
         { "SIN AUDIO", "", "NO AUDIO", "无音频", "لا صوت" },
         { "%1 en CANAL %2: entra el pad %3", "", "%1 on CHANNEL %2: pad %3 joins", "%1 在通道 %2：加入打击垫 %3", "%1 في القناة %2: ينضم اللوح %3" },
+        { "%1 en CANAL %2", "", "%1 on CHANNEL %2", "%1 在通道 %2", "%1 في القناة %2" },
         { "%1 en CANAL %2: entran los %3 pads", "", "%1 on CHANNEL %2: all %3 pads join", "%1 在通道 %2：全部 %3 个打击垫加入", "%1 في القناة %2: تنضم كل الألواح %3" },
         { "EFECTOS · CANAL %1 · %2", "", "EFFECTS · CHANNEL %1 · %2", "效果 · 通道 %1 · %2", "مؤثرات · قناة %1 · %2" },
         { "CONTROL · %1",   "",   "CONTROL · %1", "控制 · %1", "تحكم · %1" },

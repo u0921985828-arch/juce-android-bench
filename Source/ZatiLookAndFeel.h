@@ -1381,6 +1381,32 @@ public:
         setColour (juce::ComboBox::outlineColourId,    ZatiColours::panelLo);
     }
 
+    //  EL ROTULO DE LA CAJA DEL NOMBRE, con su ancho. JUCE pone la caja a 50
+    //  px del filo y el rotulo pegado se queda con lo que haya a su izquierda:
+    //  le bastaba a «file:», no a «nombre:» (41 sobre 30 en 360x640, expo.py)
+    //  ni al arabe. Se corre la caja lo que pida el rotulo, nunca menos.
+    void layoutFileBrowserComponent (juce::FileBrowserComponent& browser,
+                                     juce::DirectoryContentsDisplayComponent* lista,
+                                     juce::FilePreviewComponent* vista,
+                                     juce::ComboBox* ruta, juce::TextEditor* nombre,
+                                     juce::Button* subir) override
+    {
+        juce::LookAndFeel_V4::layoutFileBrowserComponent (browser, lista, vista, ruta, nombre, subir);
+        if (nombre == nullptr) return;
+
+        for (auto* c : browser.getChildren())
+            if (auto* l = dynamic_cast<juce::Label*> (c))
+                if (l->getAttachedComponent() == nombre)
+                {
+                    const int pide = (int) std::ceil (juce::GlyphArrangement::getStringWidth (getLabelFont (*l),
+                                                                                             l->getText()))
+                                   + getLabelBorderSize (*l).getLeftAndRight() + 1;
+                    auto b = nombre->getBounds();
+                    const int x = juce::jmax (b.getX(), 8 + pide);
+                    nombre->setBounds (b.withLeft (juce::jmin (x, b.getRight() - 40)));
+                }
+    }
+
     // ---- Browser row: flat, mono type, a coloured tick for directories.
     void drawFileBrowserRow (juce::Graphics& g, int w, int h,
                              const juce::File&, const juce::String& filename,

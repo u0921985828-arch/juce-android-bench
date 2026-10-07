@@ -6979,20 +6979,20 @@ void MainComponent::ponEnRanura (int ranura, int fx)
             {
                 engine.setPadCanal (selectedPad, (int) c);
                 if (auto* b = pads[selectedPad]) b->repaint();
-                status.setText (T ("%1 en CANAL %2: entra el pad %3", T (nombreLargoFx (fx)),
-                                   juce::String ((int) c + 1).paddedLeft ('0', 2),
-                                   juce::String (selectedPad + 1).paddedLeft ('0', 2)),
-                                juce::dontSendNotification);
+                const auto canal = juce::String ((int) c + 1).paddedLeft ('0', 2);
+                ponEstado (T ("%1 en CANAL %2: entra el pad %3", T (nombreLargoFx (fx)), canal,
+                              juce::String (selectedPad + 1).paddedLeft ('0', 2)),
+                           T ("%1 en CANAL %2", T (nombreLargoFx (fx)), canal));
             }
             else
             {
                 for (int i = 0; i < kNumPads; ++i)
                     engine.setPadCanal (i, (int) c);
                 for (auto* b : pads) if (b != nullptr) b->repaint();
-                status.setText (T ("%1 en CANAL %2: entran los %3 pads", T (nombreLargoFx (fx)),
-                                   juce::String ((int) c + 1).paddedLeft ('0', 2),
-                                   juce::String (kNumPads)),
-                                juce::dontSendNotification);
+                const auto canal = juce::String ((int) c + 1).paddedLeft ('0', 2);
+                ponEstado (T ("%1 en CANAL %2: entran los %3 pads", T (nombreLargoFx (fx)), canal,
+                              juce::String (kNumPads)),
+                           T ("%1 en CANAL %2", T (nombreLargoFx (fx)), canal));
             }
             refreshMixStrip();
             repaint();
@@ -7049,6 +7049,15 @@ void MainComponent::ponCanalActual (int c)
     //  vista de bancos con el pad que elige.
     ponCanalBanco (canalActual / kCanalesPorBanco);
     recargaFxDelCanal();
+    //  Y LA FICHA DE PRESETS, si esta abierta: su titulo dice el puesto DEL
+    //  CANAL -«EQ · SONRISA»- y tocar un pad de otro canal lo dejaba con el
+    //  del anterior. Medido con `ZATI_CENTINELA`: 470 pixeles en `preseteq`
+    //  tras cada pad de otro canal.
+    if (presetSheet.isVisible())
+    {
+        refrescaMenuPresets();
+        repaint (presetTituloBanda);
+    }
 }
 
 //  QUE DIECISEIS ENSEÑAN LOS DOS SELECTORES. No toca el canal elegido: pasear
@@ -9413,6 +9422,27 @@ void MainComponent::filaDeIconos (juce::TextButton** fila, int n)
     if (! todas)
         for (int i = 0; i < n; ++i)
             fila[i]->getProperties().set ("sinIcono", 1);
+}
+
+
+void MainComponent::ponEstado (const juce::String& largo, const juce::String& corto)
+{
+    estadoLargo = largo;
+    estadoCorto = corto;
+    status.setText (largo, juce::dontSendNotification);
+    eligeEstado();
+}
+
+void MainComponent::eligeEstado()
+{
+    const auto ahora = status.getText();
+    if (estadoLargo.isEmpty() || (ahora != estadoLargo && ahora != estadoCorto)) return;
+
+    auto& laf = status.getLookAndFeel();
+    const float cabe = (float) laf.getLabelBorderSize (status)
+                                  .subtractedFrom (status.getLocalBounds()).getWidth();
+    const bool largo = juce::GlyphArrangement::getStringWidth (laf.getLabelFont (status), estadoLargo) <= cabe;
+    status.setText (largo ? estadoLargo : estadoCorto, juce::dontSendNotification);
 }
 
 
@@ -14672,6 +14702,35 @@ void MainComponent::miraCuna()
     if (s == cunaVista) return;
     cunaVista = s;
     repaint (cajaCunas);
+}
+
+juce::String MainComponent::textoCosturaControl()
+{
+    return platoModo == ModoPlato::fx && fxEstaPuesto (focusedFx)
+               ? T ("CONTROL · %1", T (nombreLargoFx (focusedFx)))
+               : T ("CONTROL");
+}
+
+//  Feria J1/J2/J5: el efecto suena en un CANAL y nada lo decia, y la reverb
+//  de J1 no llego al fichero. La costura nombra el canal de la fila y cuantos
+//  pads entran en el; con cero, el efecto no suena.
+juce::String MainComponent::textoCosturaEfectos()
+{
+    int entran = 0;
+    for (int i = 0; i < kNumPads; ++i)
+        entran += engine.getPadCanal (i) == canalActual ? 1 : 0;
+    const auto cuantos = entran == 1 ? T ("1 PAD") : T ("%1 PADS", Lang::ltr (juce::String (entran)));
+    return T ("EFECTOS · CANAL %1 · %2", Lang::ltr (juce::String (canalActual + 1).paddedLeft ('0', 2)), cuantos);
+}
+
+void MainComponent::miraCosturas()
+{
+    if (cajaCosturaCtrl.isEmpty() && cajaCosturaFx.isEmpty()) return;
+    const auto ahora = textoCosturaControl() + "\n" + textoCosturaEfectos();
+    if (ahora == costurasVistas) return;
+    costurasVistas = ahora;
+    if (! cajaCosturaCtrl.isEmpty()) repaint (cajaCosturaCtrl);
+    if (! cajaCosturaFx.isEmpty())   repaint (cajaCosturaFx);
 }
 
 juce::Font MainComponent::fuenteContinuidad()
@@ -22499,6 +22558,7 @@ void MainComponent::pintaCuadro (double dtMs)
     //  que vale como arreglo.
     miraBanda();
     miraCuna();
+    miraCosturas();
     if ((continuidadMs += dtMs) >= kContinuidadMs)
     {
         continuidadMs = 0.0;

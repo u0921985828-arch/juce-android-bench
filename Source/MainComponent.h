@@ -1493,6 +1493,15 @@ private:
     void miraCuna();
     juce::Rectangle<int> cajaCunas;         // la franja donde puede ir
     int cunaVista = -2;                     // la ranura que se vio la ultima vez
+    //  Y LAS COSTURAS QUE DICEN ALGO: «CONTROL · <efecto>» y «EFECTOS · CANAL
+    //  nn · N PADS» cambian con el foco, el canal y lo que entra en el, que se
+    //  tocan desde decenas de sitios. Medido con `ZATI_CENTINELA`: 198 de 3700
+    //  apretadas dejaban la costura de antes. Ver miraCosturas.
+    juce::String textoCosturaControl();
+    juce::String textoCosturaEfectos();
+    void miraCosturas();
+    juce::Rectangle<int> cajaCosturaCtrl, cajaCosturaFx;   // donde las pone `paint`
+    juce::String costurasVistas;            // lo que se vio la ultima vez
 
     // --- Export -----------------------------------------------------------
     //  The bounce runs on its own thread through a clone of the engine (see
@@ -4781,6 +4790,13 @@ private:
     void refrescaPlato();                           // curva o mandos, segun quien tenga el foco
     void refrescaVisorPlato();                      // la forma del efecto enfocado; dos dueños
     juce::Label  status;
+    //  UNA FRASE CON SU FORMA CORTA. La linea de estado mide lo que le dejan
+    //  DESHACER y REHACER, y eso cambia DESPUES de escribirla (la accion que
+    //  la escribe es la que enciende DESHACER). eligeEstado la vuelve a
+    //  elegir cada vez que se maqueta, y solo si sigue siendo la suya.
+    juce::String estadoLargo, estadoCorto;
+    void ponEstado (const juce::String& largo, const juce::String& corto);
+    void eligeEstado();
     WaveformDisplay waveform;
     //  SE LLAMA CRISTAL Y NO ESPECTRO, porque no es un espectro: no lleva una
     //  sola FFT dentro. Dibuja la silueta de la onda del master sobre 0.74 s

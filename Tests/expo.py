@@ -398,7 +398,9 @@ def judge(rows, size, lang, sheet):
         #  y la ruta pasa de 24 caracteres a 47, asi que el hallazgo crecia con
         #  el nombre del directorio de pruebas y no con la app. Un banco que
         #  informa de su propio andamio ensena a no leerlo.
-        if "needW" in r and r["haveW"] > 0 and not r.get("text", "").startswith("/"):
+        #  Y LA RUTA CORTA TAMBIEN: desde la feria la caja dice "~/Music/..."
+        #  en vez de la ruta entera, y es la misma caja de JUCE.
+        if "needW" in r and r["haveW"] > 0 and not r.get("text", "").startswith(("/", "~/")):
             over = r["needW"] - r["haveW"]
             if over > 0.5:
                 #  Y EL 0.9 NO VALE PARA TODOS. Es la escala minima con la
