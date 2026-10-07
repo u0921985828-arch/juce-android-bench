@@ -1,6 +1,7 @@
 #include "SampleLoader.h"
 #include "DeviceTier.h"
 #include "AudioEngine.h"
+#include "Lang.h"
 
 namespace
 {
@@ -78,8 +79,8 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
             auto fis = std::make_unique<juce::FileInputStream> (f);
 
             if (fis->openedOk())        source = std::move (fis);
-            else if (! f.existsAsFile()) detail = "no existe el archivo";
-            else                         detail = "sin permiso de lectura";
+            else if (! f.existsAsFile()) detail = T ("no existe el archivo");
+            else                         detail = T ("sin permiso de lectura");
         }
         else
         {
@@ -88,7 +89,7 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
             if (doc.hasValue())
                 source = doc.createInputStream();
             else
-                detail = "documento no accesible";
+                detail = T ("documento no accesible");
            #else
             source = url.createInputStream (
                 juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress));
@@ -97,7 +98,7 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
 
         if (source == nullptr)
         {
-            if (detail.isEmpty()) detail = "sin flujo de datos";
+            if (detail.isEmpty()) detail = T ("sin flujo de datos");
         }
         else
         {
@@ -108,8 +109,7 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
 
             if (declared > maxFileBytes())
             {
-                detail = "demasiado grande: " + asMB (declared)
-                           + " (tope " + asMB (maxFileBytes()) + ")";
+                detail = T ("demasiado grande: %1 (tope %2)", asMB (declared), asMB (maxFileBytes()));
             }
             else
             {
@@ -133,13 +133,13 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                         sourceBytes = (juce::int64) block.getSize();
 
                         if (sourceBytes >= maxFileBytes())
-                            detail = "demasiado grande: pasa de " + asMB (maxFileBytes());
+                            detail = T ("demasiado grande: pasa de %1", asMB (maxFileBytes()));
                         else
                             seekable = std::make_unique<juce::MemoryInputStream> (std::move (block));
                     }
                     catch (const std::bad_alloc&)
                     {
-                        detail = "sin memoria al leer el archivo";
+                        detail = T ("sin memoria al leer el archivo");
                     }
                 }
 
@@ -147,7 +147,7 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                 {
                     if (sourceBytes >= 0 && sourceBytes <= 44)
                     {
-                        detail = "solo " + juce::String ((int) sourceBytes) + " bytes";
+                        detail = T ("solo %1 bytes", juce::String ((int) sourceBytes));
                     }
                     else if (auto* rawReader = formatManager.createReaderFor (std::move (seekable)))
                     {
@@ -164,13 +164,12 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                                                                 * (juce::int64) sizeof (float);
 
                         if (numChannels <= 0 || lengthIn <= 3)
-                            detail = "audio vacio";
+                            detail = T ("audio vacio");
                         else if (seconds > maxSeconds())
-                            detail = "dura " + juce::String ((int) (seconds / 60.0)) + " min (tope "
-                                       + juce::String ((int) (maxSeconds() / 60.0)) + ")";
+                            detail = T ("dura %1 min (tope %2)", juce::String ((int) (seconds / 60.0)),
+                                       juce::String ((int) (maxSeconds() / 60.0)));
                         else if (floatBytes > maxFloatBytes())
-                            detail = "ocuparia " + asMB (floatBytes)
-                                       + " en memoria (tope " + asMB (maxFloatBytes()) + ")";
+                            detail = T ("ocuparia %1 en memoria (tope %2)", asMB (floatBytes), asMB (maxFloatBytes()));
                         else
                         {
                             //  The allocation that used to take the process
@@ -198,18 +197,18 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                             }
                             catch (const std::bad_alloc&)
                             {
-                                detail = "sin memoria para " + asMB (floatBytes);
+                                detail = T ("sin memoria para %1", asMB (floatBytes));
                             }
                         }
                     }
                     else
                     {
-                        detail = "formato no reconocido";
+                        detail = T ("formato no reconocido");
                     }
                 }
                 else if (detail.isEmpty())
                 {
-                    detail = "no pude abrir el archivo";
+                    detail = T ("no pude abrir el archivo");
                 }
             }
         }

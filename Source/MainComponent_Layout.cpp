@@ -6061,6 +6061,14 @@ void MainComponent::resized()
         if (pasoAqui || onGrid)
         {
             const int base = wideFace ? 0 : bandH + costeBarra + bandH;
+            //  Y LA TIRA NO BAJA LA CELDA DE 16, que es el suelo que ya piden
+            //  las filas prescindibles con la tira puesta. Con doce las tres
+            //  filas cabian y la barra de un patron largo salia de la rejilla:
+            //  medido en 393x851, celda de 18 px con un compas y de 15 con
+            //  cuatro, los 15 que midio J1 en la feria. Con dieciseis la fila
+            //  de los bloqueos -lo primero que sobra, estan en PASO- se cae y
+            //  la celda es la misma con uno o con cuatro compases.
+            const int sueloTira = 16;
             auto cabe = [&] (int filas)
             {
                 const int coste = filas * (nameH + Metrics::hit)
@@ -6072,7 +6080,7 @@ void MainComponent::resized()
                 //  en 5.2 px de alto, la sexta parte del suelo. La cuenta es la
                 //  misma en las dos orientaciones; lo unico que cambia es que
                 //  girado no hay filas apiladas encima.
-                return (capH - chrome - base - coste) / lanes >= kMinLaneH;
+                return (capH - chrome - base - coste) / lanes >= sueloTira;
             };
             //  Tres filas: NOTA/GOLPE, REPETIR/CORTE y los cuatro bloqueos.
             //  La tercera cuesta 58 px y en 412x915 baja la celda de 16.9 a

@@ -46,7 +46,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     { { "CIERRA",    -0.55f,  0.90f, 1.00f, 0.0f },
       { "TAPA",      -0.90f,  0.70f, 1.00f, 0.0f },
       { "ABRE",       0.50f,  1.20f, 1.00f, 0.0f },
-      { "TELEFONO",   0.75f,  2.20f, 1.00f, 0.0f },
+      { "TELÉFONO",   0.75f,  2.20f, 1.00f, 0.0f },
       { "RESUENA",   -0.35f,  3.60f, 1.00f, 0.0f } },
 
     //  HPF  freq 20..20000, reso 0.3..4
@@ -73,7 +73,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     //  BIT  bits 1..16, diezmado 1..64
     { { "OCHO BITS",  8.0f,  2.0f, 0.60f, 0.0f },
       { "CONSOLA",    6.0f,  4.0f, 0.70f, 0.0f },
-      { "LINEA",      5.0f, 12.0f, 0.60f, 0.0f },
+      { "LÍNEA",      5.0f, 12.0f, 0.60f, 0.0f },
       { "DESTROZA",   3.0f, 24.0f, 0.80f, 0.0f },
       { "CRUJE",     12.0f,  8.0f, 0.50f, 0.0f } },
 
@@ -116,7 +116,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     //  LIM  techo -24..0 dB, soltar 5..500 ms
     { { "TECHO",     -1.0f, 120.0f, 1.00f, 0.0f },
       { "SEGURO",    -3.0f, 200.0f, 1.00f, 0.0f },
-      { "RAPIDO",    -2.0f,  30.0f, 1.00f, 0.0f },
+      { "RÁPIDO",    -2.0f,  30.0f, 1.00f, 0.0f },
       { "MURO",      -0.3f,  10.0f, 1.00f, 0.0f },
       { "SUELTA",    -6.0f, 400.0f, 1.00f, 0.0f } },
 
@@ -124,21 +124,21 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     { { "LENTO",     0.25f, 0.45f, 0.45f,  0.0f },
       { "ESPESO",    1.20f, 0.85f, 0.60f,  0.0f },
       { "DOBLA",     0.55f, 0.30f, 0.40f,  0.0f },
-      { "COMPAS",    0.80f, 0.55f, 0.50f, 16.0f },
+      { "COMPÁS",    0.80f, 0.55f, 0.50f, 16.0f },
       { "NEGRA",     0.80f, 0.70f, 0.55f,  4.0f } },
 
     //  FLA  rate 0.05..8 Hz, realimentacion 0..1
     { { "AVION",     0.15f, 0.85f, 0.55f,  0.0f },
       { "METAL",     0.35f, 0.20f, 0.50f,  0.0f },
       { "LENTO",     0.08f, 0.60f, 0.45f,  0.0f },
-      { "COMPAS",    0.25f, 0.55f, 0.50f, 16.0f },
+      { "COMPÁS",    0.25f, 0.55f, 0.50f, 16.0f },
       { "NEGRA",     0.25f, 0.65f, 0.50f,  4.0f } },
 
     //  PHA  rate 0.05..8 Hz, profundidad 0..1
     { { "SUAVE",     0.20f, 0.50f, 0.45f,  0.0f },
       { "HONDO",     0.45f, 0.95f, 0.60f,  0.0f },
-      { "RAPIDO",    2.50f, 0.65f, 0.50f,  0.0f },
-      { "COMPAS",    0.35f, 0.70f, 0.50f, 16.0f },
+      { "RÁPIDO",    2.50f, 0.65f, 0.50f,  0.0f },
+      { "COMPÁS",    0.35f, 0.70f, 0.50f, 16.0f },
       { "CORCHEA",   0.35f, 0.70f, 0.50f,  2.0f } },
 
     //  TRM  rate 0.2..20 Hz, profundidad 0..1
@@ -160,7 +160,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "SUB",      -12.0f,  80.0f, 1.00f, 0.0f },
       { "QUINTA",     7.0f,  60.0f, 1.00f, 0.0f },
       { "TERCERA",    4.0f,  60.0f, 1.00f, 0.0f },
-      { "METALICO",   3.0f,  20.0f, 1.00f, 0.0f } },
+      { "METÁLICO",   3.0f,  20.0f, 1.00f, 0.0f } },
 
     //  WID  ancho 0..2 veces, mono por debajo de 20..400 Hz
     { { "ABRE",      1.40f, 120.0f, 1.00f, 0.0f },
@@ -179,7 +179,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     //  TRN  ataque -1..+1, caida -1..+1 (el centro es no hacer nada)
     { { "MAS GOLPE",  0.70f, -0.20f, 1.00f, 0.0f },
       { "SIN GOLPE", -0.60f,  0.20f, 1.00f, 0.0f },
-      { "MAS COLA",   0.10f,  0.70f, 1.00f, 0.0f },
+      { "MÁS COLA",   0.10f,  0.70f, 1.00f, 0.0f },
       { "SECO",       0.40f, -0.80f, 1.00f, 0.0f },
       { "PLANO",     -0.30f, -0.30f, 1.00f, 0.0f } },
 
@@ -188,7 +188,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "MEDIO",     180.0f, 0.35f, 1.00f, 0.0f },
       { "LARGO",     420.0f, 0.55f, 1.00f, 0.0f },
       { "GRANO",      25.0f, 0.05f, 1.00f, 0.0f },
-      { "COLCHON",   350.0f, 0.90f, 1.00f, 0.0f } },
+      { "COLCHÓN",   350.0f, 0.90f, 1.00f, 0.0f } },
 
     //  WAH  sensibilidad 0..1, base 200..1200 Hz
     { { "PEDAL",     0.60f, 400.0f, 1.00f, 0.0f },
@@ -238,10 +238,10 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     //  LENTO y RAPIDO son las dos velocidades que una Leslie tiene de verdad
     //  -el conmutador del organo- y por eso son las dos primeras.
     { { "LENTO",      0.80f, 0.70f, 1.00f, 0.0f },
-      { "RAPIDO",     6.50f, 0.70f, 1.00f, 0.0f },
+      { "RÁPIDO",     6.50f, 0.70f, 1.00f, 0.0f },
       { "SUAVE",      3.00f, 0.35f, 1.00f, 0.0f },
-      { "ORGANO",     5.50f, 0.90f, 1.00f, 0.0f },
-      { "VERTIGO",    8.00f, 1.00f, 1.00f, 0.0f } },
+      { "ÓRGANO",     5.50f, 0.90f, 1.00f, 0.0f },
+      { "VÉRTIGO",    8.00f, 1.00f, 1.00f, 0.0f } },
 
     //  PNG  tiempo 20..1000 ms, realimentacion 0..0.95
     { { "CORTO",     120.0f, 0.35f, 0.30f, 0.0f },
@@ -252,7 +252,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
 
     //  DUC  rate 0.05..8 Hz, profundidad 0..1
     { { "SUAVE",       2.00f, 0.35f, 1.00f, 0.0f },
-      { "CLASICO",     2.00f, 0.70f, 1.00f, 0.0f },
+      { "CLÁSICO",     2.00f, 0.70f, 1.00f, 0.0f },
       { "BOMBEO",      2.00f, 0.90f, 1.00f, 0.0f },
       { "CORCHEAS",    4.00f, 0.65f, 1.00f, 0.0f },
       { "LENTO",       1.00f, 0.80f, 1.00f, 0.0f } },

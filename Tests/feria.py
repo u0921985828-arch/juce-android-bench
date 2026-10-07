@@ -74,6 +74,10 @@ def main():
            "DESHACER %s con REHACER, %s sin" % (r["undo_con"], r["undo_sin"]))
     regla ("rejilla", r["grid_con"] == r["grid_sin"],
            "rejilla %s sin paso elegido, %s con" % (r["grid_sin"], r["grid_con"]))
+    regla ("celda", abs (r["celda_4c"] - r["celda_1c"]) < 0.01 and r["celda_8p"] >= 2 * r["celda_1c"] - 0.01
+                    and r["celda_8p"] >= 36,
+           "celda de paso %.1f px con 1 compas y %.1f con 4; con 1-8 pistas %.1f de alto"
+           % (r["celda_1c"], r["celda_4c"], r["celda_8p"]))
     regla ("pad", r["pad_vuelve"] == 9, "pad elegido tras deshacer el estado: %d (9)" % r["pad_vuelve"])
     regla ("texto", r["bpm_basura"] == 127 and r["bpm_vacio"] == 127 and r["bpm_cifra"] == 90
                     and abs (r["master_basura"] - 0.5) < 1e-9,

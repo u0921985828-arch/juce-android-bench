@@ -6381,7 +6381,7 @@ juce::String MainComponent::fxPresetNombre (int f) const
     if (tuyo.isNotEmpty()) return tuyo;
     const int k = fxPresetPuesto[(size_t) canalActual][(size_t) f];
     if (k == kFxPresetMovido) return T ("MOVIDO");
-    return FxPresets::nombre (f, k);
+    return juce::String::fromUTF8 (FxPresets::nombre (f, k));
 }
 
 // ---------------------------------------------------------------------------
@@ -7432,7 +7432,7 @@ void MainComponent::refrescaMenuPresets()
         b->setVisible (hay);
         if (! hay) { b->setBounds ({}); continue; }
 
-        b->setButtonText (deFabrica ? juce::String (FxPresets::nombre (f, i))
+        b->setButtonText (deFabrica ? juce::String::fromUTF8 (FxPresets::nombre (f, i))
                                     : presetTuyosVistos[t]);
         b->setToggleState (deFabrica ? (tuyo.isEmpty() && i == puesto)
                                      : (tuyo == presetTuyosVistos[t]),

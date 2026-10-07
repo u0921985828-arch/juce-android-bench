@@ -48,7 +48,7 @@ FICHAS = [
     ("sec",    "SEC"),
     ("piano",  "SEC"),
     ("paso",   "SEC"),
-    ("song",   "CANCION"),
+    ("song",   "CANCIÓN"),
     ("mix",    "MEZCLA"),
     ("xy",     "XY"),
     ("set",    "AJUSTES"),
@@ -341,7 +341,7 @@ def main():
         #  `salvo` pide la palabra traducida: una pantalla, un estado, una
         #  pregunta.
         if sheet == "ranura" and lang == "es":
-            QUIERE = ["FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO"]
+            QUIERE = ["FILTRO", "SATURACIÓN", "MODULACIÓN", "ESPACIO", "DINÁMICA", "TIEMPO"]
             secc = [r["rotulo"] for r in rot if r["tipo"] == "seccion"]
             print ("  las secciones del menu: %s" % (", ".join (secc) or "(ninguna)"))
             if secc != QUIERE:

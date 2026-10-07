@@ -498,7 +498,7 @@ UNTRANSLATED_OK = {
     "SINTES",                                  # el pack se llama asi, como ZATI
     "OFF",                                     # el extremo apagado de un mando, universal en un aparato
     "PAPEL", "GRAFITO", "ACERO", "LACA",       # the four chassis, named not translated
-    "ESPANOL", "ENGLISH",                      # each language names itself
+    "ESPAÑOL", "ENGLISH",                      # each language names itself
     "file:",
     "\u4e2d\u6587", "\u0627\u0644\u0639\u0631\u0628\u064a\u0629",   # each language names itself, in itself
 }
@@ -528,7 +528,7 @@ def _presetsDeFabrica ():
     #  `{ "NOMBRE", numero, ...` — el mismo ancla que marcas.py usa con fxDefs,
     #  y con el espacio admitido dentro del nombre: «OCHO BITS» y «MAS GOLPE»
     #  son dos palabras.
-    nombres = re.findall (r'\{\s*"([A-Z0-9 ]{1,16})"\s*,\s*[-0-9]', texto)
+    nombres = re.findall (r'\{\s*"([A-Z0-9 ÁÉÍÓÚÑ]{1,16})"\s*,\s*[-0-9]', texto)
 
     mEsc = re.search (r'kEscritos\s*=\s*(\d+)', cab)
     mFx  = re.search (r'kNumFx\s*=\s*(\d+)', mot)

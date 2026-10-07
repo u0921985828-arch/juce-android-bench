@@ -3737,8 +3737,8 @@ void MainComponent::auditOpen (const juce::String& pedido)
                 //  identicas no dicen cual es cual.
                 int peor = 1;
                 for (int k = 1; k < FxPresets::cuantos(); ++k)
-                    if (juce::String (FxPresets::nombre (fx, k)).length()
-                          > juce::String (FxPresets::nombre (fx, peor)).length())
+                    if (juce::String::fromUTF8 (FxPresets::nombre (fx, k)).length()
+                          > juce::String::fromUTF8 (FxPresets::nombre (fx, peor)).length())
                         peor = k;
                 aplicaFxPreset (fx, peor);
             }
@@ -11813,6 +11813,21 @@ void MainComponent::auditFeria()
     selectedStep = 0;   resized();
     const auto gridCon = stepGrid.getBounds();
     selectedStep = -1;
+
+    //  m. LA CELDA NO ENCOGE CON LOS COMPASES, Y CON OCHO PISTAS SE DOBLA (J1:
+    //  «con 4 compases cada celda mide unos 15 px»). El lado sale del alto y
+    //  el patron largo se recorre con la barra; 1-8 es la tapa del dedo.
+    engine.setPatternLength (selectedPattern, 16);  resized();  refreshStepGrid();
+    const float celda1c = stepGrid.anchoCelda();
+    const int filas1c = (copyPatBtn.isVisible() ? 1 : 0) + (seqTiraFilas * 10);
+    engine.setPatternLength (selectedPattern, 64);  resized();  refreshStepGrid();
+    const float celda4c = stepGrid.anchoCelda();
+    const int filas4c = (copyPatBtn.isVisible() ? 1 : 0) + (seqTiraFilas * 10);
+    const int pistasAntes = pistasVista;
+    aplicaPistas (1);
+    const float celda8p = stepGrid.altoCelda();
+    aplicaPistas (pistasAntes);
+    engine.setPatternLength (selectedPattern, 16);  resized();  refreshStepGrid();
     closeAllSheets();
 
     //  e. EL PAD ELEGIDO VUELVE CON EL ESTADO (J4: SEC abria otro pad).
@@ -11955,6 +11970,8 @@ void MainComponent::auditFeria()
               << ",\"undo_sin\":" << caja (undoSin)
               << ",\"grid_sin\":" << caja (gridSin)
               << ",\"grid_con\":" << caja (gridCon)
+              << ",\"celda_1c\":" << celda1c << ",\"celda_4c\":" << celda4c
+              << ",\"celda_8p\":" << celda8p << ",\"filas_1c\":" << filas1c << ",\"filas_4c\":" << filas4c
               << ",\"pad_vuelve\":" << padVuelve
               << ",\"bpm_basura\":" << bpmBasura
               << ",\"bpm_vacio\":" << bpmVacio
