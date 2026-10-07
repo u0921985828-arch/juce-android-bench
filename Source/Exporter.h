@@ -79,6 +79,84 @@ static inline juce::AudioFormatWriterOptions opcionesDeEscritor (double sampleRa
     return o;
 }
 
+//  LA SONORIDAD DEL REBOTE, en LUFS integrados (ITU-R BS.1770-4 / EBU R128).
+//
+//  La feria (J2) se fue con «no hay LUFS»: el parte decia cuantos ficheros y
+//  cuantos segundos y nada de como suena de fuerte lo que sale, que es lo
+//  primero que mira quien lo va a subir a una plataforma. Ponderacion K -un
+//  estante de +4 dB arriba y un paso alto en 38 Hz, coeficientes sacados de
+//  la frecuencia de muestreo y no los de 48 kHz a pelo-, bloques de 400 ms
+//  que avanzan 100, puerta absoluta en -70 y relativa a -10 de la media.
+struct Sonoridad
+{
+    void prepara (double fs)
+    {
+        const double pi = juce::MathConstants<double>::pi;
+        {
+            const double f0 = 1681.974450955533, G = 3.999843853973347, Q = 0.7071752369554196;
+            const double K = std::tan (pi * f0 / fs), Vh = std::pow (10.0, G / 20.0);
+            const double Vb = std::pow (Vh, 0.4996667741545416), a0 = 1.0 + K / Q + K * K;
+            e1 = { (Vh + Vb * K / Q + K * K) / a0, 2.0 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0,
+                   2.0 * (K * K - 1.0) / a0, (1.0 - K / Q + K * K) / a0 };
+        }
+        {
+            const double f0 = 38.13547087602444, Q = 0.5003270373238773;
+            const double K = std::tan (pi * f0 / fs), a0 = 1.0 + K / Q + K * K;
+            e2 = { 1.0, -2.0, 1.0, 2.0 * (K * K - 1.0) / a0, (1.0 - K / Q + K * K) / a0 };
+        }
+        trozoN = juce::jmax (1, (int) std::lround (fs * 0.1));
+        for (auto& c : z) c = {};
+        acc = 0.0; enTrozo = 0; trozos.clear();
+    }
+
+    void mete (const juce::AudioBuffer<float>& b, int n)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const double x = b.getSample (juce::jmin (ch, b.getNumChannels() - 1), i);
+                acc += juce::square (pasa (e2, z[(size_t) ch][1], pasa (e1, z[(size_t) ch][0], x)));
+            }
+            if (++enTrozo == trozoN) { trozos.push_back (acc / trozoN); acc = 0.0; enTrozo = 0; }
+        }
+    }
+
+    //  -200 si no hay un bloque entero o si todo queda bajo la puerta.
+    double lufs() const
+    {
+        std::vector<double> bloques;
+        for (size_t i = 3; i < trozos.size(); ++i)
+            bloques.push_back ((trozos[i] + trozos[i - 1] + trozos[i - 2] + trozos[i - 3]) * 0.25);
+        auto media = [&] (double suelo)
+        {
+            double s = 0.0; int n = 0;
+            for (double e : bloques) if (e > suelo) { s += e; ++n; }
+            return n > 0 ? s / n : 0.0;
+        };
+        const double abs = std::pow (10.0, (-70.0 + 0.691) / 10.0);
+        const double m1  = media (abs);
+        if (m1 <= 0.0) return -200.0;
+        const double m2  = media (juce::jmax (abs, m1 * std::pow (10.0, -10.0 / 10.0)));
+        return m2 > 0.0 ? -0.691 + 10.0 * std::log10 (m2) : -200.0;
+    }
+
+private:
+    struct Coef { double b0, b1, b2, a1, a2; };
+    struct Est  { double x1 = 0, x2 = 0, y1 = 0, y2 = 0; };
+    static double pasa (const Coef& c, Est& s, double x)
+    {
+        const double y = c.b0 * x + c.b1 * s.x1 + c.b2 * s.x2 - c.a1 * s.y1 - c.a2 * s.y2;
+        s.x2 = s.x1; s.x1 = x; s.y2 = s.y1; s.y1 = y;
+        return y;
+    }
+    Coef e1 {}, e2 {};
+    std::array<std::array<Est, 2>, 2> z {};
+    double acc = 0.0;
+    int trozoN = 4800, enTrozo = 0;
+    std::vector<double> trozos;
+};
+
 class Exporter : public juce::Thread
 {
 public:
@@ -281,6 +359,9 @@ public:
                           : juce::String())
                      + (mudas > 0
                           ? " " + T ("(%1 pads mudos sin fichero)", juce::String (mudas))
+                          : juce::String())
+                     + (lufsMezcla > -100.0
+                          ? juce::String::fromUTF8 (" \xc2\xb7 ") + T ("%1 LUFS", juce::String (lufsMezcla, 1))
                           : juce::String());
         pistasMudas = mudas;
         Bitacora::paso ("exportar/hecho");
@@ -381,6 +462,7 @@ private:
 
         off.setPlaying (true);
         bool parado = false;
+        if (writer != nullptr && soloPad < 0) sonoridad.prepara (sampleRate);
 
         //  EL UNICO buffer del rebote, y mide un bloque. Ver la cabecera: el
         //  que media la cancion entera es el que cerraba la app.
@@ -433,6 +515,7 @@ private:
                 if (gain < 1.0f)
                     for (int ch = 0; ch < 2; ++ch)
                         trozo.applyGain (ch, 0, n, gain);
+                if (soloPad < 0) sonoridad.mete (trozo, n);
 
                 if (! writer->writeFromAudioSampleBuffer (trozo, 0, n))
                 {
@@ -455,6 +538,7 @@ private:
         }
 
         off.setPlaying (false);
+        if (writer != nullptr && soloPad < 0) lufsMezcla = sonoridad.lufs();
         return true;
     }
 
@@ -527,11 +611,13 @@ private:
     }
 
     static constexpr int kBlock = 512;
+    Sonoridad sonoridad;
 
     AudioEngine& live;
     juce::int64 bodyLen = 0;     // muestras de compases; lo pone run() del plan
 public:
     int pistasMudas = 0;         // banco: pistas que no llegaron a fichero
+    double lufsMezcla = -200.0;  // la mezcla escrita, ya con la ganancia; -200 sin mezcla
 private:
     PadSamples   pads;
     PadNames     padNames;

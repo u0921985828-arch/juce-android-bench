@@ -24,7 +24,7 @@
 #
 #      python3 Tests/export.py
 # ============================================================================
-import json, os, subprocess, sys, tempfile, shutil
+import re, json, os, subprocess, sys, tempfile, shutil
 
 #  LA PANTALLA QUE SE COMPRUEBA ES LA QUE SE USA: `PANTALLA` vive en
 #  `kits.py`, al lado de `display_alive`, y quien arranca la app la escribe
@@ -77,6 +77,22 @@ def infoOgg (ruta):
     return d
 
 
+def lufsFfmpeg (ruta):
+    """La sonoridad integrada medida por OTRO: el filtro ebur128 de ffmpeg, el
+    mismo con el que los jueces de la feria midieron los WAV."""
+    try:
+        p = subprocess.run (["ffmpeg", "-hide_banner", "-nostats", "-i", ruta,
+                             "-af", "ebur128", "-f", "null", "-"],
+                            capture_output=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    t = p.stderr.decode ("utf8", "replace")
+    k = t.rfind ("Integrated loudness:")
+    if k < 0: return None
+    m = re.search (r"I:\s*(-?[0-9.]+|-inf)\s*LUFS", t[k:])
+    return None if m is None or m.group (1) == "-inf" else float (m.group (1))
+
+
 def corre():
     casa = tempfile.mkdtemp (prefix="zati-export-")
     env = dict (os.environ, ZATI_AUDIT="1", ZATI_EXPORT="1",
@@ -95,7 +111,9 @@ def corre():
     for raiz, _, ficheros in os.walk (casa):
         for f in sorted (ficheros):
             r = os.path.join (raiz, f)
-            if   f.endswith (".wav"): marcas.setdefault ("wav", []).append ((f, infoWav (r)))
+            if   f.endswith (".wav"):
+                marcas.setdefault ("wav", []).append ((f, infoWav (r)))
+                marcas.setdefault ("lufs", {})[os.path.basename (raiz) + "/" + f] = lufsFfmpeg (r)
             elif f.endswith (".ogg"): marcas.setdefault ("ogg", []).append ((f, infoOgg (r)))
     shutil.rmtree (casa, ignore_errors=True)
 
@@ -176,6 +194,16 @@ def main():
     f = filas.get ("fuerte", {})
     juzga ("techo", -1.5 < f.get ("pico_db", 0) <= -0.99 and "bajado" in f.get ("parte", ""),
            "a tope: pico %.2f dBFS (techo -1), parte \"%s\"" % (f.get ("pico_db", 0), f.get ("parte", "")))
+    #  LA SONORIDAD QUE DICE EL PARTE ES LA DEL FICHERO (feria, J2: «no hay
+    #  LUFS»). La app la calcula al escribir y ffmpeg la mide despues sobre el
+    #  WAV: si no coinciden en medio LU, el numero del parte es decorado.
+    for nom, fila in (("lufs", m), ("lufs-tope", f)):
+        suyo = (marcas.get ("lufs", {}) or {}).get (fila.get ("fichero", ""))
+        app  = fila.get ("lufs", -200)
+        juzga (nom, suyo is not None and app > -100 and abs (app - suyo) <= 0.5
+                    and "LUFS" in fila.get ("parte", ""),
+               "la app dice %.1f LUFS, ffmpeg mide %s en %s"
+                 % (app, "?" if suyo is None else "%.1f" % suyo, fila.get ("fichero", "?")))
     juzga ("final", m.get ("final_db", 0) < -60,
            "ultimos 5 ms a %.1f dBFS" % m.get ("final_db", 0))
 

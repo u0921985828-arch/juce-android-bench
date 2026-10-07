@@ -2041,6 +2041,8 @@ void MainComponent::auditExport()
         std::cout << "{\"export\":\"" << (fuerte ? "fuerte" : comprimido ? "ogg" : pistas ? "pistas" : "master")
                   << "\",\"pads\":" << cargados
                   << ",\"mudas\":" << job.pistasMudas
+                  << ",\"lufs\":" << job.lufsMezcla
+                  << ",\"fichero\":\"" << (hechos.isEmpty() ? juce::String() : hechos[0].getParentDirectory().getFileName() + "/" + hechos[0].getFileName()) << "\""
                   << ",\"segundos\":" << segundos
                   << ",\"anunciado\":" << anunciado
                   << ",\"pico_db\":" << picoDb

@@ -494,6 +494,7 @@ namespace
           "%1 个文件，%2 秒", "%1 ملف، %2 ثانية" },
         { "%1 archivos, %2 s", "",      "%1 files, %2 s",
           "%1 个文件，%2 秒", "%1 ملفات، %2 ثانية" },
+        { "%1 LUFS", "", "%1 LUFS", "%1 LUFS", "%1 LUFS" },
         { "(bajado %1 dB para no saturar)", "", "(lowered %1 dB to avoid clipping)",
           "（降低 %1 dB 以避免削波）", "(خُفض %1 ديسيبل لتفادي القص)" },
         //  Las pistas de los pads que no suenan no se escriben (feria

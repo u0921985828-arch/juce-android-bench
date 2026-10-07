@@ -3692,6 +3692,16 @@ void MainComponent::resized()
             const int cuantas = exportShareBtn.isVisible() ? 3 : 2;
             if (! exportShareBtn.isVisible()) exportShareBtn.setBounds ({});
             layoutModuleBar (fila, lb, 0, cuantas);
+            //  Y LA FILA DECIDE EL DIBUJO DE GOLPE: PATRON lo tiene y EN VIVO
+            //  y COMPARTIR no, y una fila con una tapa dibujada y otra sin
+            //  dibujo se lee como una tapa a la que le falta algo (planos.py,
+            //  HUECO). filaDeIconos no sirve: salta las que no piden dibujo.
+            bool todas = true;
+            for (int i = 0; i < cuantas; ++i)
+                todas = todas && (int) lb[i]->getProperties().getWithDefault ("icono", 0) != 0;
+            for (int i = 0; i < cuantas; ++i)
+                if (todas) lb[i]->getProperties().remove ("sinIcono");
+                else       lb[i]->getProperties().set ("sinIcono", 1);
         }
         //  Tres tapas: el formato primero porque se elige ANTES de decidir si
         //  es master o pistas, y repartidas por el texto - "PISTAS" y "MASTER"
