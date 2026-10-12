@@ -6235,7 +6235,13 @@ void MainComponent::auditCanales()
                 const int ecuador = (y0 + y1) / 2;
                 int a = w / 2;
                 while (a > 0 && tinta (a - 1, ecuador)) --a;
-                for (int x = a; x <= dialR && img.getPixelAt (x, ecuador).getPerceivedBrightness() > 0.5f; ++x)
+                //  La linea es lo que se parece al borde y no al relleno, y no
+                //  «lo claro»: con las carcasas claras el aro es tinta oscura y
+                //  medirlo por brillo daba 0 px en la 0 y en la 2.
+                const auto luz = [&img, ecuador] (int x) { return img.getPixelAt (x, ecuador).getPerceivedBrightness(); };
+                const float borde = luz (a), relleno = luz (a + (dialR - a) / 4);
+                const float corte = std::abs (borde - relleno) * 0.5f;
+                for (int x = a; x <= dialR && corte > 0.0f && std::abs (luz (x) - borde) < corte; ++x)
                     ++mesaKnobAro;
                 //  Las letras: todo lo pintado fuera de los bordes del dial,
                 //  la L a su izquierda y la R a su derecha.
