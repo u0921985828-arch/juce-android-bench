@@ -19,6 +19,11 @@
 #   4. EL MISMO ESTADO NO SE ESCRIBE DOS VECES.
 #   5. UNA ESCRITURA QUE FALLA NO DICE «GUARDADO».
 #   6. EL PROYECTO ABIERTO NO SE REESCRIBE AL IRSE AL FONDO.
+#   7. GUARDAR ENCIMA Y FALLAR A MITAD DEJA EL VIEJO ENTERO (auditoria
+#      2026-10, persistencia#2): con la cabecera imposible de escribir, cero
+#      pads del project.xml viejo apuntando a un WAV que ya no es el suyo. Y
+#      el guardado bueno de despues, sin WAV huerfanos y abriendo lo que
+#      escribio.
 #
 #      python3 Tests/guardado.py
 # ============================================================================
@@ -128,6 +133,18 @@ def main():
            % ("intacto" if r["proyecto_intacto"] == 1 else "REESCRITO"))
     if r["proyecto_intacto"] != 1:
         malas.append ("proyecto: autosave reescribe project.xml sin sus muestras")
+
+    print ("  guardar encima con la cabecera rota: %d pads del viejo rotos, cabecera %s;"
+           " despues %d WAV huerfanos, abre lo guardado: %s"
+           % (r["atomico_pads_rotos"], "intacta" if r["atomico_cabecera"] == 1 else "CAMBIADA",
+              r["atomico_huerfanos"], "si" if r["atomico_abre"] == 1 else "NO"))
+    if r["atomico_pads_rotos"] != 0 or r["atomico_cabecera"] != 1:
+        malas.append ("atomico: un guardado que falla en la cabecera deja %d pads del proyecto viejo"
+                      " apuntando a un WAV que ya no es el suyo" % r["atomico_pads_rotos"])
+    if r["atomico_huerfanos"] != 0:
+        malas.append ("atomico: %d WAV en samples/ que la cabecera no nombra" % r["atomico_huerfanos"])
+    if r["atomico_abre"] != 1:
+        malas.append ("atomico: abrir lo recien guardado no devuelve el pad 0 que se escribio")
 
     for m in malas: print ("FALLA ", m)
     print ("VEREDICTO:", "OK" if not malas else "%d FALLA" % len (malas))

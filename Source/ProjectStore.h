@@ -691,4 +691,31 @@ public:
         return projectFolder.getChildFile ("samples")
                             .getChildFile ("pad" + juce::String (pad + 1).paddedLeft ('0', 2) + ".wav");
     }
+
+    //  EL WAV DE UN PAD CON LA MARCA DE SU GUARDADO: `pad01-<marca>.wav`.
+    //
+    //  Con el nombre fijo, guardar encima de un proyecto PISABA cada WAV en su
+    //  sitio y la cabecera iba al final: si fallaba la cabecera, el
+    //  project.xml viejo se quedaba describiendo audio que ya era otro o que
+    //  ya no estaba, debajo de un «NO se pudo guardar» (auditoria 2026-10,
+    //  persistencia#2). Con marca, los WAV nuevos van AL LADO de los viejos y
+    //  el unico paso que cambia el proyecto es el rename de su cabecera: antes
+    //  de el, el viejo entero; despues, el nuevo entero.
+    static juce::File sampleFile (const juce::File& projectFolder, int pad, const juce::String& marca)
+    {
+        return projectFolder.getChildFile ("samples")
+                            .getChildFile ("pad" + juce::String (pad + 1).paddedLeft ('0', 2)
+                                           + "-" + marca + ".wav");
+    }
+
+    //  Y EL QUE NOMBRA UNA CABECERA, que es un nombre de fichero y nunca una
+    //  ruta: un project.xml copiado de otro sitio no puede mandar a leer fuera
+    //  de su carpeta. Sin nombre -un proyecto de antes de la marca- es el de
+    //  siempre.
+    static juce::File sampleFileDe (const juce::File& projectFolder, int pad, const juce::String& nombre)
+    {
+        if (nombre.isEmpty() || nombre.containsAnyOf ("/\\:") || nombre.startsWithChar ('.'))
+            return sampleFile (projectFolder, pad);
+        return projectFolder.getChildFile ("samples").getChildFile (nombre);
+    }
 };

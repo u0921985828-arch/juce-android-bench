@@ -11195,6 +11195,103 @@ void MainComponent::auditGuardado()
         rescata = SessionKeeper::exists() && st.existsAsFile() && ! tmp.existsAsFile();
     }
 
+    //  7. GUARDAR ENCIMA Y FALLAR A MITAD DEJA EL PROYECTO VIEJO ENTERO
+    //     Va antes del troceado y no al final: abrir el proyecto devuelve al
+    //     escritor de la sesion pads que el troceado acaba de borrar, y eso es
+    //     un borrado seguido de un rename que el punto 1 contaria como hueco.
+    //     (auditoria 2026-10, persistencia#2). Se guarda, se cambian tres
+    //     cosas -el pad 0 al reves, el pad 1 vaciado y el tempo- y se vuelve a
+    //     guardar con la cabecera imposible de escribir: un directorio con algo
+    //     dentro donde va project.xml.escribiendo, el mismo truco del punto 5.
+    //     Lo que cuenta es lo que el project.xml VIEJO dice de cada pad contra
+    //     los bytes que hay en disco: un WAV que ya no esta o que es otro es un
+    //     proyecto que abre a medias aunque la app haya dicho «NO se pudo».
+    int padsRotos = -1, cabeceraIntacta = -1, huerfanos = -1, abreLoGuardado = -1;
+    {
+        const juce::String nombre ("BANCO_ATOMICO");
+        const auto carpeta = ProjectStore::folderFor (nombre);
+        carpeta.deleteRecursively();
+        const auto xmlFile = carpeta.getChildFile ("project.xml");
+
+        //  El fichero de cada pad segun SU cabecera: el que nombra, o el de
+        //  siempre si no nombra ninguno.
+        auto ficheroDe = [&carpeta] (const juce::ValueTree& pad)
+        {
+            const auto wav = pad.getProperty ("wav").toString();
+            return wav.isNotEmpty() ? carpeta.getChildFile ("samples").getChildFile (wav)
+                                    : ProjectStore::sampleFile (carpeta, (int) pad.getProperty ("i", 0));
+        };
+
+        saveProject (nombre);
+        while (padSaveJob != nullptr) stepPadSaveJob();
+        const auto xmlViejo = xmlFile.loadFileAsString();
+
+        std::map<int, juce::MemoryBlock> bytes;
+        if (auto xml = juce::parseXML (xmlViejo))
+            for (const auto& p : juce::ValueTree::fromXml (*xml).getChildWithName ("PADS"))
+                if ((bool) p.getProperty ("has", false))
+                    ficheroDe (p).loadFileAsData (bytes[(int) p.getProperty ("i", 0)]);
+
+        SampleBuffer::Ptr alReves;
+        if (uiSample[0] != nullptr)
+        {
+            alReves = new SampleBuffer();
+            alReves->buffer.makeCopyOf (uiSample[0]->buffer);
+            alReves->buffer.reverse (0, alReves->buffer.getNumSamples());
+            alReves->sourceSampleRate = uiSample[0]->sourceSampleRate;
+            assignSampleToPad (0, alReves, "AL REVES", false);
+        }
+        uiSample[1] = nullptr;
+        padHasSample[1] = false;
+        bpmSlider.setValue (bpmSlider.getValue() + 7.0, juce::sendNotificationSync);
+
+        const auto trampa = carpeta.getChildFile ("project.xml.escribiendo");
+        trampa.createDirectory();
+        trampa.getChildFile ("ocupado").replaceWithText ("ocupado");
+        saveProject (nombre);
+        while (padSaveJob != nullptr) stepPadSaveJob();
+        trampa.deleteRecursively();
+
+        cabeceraIntacta = xmlFile.loadFileAsString() == xmlViejo ? 1 : 0;
+        padsRotos = 0;
+        if (auto xml = juce::parseXML (xmlViejo))
+            for (const auto& p : juce::ValueTree::fromXml (*xml).getChildWithName ("PADS"))
+            {
+                const int i = (int) p.getProperty ("i", 0);
+                if (bytes.count (i) == 0) continue;
+                juce::MemoryBlock ahora;
+                if (! ficheroDe (p).loadFileAsData (ahora) || ahora != bytes[i]) ++padsRotos;
+            }
+
+        //  Y EL BUENO DESPUES, que no deje WAV que nadie nombra y que lo que
+        //  escribio sea lo que vuelve.
+        saveProject (nombre);
+        while (padSaveJob != nullptr) stepPadSaveJob();
+        huerfanos = 0;
+        juce::StringArray nombrados;
+        if (auto xml = juce::parseXML (xmlFile))
+            for (const auto& p : juce::ValueTree::fromXml (*xml).getChildWithName ("PADS"))
+                if ((bool) p.getProperty ("has", false))
+                    nombrados.add (ficheroDe (p).getFileName());
+        for (const auto& f : carpeta.getChildFile ("samples").findChildFiles (juce::File::findFiles, false))
+            if (! nombrados.contains (f.getFileName())) ++huerfanos;
+
+        uiSample[0] = nullptr;
+        loadProject (nombre);
+        while (padJob != nullptr) stepPadJob();
+        abreLoGuardado = 0;
+        if (alReves != nullptr && uiSample[0] != nullptr && uiSample[1] == nullptr
+            && uiSample[0]->buffer.getNumSamples() == alReves->buffer.getNumSamples())
+        {
+            const int n = alReves->buffer.getNumSamples();
+            float peor = 0.0f;
+            for (int k = 0; k < n; k += juce::jmax (1, n / 64))
+                peor = juce::jmax (peor, std::abs (uiSample[0]->buffer.getSample (0, k)
+                                                   - alReves->buffer.getSample (0, k)));
+            abreLoGuardado = peor < 1.0e-4f ? 1 : 0;
+        }
+    }
+
     //  3. UN TROCEADO: el estado en disco tiene que decir que los trozos salen
     //     del pad 0 cuando el escritor ya ha borrado sus WAV. Por el camino
     //     del temporizador -sync con el estado delante- y sin el guardado de
@@ -11279,6 +11376,10 @@ void MainComponent::auditGuardado()
               << ",\"falla_devuelve\":" << fallaDevuelve
               << ",\"falla_apunta\":" << fallaApunta
               << ",\"proyecto_intacto\":" << intacto
+              << ",\"atomico_pads_rotos\":" << padsRotos
+              << ",\"atomico_cabecera\":" << cabeceraIntacta
+              << ",\"atomico_huerfanos\":" << huerfanos
+              << ",\"atomico_abre\":" << abreLoGuardado
               << "}" << std::endl;
 }
 

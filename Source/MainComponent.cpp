@@ -14423,6 +14423,17 @@ void MainComponent::saveProject (const juce::String& rawName)
     padSaveJob = std::make_unique<PadSaveJob>();
     padSaveJob->folder = folder;
     padSaveJob->name   = name;
+    //  La marca es el reloj, y no puede coincidir con un WAV que ya este: ese
+    //  seria del proyecto viejo, y pisarlo es justo lo que la marca evita.
+    auto ms = juce::Time::currentTimeMillis();
+    auto libre = [&folder] (juce::int64 m)
+    {
+        for (int i = 0; i < kNumPads; ++i)
+            if (ProjectStore::sampleFile (folder, i, juce::String::toHexString (m)).exists()) return false;
+        return true;
+    };
+    while (! libre (ms)) ++ms;
+    padSaveJob->marca = juce::String::toHexString (ms);
     setBusyProgress (0.0f);
     stepPadSaveJob();
 }
@@ -14438,23 +14449,23 @@ void MainComponent::stepPadSaveJob()
            && juce::Time::getMillisecondCounterHiRes() - t0 < 25.0)
     {
         const int i = padSaveJob->next++;
-        const auto dest = ProjectStore::sampleFile (padSaveJob->folder, i);
         //  Un instrumento se guarda como receta en el XML, asi que aqui no hay
-        //  nada que escribir - y si quedara un WAV de antes, sobra: al abrir se
-        //  sintetiza y el fichero seria 2 MB muertos que nadie lee.
+        //  nada que escribir, y un pad vacio tampoco. Lo que quedara de antes
+        //  NO se borra aqui: es del proyecto viejo hasta que la cabecera nueva
+        //  este en su sitio, y lo barre `finishProjectSave` despues.
         if (auto sb = uiSample[(size_t) i];
-            sb != nullptr && sb->familia >= 0)
+            sb != nullptr && sb->familia < 0 && sb->buffer.getNumSamples() > 0)
         {
-            dest.deleteFile();
-        }
-        else if (sb != nullptr && sb->buffer.getNumSamples() > 0)
-        {
-            if (ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate)) ++padSaveJob->written;
-            else                                                                    ++padSaveJob->failed;
-        }
-        else
-        {
-            dest.deleteFile();      // pad emptied since the last save
+            const auto dest = ProjectStore::sampleFile (padSaveJob->folder, i, padSaveJob->marca);
+            if (ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate))
+            {
+                ++padSaveJob->written;
+                padSaveJob->wav[(size_t) i] = dest.getFileName();
+            }
+            else
+            {
+                ++padSaveJob->failed;
+            }
         }
     }
 
@@ -14464,13 +14475,15 @@ void MainComponent::stepPadSaveJob()
     {
         auto job = std::move (padSaveJob);
         endBusy();
-        finishProjectSave (job->name, job->folder, job->written, job->failed);
+        finishProjectSave (*job);
     }
 }
 
-void MainComponent::finishProjectSave (const juce::String& name, const juce::File& folder,
-                                       int written, int failed)
+void MainComponent::finishProjectSave (PadSaveJob& job)
 {
+    const auto& name   = job.name;
+    const auto& folder = job.folder;
+
     //  Write it, then READ IT BACK. replaceWithText returning true is the
     //  filesystem saying it accepted the call, not that the bytes are there:
     //  on Android shared storage it can accept and quietly drop. The only
@@ -14483,26 +14496,54 @@ void MainComponent::finishProjectSave (const juce::String& name, const juce::Fil
     //  de ProjectStore::list, que exige ese fichero. Es la misma regla que
     //  writeSample ya tenia escrita al lado: nunca se borra el bueno antes de
     //  tener el nuevo.
-    const auto xml     = captureState().toXmlString();
+    //
+    //  Y LA CABECERA NOMBRA EL WAV DE CADA PAD, que lleva la marca de este
+    //  guardado: es la que decide que audio es del proyecto, asi que hasta que
+    //  no esta en su sitio los WAV viejos siguen siendo los suyos.
+    auto arbol = captureState();
+    for (auto p : arbol.getChildWithName ("PADS"))
+    {
+        const int i = (int) p.getProperty ("i", -1);
+        if (juce::isPositiveAndBelow (i, kNumPads) && job.wav[(size_t) i].isNotEmpty())
+            p.setProperty ("wav", job.wav[(size_t) i], nullptr);
+    }
+    const auto xml     = arbol.toXmlString();
     const auto xmlFile = folder.getChildFile ("project.xml");
-    bool ok = ProjectStore::escribeTexto (xmlFile, xml, ProjectStore::esXmlLegible);
+    const auto samples = folder.getChildFile ("samples");
+
+    //  TODO O NADA: un pad que no se escribio tampoco deja guardar la
+    //  cabecera. Antes salia «Guardado con fallos» con el WAV viejo de ese pad
+    //  ya borrado; ahora el proyecto anterior sigue entero y se dice.
+    const bool ok = job.failed == 0
+                 && ProjectStore::escribeTexto (xmlFile, xml, ProjectStore::esXmlLegible);
 
     if (! ok)
     {
         //  Nothing was saved. Say so and say WHERE it tried, because the
-        //  answer to this is almost always the folder, not the app.
-        status.setText (T ("NO se pudo guardar en %1", Lang::ltr (rutaCorta (folder))),
+        //  answer to this is almost always the folder, not the app. Y lo que
+        //  este guardado escribio se va: no lo nombra nadie.
+        for (const auto& w : job.wav)
+            if (w.isNotEmpty()) samples.getChildFile (w).deleteFile();
+        status.setText (T ("NO se pudo guardar en %1: el anterior sigue como estaba",
+                           Lang::ltr (rutaCorta (folder))),
                         juce::dontSendNotification);
         setSheet.repintaTarjeta();
         return;
     }
 
+    //  Con la cabecera nueva en su sitio, lo que no nombra sobra: los WAV del
+    //  guardado anterior, los `padNN.wav` de antes de la marca, los de pads
+    //  vaciados o pasados a instrumento y algun temporal de una muerte a
+    //  medias. Si la app muere aqui, solo quedan ficheros de mas.
+    for (const auto& f : samples.findChildFiles (juce::File::findFiles, false))
+        if (! std::any_of (job.wav.begin(), job.wav.end(),
+                           [&f] (const juce::String& w) { return w == f.getFileName(); }))
+            f.deleteFile();
+
     apuntaProyecto (name);
     refreshProjectList();
 
-    status.setText (failed == 0
-                        ? T ("Guardado \"%1\"  [%2 pads]", name, juce::String (written))
-                        : T ("Guardado con fallos: %1 pads no se escribieron", juce::String (failed)),
+    status.setText (T ("Guardado \"%1\"  [%2 pads]", name, juce::String (job.written)),
                     juce::dontSendNotification);
     setSheet.repintaTarjeta();
 }
@@ -14541,6 +14582,7 @@ void MainComponent::loadProject (const juce::String& name)
     readSourceMap (tree, padJob->source);
     readInstMap   (tree, padJob->inst);
     readRecetaMap (tree, padJob->receta);
+    readWavMap    (tree, padJob->wav);
     padJob->onDone = [this, name, tree] (int restored) { finishProjectOpen (name, tree, restored); };
     setBusyProgress (0.0f);
     stepPadJob();
@@ -21258,7 +21300,7 @@ void MainComponent::lanzaHebraPads (PadLoadJob& j)
     for (int i = 0; i < kNumPads; ++i)
     {
         j.fichero[(size_t) i] = j.fromSession ? SessionKeeper::padFile (i)
-                                              : ProjectStore::sampleFile (j.folder, i);
+                                              : ProjectStore::sampleFileDe (j.folder, i, j.wav[(size_t) i]);
         //  CON LA RECETA QUE EL FICHERO TRAIGA y no con la fila de la tabla:
         //  ver stepPadJob. Se resuelve aqui porque `recetaDeTexto` lee un
         //  String del trabajo y la hebra no debe tocar mas que lo suyo.

@@ -3695,6 +3695,9 @@ private:
         //  dejo y suena con los de fabrica hasta que alguien mueva uno.
         //  Vacia = la receta es la de la tabla.
         std::array<juce::String, AudioEngine::kNumPads> receta;
+        //  Y EL WAV QUE NOMBRA LA CABECERA, por la misma razon. Vacio = el de
+        //  siempre (`padNN.wav`), que es lo que trae un proyecto de antes.
+        std::array<juce::String, AudioEngine::kNumPads> wav;
         PadLoadJob()
         {
             source.fill (-1); inst.fill (-1);
@@ -3752,6 +3755,10 @@ private:
         juce::File   folder;
         juce::String name;
         int next = 0, written = 0, failed = 0;
+        //  La marca de este guardado y el WAV que escribio cada pad (vacio = no
+        //  escribio ninguno). Ver ProjectStore::sampleFile con marca.
+        juce::String marca;
+        std::array<juce::String, AudioEngine::kNumPads> wav;
     };
     std::unique_ptr<PadSaveJob> padSaveJob;
 
@@ -3809,8 +3816,7 @@ private:
     void stepFabricaJob();
     bool padsBusy();
     void stepPadSaveJob();
-    void finishProjectSave (const juce::String& name, const juce::File& folder,
-                            int written, int failed);
+    void finishProjectSave (PadSaveJob& job);
 
     void finishSessionRestore (const juce::ValueTree& tree, int restored);
     void finishProjectOpen (const juce::String& name, const juce::ValueTree& tree, int restored);

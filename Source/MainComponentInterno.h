@@ -1031,6 +1031,19 @@ inline void readRecetaMap (const juce::ValueTree& tree,
     }
 }
 
+//  El WAV de cada pad segun la cabecera. Ver ProjectStore::sampleFileDe.
+inline void readWavMap (const juce::ValueTree& tree,
+                        std::array<juce::String, AudioEngine::kNumPads>& out)
+{
+    for (auto& s : out) s = {};
+    for (const auto& p : tree.getChildWithName ("PADS"))
+    {
+        const int i = (int) p.getProperty ("i", -1);
+        if (! juce::isPositiveAndBelow (i, AudioEngine::kNumPads)) continue;
+        out[(size_t) i] = p.getProperty ("wav", juce::String()).toString();
+    }
+}
+
 inline void readSourceMap (const juce::ValueTree& tree, std::array<int, AudioEngine::kNumPads>& out)
 {
     out.fill (-1);

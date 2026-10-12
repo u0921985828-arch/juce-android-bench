@@ -1816,9 +1816,6 @@ namespace
         { "Guardado \"%1\"  [%2 pads]", "", "Saved \"%1\"  [%2 pads]",
                                         "已保存“%1” [%2 个音垫]",
                                         "حُفظ \"%1\"  [%2 باد]" },
-        { "Guardado con fallos: %1 pads no se escribieron", "", "Saved with errors: %1 pads were not written",
-                                        "保存时出错：%1 个音垫未写入",
-                                        "حُفظ مع أخطاء: لم تُكتب %1 باد" },
         { "Abierto \"%1\"  [%2 pads]", "", "Opened \"%1\"  [%2 pads]",
                                         "已打开“%1” [%2 个音垫]",
                                         "فُتح \"%1\"  [%2 باد]" },
@@ -1831,9 +1828,12 @@ namespace
                                         "找不到工程“%1”",
                                         "لم أجد المشروع \"%1\"" },
         { "Proyecto ilegible: %1", "",  "Unreadable project: %1", "工程无法读取：%1", "مشروع غير مقروء: %1" },
-        { "NO se pudo guardar en %1", "", "COULD NOT save into %1",
-                                        "无法保存到 %1",
-                                        "تعذّر الحفظ في %1" },
+        //  Y lo dice porque ahora es verdad: guardar es todo o nada (ver
+        //  ProjectStore::sampleFile con marca).
+        { "NO se pudo guardar en %1: el anterior sigue como estaba", "",
+                                        "COULD NOT save into %1: the previous one is untouched",
+                                        "无法保存到 %1：之前的版本保持不变",
+                                        "تعذّر الحفظ في %1: النسخة السابقة كما هي" },
         // --- MIDI ----------------------------------------------------------
         { "MIDI",           "",         "MIDI",       "MIDI",       "ميدي" },
         //  EL PATRON DE UN PAD COMO FICHERO. «IMPORTAR» es la unica palabra
