@@ -677,6 +677,42 @@ inline void textoInvalidoConserva (juce::Component& raiz)
     }
 }
 
+//  LO TECLEADO DEJA EL ESTADO ENCARGADO, como un dedo que se levanta. El oido
+//  de toques (`OidoDeToques`) solo escucha mouseUp, y un tempo escrito en la
+//  caja del mando no levanta ningun dedo: ni el teclado de pantalla -en
+//  Android entra por `insertTextAtCaret`, sin evento de tecla- ni uno fisico.
+//  Medido en la auditoria 2026-10 (persistencia#4): 140 + Return y un kill a
+//  los 5 s volvia con el tempo de antes, que esperaba a los 20 s del
+//  periodico. Se engancha donde lo tecleado se CONVIERTE en valor -el lector
+//  de texto de cada mando, que ya envuelve `textoInvalidoConserva`, asi que
+//  va detras- y en el Return de cada TextEditor, que es donde se confirma un
+//  nombre.
+inline void tecladoEncarga (juce::Component& raiz, const std::function<void()>& encarga)
+{
+    for (auto* c : raiz.getChildren())
+    {
+        if (auto* sl = dynamic_cast<juce::Slider*> (c); sl != nullptr && sl->valueFromTextFunction)
+        {
+            auto previo = sl->valueFromTextFunction;
+            sl->valueFromTextFunction = [previo, encarga] (const juce::String& t)
+            {
+                encarga();
+                return previo (t);
+            };
+        }
+        else if (auto* ed = dynamic_cast<juce::TextEditor*> (c))
+        {
+            auto previo = ed->onReturnKey;
+            ed->onReturnKey = [previo, encarga]
+            {
+                if (previo) previo();
+                encarga();
+            };
+        }
+        tecladoEncarga (*c, encarga);
+    }
+}
+
 inline void fuenteTapa (juce::TextButton& b, bool cancion)
 {
 b.setButtonText (T (cancion ? "SONG" : "PATRON"));

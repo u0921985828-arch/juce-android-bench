@@ -5102,6 +5102,8 @@ MainComponent::MainComponent()
 
     //  Ver textoInvalidoConserva: todos los mandos de la cara y de las fichas.
     textoInvalidoConserva (*this);
+    //  Y lo tecleado encarga el estado igual que un toque. Ver tecladoEncarga.
+    tecladoEncarga (*this, [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; });
 
     //  Y EL DIBUJO, AL RITMO DE LA PANTALLA. Se engancha DESPUES de que la
     //  cara exista y no en la lista de inicializacion: `VBlankAttachment`

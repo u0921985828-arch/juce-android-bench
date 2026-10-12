@@ -23,6 +23,10 @@
 #   k. UN CAMBIO SE GUARDA AL SOLTAR: el tempo llega a disco 1.5 s despues del
 #      ultimo toque, y sin toque no (el control), que el estado entero era
 #      cada 20 s y J4 espero 8.
+#   m. LO TECLEADO TAMBIEN (auditoria 2026-10, persistencia#4): un tempo
+#      escrito en la caja del mando con Return llega a disco a los 2 s sin
+#      ningun dedo levantado, y el Return del nombre de un canal deja el
+#      estado encargado.
 #
 #      python3 Tests/feria.py
 # ============================================================================
@@ -121,6 +125,13 @@ def main():
     regla ("guardado", r["bpm_antes"] == 120 and r["bpm_sin_soltar"] == 120 and r["bpm_tras_soltar"] == 131,
            "tempo en disco: %g antes, %g a los 2 s sin soltar (control), %g a los 2 s de soltar"
            % (r["bpm_antes"], r["bpm_sin_soltar"], r["bpm_tras_soltar"]))
+
+    regla ("tecleado", r.get("bpm_antes_tecla", -1) == 131 and r.get("bpm_tecleado_memoria", -1) == 140
+                       and r.get("bpm_tecleado", -1) == 140 and r.get("nombre_encarga", -1) == 1,
+           "tempo tecleado 140 con Return (en memoria %g): en disco %g antes y %g a los 2 s;"
+           " el Return del nombre de canal encarga el estado %d"
+           % (r.get("bpm_tecleado_memoria", -1), r.get("bpm_antes_tecla", -1),
+              r.get("bpm_tecleado", -1), r.get("nombre_encarga", -1)))
 
     for m in malas: print ("FALLA ", m)
     print ("VEREDICTO:", "OK" if not malas else "%d FALLA" % len (malas))

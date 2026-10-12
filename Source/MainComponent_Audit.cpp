@@ -12163,6 +12163,9 @@ void MainComponent::auditFeria()
     //  cambio, y con la fabrica recien cargada eso pasaria la medida por otra
     //  puerta. El control de abajo -sin soltar- lo comprueba.
     session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
+    //  Y sin nada encargado: la `f` de arriba lee texto con el lector del mando,
+    //  y desde `tecladoEncarga` eso es teclear y deja el estado pedido.
+    estadoTrasToqueMs = -1.0;
     bpmSlider.setValue (120.0, juce::sendNotification);
     session.writeState (captureState(), currentProject);
     const double bpmAntes = bpmEnDisco();
@@ -12172,6 +12175,49 @@ void MainComponent::auditFeria()
     if (oidoDeToques.alSoltar) oidoDeToques.alSoltar();
     avanza (2000.0);
     const double bpmTrasSoltar = bpmEnDisco();
+
+    //  m. LO TECLEADO TAMBIEN SE GUARDA (auditoria 2026-10, persistencia#4).
+    //     Por la caja de texto del mando y con Return, que es como llega un
+    //     tempo escrito: ni el teclado de pantalla ni uno fisico levantan un
+    //     dedo, asi que el oido de toques no se enteraba y el tempo esperaba a
+    //     los 20 s del periodico. Y el nombre de un canal, que se confirma con
+    //     Return en su TextEditor: aqui se mira que quede encargado, porque el
+    //     clic de GUARDAR que dispara va por la cola y la sonda no la bombea.
+    //  El Return de un TextEditor no llama a nadie: deja un mensaje en la
+    //  cola (`returnPressed` -> `postCommandMessage`) y la sonda no la bombea.
+    //  Se entrega a mano el mismo mensaje que entregaria la cola.
+    auto entregaReturn = [] (juce::TextEditor& ed)
+    {
+        constexpr int kReturnDeJuce = 0x10003002;   // TextEditorDefs::returnKeyMessageId
+        static_cast<juce::Component&> (ed).handleCommandMessage (kReturnDeJuce);
+    };
+    estadoTrasToqueMs = -1.0;
+    session.writeState (captureState(), currentProject);
+    const double bpmAntesTecla = bpmEnDisco();
+    double bpmTecleadoMemoria = -1.0;
+    {
+        juce::Label* caja = nullptr;
+        for (auto* c : bpmSlider.getChildren())
+            if (auto* l = dynamic_cast<juce::Label*> (c)) caja = l;
+        if (caja != nullptr)
+        {
+            caja->showEditor();
+            if (auto* ed = caja->getCurrentTextEditor())
+            {
+                ed->setText ("140", false);
+                ed->keyPressed (juce::KeyPress (juce::KeyPress::returnKey));
+                entregaReturn (*ed);
+            }
+        }
+        bpmTecleadoMemoria = bpmSlider.getValue();
+    }
+    avanza (2000.0);
+    const double bpmTecleado = bpmEnDisco();
+    estadoTrasToqueMs = -1.0;
+    canNomBox.setText ("TECLEADO", false);
+    canNomBox.keyPressed (juce::KeyPress (juce::KeyPress::returnKey));
+    entregaReturn (canNomBox);
+    const int nombreEncarga = estadoTrasToqueMs > 0.0 ? 1 : 0;
 
     auto caja = [] (juce::Rectangle<int> r)
     { return "[" + juce::String (r.getX()) + "," + juce::String (r.getY()) + ","
@@ -12220,5 +12266,9 @@ void MainComponent::auditFeria()
               << ",\"bpm_antes\":" << bpmAntes
               << ",\"bpm_sin_soltar\":" << bpmSinSoltar
               << ",\"bpm_tras_soltar\":" << bpmTrasSoltar
+              << ",\"bpm_antes_tecla\":" << bpmAntesTecla
+              << ",\"bpm_tecleado_memoria\":" << bpmTecleadoMemoria
+              << ",\"bpm_tecleado\":" << bpmTecleado
+              << ",\"nombre_encarga\":" << nombreEncarga
               << "}" << std::endl;
 }
