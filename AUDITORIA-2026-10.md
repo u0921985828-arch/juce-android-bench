@@ -1022,3 +1022,16 @@ Los no verificados se dan por candidatos: la tasa de acierto de los 57 verificad
 
 </details>
 
+
+## Bancos con el binario final (dfd0bbb)
+
+| banco | resultado |
+|---|---|
+| StressTest | 171 OK, motor 0 FALLA |
+| expo.py (9 tamaños × 4 idiomas) | 2304 corridas, 20270 TOUCH conocidos, cero en las demás reglas |
+| cpu.py, sola | salida 0; 98.1 cuadros/s; 0 píxeles fuera de la zona repintada |
+| canales.py, carcasas 0–3 | OK en las cuatro (línea del aro 2 px en todas) |
+| session, nuevo, arr, export, piano, midi, lang, feria, atasco, ranuras, store, sel, skins, plano, planos, marcas, maqueta, paneles, limites, desglose, tour, kit | salida 0 en todos |
+| caso reservado: expo en 384x832, árabe (tamaño que ningún banco usa) | 64 corridas, cero en las reglas duras |
+
+canales.py fallaba en las carcasas claras (0 y 2) desde antes de esta auditoría: la línea del aro del pan se medía por brillo y allí es tinta oscura, así que salía 0 px. Era la medida y no el dibujo; se mide ahora por contraste con el relleno (commit dfd0bbb).
