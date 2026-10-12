@@ -1924,9 +1924,12 @@ public:
                 //  el relleno ya no es opaco, asi que a la izquierda del pomo
                 //  lo que se ve es el chasis con el color del pad por encima a
                 //  su opacidad, no el color del pad.
-                const auto fondo = aLaDerecha
-                                     ? ZatiColours::chassisTop
-                                     : ZatiColours::chassisTop.overlaidWith (relleno);
+                //  Y DEBAJO ESTA LA RANURA, que se pinta antes que el relleno:
+                //  elegir contra el chasis a secas dejaba blanco sobre el MASTER
+                //  de GRAFITO a 2.05:1 y tinta sobre el de PAPEL a 1.96:1
+                //  (auditoria 2026-10, visual#0).
+                const auto base  = ZatiColours::chassisTop.overlaidWith (ranura);
+                const auto fondo = aLaDerecha ? base : base.overlaidWith (relleno);
                 //  Y LA CAJA DE LA CIFRA ES LA CELDA, no la pista: con la
                 //  pista de `md` la letra de `fMeta` ya no cabe dentro, asi
                 //  que va centrada en la fila, por encima de la pista, con
@@ -1936,7 +1939,19 @@ public:
                                                               juce::jmax (0.0f, cell.getRight() - 6.0f - (pos + 4.0f)), (float) h)
                                     : juce::Rectangle<float> (cell.getX() + 6.0f, (float) y,
                                                               juce::jmax (0.0f, pos - 4.0f - (cell.getX() + 6.0f)), (float) h);
-                g.setColour (ZatiColours::bestOn (fondo, ZatiColours::ink, juce::Colours::white));
+                //  Y EN UNA CARCASA OSCURA LAS DOS SON CLARAS: la tinta de
+                //  GRAFITO y el blanco no llegan sobre un relleno claro
+                //  (FFFFFF sobre F2A49E, 1.99:1). Si ninguna llega a 4.5, la
+                //  casi negra.
+                auto tinta = ZatiColours::bestOn (fondo, ZatiColours::ink, juce::Colours::white);
+                if (ZatiColours::contrastRatio (tinta, fondo) < 4.5f)
+                    tinta = ZatiColours::bestOn (fondo, tinta, juce::Colour (0xff141414));
+                //  Para el banco: la tinta y un punto de la caja sin letra -la
+                //  cifra va a la derecha-, que es donde se lee el fondo de verdad.
+                s.getProperties().set ("tinta", (juce::int64) tinta.getARGB());
+                s.getProperties().set ("fondoX", (int) caja.getX() + 1);
+                s.getProperties().set ("fondoY", (int) caja.getCentreY());
+                g.setColour (tinta);
                 g.drawText (txt, caja, juce::Justification::centredRight, false);
             }
             return;

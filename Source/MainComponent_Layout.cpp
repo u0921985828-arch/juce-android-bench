@@ -7631,7 +7631,7 @@ void MainComponent::resized()
                 if (tiraFilas > 1)
                 {
                     tira.removeFromTop (Metrics::xs);
-                    fila (rollSlider, "REPETIR", lockSlider, "CORTE");
+                    fila (rollSlider, "REPETIR", lockSlider, "CORTE|filtro");
                 }
                 if (tiraFilas > 2)
                 {
@@ -7643,7 +7643,12 @@ void MainComponent::resized()
                     auto row   = tira.removeFromTop (Metrics::hit);
                     juce::Slider* cuatro[4] = { &atkPasoSlider, &relPasoSlider,
                                                 &iniPasoSlider, &panPasoSlider };
-                    const char*   nombres[4] = { "ATAQUE", "CAIDA", "INICIO", "PAN" };
+                    //  Claves de la tabla y no rotulos sueltos: «ATAQUE», «CAIDA» e
+                    //  «INICIO» no tenian fila y salian sin tilde y sin traducir;
+                    //  y el bloqueo del filtro usaba «CORTE», la de cortar una
+                    //  seleccion, que en ingles dice CUT (auditoria 2026-10,
+                    //  textos#0 y #1).
+                    const char*   nombres[4] = { "ATAQUE|x", "CAIDA|x", "INICIO|paso", "PAN" };
                     for (int i = 0; i < 4; ++i)
                     {
                         //  Lo que queda dividido por lo que queda, y no el ancho

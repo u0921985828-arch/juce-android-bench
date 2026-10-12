@@ -338,6 +338,22 @@ def main():
                         % (os.path.basename (f), _linea (f, m.group (1)), m.group (1)[:50]))
     print ("literales fuera de ASCII sin pasar por UTF-8: %d" % crudos)
 
+    #  Y LAS CLAVES QUE VIAJAN EN UN ARRAY. La tira del paso pinta sus
+    #  rotulos con `T (lb.key)` desde `const char* nombres[4] = {...}`, y ahi
+    #  no hay `T ("...")` que recoger: «ATAQUE», «CAIDA» e «INICIO» salieron
+    #  sin tilde y sin traducir en los cuatro idiomas sin que esta prueba lo
+    #  viera (auditoria 2026-10, textos#0). Se recogen los literales de esos
+    #  arrays, y ademas todo literal con forma de clave con contexto
+    #  (`CORTE|filtro`), que no puede ser otra cosa que una clave.
+    for f in glob.glob (os.path.join (SRC, "*.cpp")) + glob.glob (os.path.join (SRC, "*.h")):
+        if os.path.basename (f) in ("Lang.cpp", "MainComponent_Audit.cpp"): continue
+        t = sin_comentarios (open (f, encoding="utf8").read())
+        for arr in re.findall (r'const\s+char\s*\*\s*nombres\s*\[\s*\d*\s*\]\s*=\s*\{([^}]*)\}', t):
+            for lit in re.findall (r'"((?:[^"\\]|\\.)*)"', arr):
+                if lit: used.add (lit)
+        for lit in re.findall (r'"([A-Z][A-Z0-9 ]*\|[a-z]+)"', t):
+            used.add (lit)
+
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)
 

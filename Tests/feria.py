@@ -115,6 +115,9 @@ def main():
            % (r.get("nombre_vuelve", -1), r.get("abrir_vacia", -1)))
     regla ("corrupto", r.get("corruptos", 0) == 1,
            "state.xml roto apartado antes de pisarlo: %d copias" % r.get("corruptos", 0))
+    regla ("fondo", r.get("fondo_cuadros", -1) == 0 and r.get("frente_cuadros", 0) > 0,
+           "cuadros pintados con la app al fondo %d (delante, control: %d)"
+           % (r.get("fondo_cuadros", -1), r.get("frente_cuadros", 0)))
     regla ("guardado", r["bpm_antes"] == 120 and r["bpm_sin_soltar"] == 120 and r["bpm_tras_soltar"] == 131,
            "tempo en disco: %g antes, %g a los 2 s sin soltar (control), %g a los 2 s de soltar"
            % (r["bpm_antes"], r["bpm_sin_soltar"], r["bpm_tras_soltar"]))

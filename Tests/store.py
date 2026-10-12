@@ -98,6 +98,7 @@ def main():
     home = os.path.join (OUT, ".home")
 
     made = []
+    faltan = 0
     for lang in LANGS:
         for fmt, lw, lh, scale in FORMATS:
             for sheet, name in SHOTS:
@@ -113,6 +114,9 @@ def main():
                 d = os.path.join (OUT, lang, fmt)
                 os.makedirs (d, exist_ok=True)
                 path = os.path.join (d, name + ".png")
+                #  La de la corrida anterior fuera: si no, una foto que esta vez
+                #  no sale pasa por la de ayer (auditoria 2026-10, codigo#0).
+                if os.path.exists (path): os.remove (path)
 
                 run ({"ZATI_AUDIT": "1", "ZATI_DEMO": "1",
                       "ZATI_LANG": lang, "ZATI_OPEN": sheet,
@@ -120,13 +124,16 @@ def main():
                       "ZATI_SHOT": path, "ZATI_SHOT_SCALE": "%.4f" % scale}, home)
 
                 if not os.path.exists (path):
+                    faltan += 1
                     print ("FALLA   %s/%s/%s" % (lang, fmt, name)); continue
                 made.append (path)
 
     #  El grafico destacado, dibujado por la app con la paleta de la app.
     feature = os.path.join (OUT, "grafico-destacado-1024x500.png")
+    if os.path.exists (feature): os.remove (feature)
     run ({"ZATI_BANNER": feature, "ZATI_BANNER_SIZE": "1024x500"}, home)
     if os.path.exists (feature): made.append (feature)
+    else: faltan += 1; print ("FALLA   grafico destacado")
 
     #  El icono. El del repositorio es de 1024 y la tienda lo quiere de 512: se
     #  reduce, no se vuelve a dibujar, para que el de la ficha y el del cajon
@@ -162,7 +169,10 @@ def main():
     print ("%d imagenes en %s" % (len (made), OUT))
     print ("las %d pasan lo que pide Play" % len (made) if bad == 0
            else "%d NO pasan" % bad)
-    return 1 if bad else 0
+    #  Y LO QUE NO SALIO TAMBIEN SUSPENDE. Salia con 0 aunque la app no sacara
+    #  ni una foto, porque solo se juzgaba lo que si existia.
+    if faltan: print ("%d fotos NO salieron" % faltan)
+    return 1 if bad or faltan else 0
 
 
 if __name__ == "__main__":

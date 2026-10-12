@@ -742,6 +742,14 @@ def main():
     elif cabe != 1:
         malas.append ("a -10.3 dB la cifra del fader del pad 0 no cabe en su lado (pinta «%s»): "
                       "se acorta antes que cortarse" % cifra)
+    #     Y SE LEE (auditoria 2026-10, visual#0): la cifra elegia su tinta
+    #     contra el chasis y debajo esta la ranura; blanco sobre el MASTER de
+    #     GRAFITO salia a 2.05:1. Se mide contra el pixel pintado.
+    contraste = r.get ("fader_contraste", -1)
+    print ("fader    cifra a 0 dB sobre el relleno: %.2f:1 (tinta/fondo %s)"
+           % (contraste, r.get ("fader_tinta_fondo", "")))
+    if contraste < 4.5:
+        malas.append ("la cifra del fader se lee a %.2f:1 sobre lo que tiene debajo (minimo 4.5)" % contraste)
     if knob != 1:
         malas.append ("el pan del pad 0 no es un knob")
 

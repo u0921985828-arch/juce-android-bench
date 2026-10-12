@@ -439,6 +439,7 @@ namespace
         { "CINTA",          "",         "TAPE",       "磁带",       "شريط" },
         { "TONO",           "",         "TONE",       "变调",       "نغمة" },
         { "START",          "INICIO",   "START",      "起点",       "البداية" },
+        { "INICIO|paso",    "INICIO",   "START",      "起点",       "البداية" },
         { "END",            "FIN",      "END",        "终点",       "النهاية" },
         { "REV|reverso",    "REV",      "REV",        "倒放",       "عكس" },
         { "LOOP",           "BUCLE",    "LOOP",       "循环",       "تكرار" },

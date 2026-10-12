@@ -18347,12 +18347,22 @@ void MainComponent::terminaRebotVivo()
 //  escaner asi que sale tambien en los reproductores, y sobrevive a desinstalar
 //  la app. Por debajo de Android 10 esto devuelve vacio y no hace falta: alli el
 //  permiso vale y ProjectStore ya escribe en la Musica compartida.
-void MainComponent::publicarExport (const juce::File& carpeta)
+void MainComponent::publicarExport (const juce::File& carpeta, const juce::File& solo)
 {
     if (! carpeta.isDirectory()) return;
 
+    //  CON `solo`, ESE FICHERO Y NADA MAS. La exportacion MIDI pasaba la
+    //  carpeta de exportar entera: el .mid no casaba con el filtro y se quedaba
+    //  sin publicar, cualquier wav suelto de antes se volvia a publicar y
+    //  COMPARTIR acababa apuntando a ese audio y no a lo que se acababa de
+    //  exportar (auditoria 2026-10, android#3).
     juce::Array<juce::File> hechos;
-    carpeta.findChildFiles (hechos, juce::File::findFiles, false, "*.wav;*.ogg");
+    if (solo != juce::File())
+    {
+        if (solo.existsAsFile()) hechos.add (solo);
+    }
+    else
+        carpeta.findChildFiles (hechos, juce::File::findFiles, false, "*.wav;*.ogg");
     if (hechos.isEmpty()) return;
 
     const juce::String sub = "ZATI/" + carpeta.getFileName();
@@ -18366,7 +18376,9 @@ void MainComponent::publicarExport (const juce::File& carpeta)
     exportMime.clear();
     for (auto& f : hechos)
     {
-        const juce::String mime = f.hasFileExtension ("ogg") ? "audio/ogg" : "audio/wav";
+        const juce::String mime = f.hasFileExtension ("ogg") ? "audio/ogg"
+                                : f.hasFileExtension ("mid") ? "audio/midi"
+                                                             : "audio/wav";
         juce::String uri;
         const auto ruta = MediaStore::publicar (f, sub, mime, &uri);
         if (ruta.isNotEmpty())
@@ -18387,7 +18399,10 @@ void MainComponent::publicarExport (const juce::File& carpeta)
         exportStatus = T ("%1 en %2", juce::String (puestos), donde);
         //  Y la carpeta vacia se va con ellos, que si no queda un rastro de
         //  carpetas sin nada dentro por cada rebote.
-        if (carpeta.getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0)
+        //  Solo la de un rebote: con `solo` la carpeta es la de exportar, que
+        //  puede ser una elegida por la persona y no se borra aunque quede vacia.
+        if (solo == juce::File()
+            && carpeta.getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0)
             carpeta.deleteRecursively();
     }
 }
@@ -20608,7 +20623,7 @@ void MainComponent::exportaMidiPatron()
     //  Y SE PUBLICA COMO EL REBOTE: en Android un fichero que no pasa por el
     //  almacen de medios existe y no lo ve ningun gestor. Es la misma puerta y
     //  por la misma razon, asi que no se escribe otra vez.
-    publicarExport (destino.getParentDirectory());
+    publicarExport (destino.getParentDirectory(), destino);
 
     //  UNA CLAVE CON LOS DOS HUECOS Y NO UNA DENTRO DE OTRA. Anidar un `T`
     //  dentro del argumento de otro es invisible para `Tests/lang.py`, que lee
@@ -22331,7 +22346,10 @@ void MainComponent::timerCallback()
     //  congelada: la aguja clavada, el cabezal parado y el analizador quieto,
     //  o sea una app que parece rota. Se pinta al ritmo del SUELO, que es
     //  exactamente la cadencia que esta app tenia antes de esta tanda.
-    if (ahora - vblankUltimoMs > 2.0 * DeviceTier::profile().relojMs)
+    //  Y CON LA APP DELANTE: al fondo no hay nadie mirando, y este respaldo
+    //  es justo el que corre con la pantalla apagada -sin vblanks-, a 10-30 Hz
+    //  y con la FFT del espectro dentro (auditoria 2026-10, rendimiento#0).
+    if (appInForeground && ahora - vblankUltimoMs > 2.0 * DeviceTier::profile().relojMs)
         pintaCuadro (dt);
 }
 
@@ -22403,6 +22421,11 @@ void MainComponent::enVBlank (double timestampSec)
                              ? juce::jlimit (4.0, 200.0, (timestampSec - vblankUltimoSec) * 1000.0)
                              : 16.7;
     vblankUltimoSec = timestampSec;
+
+    //  Al fondo, con la pantalla encendida, el Choreographer sigue entregando
+    //  vblanks a 60-120 Hz: se apuntan -el respaldo del reloj los necesita
+    //  para no pintar- y no se pinta nada.
+    if (! appInForeground) return;
 
     if (cuadroSaltar > 0) { --cuadroSaltar; ++UiAudit::cuadrosSaltados; return; }
 

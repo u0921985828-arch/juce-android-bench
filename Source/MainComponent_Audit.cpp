@@ -6116,6 +6116,8 @@ void MainComponent::auditCanales()
     //  con el ANCHO de EL PAD a cero y de vuelta a uno (sincronizaMixEstereo).
     juce::StringArray mesaStRotulo;
     juce::String faderCifra;
+    float faderContraste = -1.0f;
+    juce::String faderTintaFondo;
     if (auto* f = mixFaders[0])
     {
         const double antes = f->getValue();
@@ -6337,6 +6339,30 @@ void MainComponent::auditCanales()
         f->createComponentSnapshot (f->getLocalBounds(), true, 1.0f);
         faderCabe  = (int) f->getProperties().getWithDefault ("cabe", -1);
         faderCifra = f->getProperties().getWithDefault ("cifra", "").toString();
+        //  Y SE LEE: a 0 dB el pomo esta a la derecha y la cifra va a la
+        //  izquierda, encima del relleno. El contraste se mide contra el pixel
+        //  que se PINTA, no contra el color que el codigo cree que hay
+        //  (auditoria 2026-10, visual#0).
+        {
+            f->setValue (0.0, juce::dontSendNotification);
+            const auto img = f->createComponentSnapshot (f->getLocalBounds(), true, 1.0f);
+            const auto& pr = f->getProperties();
+            const auto tinta = juce::Colour ((juce::uint32) (juce::int64) pr.getWithDefault ("tinta", 0));
+            const int fx = (int) pr.getWithDefault ("fondoX", -1), fy = (int) pr.getWithDefault ("fondoY", -1);
+            if (img.isValid() && juce::isPositiveAndBelow (fx, img.getWidth()) && juce::isPositiveAndBelow (fy, img.getHeight()))
+            {
+                auto lum = [] (juce::Colour c)
+                {
+                    auto lin = [] (float v) { return v <= 0.03928f ? v / 12.92f : std::pow ((v + 0.055f) / 1.055f, 2.4f); };
+                    return 0.2126f * lin (c.getFloatRed()) + 0.7152f * lin (c.getFloatGreen()) + 0.0722f * lin (c.getFloatBlue());
+                };
+                faderTintaFondo = tinta.toDisplayString (false) + "/" + img.getPixelAt (fx, fy).toDisplayString (false)
+                                + "@" + juce::String (fx) + "," + juce::String (fy)
+                                + " " + pr.getWithDefault ("cifra", "").toString();
+                const float a = lum (tinta), b = lum (img.getPixelAt (fx, fy));
+                faderContraste = (juce::jmax (a, b) + 0.05f) / (juce::jmin (a, b) + 0.05f);
+            }
+        }
         f->setValue (antes, juce::dontSendNotification);
     }
     for (auto* f : mixFaders) if (f != nullptr && f->getTextBoxPosition() != juce::Slider::NoTextBox) ++faderCajas;
@@ -6802,6 +6828,8 @@ void MainComponent::auditCanales()
               << ",\"fader_banda\":" << faderBanda
               << ",\"mesa_pan\":" << mesaPan << ",\"mesa_ms\":" << mesaMS
               << ",\"fader_pintado\":" << faderPintado << ",\"fader_cabe\":" << faderCabe
+              << ",\"fader_contraste\":" << faderContraste
+              << ",\"fader_tinta_fondo\":\"" << faderTintaFondo << "\""
               << ",\"fader_cifra\":\"" << faderCifra << "\",\"mesa_knob\":" << mesaKnob
               << ",\"mesa_knob_d\":" << mesaKnobD
               << ",\"mesa_knob_w\":" << mesaKnobW << ",\"mesa_knob_h\":" << mesaKnobH
@@ -11970,6 +11998,28 @@ void MainComponent::auditFeria()
                                                         false, "state.xml.corrupto-*"))
     { juce::ignoreUnused (e); ++corruptos; }
 
+    //  j4. EN SEGUNDO PLANO NO SE PINTA (auditoria 2026-10, rendimiento#0).
+    //      Diez vblanks y diez vueltas del reloj sin vblank -el respaldo que
+    //      pinta con la pantalla apagada- con la app al fondo: cuantos cuadros
+    //      salen. Llamadas directas y no esperas: lo que se mide es la
+    //      decision, no el reloj de la maquina.
+    int fondoCuadros = -1, frenteCuadros = -1;
+    {
+        appSuspended();
+        const auto c0 = UiAudit::cuadrosPintados;
+        for (int i = 0; i < 10; ++i)
+        {
+            enVBlank (vblankUltimoSec + 0.0167);
+            vblankUltimoMs = 0.0;
+            timerCallback();
+        }
+        fondoCuadros = (int) (UiAudit::cuadrosPintados - c0);
+        appResumed();
+        const auto c1 = UiAudit::cuadrosPintados;
+        for (int i = 0; i < 10; ++i) enVBlank (vblankUltimoSec + 0.0167);
+        frenteCuadros = (int) (UiAudit::cuadrosPintados - c1);
+    }
+
     //  k. UN CAMBIO SE GUARDA AL SOLTAR, NO A LOS 20 s (J4 espero 8 s).
     auto bpmEnDisco = [this]
     {
@@ -12047,6 +12097,8 @@ void MainComponent::auditFeria()
               << ",\"nombre_vuelve\":" << nombreVuelve
               << ",\"abrir_vacia\":" << abrirVacia
               << ",\"corruptos\":" << corruptos
+              << ",\"fondo_cuadros\":" << fondoCuadros
+              << ",\"frente_cuadros\":" << frenteCuadros
               << ",\"bpm_antes\":" << bpmAntes
               << ",\"bpm_sin_soltar\":" << bpmSinSoltar
               << ",\"bpm_tras_soltar\":" << bpmTrasSoltar

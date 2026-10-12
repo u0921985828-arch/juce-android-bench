@@ -458,19 +458,20 @@ def main():
         if asa["estirado"][0] != asa["antes"][0]:
             malas.append ("el asa MUEVE el bloque en vez de estirarlo: %s -> %s"
                           % (asa["antes"], asa["estirado"]))
-        #  CINCO Y NO SEIS, y es el modelo el que cambio y no la regla.
+        #  SEIS, y otra vez es el modelo el que cambio y no la regla.
         #
-        #  Con celdas, "soltar en el compas 7" se comia el compas 7 ENTERO -una
-        #  celda no se puede ocupar a medias- y el bloque medida 6. Con bloques
-        #  en pasos el filo cae donde cae el dedo: el gesto suelta en el CENTRO
-        #  del compas 7, o sea el paso 480 de 511 a la vista; `pasoPegado` lo
-        #  pega a la division de la rejilla -16 pasos con ocho compases en 320 px
-        #  de ancho- y el filo queda en el 496. El bloque arranca en el 128, asi
-        #  que mide 368 pasos = 5.75 compases, y la linea de estado saca
-        #  `largo / pasosPorCompas` entero: 5. Pedir 6 aqui seria pedir que el
-        #  asa redondee hacia arriba, que es justo lo que esta tanda quito.
-        if asa["estirado"][1] != 5:
-            malas.append ("el asa no estira: el bloque mide %d compases y tenia que medir 5"
+        #  Esta regla pedia 5 desde que los bloques se pegaban a la division
+        #  que se dibuja: soltar en el centro del compas 7 dejaba el filo en
+        #  el paso 496 y el bloque en 5.75 compases. La feria de 2026-10 (J5)
+        #  devolvio los bloques de PATRON al compas -quedaban a un tiempo del
+        #  compas sin que se viera- y desde ce495da el asa derecha cubre el
+        #  compas que tiene debajo del dedo: `h = pegado + u`, con `pegado`
+        #  el principio del compas 7. 128 -> 512 son 384 pasos, 6 compases.
+        #  La regla se quedo en 5 y arr.py estuvo rojo desde entonces
+        #  (auditoria 2026-10, codigo#1). 5 aqui es el asa que se queda un
+        #  compas corta; 7, la que se pasa.
+        if asa["estirado"][1] != 6:
+            malas.append ("el asa no estira: el bloque mide %d compases y tenia que medir 6"
                           % asa["estirado"][1])
         if asa["entradas"] != 1:
             malas.append ("un solo estiron deja %d entradas de deshacer" % asa["entradas"])

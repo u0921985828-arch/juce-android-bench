@@ -1577,7 +1577,7 @@ private:
     void openBrowseForFolder (ProjectStore::Carpeta que);
     void openBrowseForExportDir();
     //  Deja el rebote donde cualquier gestor lo vea. Ver MediaStore.
-    void publicarExport (const juce::File& carpeta);
+    void publicarExport (const juce::File& carpeta, const juce::File& solo = {});
     void usarCarpetaDeExport();
 
     juce::TextButton exportFmtBtn { "WAV" };
