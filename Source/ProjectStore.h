@@ -333,8 +333,22 @@ public:
     //  cambia es donde se busca a partir de ahora, que es lo que se pidio.
     static juce::File root() { return carpeta (Carpeta::proyectos); }
 
+    //  EL NOMBRE DE LA LISTA ES EL NOMBRE DE LA CARPETA, TAL CUAL.
+    //
+    //  `list` devuelve el nombre real de cada carpeta, y una carpeta puede
+    //  llevar un punto (guardada antes de que `sanitise` los quitara, o
+    //  copiada a mano). Pasarla otra vez por `sanitise` daba OTRA carpeta:
+    //  BORRAR "A.B" borraba "AB", que es otro proyecto. Si el nombre ya es
+    //  una carpeta de proyecto que existe dentro de la raiz, es esa.
     static juce::File folderFor (const juce::String& name)
     {
+        const auto tal = componente (name);
+        if (tal.isNotEmpty())
+        {
+            const auto f = root().getChildFile (tal);
+            if (f.isAChildOf (root()) && f.getChildFile ("project.xml").existsAsFile())
+                return f;
+        }
         return root().getChildFile (sanitise (name));
     }
 

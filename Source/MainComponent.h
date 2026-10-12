@@ -2559,6 +2559,7 @@ private:
     static constexpr int kUndoDepth = 16;
     struct Snapshot { juce::ValueTree state; PadSet pads; juce::String label; };
     std::vector<Snapshot> undoStack, redoStack;
+    void vaciaDeshacer();
 
     //  TAP TEMPO. Cuatro toques, la media de los tres intervalos. Menos de
     //  cuatro no es un tempo, es un accidente; mas de cuatro y el primero ya no

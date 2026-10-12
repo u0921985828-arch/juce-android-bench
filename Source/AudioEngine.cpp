@@ -475,7 +475,11 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
         for (auto& v : voices)
             if (v.active && v.slot >= 0 && v.slot != slot
                 && padChoke[(size_t) v.slot].load (std::memory_order_relaxed) == group)
-                v.release();
+                //  steal y no release: ahogar es CORTAR. Con la suelta del pad
+                //  un hat abierto de 600 ms seguia a -5 dB a los 50 ms del
+                //  cerrado (auditoria 2026-10, audio-dsp#6); el robo es el
+                //  fundido antichasquido de 1.5 ms, igual que AUTOCUT.
+                v.steal (systemSampleRate);
 
     //  AUTOCUT: this pad cuts its own tail. steal() rather than release() -
     //  the point is that the previous hit is GONE by the time the new one
@@ -1412,8 +1416,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             const double sps = samplesPerStepNow();
             if (sps > 1.0)
             {
+                //  `stepAccum` son las muestras desde el ULTIMO borde, asi que
+                //  la primera mitad del paso es "acabas de pasar uno" y suena
+                //  ya. La condicion estaba al reves: lo tocado a tiempo
+                //  esperaba casi un paso entero y lo tocado tarde sonaba sin
+                //  cuantizar (auditoria 2026-10, secuenciador#0).
                 const double toNext = sps - stepAccum;
-                if (toNext > sps * 0.5)
+                if (stepAccum >= sps * 0.5)
                 {
                     pending[(size_t) numPending++] = { (int) toNext, local[i].slot,
                                                        (int) local[i].semitones, local[i].velocity };

@@ -484,6 +484,13 @@ struct Voice
         //  `retarget` -uno por bloque en toda voz que da vueltas- devolvia el
         //  escalon a los 5.8 ms de haberlo quitado.
         target = g * velocity * compensa;
+        //  UNA VOZ QUE NACIO EN CERO TIENE QUE PODER SUBIR. `stepUp` sale de
+        //  `target / ataque` en `start`, asi que un pad disparado muteado, con
+        //  solo en otro o con el volumen a cero salia con paso CERO y se quedaba
+        //  muda para siempre aunque luego se subiera (auditoria 2026-10,
+        //  audio-dsp#1). Sube con la rampa de control de 10 ms, la misma que
+        //  usa para bajar.
+        if (stepUp <= 0.0f && target > 0.0f) stepUp = stepCtl;
         //  El ancho lo sigue SIEMPRE, como el volumen y a diferencia del pan
         //  bloqueado: un mando de la mesa tiene que mover lo que ya suena, y
         //  sin esto duraria 128 muestras - que es exactamente lo que le paso al

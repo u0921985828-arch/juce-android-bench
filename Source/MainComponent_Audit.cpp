@@ -11922,6 +11922,54 @@ void MainComponent::auditFeria()
         borraAbierto = currentProject == "FERIA_DOS" ? 1 : 0;
     }
 
+    //  j2. BORRAR UN PROYECTO CON PUNTO NO BORRA OTRO (auditoria 2026-10,
+    //      persistencia#0). La lista ensena el nombre real de la carpeta y
+    //      `folderFor` lo pasaba por `sanitise`, que quita el punto: BORRAR
+    //      "FERIA.PUNTO" borraba "FERIAPUNTO".
+    int puntoFuera = -1, puntoVecino = -1;
+    {
+        const auto dos = ProjectStore::folderFor ("FERIA_DOS");
+        const auto conPunto = ProjectStore::root().getChildFile ("FERIA.PUNTO");
+        const auto vecino   = ProjectStore::root().getChildFile ("FERIAPUNTO");
+        dos.copyDirectoryTo (conPunto);
+        dos.copyDirectoryTo (vecino);
+        refreshProjectList();
+        const int fila = projModel.names.indexOf ("FERIA.PUNTO");
+        if (fila >= 0)
+        {
+            projList.selectRow (fila);
+            disarmConfirm();
+            projDeleteButton.onClick();
+            projDeleteButton.onClick();
+            puntoFuera  = conPunto.exists() ? 0 : 1;
+            puntoVecino = vecino.getChildFile ("project.xml").existsAsFile() ? 1 : 0;
+        }
+        conPunto.deleteRecursively();
+        vecino.deleteRecursively();
+        refreshProjectList();
+    }
+
+    //  j3. LA PILA DE DESHACER ES DEL PROYECTO, Y DESHACER DEVUELVE EL NOMBRE
+    //      (auditoria 2026-10, persistencia#1, ux-flujos#0 y #2), Y UNA SESION
+    //      ILEGIBLE SE APARTA ANTES DE PISARLA (persistencia#3: feria.py deja
+    //      un state.xml roto antes de arrancar).
+    int nombreVuelve = -1, abrirVacia = -1, corruptos = 0;
+    if (auto* p0 = pads[0])
+    {
+        const auto original = p0->sampleName();
+        pushUndo ("FERIA NOMBRE");
+        padName[0] = "FERIA_OTRO";
+        p0->setSampleInfo (uiSample[0], padName[0], padStart01[0], padEnd01[0]);
+        performUndo();
+        nombreVuelve = p0->sampleName() == original ? 1 : 0;
+    }
+    pushUndo ("FERIA CRUZA");
+    loadProject ("FERIA_DOS");  acaba();
+    abrirVacia = undoStack.empty() && redoStack.empty() ? 1 : 0;
+    for (const auto& e : juce::RangedDirectoryIterator (SessionKeeper::stateFile().getParentDirectory(),
+                                                        false, "state.xml.corrupto-*"))
+    { juce::ignoreUnused (e); ++corruptos; }
+
     //  k. UN CAMBIO SE GUARDA AL SOLTAR, NO A LOS 20 s (J4 espero 8 s).
     auto bpmEnDisco = [this]
     {
@@ -11994,6 +12042,11 @@ void MainComponent::auditFeria()
               << ",\"borra_fuera\":" << borraFuera
               << ",\"borra_dice\":" << borraDice
               << ",\"borra_abierto\":" << borraAbierto
+              << ",\"punto_fuera\":" << puntoFuera
+              << ",\"punto_vecino\":" << puntoVecino
+              << ",\"nombre_vuelve\":" << nombreVuelve
+              << ",\"abrir_vacia\":" << abrirVacia
+              << ",\"corruptos\":" << corruptos
               << ",\"bpm_antes\":" << bpmAntes
               << ",\"bpm_sin_soltar\":" << bpmSinSoltar
               << ",\"bpm_tras_soltar\":" << bpmTrasSoltar

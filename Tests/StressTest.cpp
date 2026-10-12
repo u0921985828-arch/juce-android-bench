@@ -1192,7 +1192,7 @@ int main()
     //  no cuando lo tocaste. Sin medirlo, "esta puesto" y "no hace nada" son la
     //  misma corrida en verde.
     {
-        auto bloqueDelGolpe = [] (bool cuant)
+        auto bloqueDelGolpe = [] (bool cuant, int bloquesAntes)
         {
             const auto monton_e = std::make_unique<AudioEngine>();
             AudioEngine& e = *monton_e;
@@ -1217,8 +1217,8 @@ int main()
             e.setPlaying (true);
             e.fetchTriggered();
             //  Un paso a 120 BPM en semicorcheas son 6000 muestras, o sea 93
-            //  bloques de 64. Se toca a mitad de camino del primero.
-            for (int i = 0; i < 46; ++i) { b.clear(); e.renderNextBlock (b, 0, 64); }
+            //  bloques de 64. Se toca a `bloquesAntes` bloques del borde.
+            for (int i = 0; i < bloquesAntes; ++i) { b.clear(); e.renderNextBlock (b, 0, 64); }
             e.postNoteOn (0, 1.0f);
             int bloque = -1;
             for (int i = 0; i < 200 && bloque < 0; ++i)
@@ -1229,12 +1229,89 @@ int main()
             e.setPlaying (false);
             return bloque;
         };
-        const int libre = bloqueDelGolpe (false), atado = bloqueDelGolpe (true);
-        //  Sin cuantizar suena en el bloque siguiente; cuantizado espera al
-        //  borde del paso, que esta a unos 47 bloques de donde se toco.
-        const bool ok = libre >= 0 && atado > libre + 20;
-        std::printf ("%-34s suelto en el bloque %d, cuantizado en el %d   %s\n",
-                     "cuantizar en directo espera", libre, atado, ok ? "OK" : zatiFalla());
+        //  Las dos mitades del paso, que es donde estaba el fallo: la
+        //  condicion iba al reves y lo tocado JUSTO DESPUES del borde esperaba
+        //  casi un paso entero, mientras lo tocado justo antes del siguiente
+        //  sonaba ya, sin cuantizar (auditoria 2026-10, secuenciador#0).
+        //  Pronto (20 bloques = 1280 de 6000): suena ya, como sin cuantizar.
+        //  Tarde (70 bloques = 4480): espera al borde, unos 24 bloques.
+        const int libre  = bloqueDelGolpe (false, 70);
+        const int pronto = bloqueDelGolpe (true, 20);
+        const int tarde  = bloqueDelGolpe (true, 70);
+        const bool ok = libre >= 0 && pronto >= 0 && pronto <= libre + 1
+                     && tarde >= libre + 18 && tarde <= libre + 26;
+        std::printf ("%-34s suelto %d, pronto %d, tarde %d   %s\n",
+                     "cuantizar en directo, dos mitades", libre, pronto, tarde, ok ? "OK" : zatiFalla());
+    }
+
+    //  UN PAD QUE SUENA EN CERO PUEDE VOLVER A SONAR, Y EL CHOKE CORTA
+    //  (auditoria 2026-10, audio-dsp#1 y #6). Una muestra larga de un segundo
+    //  para que la voz siga viva mientras se mira.
+    {
+        auto motor = [] (AudioEngine& e)
+        {
+            e.prepareToPlay (48000.0, 64);
+            e.setPolyphony (8, 2);
+            enCanalCero (e);
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize (2, 48000);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 48000; ++i)
+                    sb->buffer.setSample (ch, i, 0.5f * std::sin (0.05f * (float) i));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, sb);
+            e.publishSample (1, sb);
+            juce::AudioBuffer<float> b (2, 64);
+            b.clear(); e.renderNextBlock (b, 0, 64);
+        };
+        auto rmsBloques = [] (AudioEngine& e, int bloques)
+        {
+            juce::AudioBuffer<float> b (2, 64);
+            double suma = 0.0; int n = 0;
+            for (int k = 0; k < bloques; ++k)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 64);
+                for (int i = 0; i < 64; ++i) { const double v = b.getSample (0, i); suma += v * v; ++n; }
+            }
+            return std::sqrt (suma / juce::jmax (1, n));
+        };
+
+        //  1. Disparado con el volumen a cero, y subido despues.
+        double subido = 0.0;
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            motor (e);
+            e.setPadGain (0, 0.0f);
+            e.postNoteOn (0, 1.0f);
+            rmsBloques (e, 4);
+            e.setPadGain (0, 1.0f);
+            rmsBloques (e, 16);                 // la rampa
+            subido = rmsBloques (e, 32);
+        }
+        const bool okMudo = subido > 0.05;
+        std::printf ("%-34s rms tras subir %.4f   %s\n",
+                     "pad disparado en cero vuelve", subido, okMudo ? "OK" : zatiFalla());
+
+        //  2. Choke: el 0 suena con suelta de 600 ms; el 1, del mismo grupo y
+        //     mudo, lo ahoga. A los 10 ms no puede quedar nada del 0.
+        double antes = 0.0, despues = 0.0;
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            motor (e);
+            e.setPadGain (0, 1.0f);
+            e.setPadGain (1, 0.0f);
+            e.setPadChoke (0, 1);
+            e.setPadChoke (1, 1);
+            e.setPadRelease (0, 600.0f);
+            e.postNoteOn (0, 1.0f);
+            antes = rmsBloques (e, 16);
+            e.postNoteOn (1, 1.0f);
+            rmsBloques (e, 8);                  // 10.7 ms
+            despues = rmsBloques (e, 8);
+        }
+        const bool okChoke = antes > 0.05 && despues < antes * 0.01;
+        std::printf ("%-34s rms antes %.4f, a los 10 ms %.5f   %s\n",
+                     "choke corta", antes, despues, okChoke ? "OK" : zatiFalla());
     }
 
     //  EL FILTRO DEL PAD, con TRES numeros a la vez o no dice nada.
@@ -6049,6 +6126,37 @@ int main()
             const bool ok = (fuera < -20.0) && (std::abs (queda) < 1.0);
             std::printf ("%-34s bajo %+.2f dB   alto %+.2f dB   %s\n",
                          "GTE", fuera, queda, ok ? "OK" : zatiFalla());
+        }
+
+        //  2b. GTE ABRE CON SU ATAQUE Y CIERRA CON SU CIERRE. El suavizado
+        //      usaba las dos constantes al reves: abria en los 120 ms del
+        //      CIERRE -se comia el golpe que deja pasar- y cerraba en el medio
+        //      milisegundo del ataque, con chasquido (auditoria 2026-10,
+        //      audio-dsp#0). Con una continua de 0.5 la salida ES la ganancia.
+        {
+            Dinamica d;
+            d.prepare (48000.0);
+            std::vector<float> x (48000);
+            auto pasa = [&] (float nivel)
+            {
+                std::fill (x.begin(), x.end(), nivel);
+                float* ch[1] = { x.data() };
+                for (int i = 0; i < (int) x.size(); i += 64)
+                    d.procesa (ch, 1, i, 64, Dinamica::puerta, -30.0f, 120.0f);
+            };
+            pasa (0.0f);                       // cerrada
+            pasa (0.5f);
+            int abre = -1;
+            for (int i = 0; i < (int) x.size() && abre < 0; ++i) if (x[(size_t) i] >= 0.45f) abre = i;
+            std::fill (x.begin(), x.end(), 0.5f);
+            //  Y para cerrar: de una continua a casi nada, por debajo del umbral.
+            pasa (0.001f);
+            int cierra = -1;
+            for (int i = 0; i < (int) x.size() && cierra < 0; ++i) if (x[(size_t) i] <= 0.0001f) cierra = i;
+            const double abreMs = abre / 48.0, cierraMs = cierra / 48.0;
+            const bool ok = abre >= 0 && abreMs < 3.0 && cierra >= 0 && cierraMs > 60.0;
+            std::printf ("%-34s abre al 90 %% en %.2f ms, cierra en %.1f ms   %s\n",
+                         "GTE: ataque y cierre", abreMs, cierraMs, ok ? "OK" : zatiFalla());
         }
 
         //  3. DSS. Un de-esser que baja la señal entera es un compresor con el

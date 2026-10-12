@@ -271,7 +271,13 @@ struct Dinamica
             //  hay otra forma: se sujeta en la muestra en la que pasa. La
             //  SUBIDA si va con su mando, que es lo que se oye como
             //  recuperacion.
-            const float aG = (g < gSuave ? (modo == limitador ? 0.0f : aA) : aR);
+            //  LA PUERTA AL REVES QUE LOS OTROS TRES: su accion es ABRIR, y
+            //  abrir es subir. Con la regla de los demas abria en los 120 ms
+            //  del CIERRE -se comia el golpe que deja pasar- y cerraba en el
+            //  medio milisegundo del ataque, con chasquido (auditoria 2026-10,
+            //  audio-dsp#0).
+            const float aG = modo == puerta ? (g > gSuave ? aA : aR)
+                                            : (g < gSuave ? (modo == limitador ? 0.0f : aA) : aR);
             gSuave = aG * gSuave + (1.0f - aG) * g;
             peorG = juce::jmin (peorG, gSuave);
 

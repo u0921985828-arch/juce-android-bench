@@ -12310,6 +12310,19 @@ void MainComponent::refrescaNombresDeshacer()
                            : T ("REHACER %1", redoStack.back().label));
 }
 
+//  LA PILA ES DE UN PROYECTO. Abrir otro con la pila del de antes dejaba que
+//  DESHACER aplicase al recien abierto un estado del anterior -nombres, patrones,
+//  mezcla- y que GUARDAR lo escribiese en su carpeta (auditoria 2026-10,
+//  persistencia#1 y ux-flujos#0).
+void MainComponent::vaciaDeshacer()
+{
+    undoStack.clear();
+    redoStack.clear();
+    undoButton.setVisible (false);
+    redoButton.setVisible (false);
+    refrescaNombresDeshacer();
+}
+
 void MainComponent::performUndo()
 {
     if (undoStack.empty()) return;
@@ -12325,6 +12338,13 @@ void MainComponent::performUndo()
 
     restorePads (snap.pads);
     applyState (snap.state);
+    //  Los nombres viven en el estado y `applyState` los repone en padName,
+    //  pero la tecla ensena el que le pusieron al cargar: sin volver a sellar
+    //  las 64, DESHACER devolvia el audio y dejaba el rotulo del otro
+    //  (auditoria 2026-10, ux-flujos#2). Es lo mismo que hace abrir.
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto* p = pads[i])
+            p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i], padStart01[(size_t) i], padEnd01[(size_t) i]);
     undoButton.setVisible (! undoStack.empty());
     redoButton.setVisible (true);
     refrescaNombresDeshacer();
@@ -12347,6 +12367,13 @@ void MainComponent::performRedo()
 
     restorePads (snap.pads);
     applyState (snap.state);
+    //  Los nombres viven en el estado y `applyState` los repone en padName,
+    //  pero la tecla ensena el que le pusieron al cargar: sin volver a sellar
+    //  las 64, DESHACER devolvia el audio y dejaba el rotulo del otro
+    //  (auditoria 2026-10, ux-flujos#2). Es lo mismo que hace abrir.
+    for (int i = 0; i < kNumPads; ++i)
+        if (auto* p = pads[i])
+            p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i], padStart01[(size_t) i], padEnd01[(size_t) i]);
     redoButton.setVisible (! redoStack.empty());
     undoButton.setVisible (true);
     refrescaNombresDeshacer();
@@ -14522,6 +14549,7 @@ void MainComponent::loadProject (const juce::String& name)
 void MainComponent::finishProjectOpen (const juce::String& name, const juce::ValueTree& tree, int restored)
 {
     int missing = 0;
+    vaciaDeshacer();
     applyState (tree);
     //  EL MIX GUARDADO ES DEL PROYECTO DE ANTES: encender un efecto apagado de
     //  este devolveria el que tenia aquel. Aqui y no en `applyState`, que
@@ -14848,6 +14876,13 @@ void MainComponent::padPorDefecto (int i)
 void MainComponent::newProject()
 {
     ponTransporte (false);
+
+    //  NUEVO empieza una pila nueva con UN solo paso: volver a lo que habia.
+    //  Sin el, NUEVO era lo unico destructivo de la app que no se deshacia
+    //  (ux-flujos#5); con la pila entera, DESHACER traia estados de un
+    //  proyecto que ya no es este (persistencia#1).
+    vaciaDeshacer();
+    pushUndo (T ("NUEVO"));
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -21350,6 +21385,20 @@ void MainComponent::restoreSession()
     auto xml = juce::parseXML (SessionKeeper::stateFile());
     if (xml == nullptr)
     {
+        //  UN state.xml QUE NO SE LEE NO SE PISA SIN COPIA. Truncado por un
+        //  apagado o roto por un disco lleno, aqui se adoptaba la sesion vacia
+        //  y el primer guardado lo sobrescribia: el trabajo se perdia sin una
+        //  palabra (auditoria 2026-10, persistencia#3). Se aparta con fecha,
+        //  que es lo unico de donde se podria rescatar a mano, y se dice.
+        const auto roto = SessionKeeper::stateFile();
+        if (roto.getSize() > 0)
+        {
+            const auto copia = roto.getSiblingFile (roto.getFileName() + ".corrupto-"
+                                   + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S"));
+            roto.copyFileTo (copia);
+            status.setText (T ("La sesion anterior no se pudo leer; copia en %1", copia.getFileName()),
+                            juce::dontSendNotification);
+        }
         session.adopt (uiSample.data(), kNumPads);
         return;
     }

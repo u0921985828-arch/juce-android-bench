@@ -52,6 +52,15 @@ def main():
     if not os.path.exists (APP):
         sys.exit ("no hay binario: compila primero (cmake --build build-rel)")
     casa = tempfile.mkdtemp (prefix="zati-feria-")
+    #  Una sesion rota de antes, como la deja un apagado a mitad de escribir:
+    #  el ancla apunta a una biblioteca con un state.xml truncado.
+    lib = os.path.join (casa, "ZATILIB")
+    os.makedirs (os.path.join (lib, ".sesion"))
+    with open (os.path.join (lib, ".sesion", "state.xml"), "w") as f:
+        f.write ('<?xml version="1.0"?>\n<ZATI bpm="131"><PADS><PAD i="0" na')
+    os.makedirs (os.path.join (casa, ".config"))
+    with open (os.path.join (casa, ".config", "zati-home.txt"), "w") as f:
+        f.write (lib)
     try:
         r, asan = corre (casa)
     finally:
@@ -98,6 +107,14 @@ def main():
                      and r["borra_abierto"] == 1 and asan == 0,
            "UNO borrado con DOS abierto: carpeta fuera %d, lo dice %d, DOS sigue %d, errores ASan %d"
            % (r["borra_fuera"], r["borra_dice"], r["borra_abierto"], asan))
+    regla ("punto", r.get("punto_fuera", -1) == 1 and r.get("punto_vecino", -1) == 1,
+           "BORRAR \"FERIA.PUNTO\": su carpeta fuera %d, \"FERIAPUNTO\" sigue %d"
+           % (r.get("punto_fuera", -1), r.get("punto_vecino", -1)))
+    regla ("pila", r.get("nombre_vuelve", -1) == 1 and r.get("abrir_vacia", -1) == 1,
+           "DESHACER devuelve el nombre del pad %d; ABRIR deja la pila vacia %d"
+           % (r.get("nombre_vuelve", -1), r.get("abrir_vacia", -1)))
+    regla ("corrupto", r.get("corruptos", 0) == 1,
+           "state.xml roto apartado antes de pisarlo: %d copias" % r.get("corruptos", 0))
     regla ("guardado", r["bpm_antes"] == 120 and r["bpm_sin_soltar"] == 120 and r["bpm_tras_soltar"] == 131,
            "tempo en disco: %g antes, %g a los 2 s sin soltar (control), %g a los 2 s de soltar"
            % (r["bpm_antes"], r["bpm_sin_soltar"], r["bpm_tras_soltar"]))

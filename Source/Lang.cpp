@@ -1899,6 +1899,7 @@ namespace
         //  porque nombran el mismo trabajo: los tres son 64 ficheros.
         { "Iniciando",      "",         "Starting up", "正在启动",   "جارٍ البدء" },
         { "Recuperando sesion", "Recuperando sesión",     "Restoring session", "正在恢复会话", "جارٍ استعادة الجلسة" },
+        { "La sesion anterior no se pudo leer; copia en %1", "La sesión anterior no se pudo leer; copia en %1", "The last session could not be read; copy saved as %1", "无法读取上次会话；副本已存为 %1", "تعذّرت قراءة الجلسة السابقة؛ حُفظت نسخة باسم %1" },
         { "Preparando sonidos", "",    "Preparing sounds",  "正在准备音色", "جارٍ تحضير الأصوات" },
         //  El renglon de atascos de AJUSTES · AUDIO. Ver Bitacora::Vigilante.
         { "atasco", "",                "stall",             "卡顿", "تجمّد" },
