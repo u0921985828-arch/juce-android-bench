@@ -100,7 +100,15 @@ target_link_libraries(Zati PRIVATE
 #  lleva igual, que es lo que importaba conservar.
 #
 #  Solo GCC y Clang; en el resto se deja `-flto` tal cual, que es lo que habia.
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+#
+#  Y SE PUEDE APAGAR PARA ITERAR: con LTO cada arreglo de una linea vuelve a
+#  optimizar el programa entero al enlazar, JUCE incluido. Un arbol de trabajo
+#  sin LTO (-DZATI_LTO=OFF) se mide con los mismos bancos; los que cronometran
+#  y la APK siguen saliendo de uno con LTO.
+option(ZATI_LTO "Enlazar con LTO (apagar solo para iterar)" ON)
+if(NOT ZATI_LTO)
+    message(STATUS "Zati: sin LTO (arbol de trabajo)")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     include(ProcessorCount)
     ProcessorCount(ZATI_NPROC)
     if(ZATI_NPROC EQUAL 0)
