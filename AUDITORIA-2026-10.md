@@ -19,7 +19,7 @@ Revision de arriba abajo de la app con un criterio: valorar lo que tiene y no de
 | media | 143 |
 | baja | 106 |
 | detalle | 43 |
-| arreglados en esta rama | 17 |
+| arreglados en esta rama | 19 |
 
 Los no verificados se dan por candidatos: la tasa de acierto de los 57 verificados fue del 100 %, pero cada uno se reproduce antes de tocarlo.
 
@@ -43,6 +43,8 @@ Los no verificados se dan por candidatos: la tasa de acierto de los 57 verificad
 | codigo#1 arr.py esta rojo en HEAD: el asa del bloque estira un compas de mas | alta | 7499333 | arr.py FALLA -> OK (la regla seguia el modelo de antes de ce495da) |
 | rendimiento#0 En segundo plano no se para nada: el temporizador sigue y, sin vblank, pinta el cuadro entero con la FFT incluida | alta | 7499333 | feria.py `fondo`: cuadros al fondo 20 -> 0 |
 | android#3 Exportar MIDI nunca publica el .mid y además barre wav/ogg sueltos y pisa la URI de compartir | alta | 7499333 | SIN MEDIR: MediaStore no existe en escritorio, falta un telefono |
+| persistencia#5 GUARDAR KIT con «Sobrescribir» mezcla el kit viejo y el nuevo | alta | c1d7764 | kit.py `sobrescribir`: el WAV del kit viejo queda 1 -> 0 (20 FALLA -> OK) |
+| codigo#24 canalDeParam protege un indice y fxParamDe usa otro fuera de rango (aviso -Warray-bounds) | alta | c1d7764 | build de StressTest: aviso -Warray-bounds en pasoMod 1 -> 0; StressTest 171 OK, 0 FALLA |
 | visual#0 Cifra dB de la mesa ilegible en PAPEL y GRAFITO (1.96 a 2.36:1) | alta | 7499333 | canales.py por carcasa: 1.67/1.99/1.67/9.47 -> 9.47/9.28/9.47/9.47 :1 |
 
 ## Decisiones que no son de codigo
@@ -575,7 +577,7 @@ Los no verificados se dan por candidatos: la tasa de acierto de los 57 verificad
 | 20 | alta |  | MainComponent::resized: 7903 lineas y CCN 588 | Source/MainComponent_Layout.cpp (MainComponent::resized) | pendiente, opinion |
 | 21 | alta |  | El constructor de MainComponent tiene 5087 lineas | Source/MainComponent.cpp (MainComponent::MainComponent) | pendiente, opinion |
 | 22 | alta |  | AudioEngine::renderNextBlock: 3553 lineas y CCN 520 en el hilo de audio | Source/AudioEngine.h (renderNextBlock) | pendiente, opinion |
-| 24 | alta |  | canalDeParam protege un indice y fxParamDe usa otro fuera de rango (aviso -Warray-bounds) | Source/AudioEngine.h:288-292 (canalDeParam), 3096-3103 (fxParamDe), 3198 (pasoMod) | pendiente |
+| 24 | alta |  | canalDeParam protege un indice y fxParamDe usa otro fuera de rango (aviso -Warray-bounds) | Source/AudioEngine.h:288-292 (canalDeParam), 3096-3103 (fxParamDe), 3198 (pasoMod) | arreglado (c1d7764) |
 | 3 | media |  | SKILL.md del banco no cita 20 bancos y remite a un BITACORA.md que no existe | .claude/skills/banco/SKILL.md:10 y su tabla de que correr segun lo que se toque | pendiente |
 | 4 | media |  | banco.yml dice que no corre nada que dependa del reloj, pero corre atasco.py y fps.py | .github/workflows/banco.yml:11; Tests/atasco.py (presupuesto de 250 ms por tramo); Tests/fps.py | pendiente |
 | 6 | media |  | feria.py acepta celdas de 19 px y filas de 36 px en su regla 'celda' | Tests/feria.py:77-80 | pendiente |
@@ -969,7 +971,7 @@ Los no verificados se dan por candidatos: la tasa de acierto de los 57 verificad
 | 2 | alta | si | Guardar encima de un proyecto existente no es atómico: si falla a mitad, queda un XML viejo con WAV nuevos o borrados | Source/MainComponent.cpp:14401-14441 (stepPadSaveJob) y 14444-14481 (finishProjectSave) | pendiente |
 | 3 | alta | si | Un state.xml corrupto o truncado vacía la sesión en silencio y la sobrescribe | Source/MainComponent.cpp:21320-21370 (restoreSession) | arreglado (fb718ae) |
 | 4 | alta |  | Lo que se escribe con el teclado (BPM, nombres) no dispara el guardado rápido y se pierde si el proceso muere en los 20 s siguientes | Source/MainComponent.h:2249-2256 (OidoDeToques, que solo escucha mouseUp) y 2311-2312 (kEstadoSesionMs=20000); MainComponent.cpp:22225-22256 | pendiente |
-| 5 | alta |  | GUARDAR KIT con «Sobrescribir» mezcla el kit viejo y el nuevo | Source/MainComponent.cpp:1155-1175 (projKitButton) y 19520-19575 (guardarKit) | pendiente |
+| 5 | alta |  | GUARDAR KIT con «Sobrescribir» mezcla el kit viejo y el nuevo | Source/MainComponent.cpp:1155-1175 (projKitButton) y 19520-19575 (guardarKit) | arreglado (c1d7764) |
 | 6 | alta |  | No hay indicador de «proyecto sin guardar»: «A SALVO» se refiere a la sesión y ABRIR o NUEVO tiran los cambios sin avisar | Cabecera (lineaDeContinuidad, MainComponent.cpp:14600-14660) y confirmaciones de ABRIR y NUEVO (1101-1110) | pendiente, opinion |
 | 7 | media |  | Tras DESHACER, las fichas de pad pierden el nombre aunque el estado lo tiene | Source/MainComponent.cpp:12269-12352 (performUndo y performRedo, que no repintan setSampleInfo) frente a 14528-14531 (finishProjectOpen, que | pendiente |
 | 8 | media |  | Se reescriben los 64 WAV en cada GUARDAR aunque no hayan cambiado | Source/MainComponent.cpp:14401-14441 (stepPadSaveJob) | pendiente |
