@@ -19591,6 +19591,7 @@ void MainComponent::guardarKit (const juce::String& nombre)
 
     const int base = currentBank * kPadsPerBank;
     int escritos = 0, vacios = 0;
+    juce::Array<juce::File> nuevos;
 
     beginBusy (T ("Guardando kit"));
     for (int i = 0; i < kPadsPerBank; ++i)
@@ -19620,8 +19621,18 @@ void MainComponent::guardarKit (const juce::String& nombre)
                                 : juce::String ("pad");
         const auto f = dir.getChildFile (juce::String (i + 1).paddedLeft ('0', 2)
                                            + " " + etiqueta + ".wav");
-        if (ProjectStore::writeSample (f, trozo, sb->sourceSampleRate)) ++escritos;
+        if (ProjectStore::writeSample (f, trozo, sb->sourceSampleRate)) { ++escritos; nuevos.add (f); }
     }
+
+    //  SOBRESCRIBIR ES SUSTITUIR. Los WAV de un kit anterior con el mismo
+    //  nombre se quedaban al lado de los nuevos -«01 BD» junto a «01 KICK»- y
+    //  CARGAR KIT, que coge los dieciseis primeros por nombre, los barajaba.
+    //  Se borran DESPUES de escribir, y solo si se escribio algo: si falla a
+    //  mitad, el kit viejo sigue entero en vez de quedar medio.
+    if (escritos > 0)
+        for (const auto& viejo : dir.findChildFiles (juce::File::findFiles, false, "*.wav"))
+            if (! nuevos.contains (viejo))
+                viejo.deleteFile();
     endBusy();
 
     status.setText (escritos > 0

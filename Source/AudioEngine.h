@@ -3093,12 +3093,24 @@ private:
     //  LA PUERTA UNICA. `sustituye` decide si el canal cuenta: escrito en cada
     //  sitio de lectura serian cincuenta copias de la misma condicion y la que
     //  se quedara vieja seria un delay por canal que no existe.
+    //  Y FUERA DE RANGO, UN SUMIDERO: `canalDeParam` protegia el canal pero el
+    //  tipo y el parametro se indexaban tal cual, y GCC lo avisaba en pasoMod
+    //  (subindice 30 sobre 30). Leer de fuera del array en el hilo de audio es
+    //  comportamiento indefinido; leer cero de un sitio fijo no.
+    static bool fxParamValido (int f, int par) noexcept
+    {
+        return f >= 0 && f < kNumFx && par >= 0 && par < kNumParFx;
+    }
     std::atomic<float>& fxParamDe (int c, int f, int par) noexcept
     {
+        static std::atomic<float> sumidero { 0.0f };
+        if (! fxParamValido (f, par)) { jassertfalse; return sumidero; }
         return fxP[(size_t) canalDeParam (c, f)][(size_t) f][(size_t) par];
     }
     const std::atomic<float>& fxParamDe (int c, int f, int par) const noexcept
     {
+        static const std::atomic<float> sumidero { 0.0f };
+        if (! fxParamValido (f, par)) { jassertfalse; return sumidero; }
         return fxP[(size_t) canalDeParam (c, f)][(size_t) f][(size_t) par];
     }
 

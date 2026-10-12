@@ -2939,6 +2939,15 @@ void MainComponent::auditKit (const juce::String& nombre)
     const auto mia = ProjectStore::home().getChildFile ("BANCO_KITS");
     const bool elegidaAcepta = ProjectStore::setCarpeta (ProjectStore::Carpeta::kits, mia);
 
+    //  Y UN KIT ANTERIOR CON EL MISMO NOMBRE: «Sobrescribir» tiene que dejar
+    //  los dieciseis nuevos y nada mas. El viejo se planta con un nombre que
+    //  ordena delante, que es como barajaba CARGAR KIT.
+    const auto viejo = ProjectStore::kits().getChildFile (juce::File::createLegalFileName (nombre))
+                                           .getChildFile ("01 AAVIEJO.wav");
+    if (ProjectStore::ensureDirectory (viejo.getParentDirectory()))
+        viejo.replaceWithData ("RIFF", 4);
+    const bool plantado = viejo.existsAsFile();
+
     guardarKit (nombre);
 
     const auto dir = ProjectStore::kits().getChildFile (juce::File::createLegalFileName (nombre));
@@ -2997,6 +3006,8 @@ void MainComponent::auditKit (const juce::String& nombre)
               << ",\"fuente_canales\":" << (sb != nullptr ? sb->buffer.getNumChannels() : 0)
               << ",\"rms_disco\":" << rmsDisco
               << ",\"rms_esperado\":" << rmsEsperado
+              << ",\"viejo_plantado\":" << (plantado ? 1 : 0)
+              << ",\"viejo_queda\":" << (viejo.existsAsFile() ? 1 : 0)
               << "}" << std::endl;
 }
 

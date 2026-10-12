@@ -152,6 +152,16 @@ def main():
         else:
             print(f"origen : RMS disco {dd:.5f}  memoria {de_:.5f}  ({rel*100:.2f}%)  OK")
 
+    #  SOBRESCRIBIR ES SUSTITUIR: la app planta un WAV de un kit anterior con
+    #  el mismo nombre antes de guardar, y tiene que desaparecer. Si queda,
+    #  CARGAR KIT coge los dieciseis primeros por nombre y sale barajado.
+    if not d.get("viejo_plantado"):
+        fallos.append("FALLA  la app no pudo plantar el kit viejo: la prueba no juzga nada")
+    elif d.get("viejo_queda"):
+        fallos.append("FALLA  sobrescribir el kit deja los WAV del kit anterior al lado")
+    else:
+        print("sobrescribir: el kit viejo no queda  OK")
+
     shutil.rmtree(casa, ignore_errors=True)
 
     for f in fallos:
