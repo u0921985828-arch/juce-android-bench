@@ -1543,7 +1543,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  was while the feel changes.
             const float sw = swing.load (std::memory_order_relaxed);
             const int lateBy = ((stepInPattern & 1) != 0)
-                                 ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep * 0.5)
+                                 ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep)   // 75 % es 75 % del par (audio-dsp#5)
                                  : 0;
 
             for (int p = 0; p < kNumPads; ++p)
@@ -3995,11 +3995,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                 I.pngTonoZ[0] += pngA * (dL - I.pngTonoZ[0]); vL = I.pngTonoZ[0];
                                 I.pngTonoZ[1] += pngA * (dR - I.pngTonoZ[1]); vR = I.pngTonoZ[1];
                             }
-                            const float aL = w0[i] + (chans > 1 ? vR : vL) * I.smPngFb;
+                            //  Entra la suma por un solo lado: rebota tambien con fuente centrada (audio-dsp#15).
+                            const float aL = (chans > 1 ? (w0[i] + w1[i]) * 0.5f + vR * I.smPngFb : w0[i] + vL * I.smPngFb);
                             I.pngLine.pushSample (0, std::isfinite (aL) ? aL : 0.0f);
                             if (chans > 1)
                             {
-                                const float aR = w1[i] + vL * I.smPngFb;
+                                const float aR = vL * I.smPngFb;
                                 I.pngLine.pushSample (1, std::isfinite (aR) ? aR : 0.0f);
                             }
 

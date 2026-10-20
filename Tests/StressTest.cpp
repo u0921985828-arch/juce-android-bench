@@ -9241,6 +9241,17 @@ int main()
             const bool ok = cero >= 0 && uno > 0.05f && dos > 0.05f && uno > unoD * 3.0f;
             std::printf ("%-34s 200ms izq %.3f der %.3f, 400ms der %.3f   %s\n",
                          "PNG rebota de lado", uno, unoD, dos, ok ? "OK" : zatiFalla());
+
+            //  Y CON LA FUENTE EN EL CENTRO tambien rebota (audio-dsp#15).
+            auto clicCentro = [] (juce::AudioBuffer<float>& b, double)
+            { for (int i = 0; i < 96; ++i) { b.setSample (0, i, 1.0f); b.setSample (1, i, 1.0f); } };
+            corre6 (AudioEngine::kFxPng, 200.0f, 0.80f, clicCentro, aL, aR);
+            int c2 = -1;
+            for (size_t i = 0; i < aL.size(); ++i) if (std::abs (aL[i]) > 0.05f || std::abs (aR[i]) > 0.05f) { c2 = (int) i; break; }
+            const float l2 = c2 >= 0 ? picoEn (aL, c2, 200.0) : 0.0f, r2 = c2 >= 0 ? picoEn (aR, c2, 200.0) : 0.0f;
+            const bool ok2 = c2 >= 0 && juce::jmax (l2, r2) > 0.05f && juce::jmin (l2, r2) < juce::jmax (l2, r2) * 0.3f;
+            std::printf ("%-34s 200ms izq %.3f der %.3f   %s\n",
+                         "PNG rebota con fuente centrada", l2, r2, ok2 ? "OK" : zatiFalla());
         }
 
         // --- DUC: el bombeo baja lo que dice. -------------------------
@@ -9891,6 +9902,40 @@ int main()
                          (reservas == 0 && finita) ? "OK" : zatiFalla());
         }
 #endif
+    }
+
+    //  EL SWING AL MAXIMO deja el golpe impar al 75 % del par (audio-dsp#5).
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 64); e.setPolyphony (8, 2); enCanalCero (e);
+        SampleBuffer::Ptr sb = new SampleBuffer();
+        sb->buffer.setSize (2, 2000);
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 2000; ++i) sb->buffer.setSample (ch, i, 0.5f);
+        sb->sourceSampleRate = 48000.0;
+        e.publishSample (0, sb); e.setPadGain (0, 1.0f);
+        e.setBpm (120.0); e.setPatternLength (0, 16); e.setEditPattern (0);
+        e.setStep (0, 0, 0, true); e.setStep (0, 1, 0, true);
+        e.setSwing (0.75f);
+        juce::AudioBuffer<float> b (2, 64);
+        b.clear(); e.renderNextBlock (b, 0, 64);
+        e.setPlaying (true);
+        std::vector<long> golpes;
+        bool antes = false;
+        for (long blk = 0; blk < 400 && golpes.size() < 2; ++blk)
+        {
+            b.clear(); e.renderNextBlock (b, 0, 64);
+            for (int i = 0; i < 64; ++i)
+            {
+                const bool suena = std::abs (b.getSample (0, i)) > 0.01f;
+                if (suena && ! antes) golpes.push_back (blk * 64 + i);
+                antes = suena;
+            }
+        }
+        e.setPlaying (false);
+        const double paso = 48000.0 * 60.0 / 120.0 / 4.0;
+        const double par = golpes.size() == 2 ? (double) (golpes[1] - golpes[0]) / (2.0 * paso) : 0.0;
+        std::printf ("%-34s el impar cae al %.1f %% del par (75), %d golpes   %s\n", "swing maximo es 75 %",
+                     par * 100.0, (int) golpes.size(), std::abs (par * 100.0 - 75.0) < 1.0 ? "OK" : zatiFalla());
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

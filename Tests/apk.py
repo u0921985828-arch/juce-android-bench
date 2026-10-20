@@ -182,6 +182,36 @@ print(f"permisos ({len(permisos)}):")
 for p in permisos:
     print("  " + p)
 
+# --- 2b. La actividad no se recrea y ATRAS llega (android#0, android#1) -----
+#  Se leen los atributos de <activity> y <application> del XML binario.
+manifiesto_malo = []
+if not BUNDLE:
+    attrs = {}
+    pos = 8
+    while pos + 8 <= len(ax):
+        tipo, hsz, tam = struct.unpack_from('<HHI', ax, pos)
+        if tam == 0: break
+        if tipo == 0x0102:
+            nombre = cadenas[struct.unpack_from('<I', ax, pos + 20)[0]]
+            a0, asz, an = struct.unpack_from('<HHH', ax, pos + 24)
+            for k in range(an):
+                q = pos + 16 + a0 + k * asz
+                ni = struct.unpack_from('<I', ax, q + 4)[0]
+                dato = struct.unpack_from('<I', ax, q + 16)[0]
+                attrs[(nombre, cadenas[ni] if ni < len(cadenas) else '?')] = dato
+        pos += tam
+    #  density 0x1000, fontScale 0x40000000, locale 0x4, layoutDirection 0x2000, uiMode 0x200
+    NECESARIAS = 0x1000 | 0x40000000 | 0x4 | 0x2000 | 0x200 | 0x400 | 0x800
+    cc = attrs.get(('activity', 'configChanges'), 0)
+    print(f"configChanges de la actividad: 0x{cc:x}")
+    if cc & NECESARIAS != NECESARIAS:
+        manifiesto_malo.append(f"configChanges sin 0x{NECESARIAS & ~cc:x}: un cambio de letra o idioma recrea y mata el proceso")
+    atras = [v for (e, n), v in attrs.items() if n == 'enableOnBackInvokedCallback' and e in ('activity', 'application')]
+    if not atras or any(v != 0 for v in atras):
+        manifiesto_malo.append("sin enableOnBackInvokedCallback=false: en Android 16 ATRAS no llega a la app")
+for m in manifiesto_malo:
+    print("FALLA  " + m)
+
 # --- 3. Las .so: alineadas a 16 KB por su OFFSET DE DATOS -------------------
 #  No por el de la cabecera: lo que mapea el cargador es donde empiezan los
 #  datos, y comprobar el otro da un si a un fichero que Android rechaza.
@@ -334,6 +364,7 @@ if not BUNDLE:
                    f"{esperada[:16]}…: NO puede actualizar a la anterior, el "
                    f"telefono pedira desinstalar")
 if escrito:    mal.append("escrito dentro: " + "; ".join(escrito))
+mal += manifiesto_malo
 
 print("VEREDICTO:", "OK" if not mal else "REVISAR — " + "; ".join(mal))
 sys.exit (0 if not mal else 1)
