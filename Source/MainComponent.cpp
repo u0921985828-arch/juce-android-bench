@@ -12634,6 +12634,7 @@ void MainComponent::applyAutoChop()
     for (int k = 0; k < n; ++k)
     {
         const int i  = targets[k];
+        if (i < 0 || i >= kNumPads) continue;
         //  El ultimo trozo llega hasta el final de la muestra en los dos modos:
         //  con golpes, el trozo que sigue al ultimo ataque es la cola, y
         //  cortarla en el siguiente golpe que no existe la dejaria fuera.

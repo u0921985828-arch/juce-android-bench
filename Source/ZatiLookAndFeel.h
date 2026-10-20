@@ -81,6 +81,7 @@ namespace ZatiColours
     //  never decorative: red = recording / live playhead, yellow = the step
     //  picked for editing. Neither is ever used to make something look nice.
     const juce::Colour red        { 0xffe0222c };
+    const juce::Colour redLcd     { 0xffff6b6b };   // rojo de aviso sobre el cristal (accesibilidad#14)
     const juce::Colour yellow     { 0xfff0b400 };
 
     //  ...and the third state colour: a transport that is ROLLING. PLAY going

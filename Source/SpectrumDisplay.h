@@ -306,11 +306,11 @@ public:
         //  El pico retenido, en rojo si toco el techo. Es la unica marca de la
         //  pantalla que dice algo que YA PASO, y por eso se queda: si has
         //  clipado, quieres enterarte aunque estuvieras mirando los pads.
-        g.setColour (clipMs > 0.0 ? ZatiColours::red : ZatiColours::lcdDim);
+        g.setColour (clipMs > 0.0 ? ZatiColours::redLcd : ZatiColours::lcdDim);
         g.drawText (Lang::ltr (holdDb()), top, Lang::start (juce::Justification::topRight));
         if (sinSalida)
         {
-            g.setColour (ZatiColours::red);
+            g.setColour (ZatiColours::redLcd);
             g.drawText (T ("SIN AUDIO"), top, Lang::start (juce::Justification::top));
         }
         else

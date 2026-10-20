@@ -211,6 +211,8 @@ def signal_colours():
         m = re.search (r'juce::Colour\s+' + n + r'\s*\{\s*0x([0-9a-fA-F]{8})\s*\}', src)
         if m is None: sys.exit ("no encuentro el color %s" % n)
         out[n] = int (m.group (1), 16) & 0xffffff
+    m = re.search (r'juce::Colour\s+redLcd\s*\{\s*0x([0-9a-fA-F]{8})\s*\}', src)
+    out['redLcd'] = int (m.group (1), 16) & 0xffffff if m else out['red']
     return out
 
 
@@ -409,7 +411,9 @@ def main():
             #  LA TIRA DEL MEDIDOR sobre el cristal. Se mide el PEOR de los
             #  tres: una tira en la que el verde no se ve es una tira que solo
             #  dice cosas cuando ya vas mal.
-            "segmento de la tira":      (min (ratio (c, d['lcd']) for c in SIG.values()),
+            #  Un aviso en rojo sobre el cristal se lee como texto (accesibilidad#14).
+            "aviso en la pantalla":     (ratio (SIG['redLcd'], d['lcd']), MIN_LCD),
+            "segmento de la tira":      (min (ratio (SIG[c], d['lcd']) for c in ('red', 'yellow', 'green')),
                                          MIN_METER),
             #  ...y que las tres zonas se separen entre si. La peor de las dos
             #  fronteras, que es la que decide si la tira tiene tres colores.

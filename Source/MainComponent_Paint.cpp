@@ -650,7 +650,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
 
     if (dev == nullptr)
     {
-        g.setColour (ZatiColours::red);
+        g.setColour (ZatiColours::redLcd);
         g.setFont (ZatiColours::monoFont (Metrics::fValue, true));
         g.drawText (T ("sin dispositivo de audio"), inner, juce::Justification::centredLeft);
         return;
@@ -697,7 +697,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     //  stops being one.
     const auto verdict = totalMs <= 15.0 ? ZatiColours::lcdFg
                        : totalMs <= 30.0 ? ZatiColours::yellow
-                                         : ZatiColours::red;
+                                         : ZatiColours::redLcd;
     line (T ("salida"), juce::String (totalMs, 1) + " ms  "
                     + (totalMs <= 15.0 ? T ("rapida")
                      : totalMs <= 30.0 ? T ("aceptable") : T ("LENTA")), verdict);
@@ -729,7 +729,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
     const auto policy = AudioPath::mmapPolicy();
     const auto excl   = AudioPath::exclusivePolicy();
     line (T ("mmap"), AudioPath::describe (policy) + " · " + T ("excl") + " " + AudioPath::describe (excl),
-          policy == AudioPath::Mmap::Never || excl == AudioPath::Mmap::Never ? ZatiColours::red
+          policy == AudioPath::Mmap::Never || excl == AudioPath::Mmap::Never ? ZatiColours::redLcd
         : policy == AudioPath::Mmap::Unknown ? ZatiColours::lcdDim
                                              : ZatiColours::lcdFg);
 
@@ -740,7 +740,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
           fastPath.exclusive ? ZatiColours::lcdFg
         : ! fastPath.ran     ? ZatiColours::lcdDim
         : fastPath.mmapUsed  ? ZatiColours::yellow   // shared, but still MMAP
-                             : ZatiColours::red);    // AudioFlinger's mixer
+                             : ZatiColours::redLcd);    // AudioFlinger's mixer
 
     //  ...Y SI ESTE HILO SE HA QUEDADO PARADO ALGUNA VEZ, CUANTO Y EN QUE.
     //
@@ -766,7 +766,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
             //  Rojo a partir de tres segundos porque a los cinco Android da la
             //  app por colgada: lo que hay que ver en rojo no es el atasco que
             //  ya colgo la app, es el que iba de camino.
-            color = peor >= 3000 ? ZatiColours::red : ZatiColours::yellow;
+            color = peor >= 3000 ? ZatiColours::redLcd : ZatiColours::yellow;
         }
         else if (Bitacora::atascoPrevio.isNotEmpty())
         {
@@ -818,7 +818,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
             g.setColour (! t.abrio || ! t.arranco ? ZatiColours::lcdDim
                        : t.exclusiva             ? ZatiColours::lcdFg
                        : t.mmap                  ? ZatiColours::yellow
-                                                 : ZatiColours::red);
+                                                 : ZatiColours::redLcd);
             g.setFont (ZatiColours::monoFont (Metrics::fFine, i == fastPath.gano));
             g.drawFittedText (Lang::ltr (juce::String (i + 1)) + " " + AudioPath::pideIntento (t)
                                 + "  " + AudioPath::describeIntento (t),
@@ -836,7 +836,7 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
                                    ? "  " + Lang::ltr (juce::String (measuredRate / 1000.0, 1) + "k")
                                    : juce::String()),
               measuredMs <= 30.0f ? ZatiColours::lcdFg
-            : measuredMs <= 60.0f ? ZatiColours::yellow : ZatiColours::red);
+            : measuredMs <= 60.0f ? ZatiColours::yellow : ZatiColours::redLcd);
 
     g.setColour (ZatiColours::lcdDim.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
