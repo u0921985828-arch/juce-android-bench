@@ -77,22 +77,35 @@ def foco (paso, size):
         return None
     finally:
         shutil.rmtree (casa, ignore_errors=True)
-    ult, rots = None, []
+    ult, rots, tapas, capa = None, [], [], None
     for l in out.splitlines():
         l = l.strip()
         if not l.startswith ("{"): continue
-        if '"tour"' in l:
+        #  La apertura ANTES que el paso: `{"apertura":"tour",...}` tambien
+        #  contiene la palabra y se colaba como el paso.
+        if '"apertura":"tour"' in l:
+            try: capa = json.loads (l).get ("capa")
+            except Exception: pass
+        elif '"tour"' in l:
             try: ult = json.loads (l)
             except Exception: pass
         elif '"rotulo"' in l:
             try: rots.append (json.loads (l))
+            except Exception: pass
+        elif '"kind":"button"' in l:
+            try: tapas.append (json.loads (l))
             except Exception: pass
     #  Los rotulos PINTADOS del paso, en coordenadas de ventana -el volcado ya
     #  corrige el origen del cuerpo desplazable, ver UiAudit::origenPintado-.
     #  Van con el foco porque la regla de abajo los contrasta: el anillo tiene
     #  que CONTENER lo que el paso explica, y eso no se puede saber mirando
     #  solo su tamano.
-    if ult is not None: ult["_rotulos"] = rots
+    if ult is not None:
+        ult["_rotulos"] = rots
+        #  Y LAS TAPAS DE LA GUIA -las de su capa, que el volcado publica al
+        #  abrirla-, en coordenadas de ventana: donde esta avanzar en este
+        #  paso es la medida de la regla del sitio.
+        ult["_tapas"] = [t for t in tapas if t.get ("capa") == capa]
     return ult
 
 
@@ -305,11 +318,13 @@ def main():
     malas = []
     guia (malas)
     pags  = {}
+    focos = {}
     print ("%-6s %10s   %s" % ("paso", "objetivo", "que pasa"))
     for n in range (PASOS):
         d = foco (n, size)
         if d is None:
             malas.append ("el paso %d no contesto" % n); continue
+        focos[n] = d
         w, h = d.get ("focoW", 0), d.get ("focoH", 0)
         vacio = (w <= 0 or h <= 0)
         pags[n] = d.get ("mixpag", -1)
@@ -410,6 +425,89 @@ def main():
         if n != CANALES and v != 0:
             malas.append ("el paso %d deja la mesa en la pagina %d" % (n, v))
 
+    #  --- Y AVANZAR ESTA SIEMPRE EN EL MISMO SITIO, Y SIEMPRE AVANZA ------
+    #
+    #  La tapa de la derecha se pulsa veinticuatro veces seguidas sin mirar, y
+    #  en la feria J3 la perdio dos veces y cerro la guia a la tercera: iba
+    #  dentro del muelle, el muelle salta a la mitad contraria del objetivo,
+    #  y en el paso de la puerta ese mismo sitio decia EMPEZAR y cerraba.
+    #  Ninguna de las reglas de arriba podia verlo -cada paso, solo, estaba
+    #  bien- porque es una regla ENTRE pasos: la tapa que se repite tiene que
+    #  medir lo mismo en todos.
+    #
+    #  Son TRES cifras y no un si/no, porque son tres formas de escribirlo mal
+    #  y cada una la caza una sola:
+    #   - cuanto mide el SITIO COMUN de avanzar en los veinticuatro pasos: la
+    #     interseccion de sus rectangulos, medida en la tapa de verdad -la del
+    #     volcado- y no en un numero que la app diga de si misma. Un dedo
+    #     puesto ahi acierta en todos, asi que tiene que medir un dedo
+    #     (Metrics::hit) por lado. Es interseccion y no igualdad porque la
+    #     tapa reparte su ancho por el rotulo -VER MAS y EMPEZAR son mas
+    #     cortos que SIGUIENTE- y 18 px de borde no son un sitio distinto;
+    #     dos filas si: salia 0x0, con la tapa en y=170 o en y=799.
+    #   - en que pasos PULSARLA cierra la guia, pulsandola de verdad desde
+    #     cada paso (ZATI_OPEN=toursigN): solo en el ultimo. Salian el 3 y el
+    #     23.
+    #   - cuantas tapas hay en la fila del ultimo paso: dos, porque SALTAR al
+    #     lado de EMPEZAR es saltarse nada. Salian tres.
+    print()
+    sitios, filas = {}, {}
+    for n, d in sorted (focos.items()):
+        avanza = [t for t in d.get ("_tapas", []) if t.get ("text") == d.get ("sig")]
+        if not avanza:
+            malas.append ("el paso %d no tiene la tapa de avanzar (\"%s\") en el volcado"
+                          % (n, d.get ("sig"))); continue
+        t = avanza[0]
+        sitios[n] = (t["x"], t["y"], t["w"], t["h"])
+        filas[n]  = sum (1 for o in d["_tapas"] if o["y"] == t["y"])
+    distintos = sorted (set (sitios.values()))
+    comun = None
+    for x, y, w, h in distintos:
+        c = (x, y, x + w, y + h)
+        comun = c if comun is None else (max (comun[0], c[0]), max (comun[1], c[1]),
+                                         min (comun[2], c[2]), min (comun[3], c[3]))
+    cw = max (0, comun[2] - comun[0]) if comun else 0
+    ch = max (0, comun[3] - comun[1]) if comun else 0
+    print ("avanzar ocupa %d rectangulo(s) en %d pasos (%s): el sitio comun mide %dx%d"
+           % (len (distintos), len (sitios),
+              ", ".join ("%dx%d@%d,%d" % (w, h, x, y) for x, y, w, h in distintos), cw, ch))
+    if min (cw, ch) < MIN:
+        malas.append ("avanzar cambia de sitio entre pasos: el sitio comun mide %dx%d y un "
+                      "dedo son %d (%s)"
+                      % (cw, ch, MIN, "; ".join (
+                             "%dx%d@%d,%d en %s" % (w, h, x, y, ",".join (
+                                 str (n) for n, v in sorted (sitios.items()) if v == (x, y, w, h)))
+                             for x, y, w, h in distintos)))
+    ultimo = PASOS - 1
+    print ("tapas en la fila: %s" % ", ".join ("%d:%d" % (n, v) for n, v in sorted (filas.items())
+                                                 if v != (2 if n == ultimo else 3)) or "las de siempre")
+    for n, v in sorted (filas.items()):
+        if v != (2 if n == ultimo else 3):
+            malas.append ("el paso %d tiene %d tapas en la fila y tenia que tener %d"
+                          % (n, v, 2 if n == ultimo else 3))
+
+    import concurrent.futures as cf
+    def pulsa (n):
+        ds = [d for d in _json (_corre ({"ZATI_OPEN": "toursig%d" % n}, size)) if "tour" in d]
+        return n, (ds[-1] if ds else None)
+    with cf.ThreadPoolExecutor (4) as ex:
+        pulsadas = dict (ex.map (pulsa, range (PASOS)))
+    cierran, torcidos = [], []
+    for n, d in sorted (pulsadas.items()):
+        if d is None or "puesto" not in d:
+            malas.append ("pulsar avanzar desde el paso %d no contesto" % n); continue
+        if not d["puesto"]:
+            cierran.append (n)
+        elif d["tour"] != n + 1:
+            torcidos.append ("%d->%d" % (n, d["tour"]))
+    print ("pulsar avanzar cierra la guia en: %s"
+           % (", ".join (map (str, cierran)) or "ninguno"))
+    if cierran != [ultimo]:
+        malas.append ("avanzar cierra la guia en los pasos %s y solo puede en el %d"
+                      % (cierran or "ninguno", ultimo))
+    if torcidos:
+        malas.append ("avanzar no lleva al paso siguiente: %s" % ", ".join (torcidos))
+
     #  --- LA BIENVENIDA SON CUATRO PASOS Y UNA PUERTA ---------------------
     #
     #  Quince tarjetas la primera vez son el manual otra vez, y este proyecto
@@ -439,9 +537,9 @@ def main():
             malas.append ("el cuarto paso encadena al quinto en vez de cerrar: "
                           "avanzar sigue diciendo \"%s\"" % d3.get ("sig"))
 
-    #  Y TOMARLA LLEGA AL QUINTO, pulsando la tapa DE VERDAD: llamar a
-    #  `showTour(4)` por dentro se salta justo el codigo que decide si esa tapa
-    #  salta o sigue.
+    #  Y TOMARLA LLEGA AL QUINTO, pulsando la tapa DE VERDAD -la de avanzar,
+    #  que en la puerta dice VER MAS-: llamar a `showTour(4)` por dentro se
+    #  salta justo el codigo que decide si esa tapa salta o sigue.
     dp = None
     casaP = tempfile.mkdtemp (prefix="zati-puerta-")
     try:

@@ -14,6 +14,11 @@
 class WaveformDisplay : public juce::Component
 {
 public:
+    //  UN VISOR SE DECLARA VISOR. Pinta su fondo entero, asi que un rotulo
+    //  que caiga debajo no se ve; el volcado del banco lo saca como "visor"
+    //  -ver UiAudit::kindOf- y la regla TAPADO lo trata como a una tapa.
+    WaveformDisplay() { getProperties().set ("visor", true); }
+
     void setSample (SampleBuffer::Ptr sb)
     {
         //  OTRA MUESTRA, OTRA VISTA. El zoom y el trozo que se esta mirando

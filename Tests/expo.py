@@ -608,10 +608,17 @@ UNTRANSLATED_SAFE = re.compile(r'^[\s0-9%.,:;+\-/|×xX\u00b7\u00b0"\'()\[\]_@#]*
 #  dijeran nada. La app apunta el rectangulo que el texto OCUPA -no la banda que
 #  se le dio, que suele ser el ancho entero- asi que un solape aqui es un solape
 #  de verdad.
+#  Y UN VISOR TAPA IGUAL QUE UNA TAPA. La vista previa de AUTO CHOP pinta su
+#  fondo entero y salia como "other" -lo mismo que un contenedor-, asi que el
+#  plan de la ficha («va a pads: 02 03 04», «PISA 3 pads con sonido») llevaba
+#  tandas pintado debajo de ella, en las 36 corridas de chop, y esta regla no
+#  podia verlo: ni el visor era un control ni el plan pasaba por `apunta`.
+#  Medido con el binario de antes y el plan apuntado: 36 TAPADO en chop; con
+#  la banda publicada por `resized()`, 0.
 def judge_tapado(rows, size, lang, sheet):
     out = []
     ctrl = [r for r in rows
-            if r.get("kind") in ("button", "slider", "editor")
+            if r.get("kind") in ("button", "slider", "editor", "visor")
             and r.get("w", 0) > 0 and r.get("h", 0) > 0]
     for r in rows:
         if not r.get("rotulo"):
@@ -632,7 +639,7 @@ def judge_tapado(rows, size, lang, sheet):
             #  empieza una tapa no es un rotulo tapado, es un rotulo pegado.
             if ix > 2 and iy > 2:
                 out.append(("TAPADO", f"{size}/{lang}/{sheet or 'face'}",
-                            f'"{r["rotulo"]}" debajo de "{c.get("text","?")}"', 0))
+                            f'"{r["rotulo"]}" debajo de "{c.get("text") or c.get("kind", "?")}"', 0))
                 break
 
     #  Y DOS COSAS MAS QUE UN ROTULO PINTADO PUEDE HACER Y NADIE MEDIA.

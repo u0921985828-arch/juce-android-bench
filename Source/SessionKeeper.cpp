@@ -172,7 +172,8 @@ void SessionKeeper::adopt (const SampleBuffer::Ptr* live, int numPads)
     }
 }
 
-juce::String SessionKeeper::textoDe (const juce::ValueTree& state, const juce::String& projectName)
+juce::String SessionKeeper::textoDe (const juce::ValueTree& state, const juce::String& projectName,
+                                     juce::int64 guardado)
 {
     //  The name of the open project rides along in the session's own copy of
     //  the tree, so coming back restores the header too - and a project.xml
@@ -180,6 +181,7 @@ juce::String SessionKeeper::textoDe (const juce::ValueTree& state, const juce::S
     auto copy = state.createCopy();
     copy.setProperty ("sesion", true, nullptr);
     copy.setProperty ("proyecto", projectName, nullptr);
+    if (guardado != 0) copy.setProperty ("guardado", guardado, nullptr);
     return copy.toXmlString();
 }
 
@@ -192,14 +194,15 @@ void SessionKeeper::pideEstado (juce::String texto)
     notify();
 }
 
-bool SessionKeeper::writeState (const juce::ValueTree& state, const juce::String& projectName)
+bool SessionKeeper::writeState (const juce::ValueTree& state, const juce::String& projectName,
+                                juce::int64 guardado)
 {
     //  Lo que hubiera encargado queda viejo: se escribe esto, que es de ahora.
     {
         const juce::ScopedLock sl (lock);
         estadoPendiente.clear();
     }
-    return escribeEstado (textoDe (state, projectName));
+    return escribeEstado (textoDe (state, projectName, guardado));
 }
 
 bool SessionKeeper::escribeEstado (const juce::String& text)

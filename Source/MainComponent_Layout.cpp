@@ -4726,7 +4726,16 @@ void MainComponent::resized()
             }
         }
 
-        inner.removeFromTop (juce::jmin (plannedH, inner.getHeight()));   // painted: where they land
+        //  Y LA BANDA DEL PLAN LA PUBLICA QUIEN COLOCA, como el pie del VST.
+        //
+        //  El pintor la calculaba por su cuenta sumando la misma escalera de
+        //  alturas que esta funcion, y las dos escaleras se separaron el dia
+        //  que entro la vista previa: la banda pintada caia justo donde esta
+        //  `chopVista`, que es un componente opaco, y «va a pads: 02 03 04» y
+        //  el aviso rojo de «PISA 3 pads con sonido» -lo unico por lo que
+        //  existe esta ficha- no se veian nunca. Dos cuentas del mismo sitio
+        //  son dos reglas; esta es la unica.
+        chopPlanBanda = inner.removeFromTop (juce::jmin (plannedH, inner.getHeight()));
         chopGoButton.setBounds (verbo.reduced (Metrics::aireTapa, 0));
     }
 
@@ -8155,8 +8164,8 @@ void MainComponent::resized()
         //  rectangulo bien medido y mal colocado.
         UiAudit::tourFocoX = tourFoco.getX();
         UiAudit::tourFocoY = tourFoco.getY();
-        //  Y lo que dicen las dos salidas: en el paso de la PUERTA la tercera
-        //  tapa deja de decir SALTAR y ofrece seguir con los once que quedan.
+        //  Y lo que dicen las dos salidas: en el paso de la PUERTA la de
+        //  avanzar dice VER MAS y la tercera deja de decir SALTAR y cierra.
         UiAudit::tourSig     = tourNextBtn.getButtonText().toStdString();
         UiAudit::tourTercera = tourSkipBtn.getButtonText().toStdString();
         //  Y en que pagina quedo la mesa, que es lo unico que separa «el
@@ -8164,9 +8173,10 @@ void MainComponent::resized()
         UiAudit::tourMixPag  = (mixPage == mixPageCanales ? 1 : 0);
 
         const int anchoDock = getWidth();
-        const int alto = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
-                       + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX)
-                       + Metrics::sm + Metrics::hit;
+        //  La tarjeta de texto sola: el titulo, los puntos y el parrafo mas
+        //  largo. La botonera ya no se suma aqui porque no va siempre dentro.
+        const int altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
+                              + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX);
 
         //  EN LA MITAD CONTRARIA A LA DEL OBJETIVO. Es lo unico que garantiza
         //  que el texto no tape lo que se esta senalando sin tener que negociar
@@ -8179,17 +8189,29 @@ void MainComponent::resized()
         //  gestos. La cara ya se maqueta asi desde el principio; el muelle se
         //  escribio con getLocalBounds y se quedo fuera de esa regla.
         auto ventana = safeArea();
-        const bool objetivoArriba = tourFoco.isEmpty()
-                                  || tourFoco.getCentreY() < ventana.getCentreY();
+        const int centro = ventana.getCentreY();
         //  Y ACOTADO A LA MITAD LARGA DE LA VENTANA. El alto sale de medir el
         //  parrafo mas largo, que es lo correcto, pero medir no es lo mismo que
         //  caber: con la letra a catorce y un idioma que escriba mas, un muelle
         //  sin tope taparia la maquina que esta senalando - y el paso entero
         //  consiste en que se vea.
         const int tope = ventana.getHeight() * 55 / 100;
-        const int altoDock = juce::jmin (alto, tope);
-        tourDock = objetivoArriba ? ventana.removeFromBottom (altoDock)
-                                  : ventana.removeFromTop (altoDock);
+
+        //  LA BOTONERA SIEMPRE ABAJO, Y SOLO SE MUEVE LA TARJETA. Iba dentro
+        //  del muelle, asi que saltaba con el: SIGUIENTE estaba en y=799 en
+        //  un paso y en y=170 en el siguiente, y dos toques seguidos en el
+        //  mismo punto no hacian nada -o cerraban la guia, en el paso en que
+        //  ese sitio pasaba a ser EMPEZAR- (feria, J3). Una tapa que se pulsa
+        //  veinticuatro veces seguidas tiene que estar veinticuatro veces en
+        //  el mismo sitio, y abajo es donde llega el pulgar.
+        tourBotonera = ventana.removeFromBottom (Metrics::hit + 2 * Metrics::margenFichaY);
+        const bool objetivoArriba = tourFoco.isEmpty() || tourFoco.getCentreY() < centro;
+        if (objetivoArriba)
+            //  Tarjeta y botonera pegadas: un solo panel, el de siempre.
+            tourDock = ventana.removeFromBottom (juce::jmin (altoTarjeta, tope - tourBotonera.getHeight()))
+                              .getUnion (tourBotonera);
+        else
+            tourDock = ventana.removeFromTop (juce::jmin (altoTarjeta, tope));
         //  Y EL MUELLE TAMBIEN SE APUNTA. Es la unica tarjeta de la casa que
         //  no pasa por `sheetFromBottom`, asi que era la unica que no disparaba
         //  `UiAudit::tarjeta`: su recorte propio al 55 % era invisible para el
@@ -8197,20 +8219,30 @@ void MainComponent::resized()
         //  dia que existe. No lleva suelo abajo: no es una tarjeta centrada
         //  sobre la maquina sino un muelle pegado a un borde, asi que la regla
         //  ASOMA no es suya.
-        UiAudit::tarjeta (alto, tope, false, -1, 0, tourDock,
+        UiAudit::tarjeta (altoTarjeta + (objetivoArriba ? tourBotonera.getHeight() : 0), tope,
+                          false, -1, 0, tourDock,
                           Metrics::margenFichaX, Metrics::margenFichaY,
                           (int) tourSheet.getProperties()["capa"]);
         //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
         //  el texto: sin leerlo el foco no explica nada.
-        auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
-        inner.removeFromTop (Metrics::bandaTitulo + Metrics::xs);      // pintado: titulo y puntos
         {
-            auto row = inner.removeFromBottom (Metrics::hit);
+            auto row = tourBotonera.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
             juce::TextButton* tb[3] = { &tourSkipBtn, &tourBackBtn, &tourNextBtn };
             layoutModuleBar (row, tb, 0, 3);
+        }
+        auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+        inner.removeFromTop (Metrics::bandaTitulo + Metrics::xs);      // pintado: titulo y puntos
+        if (objetivoArriba)
+        {
+            inner.removeFromBottom (Metrics::hit);                      // la botonera, ya puesta
             inner.removeFromBottom (Metrics::sm);
         }
         tourBodyArea = inner;
+        //  Y DONDE QUEDO SIGUIENTE, que es lo que esta regla mide: el mismo
+        //  rectangulo en los veinticuatro pasos. Y si al pulsarla se cierra
+        //  la guia, que solo puede pasar en el ultimo.
+        UiAudit::tourPuesto    = tourSheet.isVisible() ? 1 : 0;
+        UiAudit::tourSigCierra = tourSigCierra() ? 1 : 0;
     }
 
 }
