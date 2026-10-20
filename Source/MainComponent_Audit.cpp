@@ -9331,6 +9331,34 @@ void MainComponent::auditMidi()
                   << ",\"largo_de_un_paso\":" << largo2 << "}" << std::endl;
     }
 
+    //  Y CON LA REJILLA A 1/32T: el paso 12 es UNA negra en el fichero y vuelve al 12 (secuenciador#7).
+    {
+        const int patR = selectedPattern, padR = selectedPad;
+        const int uViejo = engine.pasoUnidades();
+        engine.setPasoUnidades (4);
+        for (int s2 = 0; s2 < AudioEngine::kNumSteps; ++s2)
+        { engine.vaciaPaso (patR, s2, padR); pattern[(size_t) patR][(size_t) s2][(size_t) padR] = false; }
+        engine.setStep (patR, 12, padR, true); engine.setStepNote (patR, 12, padR, 0);
+        pattern[(size_t) patR][12][(size_t) padR] = true;
+        for (const auto& f : ProjectStore::exports().findChildFiles (juce::File::findFiles, false, "*.mid")) f.deleteFile();
+        exportaMidiPatron();
+        juce::File escritoR;
+        for (const auto& f : ProjectStore::exports().findChildFiles (juce::File::findFiles, false, "*.mid")) escritoR = f;
+        double tick = -1.0;
+        juce::FileInputStream in (escritoR);
+        juce::MidiFile mf;
+        if (in.openedOk() && mf.readFrom (in))
+            for (int t = 0; t < mf.getNumTracks() && tick < 0.0; ++t)
+                for (auto* ev : *mf.getTrack (t))
+                    if (ev->message.isNoteOn()) { tick = ev->message.getTimeStamp(); break; }
+        engine.vaciaPaso (patR, 12, padR); pattern[(size_t) patR][12][(size_t) padR] = false;
+        if (escritoR.existsAsFile()) importaMidiPatron (escritoR);
+        const auto vuelta = notasDelPatron (patR, padR);
+        std::cout << "{\"midi\":\"rejilla\",\"tick\":" << tick << ",\"negra\":" << MidiArchivo::kPpq
+                  << ",\"vuelve_al\":" << (vuelta.empty() ? -1 : vuelta[0].paso) << "}" << std::endl;
+        engine.setPasoUnidades (uViejo);
+    }
+
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
 }
 
@@ -9460,6 +9488,24 @@ void MainComponent::auditTomas()
     const auto fondo = remuestreo (true);
     const auto lleno = remuestreo (false);
     std::cout << "{\"tomas\":4,\"fondo\":\"" << fondo << "\",\"lleno\":\"" << lleno << "\"}" << std::endl;
+
+    //  estabilidad#8: REMUESTREAR con el micro grabando no arma la toma con la
+    //  reapertura del audio todavia en vuelo.
+    int armadoEnVuelo = -1;
+    {
+        toggleMicSampling();
+        esperaAbridor (15000);
+        for (int i = 0; i < 8 && recordingActive; ++i) bombeaAudioDePrueba();
+        frenoAbridorMs.store (300);
+        pulsaTapa (&resampleButton);
+        frenoAbridorMs.store (0);
+        armadoEnVuelo = (resamplingActive && engine.isRecording() && abriendoAudio.load()) ? 1 : 0;
+        esperaAbridor (15000);
+        if (resamplingActive) pulsaTapa (&resampleButton);
+        if (recordingActive) toggleMicSampling();
+        esperaAbridor (15000);
+    }
+    std::cout << "{\"tomas\":7,\"armado_en_vuelo\":" << armadoEnVuelo << "}" << std::endl;
 
     //  6. La toma del micro no se recorta ya publicada al motor (estabilidad#2).
     tomaCompartida = -1;
@@ -11462,6 +11508,27 @@ void MainComponent::auditGuardado()
         currentProject = antes;
     }
 
+    //  7. estabilidad#23: clear() con un pad a medio escribir (disco lento a
+    //     proposito, mas que el flush de clear) no deja WAV que resuciten.
+    int resucitan = -1;
+    {
+        //  La marca dice a guardado.py donde acaban los relevos: vaciar y
+        //  reescribir aqui es a proposito.
+        const auto marca = SessionKeeper::folder().getSiblingFile ("fin-relevos.marca");
+        marca.replaceWithText ("7");
+        marca.deleteFile();
+        session.clear();
+        session.frenoPruebaMs.store (1500);
+        session.sync (uiSample.data(), kNumPads);
+        juce::Thread::sleep (150);
+        session.clear();
+        session.frenoPruebaMs.store (0);
+        juce::Thread::sleep (2000);
+        session.flush (10000);
+        resucitan = SessionKeeper::folder().getChildFile ("samples")
+                        .getNumberOfChildFiles (juce::File::findFiles, "*.wav");
+    }
+
     std::cout << "{\"guardado\":1"
               << ",\"rescata\":" << (rescata ? 1 : 0)
               << ",\"trozos\":" << trozos
@@ -11476,6 +11543,7 @@ void MainComponent::auditGuardado()
               << ",\"atomico_cabecera\":" << cabeceraIntacta
               << ",\"atomico_huerfanos\":" << huerfanos
               << ",\"atomico_abre\":" << abreLoGuardado
+              << ",\"clear_resucitan\":" << resucitan
               << "}" << std::endl;
 }
 
@@ -12692,6 +12760,34 @@ void MainComponent::auditFeria()
         }
     }
 
+    //  ab3. Cambiar la rejilla no parte la cancion: el bloque de un compas sigue midiendo un compas (secuenciador#1).
+    int bloqueAntes = 0, bloqueDespues = 0, compasDespues = 0;
+    {
+        const auto guardaB = bloques; const double guardaG = gridSlider.getValue();
+        int i32 = -1, i16 = -1;
+        for (int g = 0; g < kNumGrids; ++g) { if (rejillaU (g) == 6) i32 = g; if (rejillaU (g) == 12) i16 = g; }
+        if (i32 >= 0 && i16 >= 0)
+        {
+            gridSlider.setValue ((double) i16, juce::sendNotificationSync);
+            bloques.clear();
+            BloqueUI b; b.lane = 0; b.bank = 0; b.compas = 1; b.paso = 0; b.largo = engine.pasosPorCompas();
+            bloques.push_back (b); publicaBloques();
+            bloqueAntes = bloques[0].largo;
+            gridSlider.setValue ((double) i32, juce::sendNotificationSync);
+            bloqueDespues = bloques.empty() ? 0 : bloques[0].largo; compasDespues = engine.pasosPorCompas();
+            gridSlider.setValue ((double) i16, juce::sendNotificationSync);
+        }
+        bloques = guardaB; publicaBloques(); gridSlider.setValue (guardaG, juce::sendNotificationSync);
+    }
+
+    //  ab2. Sin barra, la rejilla enseña el patron entero (secuenciador#16).
+    int secCols = 0, secLargo = 0, secBarra = 0;
+    {
+        showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); resized();
+        secCols = stepGrid.numCols(); secLargo = engine.getPatternLength (selectedPattern); secBarra = seqHayBarra ? 1 : 0;
+        closeAllSheets(); resized();
+    }
+
     auto caja = [] (juce::Rectangle<int> r)
     { return "[" + juce::String (r.getX()) + "," + juce::String (r.getY()) + ","
                  + juce::String (r.getWidth()) + "," + juce::String (r.getHeight()) + "]"; };
@@ -12731,7 +12827,7 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
-              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"simbolos\":" << simbolos << ",\"cruces\":" << cruces
+              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"cruces\":" << cruces
               << ",\"pads_marcables\":" << padsMarcables << ",\"pad_elegido\":" << padElegido
               << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
               << ",\"estado_anuncia\":" << estadoAnuncia

@@ -137,6 +137,12 @@ def main():
         malas.append ("la marca de fabrica no vuelve del fichero: %d de %d"
                       % (c["vuelven"], c["antes"]))
 
+    #  7. estabilidad#8: REMUESTREAR tras el micro espera a que el audio reabra.
+    g = f.get (7, {})
+    print ("remuestreo  armado con la apertura en vuelo: %s (se espera 0)" % g.get ("armado_en_vuelo"))
+    if g.get ("armado_en_vuelo") != 0:
+        malas.append ("REMUESTREAR arma la toma con la reapertura del audio en vuelo: la vacia")
+
     #  5. Un remuestreo no se pierde al ir al fondo ni al llenarse (estabilidad#6 y #7).
     d = f.get (4, {})
     print ("remuestreo  al fondo %s   buffer lleno %s   (activo:pad cambio, se espera 0:1)"

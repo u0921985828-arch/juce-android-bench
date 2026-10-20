@@ -73,6 +73,8 @@ namespace MidiArchivo
     static constexpr int kPasoNegra = 4;     // cuatro pasos por negra
     static constexpr int kPpq       = 96;    // divisible por 4 y por 3: tresillos
     static constexpr int kTicksPaso = kPpq / kPasoNegra;
+    //  Ticks de UN paso con la rejilla en `u` unidades de 1/48 de pulso (secuenciador#7).
+    inline double ticksPaso (int u) noexcept { return (double) kPpq * (double) juce::jmax (1, u) / 48.0; }
 
     // ------------------------------------------------------------------
     //  ESCRIBIR
@@ -81,7 +83,7 @@ namespace MidiArchivo
     //  que una segunda pista seria una pista vacia. Con su meta de tempo, que
     //  es lo que hace que el fichero suene a la velocidad a la que lo escribiste
     //  y no a los 120 por defecto de quien lo abra.
-    inline juce::MidiFile aMidi (const std::vector<Nota>& notas, double bpm)
+    inline juce::MidiFile aMidi (const std::vector<Nota>& notas, double bpm, int u = 12)
     {
         juce::MidiMessageSequence pista;
 
@@ -94,13 +96,13 @@ namespace MidiArchivo
         for (const auto& n : notas)
         {
             const int nota = juce::jlimit (0, 127, kRaizMidi + n.semis);
-            const double t0 = (double) (n.paso * kTicksPaso);
+            const double tp = ticksPaso (u);
+            const double t0 = (double) n.paso * tp;
             //  UNA NOTA SUELTA DURA UN PASO en el fichero, que es lo que dura
             //  en la maquina: `kGateAuto` es UN PASO, que es lo que una casilla
             //  dura. Escribir duracion cero daria un fichero con notas que no
             //  suenan en ningun sitio.
-            const double dur = n.largo > 0 ? (double) n.largo * (double) kTicksPaso / 4.0
-                                           : (double) kTicksPaso;
+            const double dur = n.largo > 0 ? (double) n.largo * tp / 4.0 : tp;
             pista.addEvent (juce::MidiMessage::noteOn  (1, nota, (juce::uint8) juce::jlimit (1, 127, n.vel)), t0);
             pista.addEvent (juce::MidiMessage::noteOff (1, nota), t0 + juce::jmax (1.0, dur));
         }
@@ -114,7 +116,7 @@ namespace MidiArchivo
         return mf;
     }
 
-    inline bool escribe (const juce::File& destino, const std::vector<Nota>& notas, double bpm)
+    inline bool escribe (const juce::File& destino, const std::vector<Nota>& notas, double bpm, int u = 12)
     {
         //  Por un temporal y un renombrado no: esto no es la sesion ni la lista
         //  de licencias, es un fichero que la persona pide y que si sale a
@@ -124,7 +126,7 @@ namespace MidiArchivo
         destino.deleteFile();
         std::unique_ptr<juce::FileOutputStream> out (destino.createOutputStream());
         if (out == nullptr) return false;
-        const bool ok = aMidi (notas, bpm).writeTo (*out);
+        const bool ok = aMidi (notas, bpm, u).writeTo (*out);
         out->flush();
         out.reset();
         return ok && destino.existsAsFile() && destino.getSize() > 0;
@@ -138,7 +140,7 @@ namespace MidiArchivo
     //  la 1 es solo el tempo-, asi que quedarse con una es la forma mas barata
     //  de que un fichero perfectamente valido entre vacio. Lo que esta pagina
     //  edita son las notas de UN pad: se juntan y se cuantizan.
-    inline std::vector<Nota> lee (const juce::File& origen, int maxPasos, Parte& parte)
+    inline std::vector<Nota> lee (const juce::File& origen, int maxPasos, Parte& parte, int u = 12)
     {
         parte = {};
         std::vector<Nota> salida;
@@ -171,7 +173,8 @@ namespace MidiArchivo
             if (ev == nullptr || ! ev->message.isNoteOn() || ev->message.getVelocity() == 0) continue;
 
             const double negras = ev->message.getTimeStamp() / (double) ppq;
-            const int    paso   = (int) std::lround (negras * (double) kPasoNegra);
+            const double pasosNegra = 48.0 / (double) juce::jmax (1, u);
+            const int    paso   = (int) std::lround (negras * pasosNegra);
             const int    semis  = ev->message.getNoteNumber() - kRaizMidi;
 
             //  El orden importa: primero lo que no cabe en el patron y despues
@@ -185,7 +188,7 @@ namespace MidiArchivo
             //  tiene cuatro noteOn seguidos y cada uno se apaga cuando le toca.
             //  `updateMatchedPairs` es quien las empareja, y sin el una nota sin
             //  su noteOff -que un fichero cortado tiene- duraria hasta el final.
-            double dur = (double) kTicksPaso;
+            double dur = ticksPaso (u);
             if (auto* off = ev->noteOffObject)
                 dur = juce::jmax (1.0, off->message.getTimeStamp() - ev->message.getTimeStamp());
 
@@ -198,7 +201,7 @@ namespace MidiArchivo
             //  en vez de envolverse: una nota que da la vuelta suena en el sitio
             //  equivocado, que es peor que una corta.
             n.largo = juce::jlimit (0, 63,
-                        (int) std::lround (dur / (double) ppq * (double) (kPasoNegra * 4)));
+                        (int) std::lround (dur / (double) ppq * pasosNegra * 4.0));
 
             //  Y UN PASO TIENE UNA SOLA ORTOGRAFIA: el CERO.
             //
@@ -212,7 +215,7 @@ namespace MidiArchivo
             //  habia tocado — mismo sonido, y el patron deja de ser el que
             //  era. Es la identidad de la ida y vuelta, que es lo unico que
             //  dice que las dos mitades hablan el mismo idioma.
-            if (n.largo == kPasoNegra) n.largo = 0;
+            if (n.largo == 4) n.largo = 0;   // cuatro cuartos son un paso
 
             ++enPaso[(size_t) paso];
             ++parte.puestas;

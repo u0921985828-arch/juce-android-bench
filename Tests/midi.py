@@ -165,6 +165,19 @@ def main():
                           "dos ortografias del mismo sonido y el fichero solo lleva "
                           "una" % c["largo_de_un_paso"])
 
+    # La rejilla manda en el fichero: a 1/32T el paso 12 es una negra (secuenciador#7).
+    r = filas.get ("rejilla")
+    if r is None:
+        malas.append ("la app no publico la rejilla del MIDI")
+    else:
+        print ("rejilla  a 1/32T el paso 12 sale en el tick %d (negra %d) y vuelve al paso %d"
+               % (r["tick"], r["negra"], r["vuelve_al"]))
+        if r["tick"] != r["negra"]:
+            malas.append ("con la rejilla a 1/32T el paso 12 sale en el tick %d y no en la negra %d"
+                          % (r["tick"], r["negra"]))
+        if r["vuelve_al"] != 12:
+            malas.append ("el paso 12 a 1/32T vuelve al paso %d" % r["vuelve_al"])
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

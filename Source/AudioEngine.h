@@ -3026,6 +3026,7 @@ private:
     std::atomic<int>  golpesViejos    { 0 };
     std::atomic<bool> recordFromMaster { false };
     std::atomic<int>  recordPos { 0 };
+    std::atomic<bool> escribiendoToma { false };   // estabilidad#9
     juce::AudioBuffer<float> recordBuffer;   // allocated in prepareToPlay, never in the callback
     int    recordChannels = 1;               // how many of the input channels we keep
     double recordSeconds  = 60.0;

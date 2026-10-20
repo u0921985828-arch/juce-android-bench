@@ -314,6 +314,7 @@ void SessionKeeper::clear()
 {
     {
         const juce::ScopedLock sl (lock);
+        generacion.fetch_add (1, std::memory_order_acq_rel);   // estabilidad#23
         for (int i = 0; i < kMaxPads; ++i)
         {
             seen[(size_t) i]    = nullptr;
@@ -336,9 +337,11 @@ void SessionKeeper::run()
         int pad = -1;
         SampleBuffer::Ptr sb;
         juce::String estado;
+        int gen = 0;
 
         {
             const juce::ScopedLock sl (lock);
+            gen = generacion.load (std::memory_order_acquire);
 
             //  EL ESTADO VA DELANTE de cualquier pad: es lo que dice que
             //  ficheros sobran, y borrar uno antes de que el estado diga que
@@ -367,6 +370,7 @@ void SessionKeeper::run()
         if (estado.isNotEmpty())
         {
             escribeEstado (estado);
+            if (generacion.load (std::memory_order_acquire) != gen) stateFile().deleteFile();   // estabilidad#23
             const juce::ScopedLock sl (lock);
             writing = false;
             continue;
@@ -384,6 +388,7 @@ void SessionKeeper::run()
                                                             : juce::Thread::Priority::normal);
 
         const auto dest = padFile (pad);
+        if (const int f = frenoPruebaMs.load (std::memory_order_relaxed)) juce::Thread::sleep (f);
 
         //  UN INSTRUMENTO NO SE ESCRIBE. Va como receta en state.xml -familia
         //  y preset- y al volver se sintetiza: escribir el audio serian 2 MB
@@ -409,6 +414,8 @@ void SessionKeeper::run()
         }
 
         sb = nullptr;               // release it here, off the message thread
+
+        if (generacion.load (std::memory_order_acquire) != gen) { dest.deleteFile(); quedo = false; }   // estabilidad#23
 
         //  Un pad escrito tambien es trabajo a salvo. Ver ultimaEscrituraMs().
         //  SOLO SI QUEDO: con el disco lleno writeSample devuelve false y esto

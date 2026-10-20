@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include <thread>
 #include <cmath>
 #include <limits>
 
@@ -468,7 +469,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     if (midiOutOn.load (std::memory_order_relaxed))
         midiOut.push ({ (std::uint8_t) slot,
                         (std::uint8_t) juce::jlimit (1, 127, (int) std::lround (vel * 127.0f)),
-                        true });
+                        true, (std::int8_t) juce::jlimit (-48, 48, extraSemis) });   // secuenciador#11
 
     // Choke group: fade out any other pad's voices sharing this pad's group.
     const int group = padChoke[(size_t) slot].load (std::memory_order_relaxed);
@@ -906,7 +907,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     // 0. Capture mic input BEFORE clearing (input is in channel 0 on entry).
     //    Only when the take is coming from the microphone: a resample reads
     //    the master at the bottom of this function instead.
-    if (recording.load (std::memory_order_acquire)
+    escribiendoToma.store (true, std::memory_order_seq_cst);   // estabilidad#9
+    if (recording.load (std::memory_order_seq_cst)
         && ! recordFromMaster.load (std::memory_order_acquire)
         && out.getNumChannels() > 0)
     {
@@ -923,11 +925,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 recordBuffer.copyFrom (ch, rp, out.getReadPointer (ch, startSample), n);
 
             rp += n;
-            recordPos.store (rp, std::memory_order_relaxed);
+            recordPos.store (rp, std::memory_order_release);
         }
         if (rp >= cap)
             recording.store (false, std::memory_order_release);   // full -> auto stop
     }
+    escribiendoToma.store (false, std::memory_order_release);
 
     //  0-mon. Y LA COPIA PARA EL MONITOR, aqui y no mas abajo: la entrada vive
     //        en `out` hasta la etapa 2, que la borra. La suma se hace en 5d-mon
@@ -1768,6 +1771,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                 //  nada que contar - al quitar el silencio el bloque suena por
                 //  el paso que toque, que es lo que hace un DAW.
                 for (auto& u : ultimoDisparo) u.store (-1, std::memory_order_relaxed);
+                //  El cursor es el paso DEL PATRON que suena, el que se edita si suena (secuenciador#2).
+                const int editado = editPattern.load (std::memory_order_relaxed);
+                int pasoVisto = -1, bancoVisto = -1;
                 if (bloques != nullptr)
                 {
                     for (int i = 0; i < bloques->n; ++i)
@@ -1791,12 +1797,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         const int pasoPatron = (off + b.offset) % len;
                         firePatternStep (b.bank, pasoPatron);
                         ultimoDisparo[(size_t) b.lane].store ((b.bank << 16) | pasoPatron, std::memory_order_relaxed);
-                        if (b.lane == 0) playingPattern.store (b.bank, std::memory_order_relaxed);
+                        if (bancoVisto != editado && (b.bank == editado || bancoVisto < 0))
+                        { pasoVisto = pasoPatron; bancoVisto = b.bank; }
                     }
                 }
+                if (bancoVisto >= 0) playingPattern.store (bancoVisto, std::memory_order_relaxed);
 
                 currentStep = songStep % pasosCompas;
-                playStep.store (currentStep, std::memory_order_relaxed);
+                playStep.store (pasoVisto >= 0 ? pasoVisto : currentStep, std::memory_order_relaxed);
                 return;
             }
 
@@ -4229,7 +4237,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //     el codigo se lee una vez y el comentario se cree siempre. Que no se
     //     imprima es ademas lo correcto: bajar el master para no despertar a
     //     nadie es monitorizacion y dura un segundo; el remuestreo se queda.
-    if (recording.load (std::memory_order_acquire)
+    escribiendoToma.store (true, std::memory_order_seq_cst);   // estabilidad#9
+    if (recording.load (std::memory_order_seq_cst)
         && recordFromMaster.load (std::memory_order_acquire)
         && out.getNumChannels() > 0)
     {
@@ -4256,11 +4265,12 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             }
 
             rp += nRec;
-            recordPos.store (rp, std::memory_order_relaxed);
+            recordPos.store (rp, std::memory_order_release);
         }
         if (rp >= cap)
             recording.store (false, std::memory_order_release);
     }
+    escribiendoToma.store (false, std::memory_order_release);
 
     // 5c-duck. The master level, ramped.
     //
@@ -5470,7 +5480,10 @@ void AudioEngine::startRecording (int slot, bool fromMaster) noexcept
 
 SampleBuffer::Ptr AudioEngine::finishRecording (bool publica) noexcept
 {
-    recording.store (false, std::memory_order_release);
+    recording.store (false, std::memory_order_seq_cst);
+    //  estabilidad#9: el bloque que ya vio la toma armada acaba antes de leerla.
+    for (int i = 0; escribiendoToma.load (std::memory_order_seq_cst) && i < 200000; ++i)
+        std::this_thread::yield();
     SampleBuffer::Ptr sb;
     const int len = recordPos.load (std::memory_order_acquire);
     if (len > 4)

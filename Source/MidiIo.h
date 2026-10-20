@@ -164,7 +164,10 @@ namespace MidiIo
         std::uint8_t pad = 0;
         std::uint8_t vel = 100;
         bool         on  = true;
+        std::int8_t  semis = 0;   // secuenciador#11: la tecla del piano roll
     };
+
+    inline int notaDe (const NoteEvent& e) noexcept { return juce::jlimit (0, 127, noteForPad (e.pad) + e.semis); }
 
     //  La cola audio -> hilo de envio. Misma forma que CommandFifo y que
     //  RetiredQueue, por la misma razon: un productor, un consumidor, y ni una
@@ -359,7 +362,7 @@ namespace MidiIo
                 {
                     if (out == nullptr) return;
                     const int ch   = channel.load (std::memory_order_relaxed);
-                    const int note = noteForPad (e.pad);
+                    const int note = e.on ? notaDe (e) : enviada[e.pad];
 
                     if (e.on)
                     {
@@ -368,10 +371,11 @@ namespace MidiIo
                         //  encendido no se oye en un aparato que ya tiene esa
                         //  nota pisada, y el primer apagado mata a los dos.
                         if (gate[e.pad] > 0)
-                            out->sendMessageNow (juce::MidiMessage::noteOff (ch, note));
+                            out->sendMessageNow (juce::MidiMessage::noteOff (ch, enviada[e.pad]));
 
                         out->sendMessageNow (juce::MidiMessage::noteOn (ch, note, (juce::uint8) e.vel));
                         gate[e.pad] = kGateMs;
+                        enviada[e.pad] = note;
                     }
                     else if (gate[e.pad] > 0)
                     {
@@ -391,7 +395,7 @@ namespace MidiIo
                     if (gate[p] <= 0) continue;
                     if (--gate[p] == 0 && out != nullptr)
                         out->sendMessageNow (juce::MidiMessage::noteOff (channel.load (std::memory_order_relaxed),
-                                                                        noteForPad (p)));
+                                                                        enviada[p]));
                     else anyOpen = true;
                 }
 
@@ -451,5 +455,6 @@ namespace MidiIo
         std::atomic<int>  modo { (int) Modo::Pads };   // lo de siempre por defecto
         std::atomic<int>  padTeclado { 0 };
         int               gate[kMaxPads] {};   // ms que le quedan a cada nota
+        int               enviada[kMaxPads] {}; // la nota que se mando, para apagarla
     };
 }

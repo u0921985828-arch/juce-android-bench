@@ -173,5 +173,13 @@ private:
     juce::String ultimoEstado;
     std::atomic<int> escritos { 0 }, iguales { 0 };
 
+    //  estabilidad#23: clear() la sube; lo que el escritor tenia en vuelo de
+    //  antes se borra al acabar en vez de resucitar la carpeta.
+    std::atomic<int> generacion { 0 };
+
+public:
+    std::atomic<int> frenoPruebaMs { 0 };   // banco: un disco lento a voluntad
+private:
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SessionKeeper)
 };

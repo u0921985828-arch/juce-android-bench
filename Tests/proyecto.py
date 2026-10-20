@@ -130,6 +130,10 @@ def main():
     for nombre, ini, fin in funciones (texto):
         dentroDe.append ((ini, fin, nombre))
 
+    #  Y las que preguntan por dentro (armaAbrir): se derivan, no se declaran.
+    preguntas = {PREGUNTA} | {n for n, i, f in funciones (texto)
+                              if n != PREGUNTA and (PREGUNTA + " (") in texto[i:f]}
+
     def duenyo (pos):
         for ini, fin, nombre in dentroDe:
             if ini <= pos <= fin: return nombre
@@ -154,7 +158,7 @@ def main():
             #  —el veredicto es correcto— pero no dice a cual ir.
             quien = "%s / %s:%d" % (fn, e, texto[:m.start()].count ("\n") + 1)
             vistas.add (fn)
-            if (PREGUNTA + " (") in texto[a:b]:
+            if any ((q + " (") in texto[a:b] for q in preguntas):
                 if quien not in pide: pide.append (quien)
             elif quien not in sinRed:
                 sinRed.append (quien)

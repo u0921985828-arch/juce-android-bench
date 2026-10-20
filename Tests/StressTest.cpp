@@ -481,12 +481,13 @@ int main()
 
         //  Y el secuenciador, que es el camino que se habria quedado fuera.
         e.setStep (0, 0, 0, true);
+        e.setStepNote (0, 0, 0, 7);   // secuenciador#11: la tecla tambien sale
         e.setPlaying (true);
-        int fromSeq = 0;
+        int fromSeq = 0, notaSeq = -1;
         for (int blk = 0; blk < 60; ++blk)
         {
             b.clear(); e.renderNextBlock (b, 0, 512);
-            e.midiOutQueue().drain ([&] (const MidiIo::NoteEvent& ev) { if (ev.on) ++fromSeq; });
+            e.midiOutQueue().drain ([&] (const MidiIo::NoteEvent& ev) { if (ev.on) { ++fromSeq; notaSeq = MidiIo::notaDe (ev); } });
         }
         e.setPlaying (false);
 
@@ -497,10 +498,10 @@ int main()
         int whenOff = 0;
         e.midiOutQueue().drain ([&] (const MidiIo::NoteEvent&) { ++whenOff; });
 
-        std::printf ("%-34s %d notas  mapa %s  velocidad %s  secuenciador %d  apagada %d  %s\n",
+        std::printf ("%-34s %d notas  mapa %s  velocidad %s  secuenciador %d (nota %d)  apagada %d  %s\n",
                      "midi que sale", n, mapOk ? "ok" : "MAL", velOk ? "ok" : "MAL",
-                     fromSeq, whenOff,
-                     (countOk && mapOk && velOk && fromSeq > 0 && whenOff == 0) ? "OK" : zatiFalla());
+                     fromSeq, notaSeq, whenOff,
+                     (countOk && mapOk && velOk && fromSeq > 0 && notaSeq == 43 && whenOff == 0) ? "OK" : zatiFalla());
     }
 
     //  EL DELAY, Y EL BRILLO QUE LE QUEDA A LA OCTAVA REPETICION.
@@ -10056,6 +10057,61 @@ int main()
         }
         std::printf ("%-34s 50/100/150 Hz con el ancho a 1: L-R peor %.2f dB   %s\n", "grave mono sale centrado",
                      peor, peor < 1.5 ? "OK" : zatiFalla());
+    }
+
+    //  EN CANCION EL CURSOR ES EL PASO DEL PATRON que suena (secuenciador#2).
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 64); e.setPolyphony (8, 2); enCanalCero (e);
+        e.clearPattern (0); e.setPatternLength (0, 32); e.setStep (0, 0, 0, true); e.setEditPattern (0);
+        const int pc = juce::jmax (1, e.pasosPorCompas());
+        AudioEngine::BloqueSong b0; b0.lane = 0; b0.bank = 0; b0.compas = 0; b0.paso = 0;
+        b0.largo = 2 * pc; b0.offset = 0; b0.mudo = false;
+        e.publicaBloques (&b0, 1);
+        e.setSongLength (2); e.setSongMode (true); e.setBpm (240.0);
+        juce::AudioBuffer<float> b (2, 64);
+        e.setPlaying (true);
+        int vistos = 0, malos = 0;
+        for (int i = 0; i < 1600; ++i)
+        {
+            b.clear(); e.renderNextBlock (b, 0, 64);
+            const int u = e.getUltimoDisparo (0);
+            if (u < 0) continue;
+            ++vistos;
+            if (e.getPlayStep() != (u & 0xffff)) ++malos;
+        }
+        e.setPlaying (false);
+        std::printf ("%-34s %d de %d bloques con el cursor en otro paso   %s\n", "cursor de cancion = paso del patron",
+                     malos, vistos, (vistos > 100 && malos == 0) ? "OK" : zatiFalla());
+    }
+
+    //  estabilidad#9: PARAR LA TOMA NO SE CRUZA CON EL BLOQUE QUE LA ESCRIBE.
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 64);
+        std::atomic<bool> fin { false };
+        std::thread audio ([&]
+        {
+            juce::AudioBuffer<float> b (2, 64);
+            while (! fin.load()) { b.clear(); e.renderNextBlock (b, 0, 64); }
+        });
+        auto espera = [] (int us) { const auto t = std::chrono::steady_clock::now();
+                                    while (std::chrono::steady_clock::now() - t < std::chrono::microseconds (us)) {} };
+        int tomas = 0, cruzadas = 0;
+        for (int i = 0; i < 3000; ++i)
+        {
+            e.startRecording (0, true);
+            espera (150 + (i % 7) * 23);
+            const auto sb = e.finishRecording (false);
+            espera (200);
+            if (sb == nullptr) continue;
+            ++tomas;
+            const int pos = (int) std::lround (e.getRecordSeconds() * 48000.0);
+            if (pos != sb->buffer.getNumSamples()) ++cruzadas;
+        }
+        fin.store (true); audio.join();
+        std::printf ("%-34s %d de %d tomas siguieron escribiendose tras pararlas   %s\n", "parar la toma",
+                     cruzadas, tomas, (tomas > 1000 && cruzadas == 0) ? "OK" : zatiFalla());
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

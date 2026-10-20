@@ -117,7 +117,17 @@ public:
     float altoCelda()  const noexcept
     { return (float) getHeight() / (float) juce::jmax (1, carriles); }
     float anchoCelda() const noexcept
-    { return juce::jmax (1.0f, altoCelda() * zoomW); }
+    {
+        const float nominal = juce::jmax (1.0f, altoCelda() * zoomW);
+        //  Si el maquetado dijo que entran sin barra, entran: se estrechan hasta un 25 % (secuenciador#16).
+        if (encaje > 0 && getWidth() > kGutter)
+        {
+            const float cabe = (float) (getWidth() - kGutter) / (float) encaje;
+            if (cabe < nominal && cabe >= nominal * 0.75f) return cabe;
+        }
+        return nominal;
+    }
+    void encajaPasos (int n) noexcept { if (encaje != n) { encaje = n; visto = false; repaint(); } }
 
     //  CUANTAS COLUMNAS SE VEN ENTERAS. La que asoma por el filo derecho se
     //  dibuja igual -es lo que dice que hay mas- pero no cuenta: la ventana que
@@ -613,6 +623,7 @@ private:
     int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
     int carriles = kLanes, medio = 0;   // la ventana de pistas. Ver setVentana.
     float zoomW = 1.0f;                 // el ancho de la celda contra su alto
+    int   encaje = 0;                   // pasos que tienen que entrar sin barra; 0 = los que quepan
     float phase = 0.0f;   // how far through the live step, 0..1
 
     //  La copia de lo ultimo PINTADO, para no volver a pintarlo. Ver setSource.

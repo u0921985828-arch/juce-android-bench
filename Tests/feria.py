@@ -92,7 +92,9 @@ def main():
            "DESHACER %s con REHACER, %s sin" % (r["undo_con"], r["undo_sin"]))
     regla ("rejilla", r["grid_con"] == r["grid_sin"],
            "rejilla %s sin paso elegido, %s con" % (r["grid_sin"], r["grid_con"]))
-    regla ("celda", abs (r["celda_4c"] - r["celda_1c"]) < 0.01 and r["celda_8p"] >= 2 * r["celda_1c"] - 0.01
+    # Un compas puede estrecharse hasta un 25 % para entrar entero sin barra (secuenciador#16); nunca crecer.
+    regla ("celda", r["celda_1c"] <= r["celda_4c"] + 0.01 and r["celda_1c"] >= 0.75 * r["celda_4c"]
+                    and r["celda_8p"] >= 2 * r["celda_4c"] - 0.01
                     and r["celda_8p"] >= 36,
            "celda de paso %.1f px con 1 compas y %.1f con 4; con 1-8 pistas %.1f de alto"
            % (r["celda_1c"], r["celda_4c"], r["celda_8p"]))
@@ -165,6 +167,12 @@ def main():
            "marca de un paso puesto contra su relleno, peor carcasa y color: %.2f (1.4.1 y 1.4.11)" % r.get ("paso_marca", 0))
     regla ("pista", r.get ("pista_slider", 0) >= 3.0,
            "pista de un deslizador contra la tarjeta, peor carcasa: %.2f (1.4.11 pide 3)" % r.get ("pista_slider", 0))
+    regla ("rejilla", r.get ("bloque_antes", 0) > 0 and r.get ("bloque_despues", 0) == r.get ("compas_despues", -1),
+           "un bloque de un compas (%d pasos) mide %d tras pasar a 1/32, y el compas son %d (secuenciador#1)"
+           % (r.get ("bloque_antes", 0), r.get ("bloque_despues", 0), r.get ("compas_despues", 0)))
+    regla ("paso16", r.get ("sec_barra", 0) == 1 or r.get ("sec_cols", 0) >= r.get ("sec_largo", 99),
+           "sin barra la rejilla ensena %d columnas enteras de un patron de %d (secuenciador#16)"
+           % (r.get ("sec_cols", 0), r.get ("sec_largo", 0)))
     regla ("con nombre", r.get ("sin_nombre", -1) == 0 and r.get ("cruces", -1) == 0,
            "cajas sin nombre %d, cruces que se leen «×» %d (botones sin letra en total: %d)"
            % (r.get ("sin_nombre", -1), r.get ("cruces", -1), r.get ("simbolos", -1)))

@@ -2997,6 +2997,16 @@ MainComponent::MainComponent()
                         for (int pd = 0; pd < kNumPads; ++pd)
                             pattern[(size_t) b][(size_t) st][(size_t) pd] = engine.leePaso (b, st, pd).on;
 
+            //  Y LA CANCION VA DETRAS: bloques, clips y automatizacion se cuentan en pasos guardados (secuenciador#1).
+            if (objetivo != pasoViejo && objetivo > 0)
+            {
+                auto escala = [pasoViejo, objetivo] (int p) { return (int) std::lround ((double) p * pasoViejo / objetivo); };
+                for (auto& b : bloques)    { b.paso = escala (b.paso); b.largo = juce::jmax (1, escala (b.largo)); b.offset = escala (b.offset); }
+                for (auto& c : clips)      c.paso = escala (c.paso);
+                for (auto& e : autoEventos) e.paso = escala (e.paso);
+                publicaBloques(); publicaClips(); publicaAutomacion();
+            }
+
             //  LO UNICO QUE SE CUENTA ES EL RECORTE, y solo porque existe: el
             //  largo de una nota y su empujon tienen techo -63 cuartos de paso
             //  y media casilla- y al afinar el paso pueden no caber. Ni un
@@ -19031,6 +19041,7 @@ void MainComponent::AbridorAudio::run()
             //  La etiqueta la lleva el hilo de mensajes, no este: ver abreSalida.
             auto hazlo = std::move (mc.encargoAudio);
             mc.encargoAudio = nullptr;
+            if (const int f = mc.frenoAbridorMs.load()) juce::Thread::sleep (f);   // banco: apertura lenta
             if (hazlo) hazlo();
         }
 
@@ -20856,7 +20867,7 @@ void MainComponent::exportaMidiPatron()
                       + "-" + etiquetaPad (selectedPad) + ".mid";
     const auto destino = ProjectStore::exports().getChildFile (nombre);
 
-    if (! MidiArchivo::escribe (destino, notas, engine.getBpm()))
+    if (! MidiArchivo::escribe (destino, notas, engine.getBpm(), engine.pasoUnidades()))
     {
         midiParte = T ("No se pudo escribir en esa carpeta - cambiala en EXPORTAR");
         midiSheet.repintaTarjeta();
@@ -20887,7 +20898,7 @@ void MainComponent::importaMidiPatron (const juce::File& f)
 {
     MidiArchivo::Parte parte;
     const bool esMidi = f.hasFileExtension ("mid;midi;rmi;kar") && f.getSize() <= 4 * 1024 * 1024;   // estabilidad#21
-    const auto notas = esMidi ? MidiArchivo::lee (f, AudioEngine::kNumSteps, parte) : decltype (MidiArchivo::lee (f, 0, parte)) {};
+    const auto notas = esMidi ? MidiArchivo::lee (f, AudioEngine::kNumSteps, parte, engine.pasoUnidades()) : decltype (MidiArchivo::lee (f, 0, parte)) {};
 
     if (notas.empty())
     {
@@ -20918,9 +20929,10 @@ void MainComponent::importaMidiPatron (const juce::File& f)
     //  un patron de dieciseis pasos con un fichero de dos compases dentro
     //  dejaria la segunda mitad escrita y muda. Acotado a `kMaxPatLen`, que es
     //  lo que la maquina tiene.
-    const int compases = (parte.pasos + 15) / 16;
+    const int pc       = juce::jmax (1, engine.pasosPorCompas());   // no 16: la rejilla manda (secuenciador#7)
+    const int compases = (parte.pasos + pc - 1) / pc;
     const int pide     = juce::jlimit (AudioEngine::kMinPatLen, AudioEngine::kMaxPatLen,
-                                       juce::jmax (1, compases) * 16);
+                                       juce::jmax (1, compases) * pc);
     if (pide > engine.getPatternLength (selectedPattern))
         engine.setPatternLength (selectedPattern, pide);
 
@@ -21841,6 +21853,14 @@ void MainComponent::toggleResample()
     if (! resamplingActive)
     {
         if (recordingActive) toggleMicSampling();     // one recorder, one take
+        //  estabilidad#8: parar el micro reabre el audio, y esa apertura vacia la
+        //  toma (prepareToPlay): se arma cuando ha terminado, no antes.
+        if (! esperaAbridor (kEsperaCierreMs))
+        {
+            status.setText (T ("El audio se esta abriendo: vuelve a tocar REMUESTREAR"),
+                            juce::dontSendNotification);
+            return;
+        }
 
         //  El mismo destino que una toma de microfono al arreglo, y por la
         //  misma razon: un remuestreo es una toma. Una regla, un dueño.

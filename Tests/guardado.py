@@ -68,6 +68,7 @@ def huecos (lineas):
     for l in lineas:
         m = UNLINK.search (l)
         if m and l.rstrip().endswith ("= 0"):
+            if m.group (1).endswith ("fin-relevos.marca"): break   # paso 7: vaciar a proposito
             borrados.add (m.group (1))
             continue
         m = RENAME.search (l)
@@ -145,6 +146,10 @@ def main():
         malas.append ("atomico: %d WAV en samples/ que la cabecera no nombra" % r["atomico_huerfanos"])
     if r["atomico_abre"] != 1:
         malas.append ("atomico: abrir lo recien guardado no devuelve el pad 0 que se escribio")
+
+    print ("  vaciar la sesion con un pad en vuelo: %d WAV resucitan" % r.get ("clear_resucitan", -1))
+    if r.get ("clear_resucitan", -1) != 0:   # estabilidad#23
+        malas.append ("clear: %d WAV vuelven a la carpeta borrada" % r.get ("clear_resucitan", -1))
 
     for m in malas: print ("FALLA ", m)
     print ("VEREDICTO:", "OK" if not malas else "%d FALLA" % len (malas))

@@ -56,9 +56,9 @@ SIN_RED = {
     "stepPadJob":           "es la bomba del reparto asincrono de la sesion y del"
                             " proyecto: pone lo que ya era tuyo",
     "cancelAudition":       "la escucha se deshace por su camino, ver preAuditionSample",
-    "selectionChanged":     "es la escucha del navegador: un toque en la lista carga"
-                            " y dispara, y la foto -con lo de ANTES de oir- la toma"
-                            " CARGAR. Ver loadBrowserSelection",
+    "aplicaEscucha":        "es la escucha del navegador (salio de selectionChanged): un"
+                            " toque en la lista carga y dispara, y la foto -con lo de"
+                            " ANTES de oir- la toma CARGAR. Ver loadBrowserSelection",
     #  Se llamaba `cargaFabricaEnBanco` hasta que rendir la fabrica se fue a su
     #  propia hebra -1691 ms de un tiron en el hilo de mensajes, y eso es un ANR
     #  en un telefono-. Ahora esa funcion LANZA y no pisa ningun pad; quien lo

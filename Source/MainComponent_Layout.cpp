@@ -7809,6 +7809,7 @@ void MainComponent::resized()
                 }
             }
 
+            stepGrid.encajaPasos (seqHayBarra ? 0 : patLen);
             stepGrid.setBounds (inner);
         }
         else

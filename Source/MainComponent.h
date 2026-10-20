@@ -1843,6 +1843,7 @@ private:
     std::function<void()> encargoAudio, trasEncargo;
     std::atomic<bool> pedidoEncargo { false };
     std::atomic<bool> encargoListo  { false };
+    std::atomic<int>  frenoAbridorMs { 0 };   // banco estabilidad#8
     bool pideEncargoAudio (std::function<void()> hazlo, std::function<void()> despues = {});
     void recogeEncargo();
     //  Abrir con N entradas en UNA apertura: reloj elegido y bufer de la
