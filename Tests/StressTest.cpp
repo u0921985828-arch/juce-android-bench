@@ -9332,6 +9332,127 @@ int main()
             std::printf ("%-34s el ruido se repite en %d muestras sin el y %d con el   %s\n",
                          "REP repite el trozo", sinRep, conRep, ok ? "OK" : zatiFalla());
         }
+
+        // --- DUC y REP: la vuelta sin chasquido. ----------------------
+        //
+        //  Los dos van con el reloj y los dos daban un ESCALON en cada vuelta
+        //  de fase: el bombeo caia de 1 a 1-prof en UNA muestra, y el
+        //  repetidor saltaba del trozo a lo vivo -y del final del trozo a su
+        //  principio- sin fundido (auditoria 2026-10, audio-dsp#8 y #9). Un
+        //  escalon con un tono sostenido se ve como un salto entre dos
+        //  muestras seguidas mucho mayor que la pendiente del propio tono. Se
+        //  mide el mayor salto con el efecto puesto contra el mayor salto con
+        //  el mando a cero -el mismo tono por el mismo camino- y el liston es
+        //  DOS veces: un fundido de unos milisegundos suma al tono una
+        //  pendiente mas pequeña que la suya, y un corte suma la amplitud
+        //  entera. Medido antes del arreglo: DUC x24.1 y REP x52.8.
+        {
+            auto saltoMax = [] (const std::vector<float>& v)
+            {
+                float m = 0.0f;
+                for (size_t i = juce::jmax ((size_t) 1, v.size() / 3); i < v.size(); ++i)
+                    m = juce::jmax (m, std::abs (v[i] - v[i - 1]));
+                return m;
+            };
+            corre6 (AudioEngine::kFxDuc, 2.0f, 0.00f, tono (220.0f), aL, aR, 150);
+            corre6 (AudioEngine::kFxDuc, 2.0f, 0.70f, tono (220.0f), bL, bR, 150);
+            const double ducNat = saltoMax (aL), ducCon = saltoMax (bL);
+            const double xDuc = ducCon / juce::jmax (1.0e-6, ducNat);
+
+            corre6 (AudioEngine::kFxRep, 4.0f, 0.00f, tono (233.0f), aL, aR, 150);
+            corre6 (AudioEngine::kFxRep, 4.0f, 0.60f, tono (233.0f), bL, bR, 150);
+            const double repNat = saltoMax (aL), repCon = saltoMax (bL);
+            const double xRep = repCon / juce::jmax (1.0e-6, repNat);
+
+            const bool ok = ducNat > 1.0e-4 && repNat > 1.0e-4 && xDuc < 2.0 && xRep < 2.0;
+            std::printf ("%-34s DUC salto %.4f (tono %.4f, x%.1f), REP salto %.4f (tono %.4f, x%.1f), liston x2   %s\n",
+                         "DUC y REP sin chasquido", ducCon, ducNat, xDuc, repCon, repNat, xRep,
+                         ok ? "OK" : zatiFalla());
+        }
+    }
+
+    //  EL ROBO CON EL POOL LLENO, SIN CORTE.
+    //
+    //  steal() es un fundido de 1.5 ms y no un corte, pero solo si la voz
+    //  robada sigue viva mientras se apaga. Con el pool ENTERO ocupado la
+    //  nota nueva caia en la misma Voice y start() ponia gain a cero antes de
+    //  la muestra siguiente: el fundido no llegaba a sonar y lo que sonaba
+    //  desaparecia de golpe, con un escalon del tamaño de su amplitud. El
+    //  comentario del motor lo daba por raro «a 48 voces», pero la gama baja
+    //  tiene 16 (auditoria 2026-10, audio-dsp#7).
+    //
+    //  Dieciseis pads con un seno grave sostenido llenan un pool de 16; el
+    //  decimoseptimo es SILENCIO, asi que cualquier salto en la salida al
+    //  dispararlo es el corte de la robada y no el ataque de la nueva. La
+    //  robada es la mas vieja -el pad 0, el mas fuerte de los dieciseis- y se
+    //  dispara en el bloque en que su seno anda cerca del pico, que es donde
+    //  el corte se ve entero. Liston: el mayor salto del bloque del disparo
+    //  por debajo de DOS veces el mayor salto de los diez bloques de antes.
+    //  Medido antes del arreglo: x29.5 (0.0845 sobre 0.0029).
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (16, 4);
+        enCanalCero (e);
+
+        auto seno = [] (float hz, float amp)
+        {
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (2, 96000);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 96000; ++i)
+                    sb->buffer.setSample (c, i, amp * std::sin (juce::MathConstants<float>::twoPi
+                                                                * hz * (float) i / 48000.0f));
+            sb->sourceSampleRate = 48000.0;
+            return SampleBuffer::Ptr (sb);
+        };
+        //  El pad 0 a 220 Hz y mas fuerte; los otros quince flojos y graves,
+        //  para que la suma no sature y el corte se vea sobre ella. A 220 Hz
+        //  la pendiente del propio seno (0.12 x 2pi x 220 / 48000) es el doble
+        //  de lo que suma un fundido de 1.5 ms: el liston separa el fundido
+        //  del corte y no castiga al fundido.
+        for (int p = 0; p < 16; ++p)
+        {
+            e.setPadGain (p, 1.0f);
+            e.publishSample (p, seno (p == 0 ? 220.0f : 65.0f + 2.0f * (float) p, p == 0 ? 0.12f : 0.03f));
+        }
+        e.setPadGain (16, 1.0f);
+        e.publishSample (16, seno (100.0f, 0.0f));
+
+        juce::AudioBuffer<float> b (2, 512);
+        for (int i = 0; i < 2; ++i) { b.clear(); e.renderNextBlock (b, 0, 512); }
+        //  En orden: el pad 0 es el de serie mas baja y el que el robo elige.
+        for (int p = 0; p < 16; ++p) e.postNoteOn (p, 1.0f);
+
+        int bloqueDisparo = 12; float masAlto = 0.0f;
+        for (int k = 12; k < 28; ++k)
+        {
+            const float s = std::abs (std::sin (juce::MathConstants<float>::twoPi * 220.0f
+                                                * (float) (k * 512) / 48000.0f));
+            if (s > masAlto) { masAlto = s; bloqueDisparo = k; }
+        }
+
+        std::vector<float> out;
+        for (int k = 0; k <= bloqueDisparo; ++k)
+        {
+            if (k == bloqueDisparo) e.postNoteOn (16, 1.0f);
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            for (int n = 0; n < 512; ++n) out.push_back (b.getSample (0, n));
+        }
+
+        auto saltoMax = [&out] (size_t desde, size_t hasta)
+        {
+            float m = 0.0f;
+            for (size_t i = juce::jmax ((size_t) 1, desde); i < hasta && i < out.size(); ++i)
+                m = juce::jmax (m, std::abs (out[i] - out[i - 1]));
+            return m;
+        };
+        const size_t d = (size_t) bloqueDisparo * 512;
+        const double natural = saltoMax (d - 10 * 512, d);
+        const double disparo = saltoMax (d, d + 512);
+        const double x = disparo / juce::jmax (1.0e-6, natural);
+        const bool ok = natural > 1.0e-4 && x < 2.0;
+        std::printf ("%-34s pool 16 lleno y una mas: salto %.4f en el disparo, %.4f antes (x%.1f, liston x2)   %s\n",
+                     "robo con el pool lleno", disparo, natural, x, ok ? "OK" : zatiFalla());
     }
 
     //  TANDA 30 · CADA CANAL CON SU DLY, SU REV, SU AMB Y SU PNG.

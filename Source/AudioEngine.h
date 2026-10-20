@@ -365,6 +365,10 @@ public:
     //  eso ya es congelar, y congelar lo hace FRZ. Son 12000 muestras por canal
     //  a 48 kHz, o sea 96 KB por canal de mesa con los dos lados.
     static constexpr double kRepMaxSeg = 0.250;
+    //  Y LA COSTURA DEL REPETIDOR: cuatro milisegundos de fundido en cada
+    //  vuelta del trozo y al volver a lo vivo. Esto es el tope en muestras de
+    //  la cola que se aparta en la vuelta del reloj (256 son 5.3 ms a 48 kHz).
+    static constexpr int kRepCola = 256;
 
     static constexpr int kAmbTomas = 8;
     static constexpr float kAmbMsL[kAmbTomas] = { 11.3f, 19.7f, 28.1f, 37.9f,
@@ -2550,7 +2554,16 @@ private:
     //  allocated, so nothing about a tier decision can ever reach the audio
     //  thread as a reallocation.
     static constexpr int kNumVoices     = 64;
-    std::array<Voice, kNumVoices>       voices {};
+    //  Y CUATRO MAS QUE NO SON DEL POOL: la cola de un robo con el pool
+    //  lleno. steal() es un fundido de 1.5 ms, pero con el pool entero
+    //  ocupado la nota nueva caia en la misma Voice y start() lo pisaba antes
+    //  de sonar una muestra: un corte seco del tamaño de la voz robada, en
+    //  cada nota que entraba (auditoria 2026-10, audio-dsp#7). La robada se
+    //  copia aqui, detras de voiceLimit, y se apaga en su sitio mientras la
+    //  nueva arranca en el hueco. Fuera del pool a proposito: ni cuentan para
+    //  la polifonia ni se pueden robar, y viven 72 muestras.
+    static constexpr int kColaRobo      = 4;
+    std::array<Voice, kNumVoices + kColaRobo> voices {};
     int voiceLimit      = 48;   // <= kNumVoices, message thread sets, audio reads
     int maxVoicesOnPad  = 8;
 
@@ -2562,7 +2575,7 @@ private:
     //  builds a per-pad chain and every later loop touches only its own.
     //  Audio thread only.
     std::array<int, kNumPads>    padFirstVoice {};
-    std::array<int, kNumVoices>  voiceNextInPad {};
+    std::array<int, kNumVoices + kColaRobo>  voiceNextInPad {};
     std::uint32_t                       voiceSerial = 0;   // audio-thread only, for oldest-steal
 
     //  EL PEDAL DE SOSTENIDO, del hilo de AUDIO y de nadie mas: lo escribe
@@ -3857,6 +3870,13 @@ private:
         float smRepCantidad = 0.0f;
         bool  repWasActive = false;
         float repFaseAnt = 0.0f;
+        //  La cola de la vuelta: lo que el trozo iba a seguir sonando cuando
+        //  el reloj vuelve a cero, apartado antes de que la grabacion nueva
+        //  lo pise, y fundido con lo vivo. Y si en la muestra anterior se
+        //  estaba repitiendo, que es lo que decide si hay cola que apartar.
+        std::array<std::array<float, kRepCola>, 2> repCola {};
+        int   repColaN = 0, repColaI = 0;
+        bool  repRepite = false;
 
         //  ============================================================
         //  Y LA MESA DE LA TIRA: DLY, REV, AMB y PNG

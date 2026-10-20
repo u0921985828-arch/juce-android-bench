@@ -334,6 +334,7 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         for (auto& c : I.repVent) c.assign ((size_t) (systemSampleRate * kRepMaxSeg) + 4, 0.0f);
         I.repLargo = (int) (systemSampleRate * 0.125);
         I.repEscritas = 0; I.repLee = 0.0f; I.repFaseAnt = 0.0f;
+        I.repColaN = I.repColaI = 0; I.repRepite = false;
         I.frmWasActive = I.fldWasActive = I.rotWasActive = false;
         I.ducWasActive = I.repWasActive = false;
         I.ducGan.store (1.0f, std::memory_order_relaxed);
@@ -681,7 +682,9 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     //  it keeps the same voice alive for a few milliseconds while the new
     //  note starts elsewhere. Only when the WHOLE pool is busy does the new
     //  note have to land on the voice being taken, and then the fade has
-    //  nowhere to happen. At 48 voices that is rare and it is buried.
+    //  nowhere to happen in that Voice: it happens in `kColaRobo`, see below.
+    //  Decia «at 48 voices that is rare»; la gama baja tiene 16 y un
+    //  proyecto denso con colas largas lo pisa en cada nota.
     Voice* chosen  = nullptr;
     Voice* oldest  = nullptr;
     Voice* oldestOnPad = nullptr;
@@ -711,15 +714,37 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
         }
     }
 
+    Voice* victima = nullptr;
     if (onPad >= maxVoicesOnPad && oldestOnPad != nullptr)
     {
         oldestOnPad->steal (systemSampleRate);
-        if (chosen == nullptr) chosen = oldestOnPad;
+        if (chosen == nullptr) victima = oldestOnPad;
     }
     else if (chosen == nullptr && oldest != nullptr)
     {
         oldest->steal (systemSampleRate);
-        chosen = oldest;
+        victima = oldest;
+    }
+
+    //  EL POOL ENTERO ESTA LLENO y la nueva tiene que caer en la robada. Su
+    //  fundido de 1.5 ms se iria con el start() de la linea siguiente -gain a
+    //  cero, releasing a falso- y lo que sonaba desapareceria de golpe: un
+    //  escalon del tamaño de la voz. Medido en StressTest con el pool de la
+    //  gama baja lleno: x29.5 sobre la pendiente del seno robado. Asi que la
+    //  robada, ya en fundido, se copia a una Voice de la cola de robo, detras
+    //  de voiceLimit, donde el render la deja apagarse; y la nueva arranca
+    //  en el hueco que deja. Es una copia de un struct de valores por robo
+    //  con el pool lleno, que es un caso raro, y nada mas. Si las cuatro de
+    //  la cola estan ocupadas -cuatro robos en 1.5 ms con el pool lleno- se
+    //  corta como antes, que es el ultimo recurso y no la regla.
+    if (victima != nullptr)
+    {
+        for (int vi = voiceLimit; vi < voiceLimit + kColaRobo; ++vi)
+        {
+            auto& cola = voices[(size_t) vi];
+            if (! cola.active) { cola = *victima; break; }
+        }
+        chosen = victima;
     }
 
     if (chosen == nullptr)
@@ -1210,7 +1235,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         float padGainNow[kNumPads], padPanNow[kNumPads], padAnchoNow[kNumPads];
         bool  padTouched[kNumPads] = {};
 
-        for (int v = voiceLimit - 1; v >= 0; --v)
+        //  Hasta el final de la cola de robo y no solo del pool: las voces de
+        //  detras de voiceLimit son las robadas con el pool lleno, que se
+        //  estan apagando y tienen que sonar sus 72 muestras.
+        for (int v = voiceLimit + kColaRobo - 1; v >= 0; --v)
         {
             auto& vc = voices[(size_t) v];
             if (! vc.active || vc.slot < 0 || vc.slot >= kNumPads) continue;
@@ -3578,13 +3606,31 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         float fase = fm.fase;
                         float g = 1.0f;
 
+                        //  LA CAIDA DURA DOS MILISEGUNDOS Y NO UNA MUESTRA. En
+                        //  fase cero la ganancia pasaba de 1 a 1-prof de una
+                        //  muestra a la siguiente, y eso con un tono es un
+                        //  chasquido en cada vuelta: medido x24 sobre la
+                        //  pendiente del propio tono (auditoria 2026-10,
+                        //  audio-dsp#8). Un sidechain de verdad tampoco cae en
+                        //  cero: tiene un ataque de un par de milisegundos, que
+                        //  de oido sigue siendo «de golpe» y en la onda no deja
+                        //  escalon. Se escala la profundidad por `fase / fAtaque`
+                        //  hasta llegar a uno, asi que es funcion de la fase
+                        //  como todo lo demas y el re-anclaje por bloque no lo
+                        //  mueve. Con paso cero la fase no avanza y no hay
+                        //  vuelta que suavizar: se deja como estaba.
+                        const float invAtaque = (fm.paso > 0.0f)
+                            ? 1.0f / (fm.paso * (float) juce::jmax (1.0, 0.002 * systemSampleRate))
+                            : 0.0f;
+
                         for (int i = 0; i < numSamples; ++i)
                         {
                             //  Cae en el uno y vuelve: en fase cero la ganancia
                             //  es 1 - profundidad, y al llegar al final del ciclo
                             //  ha vuelto a uno.
                             const float q = 1.0f - fase;
-                            g = 1.0f - I.smDucProf * q * q;
+                            const float caida = (invAtaque > 0.0f) ? juce::jmin (1.0f, fase * invAtaque) : 1.0f;
+                            g = 1.0f - I.smDucProf * caida * q * q;
                             for (int ch = 0; ch < chans; ++ch)
                                 fxBus[busIdx (kFxDuc)].getWritePointer (ch, startSample)[i] *= g;
                             fase += fm.paso;
@@ -3615,6 +3661,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                     if (vivo && ! I.repWasActive)
                     {
                         I.repEscritas = 0; I.repLee = 0.0f; I.repFaseAnt = 1.0f;
+                        I.repColaN = I.repColaI = 0; I.repRepite = false;
                         for (auto& c : I.repVent) std::fill (c.begin(), c.end(), 0.0f);
                     }
                     I.repWasActive = vivo;
@@ -3625,6 +3672,49 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                         float fase = fm.fase;
                         const int tope = (int) I.repVent[0].size() - 1;
 
+                        //  LAS TRES COSTURAS, FUNDIDAS. El trozo saltaba de su
+                        //  final a su principio, lo vivo saltaba al trozo y el
+                        //  trozo saltaba a lo vivo en la vuelta del reloj, todo
+                        //  sin fundido: con un tono, x53 sobre su pendiente
+                        //  (auditoria 2026-10, audio-dsp#9). Cuatro
+                        //  milisegundos de coseno en cada una, asi:
+                        //  - Al empezar a repetir se siguen GRABANDO `nFund`
+                        //    muestras vivas detras del trozo: son lo que venia
+                        //    despues de su final, y en cada vuelta el principio
+                        //    se funde con ellas. La primera vuelta es la misma
+                        //    cuenta -lo vivo fundiendose con el trozo- porque
+                        //    esas muestras se escriben justo antes de leerse.
+                        //  - En la vuelta del reloj, lo que el trozo iba a
+                        //    seguir sonando se aparta en `repCola` antes de que
+                        //    la grabacion nueva lo pise, y se funde con lo vivo.
+                        //  La rampa no toca ni el cero ni el uno: la muestra
+                        //  anterior a la costura ya era entera de un lado y la
+                        //  de despues lo es del otro, asi que repartirla en n+1
+                        //  tramos es lo que no deja escalon en ninguna punta.
+                        const int nFund = juce::jmin (kRepCola, (int) (0.004 * systemSampleRate));
+                        auto rampa = [] (int k, int tramos) noexcept
+                        {
+                            return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi
+                                                           * (float) (k + 1) / (float) (tramos + 1));
+                        };
+                        //  Lo que el trozo suena en su muestra k. `colaOk` es
+                        //  cuantas muestras de detras del final estan ya
+                        //  escritas: solo con esas se funde, y si no hay
+                        //  -el trozo llena la ventana- se lee tal cual.
+                        auto trozo = [&] (int ch, int k, int colaOk) noexcept -> float
+                        {
+                            const auto& vent = I.repVent[(size_t) ch];
+                            const int largo = I.repEscritas;
+                            const int pos = k % largo;
+                            const int costura = juce::jmin (nFund, largo);
+                            if (pos < costura && pos < colaOk && largo + pos < tope)
+                            {
+                                const float r = rampa (pos, costura);
+                                return vent[(size_t) pos] * r + vent[(size_t) (largo + pos)] * (1.0f - r);
+                            }
+                            return vent[(size_t) pos];
+                        };
+
                         for (int i = 0; i < numSamples; ++i)
                         {
                             //  LA VUELTA SE DETECTA POR EL SALTO DE FASE y no
@@ -3632,7 +3722,19 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             //  cada bloque -ver `pasoMod`- asi que un contador
                             //  se separaria de el, que es justo lo que esa
                             //  funcion existe para no tener.
-                            if (fase < I.repFaseAnt) { I.repEscritas = 0; I.repLee = 0.0f; }
+                            if (fase < I.repFaseAnt)
+                            {
+                                if (I.repRepite)
+                                {
+                                    const int lee = (int) I.repLee;
+                                    const int colaOk = juce::jmin (nFund, lee);
+                                    for (int ch = 0; ch < chans; ++ch)
+                                        for (int k = 0; k < nFund; ++k)
+                                            I.repCola[(size_t) ch][(size_t) k] = trozo (ch, lee + k, colaOk);
+                                    I.repColaN = nFund; I.repColaI = 0;
+                                }
+                                I.repEscritas = 0; I.repLee = 0.0f;
+                            }
                             I.repFaseAnt = fase;
 
                             //  Cuanto de la vuelta se graba antes de empezar a
@@ -3640,6 +3742,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                             //  se repite nunca.
                             const float vivo01 = 1.0f - I.smRepCantidad;
                             const bool grabando = (fase <= vivo01) || I.repEscritas == 0;
+                            const int lee = (int) I.repLee;
+                            I.repRepite = ! grabando;
 
                             for (int ch = 0; ch < chans; ++ch)
                             {
@@ -3649,12 +3753,19 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                     if (I.repEscritas < tope)
                                         I.repVent[(size_t) ch][(size_t) I.repEscritas] = w[i];
                                 }
-                                else if (I.repEscritas > 0)
+                                else
                                 {
-                                    const int pos = (int) I.repLee % I.repEscritas;
-                                    w[i] = I.repVent[(size_t) ch][(size_t) pos];
+                                    if (lee < nFund && I.repEscritas + lee < tope)
+                                        I.repVent[(size_t) ch][(size_t) (I.repEscritas + lee)] = w[i];
+                                    w[i] = trozo (ch, lee, juce::jmin (nFund, lee + 1));
+                                }
+                                if (I.repColaI < I.repColaN)
+                                {
+                                    const float r = rampa (I.repColaI, I.repColaN);
+                                    w[i] = w[i] * r + I.repCola[(size_t) ch][(size_t) I.repColaI] * (1.0f - r);
                                 }
                             }
+                            if (I.repColaI < I.repColaN) ++I.repColaI;
                             if (grabando) { if (I.repEscritas < tope) ++I.repEscritas; }
                             else          { I.repLee += 1.0f; }
 
