@@ -1790,6 +1790,10 @@ namespace
         //  dice que no hay proyecto y «A SALVO» que aun asi no vas a perder
         //  nada. Los dos juntos son la frase entera.
         { "A SALVO",        "",         "SAFE",       "已保存",     "محفوظ" },
+        //  Y lo que dice en su lugar cuando el PROYECTO tiene cambios que no
+        //  estan en su carpeta: «A SALVO» es de la sesion y se leia como que
+        //  el proyecto estaba guardado (auditoria 2026-10, persistencia#6).
+        { "SIN GUARDAR",    "",         "UNSAVED",    "未保存",     "غير محفوظ" },
 
         //  EL RENGLON DE CONTINUIDAD. Tres campos con clave PROPIA y no
         //  reaprovechada: «PADS» ya existe como el nombre de una ficha y
@@ -1805,6 +1809,14 @@ namespace
         //  El aviso de ABRIR, que nombra el proyecto que va a entrar: la tapa
         //  armada tiene que decir QUE abre, como la de BORRAR dice que borra.
         { "ABRIR %1?",      "¿ABRIR %1?",         "OPEN %1?",   "打开 %1？", "فتح %1؟" },
+        //  Las mismas dos tapas con cambios sin guardar: la pregunta nombra
+        //  lo que se pierde y el renglon de estado da las tres salidas.
+        { "ABRIR SIN GUARDAR?", "¿ABRIR SIN GUARDAR?", "OPEN UNSAVED?", "不保存就打开？", "فتح دون حفظ؟" },
+        { "NUEVO SIN GUARDAR?", "¿NUEVO SIN GUARDAR?", "NEW UNSAVED?",  "不保存就新建？", "جديد دون حفظ؟" },
+        { "\"%1\" tiene cambios: GUARDAR primero, o toca otra vez y se pierden", "",
+          "\"%1\" has changes: SAVE first, or tap again and lose them",
+          "“%1”有未保存的更改：请先保存，或再点一次放弃",
+          "\"%1\" فيه تغييرات: احفظ أولًا، أو انقر مرة أخرى لتفقدها" },
         { "BORRAR %1?",     "¿BORRAR %1?",         "DELETE %1?", "删除 %1？", "حذف %1؟" },
         { "sin proyectos - GUARDAR crea el primero", "", "no projects - SAVE makes the first one",
                                         "没有工程 — 保存即可新建",

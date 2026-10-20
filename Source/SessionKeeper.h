@@ -69,7 +69,11 @@ public:
 
     //  El texto de state.xml para un estado y un proyecto. Hilo de mensajes:
     //  copiar el arbol es lo que lo hace legible desde otro hilo.
-    static juce::String textoDe (const juce::ValueTree& state, const juce::String& projectName);
+    //  Y CON LA HUELLA DE LO ULTIMO GUARDADO en el proyecto (`guardado`): es
+    //  lo que deja decir «SIN GUARDAR» tras recuperar la sesion. Cero es «no
+    //  se sabe» y no se escribe.
+    static juce::String textoDe (const juce::ValueTree& state, const juce::String& projectName,
+                                 juce::int64 guardado = 0);
 
     //  Encarga el estado al escritor y vuelve. Es el guardado de cada veinte
     //  segundos: escribirlo aqui eran 85 KB por FUSE en el hilo de mensajes
@@ -83,7 +87,8 @@ public:
 
     //  Sincrono: lo usa `onPause`, que no puede fiarse de que el proceso siga
     //  vivo para ver acabar a otro hilo. Devuelve si quedo en disco.
-    bool writeState (const juce::ValueTree& state, const juce::String& projectName);
+    bool writeState (const juce::ValueTree& state, const juce::String& projectName,
+                     juce::int64 guardado = 0);
 
     //  Espera a que la cola se vacie. Devuelve false si se agota el plazo, y
     //  quien llama sigue de todas formas: que la espera tenga tope es el

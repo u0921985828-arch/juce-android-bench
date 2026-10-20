@@ -1031,7 +1031,7 @@ MainComponent::MainComponent()
             if (! juce::isPositiveAndBelow (row, projModel.names.size())) return;
             const auto nombre = projModel.names[row];
             projNameBox.setText (nombre, juce::dontSendNotification);
-            if (! armConfirm (projLoadButton, T ("ABRIR %1?", nombre))) return;
+            if (! armaAbrir (nombre)) return;
             loadProject (nombre);
         };
         setSheet.cuerpo.addAndMakeVisible (projList);
@@ -1105,16 +1105,29 @@ MainComponent::MainComponent()
             //  La otra puerta del mismo aviso. Ver `projModel.onChosen`: si el
             //  doble toque en la fila ya lo armo, este es el segundo toque y
             //  abre; si vienes directo a la tapa, este es el primero y arma.
-            if (! armConfirm (projLoadButton, T ("ABRIR %1?", nombre))) return;
+            if (! armaAbrir (nombre)) return;
             loadProject (nombre);
         };
         setSheet.cuerpo.addAndMakeVisible (projLoadButton);
 
         styleButton (projNewButton, kKey);
-        //  NUEVO empties every pad and every pattern. Two taps.
+        //  NUEVO empties every pad and every pattern. Two taps. Y CON CAMBIOS
+        //  SIN GUARDAR LO DICE, como ABRIR: «BORRA TODO?» preguntaba lo mismo
+        //  hubiera cambios o no (auditoria 2026-10, ux-flujos#4).
         projNewButton.onClick = [this]
         {
-            if (! armConfirm (projNewButton, T ("BORRA TODO?"))) return;
+            mideHuella();
+            if (proyectoModificado())
+            {
+                if (! armConfirm (projNewButton, T ("NUEVO SIN GUARDAR?")))
+                {
+                    status.setText (T ("\"%1\" tiene cambios: GUARDAR primero, o toca otra vez y se pierden",
+                                       currentProject),
+                                    juce::dontSendNotification);
+                    return;
+                }
+            }
+            else if (! armConfirm (projNewButton, T ("BORRA TODO?"))) return;
             newProject();
         };
         setSheet.cuerpo.addAndMakeVisible (projNewButton);
@@ -12035,6 +12048,29 @@ void MainComponent::refreshSystemInsets()
     repaint();
 }
 
+//  LA PREGUNTA DE ABRIR, que con cambios sin guardar es otra. «ABRIR X?»
+//  decia lo mismo con el proyecto recien guardado que con media hora de
+//  trabajo sin guardar, y la persona confirmaba sin saber que perdia
+//  (auditoria 2026-10, ux-flujos#4). Las tres salidas son las que ya tiene
+//  la fila: GUARDAR esta al lado -y limpia la pregunta-, el segundo toque
+//  descarta, y no tocar -cinco segundos- cancela. Lo dice el renglon de
+//  estado, que es donde esta ficha explica lo que arma; la tapa mide 90 px.
+//  La huella se mide AQUI y no se fia de la de la sesion, que llega un
+//  momento despues de soltar: pulsar ABRIR justo tras un cambio tiene que
+//  verlo.
+bool MainComponent::armaAbrir (const juce::String& nombre)
+{
+    mideHuella();
+    if (! proyectoModificado())
+        return armConfirm (projLoadButton, T ("ABRIR %1?", nombre));
+
+    if (armConfirm (projLoadButton, T ("ABRIR SIN GUARDAR?"))) return true;
+    status.setText (T ("\"%1\" tiene cambios: GUARDAR primero, o toca otra vez y se pierden",
+                       currentProject),
+                    juce::dontSendNotification);
+    return false;
+}
+
 bool MainComponent::armConfirm (juce::TextButton& b, const juce::String& armedText)
 {
     if (confirmPending == &b)          // second tap: go ahead
@@ -14627,14 +14663,45 @@ void MainComponent::finishProjectOpen (const juce::String& name, const juce::Val
 //
 //  Y AQUI ES DONDE SE LEE EL DISCO, que es el otro motivo de que exista: una
 //  sola vez por apertura o por guardado, y nunca desde `paint`.
-void MainComponent::apuntaProyecto (const juce::String& name)
+void MainComponent::apuntaProyecto (const juce::String& name, juce::int64 guardado)
 {
     currentProject = name;
     proyectoFecha  = name.isEmpty()
                        ? juce::Time()
                        : ProjectStore::folderFor (name).getChildFile ("project.xml")
                                                        .getLastModificationTime();
+    //  Y DESDE AQUI SE CUENTAN LOS CAMBIOS. Lo que hay en memoria es lo
+    //  guardado salvo que la sesion diga con que huella se guardo: lo que
+    //  recupera puede llevar cambios que nunca llegaron al proyecto, y la
+    //  banda tiene que seguir diciendolo.
+    mideHuella();
+    huellaGuardada = guardado != 0 ? guardado : huellaActual;
     repaint (headerArea);
+}
+
+//  LO QUE ES DE LA VISTA NO CUENTA: elegir un pad o un patron se guarda en
+//  el proyecto -para volver donde estabas- pero no es un cambio que haya que
+//  guardar, y una banda que dijera «SIN GUARDAR» por tocar un pad mentiria al
+//  reves. Sobre una copia: el arbol que llega es el que va a la sesion.
+juce::int64 MainComponent::huellaDe (const juce::ValueTree& estado)
+{
+    auto copia = estado.createCopy();
+    for (const char* vista : { "selectedPad", "selectedPattern", "focusedFx" })
+        copia.removeProperty (vista, nullptr);
+    const auto h = copia.toXmlString().hashCode64();
+    return h != 0 ? h : 1;      // cero es «no se sabe» en la sesion
+}
+
+void MainComponent::mideHuella()
+{
+    huellaActual = huellaDe (captureState());
+}
+
+juce::String MainComponent::textoSesion()
+{
+    const auto estado = captureState();
+    huellaActual = huellaDe (estado);
+    return SessionKeeper::textoDe (estado, currentProject, huellaGuardada);
 }
 
 //  QUE PROYECTO, CUANTO TRABAJO Y DE CUANDO — y en ese orden de importancia,
@@ -14699,8 +14766,23 @@ juce::String MainComponent::lineaDeContinuidad (int anchoDisponible,
     //  y la cuenta dice cuanto hay, pero solo este dice que no vas a perder
     //  nada aunque no hayas guardado jamas-, y ademas es el mas corto: siete
     //  letras contra las nueve de «64 PADS» con su separador.
-    if (session.ultimaEscrituraMs() > 0
-          && juce::Time::currentTimeMillis() - session.ultimaEscrituraMs() < kASalvoMs)
+    //
+    //  Y «SIN GUARDAR» EN SU LUGAR cuando el proyecto tiene cambios que no
+    //  estan en su carpeta: «A SALVO» es de la sesion y la persona lo leia
+    //  como que su proyecto estaba guardado, y ABRIR se los llevaba
+    //  (auditoria 2026-10, persistencia#6 y ux-flujos#3). Los dos a la vez
+    //  dirian que si y que no, que es lo que ya costo «BORRADOR». Y este NO
+    //  SE CAE: si no cabe detras del nombre va delante, y el que se recorta
+    //  con puntos es el nombre, porque de los dos es el que tambien se lee
+    //  en PROYECTOS.
+    if (proyectoModificado())
+    {
+        const auto sinGuardar = T ("SIN GUARDAR");
+        if (cabe (linea + sep + sinGuardar)) linea += sep + sinGuardar;
+        else                                 linea = sinGuardar + sep + linea;
+    }
+    else if (session.ultimaEscrituraMs() > 0
+               && juce::Time::currentTimeMillis() - session.ultimaEscrituraMs() < kASalvoMs)
     {
         const auto salvo = T ("A SALVO");
         if (cabe (linea + sep + salvo)) linea += sep + salvo;
@@ -21258,7 +21340,7 @@ void MainComponent::autosave()
     //  EL ESTADO ANTES QUE LOS PADS: sync encola los borrados de los pads que
     //  pasan a salir de otro, y el escritor los haria antes de que state.xml
     //  dijera que sobran. Ver SessionKeeper::sync.
-    session.writeState (captureState(), currentProject);
+    session.writeState (captureState(), currentProject, huellaGuardada);
     session.sync (uiSample.data(), kNumPads);
 }
 
@@ -21519,7 +21601,8 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
             p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i],
                               padStart01[(size_t) i], padEnd01[(size_t) i]);
 
-    apuntaProyecto (tree.getProperty ("proyecto", "").toString());
+    apuntaProyecto (tree.getProperty ("proyecto", "").toString(),
+                    (juce::int64) tree.getProperty ("guardado", 0));
     refreshProjectList();
 
     //  These buffers came off this very folder: nothing to write back.

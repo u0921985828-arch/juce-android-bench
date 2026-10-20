@@ -27,6 +27,11 @@
 #      escrito en la caja del mando con Return llega a disco a los 2 s sin
 #      ningun dedo levantado, y el Return del nombre de un canal deja el
 #      estado encargado.
+#   n. EL PROYECTO CON CAMBIOS LO DICE (auditoria 2026-10, persistencia#6,
+#      ux-flujos#3 y #4): tras mover el tempo la banda dice SIN GUARDAR y no
+#      A SALVO -en los cuatro idiomas y con un nombre largo-, ABRIR y NUEVO
+#      avisan y nombran el proyecto, GUARDAR o DESHACER hasta lo guardado lo
+#      limpian, y la sesion recuperada sigue diciendolo.
 #
 #      python3 Tests/feria.py
 # ============================================================================
@@ -132,6 +137,20 @@ def main():
            " el Return del nombre de canal encarga el estado %d"
            % (r.get("bpm_tecleado_memoria", -1), r.get("bpm_antes_tecla", -1),
               r.get("bpm_tecleado", -1), r.get("nombre_encarga", -1)))
+
+    regla ("singuardar", r.get ("limpio_avisa", -1) == 0 and r.get ("sucio_avisa", -1) == 1
+                         and r.get ("sucio_salvo", -1) == 0 and r.get ("aviso_idiomas", -1) == 4
+                         and r.get ("aviso_largo", -1) == 4 and r.get ("abrir_avisa", -1) == 1
+                         and r.get ("abrir_dice", -1) == 1 and r.get ("nuevo_avisa", -1) == 1
+                         and r.get ("guardar_limpia", -1) == 1 and r.get ("abrir_limpio", -1) == 1
+                         and r.get ("deshacer_limpia", -1) == 1 and r.get ("sesion_lleva", -1) == 1,
+           "con el tempo movido la banda dice SIN GUARDAR %d (A SALVO %d; recien abierto %d), en %d/4 idiomas"
+           " y %d/4 con nombre largo; ABRIR avisa %d y nombra el proyecto %d, NUEVO avisa %d;"
+           " GUARDAR limpia %d, ABRIR vuelve a secas %d, DESHACER limpia %d; la sesion recuperada lo trae %d"
+           % (r.get ("sucio_avisa", -1), r.get ("sucio_salvo", -1), r.get ("limpio_avisa", -1),
+              r.get ("aviso_idiomas", -1), r.get ("aviso_largo", -1), r.get ("abrir_avisa", -1),
+              r.get ("abrir_dice", -1), r.get ("nuevo_avisa", -1), r.get ("guardar_limpia", -1),
+              r.get ("abrir_limpio", -1), r.get ("deshacer_limpia", -1), r.get ("sesion_lleva", -1)))
 
     for m in malas: print ("FALLA ", m)
     print ("VEREDICTO:", "OK" if not malas else "%d FALLA" % len (malas))

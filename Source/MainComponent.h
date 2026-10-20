@@ -1465,7 +1465,25 @@ private:
     //  Un solo sitio que escribe los dos, porque son un solo hecho: el
     //  proyecto que hay puesto y de cuando es. Estaban en cinco `currentProject
     //  = ...` sueltos y la fecha habria quedado vieja en el que se olvidara.
-    void apuntaProyecto (const juce::String& name);
+    //  `guardado` es la huella con la que la sesion dice que se guardo, al
+    //  recuperarla; cero es «lo que hay en memoria ES lo guardado», que es
+    //  verdad al abrir, al guardar y en NUEVO.
+    void apuntaProyecto (const juce::String& name, juce::int64 guardado = 0);
+
+    //  SI EL PROYECTO TIENE CAMBIOS SIN GUARDAR, como dos huellas del estado y
+    //  no como un contador: la de lo ultimo que se GUARDO o ABRIO y la de lo
+    //  que hay. Un contador de toques diria «sin guardar» al elegir un pad y
+    //  seguiria diciendolo tras DESHACER hasta lo guardado; la huella no. Se
+    //  mide donde el estado ya se captura -al encargarlo a la sesion, un
+    //  momento despues de soltar- y en las dos tapas que lo preguntan, que
+    //  son las que pueden tirarlo (auditoria 2026-10, persistencia#6).
+    //  Y es del PROYECTO: un BORRADOR no tiene nada con que compararse y ya
+    //  lo dice su nombre.
+    static juce::int64 huellaDe (const juce::ValueTree& estado);
+    void mideHuella();
+    bool proyectoModificado() const noexcept
+        { return currentProject.isNotEmpty() && huellaActual != huellaGuardada; }
+    juce::int64 huellaGuardada = 0, huellaActual = 0;
 
     //  Lo que la banda dice, compuesto donde se sabe cuanto sitio hay. Los tres
     //  campos caen POR ORDEN -primero el cuando, luego los pads- porque el
@@ -2207,8 +2225,10 @@ public:
 
 private:
     void autosave();
-    //  El texto de state.xml de ahora. Ver SessionKeeper::sync.
-    juce::String textoSesion() { return SessionKeeper::textoDe (captureState(), currentProject); }
+    //  El texto de state.xml de ahora. Ver SessionKeeper::sync. Y de paso la
+    //  huella de lo que hay, que es la unica vez que el estado se captura sin
+    //  que lo pida nadie mas. Ver `proyectoModificado`.
+    juce::String textoSesion();
 
     //  The work that was never given a name. Written continuously in the
     //  background and read back on the next launch, so a process the system
@@ -2496,6 +2516,8 @@ private:
     //  so; the second does it; five seconds of not deciding disarms it, and says so.
     //  Cheaper than a sheet, and a sheet would be the third one deep here.
     bool armConfirm (juce::TextButton& b, const juce::String& armedText = "SEGURO?");
+    //  La pregunta de ABRIR, que con cambios sin guardar es otra y lo dice.
+    bool armaAbrir (const juce::String& nombre);
     void disarmConfirm();
     juce::TextButton* confirmPending = nullptr;
     juce::String      confirmOldText;

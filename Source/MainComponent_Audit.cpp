@@ -12219,6 +12219,103 @@ void MainComponent::auditFeria()
     entregaReturn (canNomBox);
     const int nombreEncarga = estadoTrasToqueMs > 0.0 ? 1 : 0;
 
+    //  n. EL PROYECTO CON CAMBIOS LO DICE, Y ABRIR Y NUEVO AVISAN (auditoria
+    //     2026-10, persistencia#6, ux-flujos#3 y #4). La banda decia «A
+    //     SALVO» -que es de la sesion- con el tempo cambiado y el proyecto sin
+    //     guardar, y ABRIR y NUEVO preguntaban lo mismo hubiera cambios o no.
+    //     La banda se mide con el ancho que tiene PINTADA a 393 px -la caja la
+    //     pone `paint`, asi que se pinta un cuadro-, en los cuatro idiomas y
+    //     con un nombre largo que no deja sitio al aviso: un campo que solo
+    //     sale si sobra sitio se cae justo donde hace falta.
+    auto lineaBanda = [this]
+    {
+        closeAllSheets();
+        juce::ignoreUnused (createComponentSnapshot (getLocalBounds(), true, 1.0f));
+        return lineaDeContinuidad (cajaContinuidad.getWidth(), fuenteContinuidad());
+    };
+    auto avisa = [] (const juce::String& l) { return l.contains (T ("SIN GUARDAR")) ? 1 : 0; };
+    //  Un cambio como lo hace la persona: mover un mando y soltar. El estado
+    //  se encarga al soltar y la huella se mide ahi (ver textoSesion).
+    auto cambia = [this, &avanza]
+    {
+        bpmSlider.setValue (bpmSlider.getValue() + 7.0, juce::sendNotification);
+        if (oidoDeToques.alSoltar) oidoDeToques.alSoltar();
+        avanza (2000.0);
+    };
+    loadProject ("FERIA_DOS");  acaba();
+    estadoTrasToqueMs = -1.0;
+    const int limpioAvisa = avisa (lineaBanda());
+    cambia();
+    const auto bandaSucia = lineaBanda();
+    const int sucioAvisa = avisa (bandaSucia);
+    const int sucioSalvo = bandaSucia.contains (T ("A SALVO")) ? 1 : 0;
+    int avisoIdiomas = 0, avisoLargo = 0;
+    {
+        const auto nombre = currentProject;
+        const auto idioma = Lang::current();
+        for (int i = 0; i < Lang::numLanguages; ++i)
+        {
+            Lang::set ((Lang::Id) i);
+            currentProject = nombre;
+            avisoIdiomas += avisa (lineaDeContinuidad (cajaContinuidad.getWidth(), fuenteContinuidad()));
+            currentProject = "FERIA DOS CON UN NOMBRE LARGO";
+            avisoLargo += avisa (lineaDeContinuidad (cajaContinuidad.getWidth(), fuenteContinuidad()));
+        }
+        Lang::set (idioma);
+        currentProject = nombre;
+    }
+    int abrirAvisa = -1, abrirDice = -1, nuevoAvisa = -1, guardarLimpia = -1, abrirLimpio = -1,
+        deshacerLimpia = -1;
+    refreshProjectList();
+    if (const int filaDos = projModel.names.indexOf ("FERIA_DOS"); filaDos >= 0)
+    {
+        projList.selectRow (filaDos);
+        disarmConfirm();
+        status.setText ({}, juce::dontSendNotification);
+        projLoadButton.onClick();                   // primer toque: arma
+        abrirAvisa = avisa (projLoadButton.getButtonText());
+        abrirDice  = status.getText().contains ("FERIA_DOS") ? 1 : 0;
+        disarmConfirm();
+        projNewButton.onClick();
+        nuevoAvisa = avisa (projNewButton.getButtonText());
+        disarmConfirm();
+        //  GUARDAR limpia, y ABRIR vuelve a preguntar a secas.
+        saveProject ("FERIA_DOS");  acaba();
+        guardarLimpia = 1 - avisa (lineaBanda());
+        projLoadButton.onClick();
+        abrirLimpio = projLoadButton.getButtonText() == T ("ABRIR %1?", "FERIA_DOS") ? 1 : 0;
+        disarmConfirm();
+        //  Y DESHACER hasta lo guardado tambien limpia: lo que se compara es el
+        //  estado y no cuantas veces se toco.
+        pushUndo ("FERIA SUCIO");
+        cambia();
+        const int sucioOtraVez = avisa (lineaBanda());
+        performUndo();
+        if (oidoDeToques.alSoltar) oidoDeToques.alSoltar();
+        avanza (2000.0);
+        deshacerLimpia = sucioOtraVez == 1 && avisa (lineaBanda()) == 0 ? 1 : 0;
+    }
+    //  Y LA SESION SE LLEVA LA HUELLA DE LO GUARDADO: lo que se recupera tras
+    //  un reinicio puede traer cambios que nunca llegaron al proyecto, y la
+    //  banda tiene que seguir diciendolo. Se escribe con cambios, se lee
+    //  state.xml como lo lee el arranque y se apunta el proyecto con lo que
+    //  trae: sucio sigue sucio, y guardado sigue limpio.
+    int sesionLleva = -1;
+    {
+        cambia();
+        autosave();
+        auto arbol = juce::ValueTree::fromXml (*juce::parseXML (SessionKeeper::stateFile()));
+        apuntaProyecto (arbol.getProperty ("proyecto", "").toString(),
+                        (juce::int64) arbol.getProperty ("guardado", 0));
+        const int sucioVuelve = avisa (lineaBanda());
+        saveProject ("FERIA_DOS");  acaba();
+        autosave();
+        arbol = juce::ValueTree::fromXml (*juce::parseXML (SessionKeeper::stateFile()));
+        apuntaProyecto (arbol.getProperty ("proyecto", "").toString(),
+                        (juce::int64) arbol.getProperty ("guardado", 0));
+        sesionLleva = sucioVuelve == 1 && avisa (lineaBanda()) == 0 ? 1 : 0;
+    }
+
     auto caja = [] (juce::Rectangle<int> r)
     { return "[" + juce::String (r.getX()) + "," + juce::String (r.getY()) + ","
                  + juce::String (r.getWidth()) + "," + juce::String (r.getHeight()) + "]"; };
@@ -12270,5 +12367,17 @@ void MainComponent::auditFeria()
               << ",\"bpm_tecleado_memoria\":" << bpmTecleadoMemoria
               << ",\"bpm_tecleado\":" << bpmTecleado
               << ",\"nombre_encarga\":" << nombreEncarga
+              << ",\"limpio_avisa\":" << limpioAvisa
+              << ",\"sucio_avisa\":" << sucioAvisa
+              << ",\"sucio_salvo\":" << sucioSalvo
+              << ",\"aviso_idiomas\":" << avisoIdiomas
+              << ",\"aviso_largo\":" << avisoLargo
+              << ",\"abrir_avisa\":" << abrirAvisa
+              << ",\"abrir_dice\":" << abrirDice
+              << ",\"nuevo_avisa\":" << nuevoAvisa
+              << ",\"guardar_limpia\":" << guardarLimpia
+              << ",\"abrir_limpio\":" << abrirLimpio
+              << ",\"deshacer_limpia\":" << deshacerLimpia
+              << ",\"sesion_lleva\":" << sesionLleva
               << "}" << std::endl;
 }
