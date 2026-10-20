@@ -1668,6 +1668,8 @@ def main():
             if ma["sonando"] < 1:
                 fallos.append ("abrir la ficha corta la nota: %d voces con el dedo encima"
                                % ma["sonando"])
+            if ma.get ("lector", 0) < 1:
+                fallos.append ("el toque del lector en un pad de instrumento no suena (accesibilidad#25)")
             if ma["al_soltar"] != 0:
                 fallos.append ("al soltar quedan %d voces: la ficha se comio el suelta"
                                % ma["al_soltar"])

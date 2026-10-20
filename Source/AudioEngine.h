@@ -2474,7 +2474,7 @@ public:
     //  voices, the effects and the master stage, because that is the sound
     //  that actually leaves the phone.
     void              startRecording (int slot, bool fromMaster = false) noexcept;
-    SampleBuffer::Ptr finishRecording() noexcept;   // stop + build + publish; returns the buffer
+    SampleBuffer::Ptr finishRecording (bool publica = true) noexcept;   // stop + build + publish; returns the buffer
     bool isRecording() const noexcept { return recording.load (std::memory_order_relaxed); }
     float getRecordSeconds() const noexcept;
 

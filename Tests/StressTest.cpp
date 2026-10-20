@@ -9489,6 +9489,49 @@ int main()
                      "NaN en un pad no calla a otro", (double) minimo, peor.toRawUTF8(), ok ? "OK" : zatiFalla());
     }
 
+    //  Un cambio de banda del EQ no se pierde en la carrera con el audio (estabilidad#5).
+    {
+        Eq5 eq, ref;
+        for (auto* q : { &eq, &ref })
+        {
+            q->prepare (48000.0); q->reset();
+            for (int b = 0; b < Eq5::kBands; ++b) q->ponBanda (b, (float) (100.0 * (b + 1)), 0.0f);
+            q->refresca();
+        }
+        std::atomic<int> bloques { 0 };
+        std::atomic<bool> fin { false };
+        std::thread audio ([&]
+        {
+            juce::AudioBuffer<float> buf (2, 32);
+            while (! fin.load())
+            {
+                buf.clear();
+                eq.procesa (buf.getArrayOfWritePointers(), 2, 0, 32);
+                bloques.fetch_add (1);
+            }
+        });
+        const int n = 20000;
+        int perdidos = 0;
+        for (int i = 0; i < n; ++i)
+        {
+            //  El primero arranca un recalcula; el segundo cae, si cae, dentro de el.
+            const float dB = (float) ((i * 7) % 25 - 12);
+            eq.ponBanda (2, 300.0f, -dB);
+            const int bA = bloques.load();
+            while (bloques.load() == bA) {}
+            eq.ponBanda (2, 300.0f, dB);
+            const int b0 = bloques.load();
+            while (bloques.load() < b0 + 3) std::this_thread::yield();
+            ref.ponBanda (2, 300.0f, dB);
+            ref.refresca();
+            if (std::abs (eq.respuestaEnDb (300.0f) - ref.respuestaEnDb (300.0f)) > 0.05f) ++perdidos;
+        }
+        fin = true;
+        audio.join();
+        std::printf ("%-34s %d de %d cambios de banda no llegan al motor   %s\n",
+                     "EQ: ningun cambio se pierde", perdidos, n, perdidos == 0 ? "OK" : zatiFalla());
+    }
+
     //  TANDA 30 · CADA CANAL CON SU DLY, SU REV, SU AMB Y SU PNG.
     //
     //  «Si yo hago un envio al Canal 10 que tiene reverb, que ahi recojo el

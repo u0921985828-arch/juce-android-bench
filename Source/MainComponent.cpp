@@ -9607,7 +9607,16 @@ void MainComponent::padClicked (int index)
     //  EN MODO TECLA LA NOTA YA EMPEZO al apretar y ya se solto al levantar.
     //  Dispararla otra vez aqui seria un golpe de mas por toque - el mismo
     //  fallo que la prueba de la cancion tuvo con el compas que vuelve a cero.
-    if (pads[index] != nullptr && pads[index]->enModoNota()) return;
+    if (pads[index] != nullptr && pads[index]->enModoNota())
+    {
+        if (! pads[index]->tomaNotaDeDedo())   // el toque del lector: nota corta (accesibilidad#25)
+        {
+            padNotaOn (index, 1.0f);
+            juce::Component::SafePointer<MainComponent> yo (this);
+            juce::Timer::callAfterDelay (250, [yo, index] { if (yo != nullptr) yo->padNotaOff (index); });
+        }
+        return;
+    }
 
     recuperaFoco();
 
@@ -12122,10 +12131,19 @@ bool MainComponent::armConfirm (juce::TextButton& b, const juce::String& armedTe
     confirmOldText = b.getButtonText();
     confirmMs      = kConfirmMs;
     b.setButtonText (armedText);
+    b.setTitle (armedText);   // el lector oye la pregunta (accesibilidad#5)
+    anuncia (armedText);
     b.setColour (juce::TextButton::buttonColourId, ZatiColours::red);
     b.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     b.repaint();
     return false;
+}
+
+void MainComponent::anuncia (const juce::String& texto)
+{
+    ++anunciosHechos;
+    if (auto* h = getAccessibilityHandler())
+        h->postAnnouncement (texto, juce::AccessibilityHandler::AnnouncementPriority::high);
 }
 
 void MainComponent::disarmConfirm()
@@ -12136,6 +12154,7 @@ void MainComponent::disarmConfirm()
     confirmPending = nullptr;
     confirmMs      = 0.0;
     b->setButtonText (confirmOldText);
+    b->setTitle (confirmOldText);
     //  Each button gets back the style it was BUILT with, not a guess.
     //  GUARDAR is an accent cap with white text (it is the only primary action
     //  in its row); restyling it as a plain key on disarm stripped that for
@@ -21915,7 +21934,8 @@ void MainComponent::toggleMicSampling()
     else
     {
         recordingActive = false;
-        auto sb = engine.finishRecording();
+        auto sb = engine.finishRecording (false);   // se recorta antes de publicarla (estabilidad#2)
+        tomaCompartida = (sb != nullptr && sb->getReferenceCount() > 1) ? 1 : 0;
 
         //  Everything the microphone hears arrives late by the capture path's
         //  own latency, so the take opens with that many samples of whatever

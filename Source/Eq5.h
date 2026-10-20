@@ -204,7 +204,7 @@ public:
     //  una raya recta con los cinco nodos movidos. Ni el banco del motor lo veia
     //  -mide sobre una instancia que acaba de procesar- ni podia verlo
     //  `Tests/eq.py`, que miraba las ganancias y no la forma.
-    void refresca() noexcept { if (sucio) recalcula(); }
+    void refresca() noexcept { if (sucio.load()) recalcula(); }
 
     //  LOS DOS QUE LA CURVA NO PUEDE DECIR, y por eso son mandos y no nodos.
     //
@@ -263,7 +263,7 @@ public:
     //  DEL HILO DE AUDIO. Cinco biquads por canal, en sitio.
     void procesa (float* const* datos, int canales, int inicio, int n) noexcept
     {
-        if (sucio) recalcula();
+        if (sucio.load()) recalcula();
 
         //  La SALIDA se suaviza y se aplica en RAMPA dentro del bloque, como
         //  cualquier otra ganancia que multiplica una señal: un salto crudo es
@@ -364,6 +364,7 @@ private:
     //  salen de los MISMOS cinco numeros.
     void recalcula() noexcept
     {
+        sucio.store (false);   // antes de leer: un cambio a mitad deja la marca puesta (estabilidad#5)
         for (int b = 0; b < kBands; ++b)
         {
             auto& f = banda[(size_t) b];
@@ -437,14 +438,13 @@ private:
             f.b0 = (float) (b0 * inv); f.b1 = (float) (b1 * inv); f.b2 = (float) (b2 * inv);
             f.a1 = (float) (a1 * inv); f.a2 = (float) (a2 * inv);
         }
-        sucio = false;
     }
 
     double fs = 48000.0;
     std::array<Banda, kBands> banda {};
     //  Los diez numeros. No son atomicos: los escribe el hilo de mensajes y los
-    //  lee el de audio a traves de `sucio`, que si lo es - un float mal leido
-    //  aqui vale un bloque con la banda a medio mover, no un fallo.
+    //  lee el de audio a traves de `sucio`, que si lo es y se baja ANTES de
+    //  leerlos: un cambio a mitad de recalcula la vuelve a subir.
     std::array<float, kBands> freq {};
     std::array<float, kBands> gain {};
     std::array<Tipo,  kBands> tipo {};

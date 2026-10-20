@@ -5464,7 +5464,7 @@ void AudioEngine::startRecording (int slot, bool fromMaster) noexcept
     recording.store (true, std::memory_order_release);
 }
 
-SampleBuffer::Ptr AudioEngine::finishRecording() noexcept
+SampleBuffer::Ptr AudioEngine::finishRecording (bool publica) noexcept
 {
     recording.store (false, std::memory_order_release);
     SampleBuffer::Ptr sb;
@@ -5495,7 +5495,7 @@ SampleBuffer::Ptr AudioEngine::finishRecording() noexcept
             sb->buffer.copyFrom (ch, 0, recordBuffer, ch, 0, len);
 
         sb->sourceSampleRate = systemSampleRate;
-        publishSample (recordSlot, sb);
+        if (publica) publishSample (recordSlot, sb);
     }
     return sb;
 }

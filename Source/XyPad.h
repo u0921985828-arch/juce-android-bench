@@ -24,6 +24,9 @@
 class XyPad : public juce::Component
 {
 public:
+    static juce::Colour tintaCursor() { return ZatiColours::lcdFg; }   // (accesibilidad#9)
+
+public:
     XyPad()
     {
         setWantsKeyboardFocus (false);
@@ -93,7 +96,7 @@ public:
         g.drawLine (cx, in.getY(), cx, in.getBottom(), 1.0f);
 
         const float rad = touching ? 9.0f : 6.0f;
-        g.setColour (ZatiColours::accent);
+        g.setColour (tintaCursor());
         g.fillEllipse (cx - rad, cy - rad, rad * 2.0f, rad * 2.0f);
         g.setColour (ZatiColours::screenBg);
         g.fillEllipse (cx - rad * 0.42f, cy - rad * 0.42f, rad * 0.84f, rad * 0.84f);

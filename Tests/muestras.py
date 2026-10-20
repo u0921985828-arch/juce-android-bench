@@ -37,6 +37,12 @@ def escribe (d):
     wav (os.path.join (d, "06-16canales.wav"), seno (4800, 16), 16, 48000)
     wav (os.path.join (d, "07-255canales.wav"), seno (480, 255), 255, 48000)
     open (os.path.join (d, "08-mp3-falso.mp3"), "wb").write (bytes ((i * 2654435761) >> 13 & 0xff for i in range (200000)))
+    #  Un .wav no se decodifica como MP3 (estabilidad#4).
+    wav (os.path.join (d, "09-f64.wav"), b"".join (struct.pack ("<d", 0.1 * math.sin (0.05 * i)) for i in range (20736)), 1, 48000, 64, 3)
+    open (os.path.join (d, "10-wav-basura.wav"), "wb").write (bytes ((i * 40503) >> 7 & 0xff for i in range (200000)))
+
+#  Lo unico que puede salir de esos dos si entran: lo que su cabecera declara.
+DECLARA = { "09-f64.wav": (1, 48000), "10-wav-basura.wav": None }
 
 def main():
     if not os.path.exists (CARGA):
@@ -68,6 +74,8 @@ def main():
         if not r["ok"]:
             print ("%-22s %-8s rechazado" % (r["f"], r["via"]))
             continue
+        if r["f"] in DECLARA and (DECLARA[r["f"]] is None or (r["ch"], int (r["sr"])) != DECLARA[r["f"]]):
+            malas.append ("%s por %s: entra como %dch %.0fHz, no lo que declara" % (r["f"], r["via"], r["ch"], r["sr"]))
         print ("%-22s %-8s ch %-3d sr %-7.0f no finitas %-6d pico %-8.3g ruido no finitas %d"
                % (r["f"], r["via"], r["ch"], r["sr"], r["no_finitas"], r["pico"], r["ruido_no_finitas"]))
         if r["no_finitas"] or r["ruido_no_finitas"] > 0:

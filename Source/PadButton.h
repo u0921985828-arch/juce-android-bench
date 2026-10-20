@@ -98,6 +98,8 @@ public:
 
     void setModoNota (bool b)          { if (modoNota != b) { modoNota = b; repaint(); } }
     bool enModoNota() const noexcept   { return modoNota; }
+    //  La nota salio del dedo (mouseDown); si no, el click vino del lector (accesibilidad#25).
+    bool tomaNotaDeDedo() noexcept     { const bool b = notaDeDedo; notaDeDedo = false; return b; }
 
     //  start01/end01 are the pad's own trim window. After an auto-chop all
     //  sixteen pads point at ONE buffer with sixteen windows, so a sparkline
@@ -236,6 +238,7 @@ public:
         //  dedo pase encima. En una nota es la diferencia entre tocar y no - y
         //  en percusion tambien, que es lo que `setTriggeredOnMouseDown`
         //  arregla arriba: la fuerza ya esta puesta cuando el click sale.
+        notaDeDedo = modoNota;
         if (modoNota && onNotaOn) onNotaOn (lastVelocity);
 
         juce::Button::mouseDown (e);
@@ -260,8 +263,8 @@ public:
         //  que si hace es devolver la tapa a su estado normal sin que JUCE
         //  vuelva a pasar por su maquinaria de click - un `held` que llegara
         //  aqui con el boton todavia «down» dejaria el pad encendido.
-        if (held) { setState (buttonNormal); return; }
-        juce::Button::mouseUp (e);
+        if (held) { setState (buttonNormal); notaDeDedo = false; return; }
+        juce::Button::mouseUp (e); notaDeDedo = false;   // accesibilidad#25
     }
 
     //  DOS PUERTAS PARA EL BANCO, con la misma forma que las de `EqCurve`: en
@@ -494,6 +497,7 @@ private:
 
     bool held = false;
     bool modoNota = false;
+    bool notaDeDedo = false;
     Iconos::Id instr = Iconos::Id::ninguno;
 
     void buildSpark (const SampleBuffer* sb, float start01, float end01)

@@ -2520,6 +2520,7 @@ private:
     //  La pregunta de ABRIR, que con cambios sin guardar es otra y lo dice.
     bool armaAbrir (const juce::String& nombre);
     void disarmConfirm();
+    void anuncia (const juce::String& texto);
     juce::TextButton* confirmPending = nullptr;
     juce::String      confirmOldText;
     double            confirmMs = 0.0;
@@ -5081,6 +5082,8 @@ private:
     int  selectedPad   = -1;
     bool loadArmed     = false;
     bool recordingActive = false;
+    int  tomaCompartida  = -1;
+    int  anunciosHechos  = 0;    // avisos mandados al lector de pantalla   // la toma del micro ya estaba publicada al recortarla (estabilidad#2)
     int  recordingSlot = -1;
     int  lastPlayStep  = -1;
 

@@ -148,6 +148,12 @@ def main():
         malas.append ("con el buffer lleno el remuestreo queda en %s: la tapa sigue en "
                       "PARAR y el pad sin la toma" % d.get ("lleno"))
 
+    #  6. La toma del micro no se toca ya publicada (estabilidad#2).
+    e = f.get (6, {})
+    print ("micro    toma compartida con el motor al recortarla: %s (se espera 0)" % e.get ("compartida"))
+    if e.get ("compartida") != 0:
+        malas.append ("la toma del micro se recorta despues de publicarla al hilo de audio (%s)" % e.get ("compartida"))
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

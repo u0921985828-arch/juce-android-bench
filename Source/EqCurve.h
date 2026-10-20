@@ -56,6 +56,9 @@
 class EqCurve : public juce::Component
 {
 public:
+    static juce::Colour tintaCurva() { return ZatiColours::lcdFg; }   // el acento casi negro no se ve en el cristal (accesibilidad#9)
+
+public:
     //  Ver Analizador.h: la ventana, la FFT y el par ataque/caida salieron de
     //  aqui el dia que los visores del plato tuvieron que dibujar lo mismo.
     static constexpr int kFft   = Analizador::kFft;
@@ -370,9 +373,9 @@ private:
         //  dice CUANTO se esta quitando y cuanto poniendo. Y a la linea de cero
         //  y no al borde de abajo, que es lo que hace que un recorte se dibuje
         //  como una mordida y no como menos relleno.
-        g.setColour (ZatiColours::accent.withAlpha (0.20f));
+        g.setColour (tintaCurva().withAlpha (0.20f));
         g.fillPath (relleno);
-        g.setColour (ZatiColours::accent);
+        g.setColour (tintaCurva());
         g.strokePath (linea, juce::PathStrokeType (1.8f));
     }
 

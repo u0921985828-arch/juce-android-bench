@@ -146,6 +146,11 @@ def main():
     regla ("rojo", r.get ("rojo_tinta", 0) >= 4.5,
            "texto sobre tapa roja, peor de las cuatro carcasas: %.2f (AA 4.5)" % r.get ("rojo_tinta", 0))
 
+    regla ("cristal", r.get ("cristal_trazo", 0) >= 3.0,
+           "curva del EQ y cursor del XY sobre el cristal, peor carcasa: %.2f (1.4.11 pide 3)" % r.get ("cristal_trazo", 0))
+    regla ("armada", r.get ("armada_nombre", 0) == 1 and r.get ("armada_anuncia", 0) == 1,
+           "la tapa armada se llama como lo que pregunta %d y se anuncia %d veces"
+           % (r.get ("armada_nombre", 0), r.get ("armada_anuncia", 0)))
     regla ("pulgar", r.get ("pulgar_filo", 0) >= 3.0,
            "filo del pulgar de la barra contra la ficha, peor carcasa: %.2f (1.4.11 pide 3)" % r.get ("pulgar_filo", 0))
 

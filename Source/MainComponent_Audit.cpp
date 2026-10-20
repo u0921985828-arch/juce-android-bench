@@ -2566,10 +2566,17 @@ void MainComponent::auditInstr()
         const int alSoltar = vivas();
         closeAllSheets();
 
+        //  El toque del lector (press -> onClick) tambien suena (accesibilidad#25).
+        engine.postPanic();
+        vivas();
+        padClicked (pad);
+        const int lector = vivas();
+
         std::cout << "{\"instr\":\"mantener\",\"tecla\":" << tecla
                   << ",\"armado\":" << armado << ",\"ficha\":\"" << q
                   << "\",\"sonando\":" << sonando
-                  << ",\"al_soltar\":" << alSoltar << "}" << std::endl;
+                  << ",\"al_soltar\":" << alSoltar
+                  << ",\"lector\":" << lector << "}" << std::endl;
     }
 
     // ------------------------------------------------------------------
@@ -9453,6 +9460,15 @@ void MainComponent::auditTomas()
     const auto fondo = remuestreo (true);
     const auto lleno = remuestreo (false);
     std::cout << "{\"tomas\":4,\"fondo\":\"" << fondo << "\",\"lleno\":\"" << lleno << "\"}" << std::endl;
+
+    //  6. La toma del micro no se recorta ya publicada al motor (estabilidad#2).
+    tomaCompartida = -1;
+    toggleMicSampling();
+    esperaAbridor (15000);
+    for (int i = 0; i < 64 && recordingActive; ++i) bombeaAudioDePrueba();
+    if (recordingActive) toggleMicSampling();
+    esperaAbridor (15000);
+    std::cout << "{\"tomas\":6,\"compartida\":" << tomaCompartida << "}" << std::endl;
 }
 
 //  ==========================================================================
@@ -12130,6 +12146,29 @@ void MainComponent::auditFeria()
         retranslateUi();
     }
 
+    //  q. La curva del EQ y el cursor del XY se ven sobre el cristal (accesibilidad#9).
+    float cristalTrazo = 99.0f;
+    {
+        const int piel = ZatiColours::currentSkin;
+        for (int sk = 0; sk < 4; ++sk)
+        {
+            ZatiColours::setSkin (sk);
+            for (auto c : { EqCurve::tintaCurva(), XyPad::tintaCursor() })
+                cristalTrazo = juce::jmin (cristalTrazo, (float) ZatiColours::contrastRatio (c, ZatiColours::screenBg));
+        }
+        ZatiColours::setSkin (piel);
+    }
+
+    //  r. La tapa armada dice lo que pregunta al lector (accesibilidad#5).
+    int armadaNombre = -1, armadaAnuncia = -1;
+    {
+        const int antes = anunciosHechos;
+        armConfirm (projDeleteButton, "BANCO?");
+        armadaNombre = projDeleteButton.getTitle() == "BANCO?" ? 1 : 0;
+        armadaAnuncia = anunciosHechos - antes;
+        disarmConfirm();
+    }
+
     //  o. El filo del pulgar de la barra se ve contra la ficha (accesibilidad#17).
     float pulgarFilo = 99.0f;
     {
@@ -12506,6 +12545,9 @@ void MainComponent::auditFeria()
               << ",\"escucha_tarde\":" << tardeNoPisa
               << ",\"rojo_tinta\":" << rojoTinta
               << ",\"pulgar_filo\":" << pulgarFilo
+              << ",\"cristal_trazo\":" << cristalTrazo
+              << ",\"armada_nombre\":" << armadaNombre
+              << ",\"armada_anuncia\":" << armadaAnuncia
               << ",\"titulos_copiados\":" << titulosCopiados
               << ",\"titulos_viejos\":" << titulosViejos
               << ",\"asoma_undo\":" << asomaUndo

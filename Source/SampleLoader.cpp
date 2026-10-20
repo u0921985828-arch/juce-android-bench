@@ -45,6 +45,24 @@ namespace
     }
 }
 
+//  Por la extension si es conocida; si no, todo menos MP3 primero, que "encuentra" un marco en cualquier basura (estabilidad#4).
+juce::AudioFormatReader* SampleLoader::abreLector (std::unique_ptr<juce::InputStream> s, const juce::String& ext)
+{
+    if (auto* f = ext.isNotEmpty() ? formatManager.findFormatForFileExtension (ext) : nullptr)
+        return f->createReaderFor (s.release(), true);
+    auto* mp3 = formatManager.findFormatForFileExtension (".mp3");
+    const auto inicio = s->getPosition();
+    for (int i = 0; i < formatManager.getNumKnownFormats(); ++i)
+    {
+        auto* f = formatManager.getKnownFormat (i);
+        if (f == mp3) continue;
+        s->setPosition (inicio);
+        if (auto* r = f->createReaderFor (s.get(), false)) { s.release(); return r; }
+    }
+    s->setPosition (inicio);
+    return mp3 != nullptr ? mp3->createReaderFor (s.release(), true) : nullptr;
+}
+
 SampleLoader::SampleLoader (AudioEngine& engineToLoadInto)
     : engine (engineToLoadInto)
 {
@@ -150,7 +168,8 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                     {
                         detail = T ("solo %1 bytes", juce::String ((int) sourceBytes));
                     }
-                    else if (auto* rawReader = formatManager.createReaderFor (std::move (seekable)))
+                    else if (auto* rawReader = abreLector (std::move (seekable),
+                                                           juce::File::createFileWithoutCheckingPath (url.getFileName()).getFileExtension()))
                     {
                         std::unique_ptr<juce::AudioFormatReader> reader (rawReader);
                         const int    numChannels = juce::jmin ((int) reader->numChannels, SampleBuffer::kMaxCanales);

@@ -30,6 +30,8 @@ public:
     }
 
 private:
+    juce::AudioFormatReader* abreLector (std::unique_ptr<juce::InputStream> s, const juce::String& ext);
+
     AudioEngine&             engine;
     juce::AudioFormatManager formatManager;
     juce::ThreadPool         pool { 1 };   // one background decode worker
