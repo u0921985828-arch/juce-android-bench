@@ -149,6 +149,10 @@ def main():
     regla ("pulgar", r.get ("pulgar_filo", 0) >= 3.0,
            "filo del pulgar de la barra contra la ficha, peor carcasa: %.2f (1.4.11 pide 3)" % r.get ("pulgar_filo", 0))
 
+    regla ("titulos", r.get ("titulos_copiados", 0) > 0 and r.get ("titulos_viejos", -1) == 0,
+           "nombres accesibles copiados del rotulo que cambian con el idioma: %d, se quedan en el anterior: %d"
+           % (r.get ("titulos_copiados", 0), r.get ("titulos_viejos", -1)))
+
     regla ("singuardar", r.get ("limpio_avisa", -1) == 0 and r.get ("sucio_avisa", -1) == 1
                          and r.get ("sucio_salvo", -1) == 0 and r.get ("aviso_idiomas", -1) == 4
                          and r.get ("aviso_largo", -1) == 4 and r.get ("abrir_avisa", -1) == 1

@@ -11945,8 +11945,16 @@ void MainComponent::retranslateUi()
         for (auto* h : c.getChildren())
         {
             if (auto* b = dynamic_cast<juce::Button*> (h))
-                if (b->getTitle().isEmpty() && b->getButtonText().isNotEmpty())
+            {
+                //  Lo copiado se vuelve a copiar; lo escrito a mano no se pisa (accesibilidad#4).
+                auto& p = b->getProperties();
+                const bool copiado = b->getTitle() == p["tituloCopiado"].toString();
+                if ((b->getTitle().isEmpty() || copiado) && b->getButtonText().isNotEmpty())
+                {
                     b->setTitle (b->getButtonText());
+                    p.set ("tituloCopiado", b->getButtonText());
+                }
+            }
             nombra (*h);
         }
     };

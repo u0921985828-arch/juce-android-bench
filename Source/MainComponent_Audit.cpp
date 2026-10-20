@@ -12102,6 +12102,34 @@ void MainComponent::auditFeria()
         ZatiColours::setSkin (piel);
     }
 
+    //  p. Un nombre accesible copiado del rotulo sigue al idioma (accesibilidad#4).
+    int titulosCopiados = 0, titulosViejos = 0;
+    {
+        std::vector<std::pair<juce::Component::SafePointer<juce::Button>, juce::String>> antes;
+        std::function<void (juce::Component&)> junta = [&] (juce::Component& c)
+        {
+            for (auto* h : c.getChildren())
+            {
+                if (auto* b = dynamic_cast<juce::Button*> (h))
+                    if (b->getButtonText().isNotEmpty() && b->getTitle() == b->getButtonText())
+                        antes.push_back ({ b, b->getButtonText() });
+                junta (*h);
+            }
+        };
+        junta (*this);
+        const auto idioma = Lang::current();
+        Lang::set (idioma == Lang::en ? Lang::es : Lang::en);
+        retranslateUi();
+        for (auto& [b, t] : antes)
+            if (b != nullptr && b->getButtonText() != t)
+            {
+                ++titulosCopiados;
+                if (b->getTitle() == t) ++titulosViejos;
+            }
+        Lang::set (idioma);
+        retranslateUi();
+    }
+
     //  o. El filo del pulgar de la barra se ve contra la ficha (accesibilidad#17).
     float pulgarFilo = 99.0f;
     {
@@ -12478,6 +12506,8 @@ void MainComponent::auditFeria()
               << ",\"escucha_tarde\":" << tardeNoPisa
               << ",\"rojo_tinta\":" << rojoTinta
               << ",\"pulgar_filo\":" << pulgarFilo
+              << ",\"titulos_copiados\":" << titulosCopiados
+              << ",\"titulos_viejos\":" << titulosViejos
               << ",\"asoma_undo\":" << asomaUndo
               << ",\"asoma_cierra\":" << asomaCierra
               << ",\"asoma_deshace\":" << asomaDeshace
