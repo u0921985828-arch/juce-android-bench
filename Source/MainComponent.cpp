@@ -21180,6 +21180,11 @@ void MainComponent::appSuspended()
     //  away whatever had been captured.
     if (recordingActive)
         toggleMicSampling();
+    //  Y el remuestreo, por lo mismo: seguia armado, la apertura al volver
+    //  vaciaba el buffer y lo grabado se perdia sin aviso (auditoria 2026-10,
+    //  estabilidad#6; ver Tests/tomas.py).
+    if (resamplingActive)
+        toggleResample();
 
     engine.postPanic();          // no voice is left ringing into the silence
     autosave();
@@ -21259,6 +21264,8 @@ void MainComponent::audioFocusLost (bool permanently)
 
     if (recordingActive)
         toggleMicSampling();
+    if (resamplingActive)
+        toggleResample();
 
     //  Remember whether the SEQUENCER was rolling, not just whether the audio
     //  device existed. Coming back used to restore the stream and leave the
@@ -23169,4 +23176,10 @@ void MainComponent::pintaCuadro (double dtMs)
                                juce::String ((int) engine.getRecordLimitSeconds())),
                             juce::dontSendNotification);
     }
+
+    //  El remuestreo tambien se para solo al llenarse el buffer, y solo se
+    //  recogia el del micro: la tapa seguia en PARAR y el pad sin la toma
+    //  (auditoria 2026-10, estabilidad#7).
+    if (resamplingActive && ! engine.isRecording())
+        toggleResample();
 }

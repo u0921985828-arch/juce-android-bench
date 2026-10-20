@@ -9424,6 +9424,43 @@ void MainComponent::auditTomas()
 
     std::cout << "{\"tomas\":3,\"antes\":" << antesDeGuardar
               << ",\"vuelven\":" << vuelven << "}" << std::endl;
+
+    //  5. UN REMUESTREO NO SE PIERDE NI AL IR AL FONDO NI AL LLENARSE.
+    //
+    //  appSuspended paraba el micro y no el remuestreo: la toma seguia armada,
+    //  la apertura al volver vaciaba el buffer y lo grabado se iba sin aviso
+    //  (auditoria 2026-10, estabilidad#6). Y al llenarse el buffer el motor
+    //  paraba solo, pero el temporizador solo lo recogia para el micro: la
+    //  tapa seguia en PARAR y el pad sin la toma (estabilidad#7). Por la tapa
+    //  y por los ganchos de verdad -appSuspended, timerCallback-, con dos
+    //  cifras cada caso: el remuestreo ya no esta activo Y el pad cambio.
+    auto remuestreo = [this] (bool alFondo) -> juce::String
+    {
+        pulsaTapa (&resampleButton);
+        if (! resamplingActive) return "no-arranco";
+        const int slot = resamplingSlot;
+        const auto antes = uiSample[(size_t) slot];
+        engine.setPlaying (true);
+        if (alFondo)
+        {
+            for (int i = 0; i < 8; ++i) bombeaAudioDePrueba();
+            appSuspended();
+            appResumed();
+            esperaAbridor (15000);
+        }
+        else
+        {
+            for (int i = 0; i < 20000 && engine.isRecording(); ++i) bombeaAudioDePrueba();
+            timerCallback();
+        }
+        const int activo = resamplingActive ? 1 : 0;
+        const int cambio = uiSample[(size_t) slot] != antes ? 1 : 0;
+        if (resamplingActive) pulsaTapa (&resampleButton);   // que no contamine el siguiente
+        return juce::String (activo) + ":" + juce::String (cambio);
+    };
+    const auto fondo = remuestreo (true);
+    const auto lleno = remuestreo (false);
+    std::cout << "{\"tomas\":4,\"fondo\":\"" << fondo << "\",\"lleno\":\"" << lleno << "\"}" << std::endl;
 }
 
 //  ==========================================================================
