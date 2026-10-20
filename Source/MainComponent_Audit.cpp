@@ -12088,6 +12088,20 @@ void MainComponent::auditFeria()
     const int atras2 = cierraLoDeArriba() ? 1 : 0;
     const int atrasCerro = setSheet.isVisible() ? 0 : 1;
 
+    //  n. El texto de una tapa roja se lee en las cuatro carcasas (accesibilidad#13).
+    float rojoTinta = 99.0f;
+    {
+        const int piel = ZatiColours::currentSkin;
+        for (int sk = 0; sk < 4; ++sk)
+        {
+            ZatiColours::setSkin (sk);
+            juce::TextButton t;
+            styleButton (t, ZatiColours::red);
+            rojoTinta = juce::jmin (rojoTinta, (float) ZatiColours::contrastRatio (t.findColour (juce::TextButton::textColourOffId), ZatiColours::red));
+        }
+        ZatiColours::setSkin (piel);
+    }
+
     //  m. ATRAS en el explorador devuelve el pad y la carga tardia no lo pisa.
     int escuchaSuena = -1, atrasDevuelve = -1, tardeNoPisa = -1;
     {
@@ -12450,6 +12464,7 @@ void MainComponent::auditFeria()
               << ",\"escucha_suena\":" << escuchaSuena
               << ",\"escucha_atras\":" << atrasDevuelve
               << ",\"escucha_tarde\":" << tardeNoPisa
+              << ",\"rojo_tinta\":" << rojoTinta
               << ",\"asoma_undo\":" << asomaUndo
               << ",\"asoma_cierra\":" << asomaCierra
               << ",\"asoma_deshace\":" << asomaDeshace

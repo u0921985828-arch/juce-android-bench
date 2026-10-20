@@ -1115,7 +1115,9 @@ namespace ZatiColours
 
     inline juce::Colour textOn (juce::Colour surface)
     {
-        return bestOn (surface, ink, inkLight);
+        //  Si ninguna tinta llega a AA -el rojo de grabar-, blanco o negro (accesibilidad#13).
+        const auto c = bestOn (surface, ink, inkLight);
+        return contrastRatio (c, surface) >= 4.5f ? c : bestOn (surface, juce::Colours::white, juce::Colours::black);
     }
 
     //  HUNDIR UNA SUPERFICIE. Estructura, no tinta.

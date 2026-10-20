@@ -293,7 +293,9 @@ def filo_de_zati (z, panel):
     return a if ratio (a, panel) >= ratio (b, panel) else b
 def ink_on (d, surface):
     """La misma eleccion que ZatiColours::textOn: se MIDE, no se supone."""
-    return d['ink'] if ratio (d['ink'], surface) >= ratio (d['inkLight'], surface) else d['inkLight']
+    c = d['ink'] if ratio (d['ink'], surface) >= ratio (d['inkLight'], surface) else d['inkLight']
+    if ratio (c, surface) >= 4.5: return c
+    return 0xffffff if ratio (0xffffff, surface) >= ratio (0x000000, surface) else 0x000000
 
 
 #  LA CABECERA, EN EL ORDEN DEL DICCIONARIO de `main`. Las dos listas y el

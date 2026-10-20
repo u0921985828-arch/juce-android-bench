@@ -143,6 +143,9 @@ def main():
            "explorador: escucha suena %d, ATRAS devuelve %d, carga tardia no pisa %d"
            % (r.get ("escucha_suena", -1), r.get ("escucha_atras", -1), r.get ("escucha_tarde", -1)))
 
+    regla ("rojo", r.get ("rojo_tinta", 0) >= 4.5,
+           "texto sobre tapa roja, peor de las cuatro carcasas: %.2f (AA 4.5)" % r.get ("rojo_tinta", 0))
+
     regla ("singuardar", r.get ("limpio_avisa", -1) == 0 and r.get ("sucio_avisa", -1) == 1
                          and r.get ("sucio_salvo", -1) == 0 and r.get ("aviso_idiomas", -1) == 4
                          and r.get ("aviso_largo", -1) == 4 and r.get ("abrir_avisa", -1) == 1
