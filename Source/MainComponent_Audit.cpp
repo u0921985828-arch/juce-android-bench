@@ -3943,7 +3943,25 @@ void MainComponent::auditOpen (const juce::String& pedido)
         closeAllSheets();
         showTour (kTourBienvenida - 1);
         openSheet (tourSheet, setButton);
-        if (tourSkipBtn.onClick) tourSkipBtn.onClick();
+        //  La puerta es la tapa de AVANZAR -VER MAS-, no la tercera: la
+        //  tercera cierra en todos los pasos, que es lo que la hace fiable.
+        if (tourNextBtn.onClick) tourNextBtn.onClick();
+        resized();
+    }
+    //  Y AVANZAR PULSADA DE VERDAD DESDE CADA PASO, "toursigN": abre el paso N
+    //  y pulsa la tapa de la derecha. Lo que se mide es donde queda la guia y
+    //  si sigue puesta, que es la unica forma de ver que esa tapa SIGUE en
+    //  todos los pasos menos el ultimo: en el de la puerta decia EMPEZAR y
+    //  cerraba, y ninguna regla que mire rotulos o rectangulos lo distingue
+    //  de una que siga.
+    else if (which.startsWith ("toursig") && which.substring (7).containsOnly ("0123456789"))
+    {
+        closeAllSheets();
+        const int n = which.substring (7).getIntValue();
+        showTour (n);
+        openSheet (tourSheet, setButton);
+        showTour (n);
+        if (tourNextBtn.onClick) tourNextBtn.onClick();
         resized();
     }
     //  LA CARA EN MODO CANCION, que es un estado que el banco no abria y por

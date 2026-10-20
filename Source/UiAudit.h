@@ -930,6 +930,13 @@ namespace UiAudit
     //  Lo que dicen las dos salidas de la tarjeta: la que avanza y la tercera,
     //  que en el paso de la PUERTA deja de decir SALTAR. Ver `tourSkipCaption`.
     inline std::string tourSig, tourTercera;
+    //  Y SI LA GUIA SIGUE PUESTA, Y SI AVANZAR LA CIERRA. La tapa de la
+    //  derecha cerraba en el paso de la puerta -decia EMPEZAR- y la que se
+    //  pulsa sin mirar cambiaba de sentido en la cuarta pulsacion (feria,
+    //  J3). `puesto` lo mide una corrida que PULSA avanzar desde cada paso
+    //  (ZATI_OPEN=toursigN) y mira si la ficha sigue; `sigCierra` es lo que
+    //  la app decide, desde la misma linea que decide la pulsacion.
+    inline int tourPuesto = 0, tourSigCierra = 0;
     //  Y EN QUE PAGINA QUEDO LA MESA. El paso 11 nombra los dieciseis
     //  CANALES y abria la mesa en la pagina que hubiera - por defecto
     //  PADS - asi que la palabra no se veia. Es una CIFRA y no un si/no:
@@ -1082,6 +1089,13 @@ namespace UiAudit
         //  escritos uno a uno mas abajo- asi que las seis reglas de expo.py no
         //  se mueven; lo que gana es precision en el volcado.
         if (dynamic_cast<juce::ComboBox*>   (&c) != nullptr) return "combo";
+        //  UN VISOR ES OPACO: lo que caiga debajo no se ve. La vista previa
+        //  de AUTO CHOP salia como "other", igual que un contenedor, asi que
+        //  para TAPADO no existia y el plan de la ficha llevaba tandas pintado
+        //  debajo de ella sin que nadie lo cantara. Lo dice el propio visor
+        //  con una propiedad -esta cabecera no conoce sus clases- y no una
+        //  lista de nombres aqui.
+        if (c.getProperties().contains ("visor")) return "visor";
         return "other";
     }
 
@@ -1742,6 +1756,8 @@ namespace UiAudit
                       //  y no partirlo dan la misma corrida en verde.
                       << ",\"sig\":\"" << tourSig << "\""
                       << ",\"tercera\":\"" << tourTercera << "\""
+                      << ",\"puesto\":" << tourPuesto
+                      << ",\"sigCierra\":" << tourSigCierra
                       << ",\"mixpag\":" << tourMixPag << "}" << std::endl;
         walk (root, root, "root", 0);
 

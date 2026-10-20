@@ -3909,6 +3909,14 @@ private:
     //  objetivo: ni anillo ni numero, y el muelle se centra.
     juce::Rectangle<int> tourFoco;
     juce::Rectangle<int> tourDock;
+    //  LA BOTONERA -SALTAR, ATRAS, SIGUIENTE- SIEMPRE ABAJO, en el mismo
+    //  sitio en los veinticuatro pasos. Antes iba dentro del muelle, y el
+    //  muelle salta a la mitad contraria del objetivo: SIGUIENTE pasaba de
+    //  y=799 a y=170 de un paso al otro y dos toques seguidos en el mismo
+    //  punto no hacian nada (feria, J3). Cuando el muelle va abajo, la
+    //  botonera queda dentro de el, como siempre; cuando va arriba, la
+    //  botonera se queda abajo con su propio panel.
+    juce::Rectangle<int> tourBotonera;
     void tourPrepara (int paso);              // abre la ficha que el paso explica
     juce::Rectangle<int> tourObjetivo (int paso) const;
     void showTour (int paso);
@@ -3924,6 +3932,11 @@ private:
     //  cuarto paso es un paso mas, y «VER MAS» alli sacaria de su capitulo.
     bool tourEsLaPuerta() const { return tourDesde == 0 && tourHasta == kTourPasos - 1
                                          && tourPaso == kTourBienvenida - 1; }
+    //  Y AVANZAR SOLO CIERRA EN EL ULTIMO PASO. La tapa de la derecha es la
+    //  que se pulsa sin mirar, asi que su sentido no cambia por el camino: en
+    //  la puerta dice VER MAS y SIGUE; cerrar es la tercera tapa, EMPEZAR.
+    //  Lo deciden la pulsacion y el rotulo desde esta misma linea.
+    bool tourSigCierra() const { return tourPaso >= tourHasta; }
     int  tourBodyHeight (int ancho) const;
     //  EL ANCHO DE CADA CUERPO, MEDIDO UNA VEZ POR IDIOMA. tourBodyHeight
     //  corre dentro de resized(), que corre en cada toque, y media los

@@ -1120,20 +1120,29 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         g.drawText (tTrozos, banda, Lang::start());
     }
 
-    inner.removeFromTop (Metrics::hit + Metrics::sm + Metrics::hit + Metrics::sm);
-
     //  The plan, in pad numbers. This is the whole point of the sheet: the
     //  old one-tap chop was destructive precisely because it never said this.
+    //
+    //  Y SU BANDA LA DICE `resized()`, no se vuelve a sumar aqui. El pintor
+    //  llevaba su propia escalera -la fila de 2/4/8/16, aire, RESPETAR, aire-
+    //  y se quedo sin el escalon de la vista previa cuando esta entro, asi que
+    //  el plan se pintaba justo debajo de `chopVista`, que es opaca, y no se
+    //  veia en ninguna pantalla. Dos escaleras del mismo sitio se separan;
+    //  una banda con un dueno, no.
     const auto targets = chopTargets (chopSlices, chopOnlyEmpty);
-    auto planned = inner.removeFromTop (40);
-    chopPlanBanda = planned;
+    auto planned = chopPlanBanda;
+    if (planned.isEmpty()) return;
 
+    //  Y TODO LO QUE SE PINTA AQUI PASA POR `apunta`: lo que no se apunta no
+    //  lo ve la regla TAPADO, que es justo la que lleva tandas sin poder ver
+    //  este fallo.
     if (uiSample[(size_t) sp] == nullptr)
     {
         g.setColour (ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fLabel, true));
-        g.drawFittedText (T ("Este pad no tiene sonido que cortar."),
-                          planned, Lang::start (juce::Justification::top), 1, 0.8f);
+        const auto t = T ("Este pad no tiene sonido que cortar.");
+        apunta (g, planned, t, "plan", 0.0f, 1, 0.8f);
+        g.drawFittedText (t, planned, Lang::start (juce::Justification::top), 1, 0.8f);
         return;
     }
 
@@ -1155,15 +1164,21 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     {
         g.setColour (hits >= 2 ? ZatiColours::inkDim : ZatiColours::red);
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-        g.drawFittedText (hits >= 2 ? T ("%1 golpes encontrados", juce::String (hits))
-                                    : T ("no hay golpes que separar aqui"),
-                          planned.removeFromTop (18), Lang::start (juce::Justification::top), 1, 0.8f);
+        const auto t = hits >= 2 ? T ("%1 golpes encontrados", juce::String (hits))
+                                 : T ("no hay golpes que separar aqui");
+        const auto caja = planned.removeFromTop (18);
+        apunta (g, caja, t, "plan", 0.0f, 1, 0.8f);
+        g.drawFittedText (t, caja, Lang::start (juce::Justification::top), 1, 0.8f);
     }
 
     g.setColour (ZatiColours::ink.withAlpha (0.85f));
     g.setFont (ZatiColours::monoFont (Metrics::fMeta, true).withExtraKerningFactor (0.06f));
-    g.drawFittedText (T ("va a pads: %1", nums.joinIntoString (" ")),
-                      planned.removeFromTop (22), Lang::start (juce::Justification::top), 2, 0.8f);
+    {
+        const auto t    = T ("va a pads: %1", nums.joinIntoString (" "));
+        const auto caja = planned.removeFromTop (22);
+        apunta (g, caja, t, "plan", 0.0f, 2, 0.8f);
+        g.drawFittedText (t, caja, Lang::start (juce::Justification::top), 2, 0.8f);
+    }
 
     //  Y ESTAS TRES FRASES PASAN POR `T()`, que es donde no estaban.
     //
@@ -1185,6 +1200,7 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
         warn = T ("no pisa ningun pad con sonido");
 
     g.setColour (overwritten > 0 ? ZatiColours::red : ZatiColours::inkDim);
+    apunta (g, planned, warn, "plan", 0.0f, 1, 0.8f);
     g.drawFittedText (warn, planned, Lang::start (juce::Justification::top), 1, 0.8f);
 }
 
@@ -3067,7 +3083,7 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
         //  lo que hacia el ultimo recurso y tapaba el control (feria, J3). Si
         //  no cabe en ningun lado, en la esquina del muelle.
         const auto libre = [&] (juce::Rectangle<int> c)
-        { return todo.contains (c) && ! c.intersects (tourDock); };
+        { return todo.contains (c) && ! c.intersects (tourDock) && ! c.intersects (tourBotonera); };
         const juce::Rectangle<int> sitios[] = {
             chapa.withPosition (foco.getX() - 2, foco.getY() - d - 6),
             chapa.withPosition (foco.getX() - 2, foco.getBottom() + 6),
@@ -3084,6 +3100,17 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
         g.setColour (ZatiColours::textOn (ZatiColours::accent));
         g.setFont (ZatiColours::monoFont (12.0f, true));
         g.drawText (juce::String (tourPaso + 1), chapa, juce::Justification::centred);
+    }
+
+    //  LA BOTONERA, cuando el muelle se fue arriba y ella se quedo abajo: su
+    //  propio panel, del mismo papel que el muelle. Cuando el muelle va abajo
+    //  la contiene y este panel es el suyo.
+    if (! tourBotonera.isEmpty() && ! tourDock.contains (tourBotonera))
+    {
+        g.setColour (ZatiColours::chassisTop);
+        g.fillRect (tourBotonera);
+        g.setColour (ZatiColours::ink.withAlpha (0.85f));
+        g.drawRect (tourBotonera.toFloat(), Metrics::filo);
     }
 
     //  EL MUELLE. Su sitio lo decidio resized(), en la mitad contraria a la del

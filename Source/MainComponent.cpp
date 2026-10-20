@@ -3869,7 +3869,11 @@ MainComponent::MainComponent()
     tourBackBtn.onClick = [this] { showTour (tourPaso - 1); };
     tourNextBtn.onClick = [this]
     {
-        if (! tourEsLaPuerta() && tourPaso < tourHasta) { showTour (tourPaso + 1); return; }
+        //  SIGUIENTE SIGUE, tambien en la puerta: alli dice VER MAS y lleva al
+        //  quinto. Antes decia EMPEZAR y cerraba, o sea que la tapa que se
+        //  venia pulsando tres veces en el mismo sitio cambiaba de sentido en
+        //  la cuarta (feria, J3). Cerrar es la tercera tapa.
+        if (! tourSigCierra()) { showTour (tourPaso + 1); return; }
         //  Al final se marca visto y se cierra. Ya lo esta desde que se enseño
         //  -ver el arranque- asi que esto es idempotente; se deja porque el
         //  tour tambien se abre a mano desde AJUSTES y acabarlo por ahi tiene
@@ -3884,7 +3888,6 @@ MainComponent::MainComponent()
         //  tambien: quien se va a los once ya ha visto la bienvenida, y sin
         //  esto cerrar a mitad del recorrido largo la traeria manana entera.
         ProjectStore::escribeTexto (tourFile(), "1");
-        if (tourEsLaPuerta()) { showTour (kTourBienvenida); return; }
         tourDesde = 0; tourHasta = kTourPasos - 1;
         closeAllSheets();
     };
@@ -17958,23 +17961,27 @@ juce::File MainComponent::tourFile()
 //  ultima tarjeta es una promesa de una siguiente que no existe.
 juce::String MainComponent::tourNextCaption() const
 {
-    //  Y en el paso de la PUERTA tambien dice EMPEZAR, que es lo que hace:
-    //  cerrar y ponerse a tocar. Seguir leyendo es la otra tapa.
-    if (tourEsLaPuerta() || tourPaso >= tourHasta) return T ("TOUR EMPEZAR");
+    //  Y en el paso de la PUERTA dice VER MAS, que es lo que hace: seguir con
+    //  los veinte que quedan. Siempre avanza; cerrar es la otra tapa. Decia
+    //  EMPEZAR y cerraba, y la tapa de la derecha es la que se pulsa sin
+    //  mirar: J3 cerro la guia en la feria queriendo pasar de pagina.
+    if (tourEsLaPuerta()) return T ("TOUR VER MAS");
+    if (tourSigCierra())  return T ("TOUR EMPEZAR");
     return T ("SIGUIENTE");
 }
 
-//  LA TERCERA TAPA. En los tres primeros pasos es SALTAR -salirse del
-//  recorrido- y en el cuarto es la PUERTA a los once que quedan. No es una tapa
-//  mas: esa fila son tres y una cuarta la parte en dos justo en la pantalla que
-//  se ve la primera vez que alguien abre esto.
+//  LA TERCERA TAPA. Es SALTAR -salirse del recorrido- menos en el cuarto
+//  paso, donde es EMPEZAR: la bienvenida acaba ahi y cerrar es ponerse a
+//  tocar. No es una tapa mas: esa fila son tres y una cuarta la parte en dos
+//  justo en la pantalla que se ve la primera vez que alguien abre esto.
 //
-//  Y en el cuarto no se pierde nada por reaprovecharla: alli SALTAR y EMPEZAR
-//  hacen ya exactamente lo mismo -marcar visto y cerrar- asi que una de las dos
-//  sobraba.
+//  Y no se pierde nada por reaprovecharla: SALTAR y EMPEZAR hacen exactamente
+//  lo mismo -marcar visto y cerrar- asi que son la misma tapa con el rotulo
+//  que toca. En el ultimo paso no se pone: SALTAR al lado de EMPEZAR es
+//  saltarse nada.
 juce::String MainComponent::tourSkipCaption() const
 {
-    return tourEsLaPuerta() ? T ("TOUR VER MAS") : T ("SALTAR");
+    return tourEsLaPuerta() ? T ("TOUR EMPEZAR") : T ("SALTAR");
 }
 
 void MainComponent::showTour (int paso)
@@ -17987,6 +17994,9 @@ void MainComponent::showTour (int paso)
     tourBackBtn.setEnabled (tourPaso > tourDesde);
     tourNextBtn.setButtonText (tourNextCaption());
     tourSkipBtn.setButtonText (tourSkipCaption());
+    //  Sin SALTAR en el ultimo paso: ahi EMPEZAR ya cierra. Se le deja su
+    //  hueco en la fila, para que SIGUIENTE no cambie de sitio ni de ancho.
+    tourSkipBtn.setVisible (! tourSigCierra());
     resized();
     tourSheet.repintaTarjeta();
 }
