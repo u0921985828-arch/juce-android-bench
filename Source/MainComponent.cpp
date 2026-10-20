@@ -20858,7 +20858,8 @@ void MainComponent::exportaMidiPatron()
 void MainComponent::importaMidiPatron (const juce::File& f)
 {
     MidiArchivo::Parte parte;
-    const auto notas = MidiArchivo::lee (f, AudioEngine::kNumSteps, parte);
+    const bool esMidi = f.hasFileExtension ("mid;midi;rmi;kar") && f.getSize() <= 4 * 1024 * 1024;   // estabilidad#21
+    const auto notas = esMidi ? MidiArchivo::lee (f, AudioEngine::kNumSteps, parte) : decltype (MidiArchivo::lee (f, 0, parte)) {};
 
     if (notas.empty())
     {
@@ -22236,6 +22237,11 @@ void MainComponent::timerCallback()
     //  este hilo y en que. Es lo unico que convierte un «Zati Sampler no
     //  responde» en un dato en vez de en una deduccion.
     Bitacora::late();
+    if (status.getText() != estadoDicho && juce::Time::getMillisecondCounter() - estadoCuando > 1000)   // accesibilidad#6
+    {
+        estadoDicho = status.getText(); estadoCuando = juce::Time::getMillisecondCounter();
+        if (estadoDicho.isNotEmpty()) anuncia (estadoDicho);
+    }
 
     //  Y LA ETIQUETA DE DONDE ESTA ESTE HILO. `Bitacora::tarea` nace en
     //  «arranque» y nadie la movia despues: un atasco en el temporizador, o en

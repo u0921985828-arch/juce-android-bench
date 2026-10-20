@@ -38,6 +38,25 @@
 class PianoRoll : public juce::Component, public Rejilla
 {
 public:
+    static juce::Colour fondoRegla() { return ZatiColours::chassisTop.overlaidWith (ZatiColours::groove (0.40f)); }
+    static juce::Colour tintaRegla (juce::Colour fondo, bool compas)   // accesibilidad#11
+    {
+        const auto c = compas ? ZatiColours::ink : ZatiColours::inkDim;
+        return ZatiColours::contrastRatio (c, fondo) >= 4.5 ? c : ZatiColours::bestOn (fondo, juce::Colours::black, juce::Colours::white);
+    }
+    static juce::Colour filoNota()   // accesibilidad#10: el filo que mejor se ve contra la celda mas desfavorable
+    {
+        auto peor = [] (juce::Colour t)
+        {
+            double m = 99.0;
+            for (float a : { 0.34f, 0.26f, 0.16f })
+                m = juce::jmin (m, (double) ZatiColours::contrastRatio (t, ZatiColours::chassisTop.overlaidWith (ZatiColours::groove (a))));
+            return m;
+        };
+        return peor (juce::Colours::black) >= peor (juce::Colours::white) ? juce::Colours::black : juce::Colours::white;
+    }
+    static constexpr float grosorFilo = 1.5f;
+
     //  Las tres cifras del banco. El piano cambia de columnas con el zoom y
     //  de filas con OCTAVA -trece o veinticinco-, asi que escribirlas fuera
     //  seria medir la rejilla de ayer.
@@ -519,8 +538,8 @@ public:
                                                              (float) r.getRight() - celda.getX()));
                     g.setColour (tinta);
                     g.fillRect (barra);
-                    g.setColour (ZatiColours::ink.withAlpha (0.35f));
-                    g.drawRect (barra, Metrics::filo);
+                    g.setColour (filoNota());
+                    g.drawRect (barra, grosorFilo);
                     //  Y el ARRANQUE marcado, que en una barra de cuatro
                     //  casillas es lo unico que dice donde empieza la nota.
                     if (cu > 4)
@@ -978,7 +997,8 @@ private:
             const juce::String txt = compas && ! cabePulso
                                        ? juce::String (paso / 16 + 1)
                                        : juce::String (paso / 16 + 1) + "." + juce::String ((paso % 16) / 4 + 1);
-            g.setColour (compas ? ZatiColours::ink : ZatiColours::inkDim);
+            const bool enTramo = c >= tramo0 && c <= tramo1;
+            g.setColour (tintaRegla (enTramo ? fondoRegla().overlaidWith (ZatiColours::playhead.withAlpha (0.35f)) : fondoRegla(), compas));
             g.drawText (txt, juce::Rectangle<float> (x + 2.0f, banda.getY(),
                                                      juce::jmax (anchoPulso - 3.0f, 10.0f), banda.getHeight() - 3.0f),
                         juce::Justification::centredLeft, false);

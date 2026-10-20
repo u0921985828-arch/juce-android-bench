@@ -56,6 +56,8 @@
 class EqCurve : public juce::Component
 {
 public:
+    static juce::Colour tintaRotulo() { return ZatiColours::lcdFg.withAlpha (0.70f); }   // accesibilidad#12
+    static constexpr float cuerpoRotulo = Metrics::fTiny;
     static juce::Colour tintaCurva() { return ZatiColours::lcdFg; }   // el acento casi negro no se ve en el cristal (accesibilidad#9)
 
 public:
@@ -271,10 +273,10 @@ private:
             const float x = dentro.getX() + xDe (kHz[i]) * w;
             g.setColour (ZatiColours::lcdFg.withAlpha (0.10f));
             g.drawVerticalLine ((int) x, dentro.getY(), dentro.getBottom());
-            g.setColour (ZatiColours::lcdFg.withAlpha (0.28f));
-            g.setFont (ZatiColours::monoFont (8.0f, false));
-            g.drawText (kEt[i], juce::Rectangle<float> (x + 2.0f, dentro.getBottom() - 10.0f,
-                                                        26.0f, 9.0f),
+            g.setColour (tintaRotulo());
+            g.setFont (ZatiColours::monoFont (cuerpoRotulo, false));
+            g.drawText (kEt[i], juce::Rectangle<float> (x + 2.0f, dentro.getBottom() - 13.0f,
+                                                        32.0f, 12.0f),
                         juce::Justification::centredLeft);
         }
 

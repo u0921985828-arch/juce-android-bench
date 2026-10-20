@@ -12589,6 +12589,63 @@ void MainComponent::auditFeria()
         sesionLleva = sucioVuelve == 1 && avisa (lineaBanda()) == 0 ? 1 : 0;
     }
 
+    //  v. IMPORTAR MIDI no traga lo que no es un MIDI pequeno (estabilidad#21).
+    int midiAjeno = -1, midiGordo = -1;
+    {
+        juce::MidiMessageSequence sec;
+        sec.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0.0);
+        sec.addEvent (juce::MidiMessage::noteOff (1, 60), 96.0);
+        juce::MidiFile mf; mf.setTicksPerQuarterNote (96); mf.addTrack (sec);
+        auto dir = juce::File::createTempFile ("midi"); dir.createDirectory();
+        auto ajeno = dir.getChildFile ("x.wav"), gordo = dir.getChildFile ("y.mid");
+        { juce::FileOutputStream o (ajeno); mf.writeTo (o); }
+        { juce::FileOutputStream o (gordo); mf.writeTo (o); juce::HeapBlock<char> cero (1 << 20, true);
+          for (int i = 0; i < 5; ++i) o.write (cero, 1 << 20); }
+        auto prueba = [&] (const juce::File& f)
+        {
+            for (int s2 = 0; s2 < AudioEngine::kNumSteps; ++s2)
+            { engine.vaciaPaso (selectedPattern, s2, selectedPad); pattern[(size_t) selectedPattern][(size_t) s2][(size_t) selectedPad] = false; }
+            importaMidiPatron (f);
+            closeAllSheets();
+            return (int) notasDelPatron (selectedPattern, selectedPad).size();
+        };
+        midiAjeno = prueba (ajeno);
+        midiGordo = prueba (gordo);
+        dir.deleteRecursively();
+    }
+
+    //  w. Lo que dice la linea de estado llega al lector (accesibilidad#6).
+    int estadoAnuncia = -1;
+    {
+        const int antes = anunciosHechos;
+        estadoCuando = 0;
+        status.setText ("PRUEBA ESTADO", juce::dontSendNotification);
+        avanza (1600.0);
+        estadoAnuncia = anunciosHechos - antes;
+    }
+
+    //  x, y, z. Regla y notas del piano, rotulos del EQ (accesibilidad#10, #11, #12).
+    float reglaTinta = 99.0f, eqRotulo = 99.0f, notaFilo = 99.0f;
+    {
+        const int piel = ZatiColours::currentSkin;
+        for (int sk = 0; sk < 4; ++sk)
+        {
+            ZatiColours::setSkin (sk);
+            const auto banda = PianoRoll::fondoRegla();
+            for (auto fondo : { banda, banda.overlaidWith (ZatiColours::playhead.withAlpha (0.35f)) })
+                for (bool compas : { true, false })
+                    reglaTinta = juce::jmin (reglaTinta, (float) ZatiColours::contrastRatio (PianoRoll::tintaRegla (fondo, compas), fondo));
+            const auto lcd = ZatiColours::screenBg;
+            eqRotulo = juce::jmin (eqRotulo, (float) ZatiColours::contrastRatio (lcd.overlaidWith (EqCurve::tintaRotulo()), lcd));
+            for (float a : { 0.34f, 0.26f, 0.16f })
+            {
+                const auto celda = ZatiColours::chassisTop.overlaidWith (ZatiColours::groove (a));
+                notaFilo = juce::jmin (notaFilo, (float) ZatiColours::contrastRatio (celda.overlaidWith (PianoRoll::filoNota()), celda));
+            }
+        }
+        ZatiColours::setSkin (piel);
+    }
+
     auto caja = [] (juce::Rectangle<int> r)
     { return "[" + juce::String (r.getX()) + "," + juce::String (r.getY()) + ","
                  + juce::String (r.getWidth()) + "," + juce::String (r.getHeight()) + "]"; };
@@ -12628,6 +12685,11 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
+              << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
+              << ",\"estado_anuncia\":" << estadoAnuncia
+              << ",\"regla_tinta\":" << reglaTinta << ",\"eq_rotulo\":" << eqRotulo
+              << ",\"eq_cuerpo\":" << EqCurve::cuerpoRotulo
+              << ",\"nota_filo\":" << notaFilo << ",\"nota_grosor\":" << PianoRoll::grosorFilo
               << ",\"titulos_copiados\":" << titulosCopiados
               << ",\"titulos_viejos\":" << titulosViejos
               << ",\"asoma_undo\":" << asomaUndo

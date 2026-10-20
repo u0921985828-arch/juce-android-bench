@@ -4851,6 +4851,8 @@ private:
     void refrescaPlato();                           // curva o mandos, segun quien tenga el foco
     void refrescaVisorPlato();                      // la forma del efecto enfocado; dos dueños
     juce::Label  status;
+    juce::String estadoDicho;
+    juce::uint32 estadoCuando = 0;
     //  UNA FRASE CON SU FORMA CORTA. La linea de estado mide lo que le dejan
     //  DESHACER y REHACER, y eso cambia DESPUES de escribirla (la accion que
     //  la escribe es la que enciende DESHACER). eligeEstado la vuelve a

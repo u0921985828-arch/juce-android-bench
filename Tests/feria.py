@@ -163,6 +163,17 @@ def main():
            % (r.get ("cara_tapada", -1), r.get ("cara_vuelve", 0)))
     regla ("paso marcado", r.get ("paso_marca", 0) >= 3.0,
            "marca de un paso puesto contra su relleno, peor carcasa y color: %.2f (1.4.1 y 1.4.11)" % r.get ("paso_marca", 0))
+    regla ("midi ajeno", r.get ("midi_ajeno", -1) == 0 and r.get ("midi_gordo", -1) == 0,
+           "IMPORTAR MIDI con un .wav trae %d notas y con un .mid de 5 MB %d"
+           % (r.get ("midi_ajeno", -1), r.get ("midi_gordo", -1)))
+    regla ("estado al lector", r.get ("estado_anuncia", 0) == 1,
+           "la linea de estado se anuncia %d veces (una)" % r.get ("estado_anuncia", 0))
+    regla ("regla del piano", r.get ("regla_tinta", 0) >= 4.5,
+           "cifras de la regla del piano, peor carcasa: %.2f (1.4.3 pide 4.5)" % r.get ("regla_tinta", 0))
+    regla ("rotulo del EQ", r.get ("eq_rotulo", 0) >= 4.5 and r.get ("eq_cuerpo", 0) >= 11,
+           "rotulos de frecuencia del EQ: %.2f a %g px (4.5 y 11)" % (r.get ("eq_rotulo", 0), r.get ("eq_cuerpo", 0)))
+    regla ("filo de nota", r.get ("nota_filo", 0) >= 3.0 and r.get ("nota_grosor", 0) >= 1.5,
+           "filo de una nota del piano contra su celda: %.2f a %g px (3 y 1.5)" % (r.get ("nota_filo", 0), r.get ("nota_grosor", 0)))
     regla ("titulos", r.get ("titulos_copiados", 0) > 0 and r.get ("titulos_viejos", -1) == 0,
            "nombres accesibles copiados del rotulo que cambian con el idioma: %d, se quedan en el anterior: %d"
            % (r.get ("titulos_copiados", 0), r.get ("titulos_viejos", -1)))
