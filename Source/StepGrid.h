@@ -345,6 +345,16 @@ public:
                  .getSmallestIntegerContainer().getIntersection (r);
     }
 
+    static void pintaPaso (juce::Graphics& g, juce::Rectangle<float> cell, juce::Colour fill, bool conMarca)
+    {
+        g.setColour (fill);
+        g.fillRect (cell);
+        if (! conMarca) return;
+        const float d = juce::jmax (2.0f, juce::jmin (cell.getWidth(), cell.getHeight()) * 0.3f);
+        g.setColour (ZatiColours::bestOn (fill, juce::Colours::black, juce::Colours::white));   // accesibilidad#8
+        g.fillRect (juce::Rectangle<float> (d, d).withCentre (cell.getCentre()));
+    }
+
     void paint (juce::Graphics& g) override
     {
         if (data == nullptr) return;
@@ -435,15 +445,14 @@ public:
                     //  sobre un cuerpo oscuro y oscura sobre uno claro. Escrito
                     //  con ZatiColours::ink salia crema en LACA - mas llamativo
                     //  que un paso que SI tiene sonido.
-                    g.setColour (has ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.55f));
-                    g.fillRect (cell);
+                    const int semis = noteOf != nullptr ? (int) noteOf[step * kLanes + pad] : 0;
+                    pintaPaso (g, cell, has ? frag : ZatiColours::markOn (ZatiColours::chassisTop, 0.55f), semis == 0);
 
                     //  The pitch of a step used to exist only as a number in a
                     //  field, so a melody was something you had to remember
                     //  rather than see. Drawn inside the cell as a mark whose
                     //  HEIGHT is the semitone (-12 at the floor, +12 at the
                     //  ceiling), a lane becomes a contour you can read.
-                    const int semis = noteOf != nullptr ? (int) noteOf[step * kLanes + pad] : 0;
                     if (semis != 0)
                     {
                         const float t = 0.5f - juce::jlimit (-1.0f, 1.0f, (float) semis / 12.0f) * 0.42f;

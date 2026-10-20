@@ -12169,6 +12169,82 @@ void MainComponent::auditFeria()
         disarmConfirm();
     }
 
+    //  s. Lo que se mantiene tambien se ofrece al lector como accion (accesibilidad#3).
+    int mantenTotal = 0, mantenAccion = 0, mantenDispara = 0;
+    {
+        juce::Button* primero = nullptr;
+        std::function<void()>* suyo = nullptr;
+        std::function<void (juce::Component&)> busca = [&] (juce::Component& c)
+        {
+            for (auto* h : c.getChildren())
+            {
+                std::function<void()>* f = nullptr;
+                if (auto* hb = dynamic_cast<HoldButton*> (h)) f = &hb->onHold;
+                if (auto* pb = dynamic_cast<PadButton*> (h))  f = &pb->onHold;
+                if (f != nullptr && *f)
+                {
+                    ++mantenTotal;
+                    auto* ah = h->getAccessibilityHandler();
+                    if (ah != nullptr && ah->getActions().contains (juce::AccessibilityActionType::showMenu))
+                    {
+                        ++mantenAccion;
+                        if (primero == nullptr) { primero = static_cast<juce::Button*> (h); suyo = f; }
+                    }
+                }
+                busca (*h);
+            }
+        };
+        busca (*this);
+        if (primero != nullptr)
+        {
+            auto viejo = *suyo;
+            *suyo = [&] { ++mantenDispara; };
+            primero->getAccessibilityHandler()->getActions().invoke (juce::AccessibilityActionType::showMenu);
+            *suyo = viejo;
+        }
+    }
+
+    //  t. Con una ficha abierta el lector no recorre la cara de detras (accesibilidad#1).
+    int caraTapada = -1, caraVuelve = -1;
+    {
+        auto cuenta = [this]
+        {
+            int n = 0;
+            for (auto* c : getChildren())
+                if (c->isVisible() && ! c->getProperties().contains ("capa") && c->isAccessible()) ++n;
+            return n;
+        };
+        closeAllSheets();
+        openSheet (setSheet, setButton);
+        caraTapada = cuenta();
+        closeAllSheets();
+        caraVuelve = cuenta();
+    }
+
+    //  u. Un paso puesto lleva una marca que no es solo color (accesibilidad#8).
+    float pasoMarca = 99.0f;
+    {
+        const int piel = ZatiColours::currentSkin;
+        juce::Image img (juce::Image::ARGB, 24, 24, true);
+        for (int sk = 0; sk < 4; ++sk)
+        {
+            ZatiColours::setSkin (sk);
+            std::vector<juce::Colour> rellenos { ZatiColours::markOn (ZatiColours::chassisTop, 0.55f) };
+            for (int z = 0; z < Zati::kNumColours; ++z) rellenos.push_back (Zati::colour (z));
+            for (auto fill : rellenos)
+            {
+                img.clear (img.getBounds());
+                { juce::Graphics g (img); StepGrid::pintaPaso (g, { 0.0f, 0.0f, 24.0f, 24.0f }, fill, true); }
+                float mejor = 1.0f;
+                for (int y = 0; y < 24; ++y)
+                    for (int x = 0; x < 24; ++x)
+                        mejor = juce::jmax (mejor, (float) ZatiColours::contrastRatio (img.getPixelAt (x, y), fill));
+                pasoMarca = juce::jmin (pasoMarca, mejor);
+            }
+        }
+        ZatiColours::setSkin (piel);
+    }
+
     //  o. El filo del pulgar de la barra se ve contra la ficha (accesibilidad#17).
     float pulgarFilo = 99.0f;
     {
@@ -12548,6 +12624,10 @@ void MainComponent::auditFeria()
               << ",\"cristal_trazo\":" << cristalTrazo
               << ",\"armada_nombre\":" << armadaNombre
               << ",\"armada_anuncia\":" << armadaAnuncia
+              << ",\"manten_total\":" << mantenTotal << ",\"manten_accion\":" << mantenAccion
+              << ",\"manten_dispara\":" << mantenDispara
+              << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
+              << ",\"paso_marca\":" << pasoMarca
               << ",\"titulos_copiados\":" << titulosCopiados
               << ",\"titulos_viejos\":" << titulosViejos
               << ",\"asoma_undo\":" << asomaUndo

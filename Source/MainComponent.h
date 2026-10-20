@@ -218,6 +218,21 @@ private:
         //  maquetadas. Se pone al construir y lo hereda todo lo que cuelga.
         Sheet() { getProperties().set ("capa", UiAudit::siguienteCapa++); }
 
+        //  Abierta, la cara de detras sale del arbol del lector (accesibilidad#1).
+        void visibilityChanged() override { if (auto* p = getParentComponent()) tapaLaCara (*p); }
+        static void tapaLaCara (juce::Component& p)
+        {
+            bool hay = false;
+            for (auto* c : p.getChildren())
+                if (c->isVisible() && dynamic_cast<Sheet*> (c) != nullptr) hay = true;
+            for (auto* c : p.getChildren())
+            {
+                if (c->getProperties().contains ("capa")) continue;
+                if (hay && c->isAccessible())  { c->setAccessible (false); c->getProperties().set ("tapada", true); }
+                if (! hay && c->getProperties().contains ("tapada")) { c->setAccessible (true); c->getProperties().remove ("tapada"); }
+            }
+        }
+
         //  EL NOMBRE DE LA FICHA, SIN TRADUCIR. Lo escribe la caja negra
         //  (`openSheet`) y por eso NO puede ser el rotulo de la tapa que la
         //  abre, que es lo que hacia: un parte de un telefono en chino decia
@@ -3019,6 +3034,8 @@ private:
     public:
         using juce::TextButton::TextButton;
         std::function<void()> onHold;
+        std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+        { return std::make_unique<AccionMantener> (*this, onHold); }   // accesibilidad#3
         //  Long enough not to fire on a firm tap, short enough that it lands
         //  while you still think of yourself as pressing. Android's own
         //  long-press is 500; a control you play with wants to be under it.

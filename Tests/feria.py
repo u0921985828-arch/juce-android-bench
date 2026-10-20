@@ -154,6 +154,15 @@ def main():
     regla ("pulgar", r.get ("pulgar_filo", 0) >= 3.0,
            "filo del pulgar de la barra contra la ficha, peor carcasa: %.2f (1.4.11 pide 3)" % r.get ("pulgar_filo", 0))
 
+    regla ("mantener", r.get ("manten_total", 0) > 0 and r.get ("manten_accion", 0) == r.get ("manten_total", 0)
+           and r.get ("manten_dispara", 0) == 1,
+           "botones con mantener %d, con accion para el lector %d, la accion dispara %d"
+           % (r.get ("manten_total", 0), r.get ("manten_accion", 0), r.get ("manten_dispara", 0)))
+    regla ("ficha modal", r.get ("cara_tapada", -1) == 0 and r.get ("cara_vuelve", 0) > 0,
+           "con la ficha abierta el lector ve %d controles de la cara (al cerrar %d)"
+           % (r.get ("cara_tapada", -1), r.get ("cara_vuelve", 0)))
+    regla ("paso marcado", r.get ("paso_marca", 0) >= 3.0,
+           "marca de un paso puesto contra su relleno, peor carcasa y color: %.2f (1.4.1 y 1.4.11)" % r.get ("paso_marca", 0))
     regla ("titulos", r.get ("titulos_copiados", 0) > 0 and r.get ("titulos_viejos", -1) == 0,
            "nombres accesibles copiados del rotulo que cambian con el idioma: %d, se quedan en el anterior: %d"
            % (r.get ("titulos_copiados", 0), r.get ("titulos_viejos", -1)))

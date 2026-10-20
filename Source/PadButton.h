@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "AccionMantener.h"
 #include "SampleBuffer.h"
 #include "Iconos.h"
 #include "ZatiLookAndFeel.h"
@@ -54,6 +55,8 @@ public:
     //  keys, because a gesture you only find out about on release is one
     //  nobody believes in.
     std::function<void()> onHold;
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    { return std::make_unique<AccionMantener> (*this, onHold); }   // accesibilidad#3
     static constexpr int kHoldMs = Metrics::holdMs;
 
     // ------------------------------------------------------------------------
