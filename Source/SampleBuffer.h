@@ -129,6 +129,26 @@ public:
     //  instrumento y no N copias de un WAV. Es la leccion del troceado: alli
     //  volvian los trozos y lo que no volvia era la RELACION.
     int familia = -1, preset = -1;
+
+    //  Lo que entra del disco se sanea fuera del hilo de audio (estabilidad#3, #13, #15).
+    static constexpr int   kMaxCanales = 2;
+    static constexpr float kPicoMax    = 16.0f;     // +24 dBFS: mas alto es basura, no audio
+    static double frecuencia (double sr) noexcept { return sr > 0.0 && std::isfinite (sr) ? juce::jlimit (4000.0, 768000.0, sr) : 44100.0; }
+    //  NaN e Inf a cero; devuelve el pico de lo que queda.
+    static float sanea (juce::AudioBuffer<float>& b) noexcept
+    {
+        float pico = 0.0f;
+        for (int c = 0; c < b.getNumChannels(); ++c)
+        {
+            auto* d = b.getWritePointer (c);
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                if (! std::isfinite (d[i])) d[i] = 0.0f;
+                pico = juce::jmax (pico, std::abs (d[i]));
+            }
+        }
+        return pico;
+    }
 };
 
 // ============================================================================

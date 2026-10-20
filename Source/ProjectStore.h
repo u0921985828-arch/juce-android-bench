@@ -675,9 +675,10 @@ public:
         try
         {
             SampleBuffer::Ptr sb = new SampleBuffer();
-            sb->buffer.setSize ((int) reader->numChannels, n);
+            sb->buffer.setSize (juce::jmin ((int) reader->numChannels, SampleBuffer::kMaxCanales), n);
             reader->read (&sb->buffer, 0, n, 0, true, true);
-            sb->sourceSampleRate = reader->sampleRate;
+            sb->sourceSampleRate = SampleBuffer::frecuencia (reader->sampleRate);
+            if (SampleBuffer::sanea (sb->buffer) > SampleBuffer::kPicoMax) return nullptr;   // igual que el cargador
             return sb;
         }
         catch (const std::bad_alloc&)

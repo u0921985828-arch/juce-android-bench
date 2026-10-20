@@ -22,6 +22,13 @@ public:
     void loadAsync (const juce::URL& url, int slot,
                     std::function<void (bool, juce::String, SampleBuffer::Ptr)> onFinished);
 
+    int formatosMp3() const   // para Tests/Carga.cpp
+    {
+        int n = 0;
+        for (auto* f : formatManager) if (f->getFileExtensions().contains (".mp3")) ++n;
+        return n;
+    }
+
 private:
     AudioEngine&             engine;
     juce::AudioFormatManager formatManager;

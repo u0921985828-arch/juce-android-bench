@@ -48,9 +48,10 @@ namespace
 SampleLoader::SampleLoader (AudioEngine& engineToLoadInto)
     : engine (engineToLoadInto)
 {
-    formatManager.registerBasicFormats();          // WAV, AIFF, FLAC, Ogg
+    formatManager.registerBasicFormats();          // WAV, AIFF, FLAC, Ogg y MP3 (JUCE 8 ya lo trae; estabilidad#16)
    #if JUCE_USE_MP3AUDIOFORMAT
-    formatManager.registerFormat (new juce::MP3AudioFormat(), false);   // + MP3
+    if (formatManager.findFormatForFileExtension (".mp3") == nullptr)
+        formatManager.registerFormat (new juce::MP3AudioFormat(), false);
    #endif
 }
 
@@ -152,9 +153,9 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                     else if (auto* rawReader = formatManager.createReaderFor (std::move (seekable)))
                     {
                         std::unique_ptr<juce::AudioFormatReader> reader (rawReader);
-                        const int    numChannels = (int) reader->numChannels;
+                        const int    numChannels = juce::jmin ((int) reader->numChannels, SampleBuffer::kMaxCanales);
                         const auto   lengthIn    = reader->lengthInSamples;
-                        const double rate        = reader->sampleRate > 0.0 ? reader->sampleRate : 48000.0;
+                        const double rate        = SampleBuffer::frecuencia (reader->sampleRate);
                         const double seconds     = (double) lengthIn / rate;
 
                         //  What the decoded audio will actually cost. int64
@@ -180,20 +181,21 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                                 SampleBuffer::Ptr sb = new SampleBuffer();
                                 sb->buffer.setSize (numChannels, numSamples);
                                 reader->read (&sb->buffer, 0, numSamples, 0, true, true);
-                                //  La frecuencia que declara la cabecera, con
-                                //  un rango. Un WAV puede decir 0 - y entonces
-                                //  el paso de lectura es cero y la voz no
-                                //  avanza - o decir 1e9. Se acota aqui, en la
-                                //  puerta, ademas de en Voice::start.
-                                sb->sourceSampleRate = juce::jlimit (4000.0, 768000.0,
-                                                                     reader->sampleRate > 0.0
-                                                                         ? reader->sampleRate : 44100.0);
-
-                                engine.publishSample (slot, sb);
-                                loaded  = sb;
-                                success = true;
-                                detail  = juce::String (numChannels) + "ch "
-                                        + juce::String ((int) reader->sampleRate) + "Hz";
+                                sb->sourceSampleRate = rate;
+                                const float pico = SampleBuffer::sanea (sb->buffer);
+                                if (pico > SampleBuffer::kPicoMax)
+                                {
+                                    detail = T ("muestra corrupta");
+                                }
+                                else
+                                {
+                                    engine.publishSample (slot, sb);
+                                    loaded  = sb;
+                                    success = true;
+                                    detail  = juce::String ((int) reader->numChannels)
+                                            + (numChannels < (int) reader->numChannels ? ">2ch " : "ch ")
+                                            + juce::String ((int) rate) + "Hz";
+                                }
                             }
                             catch (const std::bad_alloc&)
                             {

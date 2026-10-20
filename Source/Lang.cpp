@@ -2036,6 +2036,7 @@ namespace
         { "ocuparia %1 en memoria (tope %2)", "ocuparía %1 en memoria (tope %2)", "would take %1 of memory (limit %2)", "将占用 %1 内存（上限 %2）", "سيشغل %1 من الذاكرة (الحد %2)" },
         { "sin memoria para %1", "", "out of memory for %1", "内存不足以容纳 %1", "لا ذاكرة كافية لـ %1" },
         { "formato no reconocido", "", "unrecognised format", "无法识别的格式", "صيغة غير معروفة" },
+        { "muestra corrupta",      "", "corrupt sample",      "样本已损坏",     "عينة تالفة" },
         { "no pude abrir el archivo", "", "could not open the file", "无法打开文件", "تعذّر فتح الملف" },
         { "No se pudo leer: %1", "",    "Could not read: %1", "无法读取：%1", "تعذّرت القراءة: %1" },
         { "Sin permiso de audio: no puedo leer tus carpetas de muestras", "",

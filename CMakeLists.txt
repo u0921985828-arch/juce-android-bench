@@ -155,6 +155,17 @@ if(ZATI_BENCH)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
+    #  Lo que entra del disco: ficheros hostiles por los dos lectores. Ver Tests/muestras.py.
+    juce_add_console_app(Carga PRODUCT_NAME "Carga")
+    juce_generate_juce_header(Carga)
+    target_sources(Carga PRIVATE Tests/Carga.cpp Source/AudioEngine.cpp Source/Sintes.cpp
+        Source/SampleLoader.cpp Source/DeviceTier.cpp Source/Lang.cpp Source/AppStorage.cpp)
+    target_compile_definitions(Carga PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1
+        JUCE_USE_MP3AUDIOFORMAT=1 JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(Carga PRIVATE ZatiData juce::juce_audio_utils juce::juce_dsp
+        juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+
     #  Y el de MUCHA GENTE, que es otra cosa que el de mucha carga: un millon
     #  de sesiones distintas, cada una con su semilla, su aparato y su tirada
     #  de acciones. Ver Tests/Soak.cpp.

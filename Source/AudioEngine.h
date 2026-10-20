@@ -698,7 +698,9 @@ public:
     int takeDroppedCommands() noexcept { return droppedCommands.exchange (0, std::memory_order_relaxed); }
 
     // --- Per-pad params (message thread) ---
-    void setPadPitch   (int slot, float semis) noexcept { store (padPitch,   slot, semis); }
+    //  jlimit deja pasar NaN; un NaN en un pad silenciaba a los demas (estabilidad#19).
+    static float acota (float lo, float hi, float v, float siNo) noexcept { return std::isfinite (v) ? juce::jlimit (lo, hi, v) : siNo; }
+    void setPadPitch   (int slot, float semis) noexcept { store (padPitch,   slot, acota (-48.0f, 48.0f, semis, 0.0f)); }
     //  Existe para el banco: "oir una nota no afina el pad" es una promesa que
     //  no se puede comprobar sin leer lo que quedo guardado.
     float getPadPitch (int slot) const noexcept
@@ -715,7 +717,7 @@ public:
     //  escrito desde el dia que se escribio: se lee acotado al rango del mando.
     //  Y aqui y no en applyState, que es la unica puerta por la que pasan
     //  todos los caminos - el fichero, el mando, el bloqueo de paso y el kit.
-    void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, juce::jlimit (0.0f, 4.0f, g)); }
+    void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, acota (0.0f, 4.0f, g, 1.0f)); }
     void setPadStart   (int slot, int s)       noexcept { store (padStart,   slot, s); }
     void setPadEnd     (int slot, int e)       noexcept { store (padEnd,     slot, e); }
     void setPadLoop    (int slot, bool b)      noexcept { store (padLoop,    slot, b); }
@@ -733,16 +735,16 @@ public:
     void setPadSelfCut (int slot, bool on)     noexcept { store (padSelfCut, slot, on); }
     bool getPadSelfCut (int slot) const noexcept
     { return slot >= 0 && slot < kNumPads && padSelfCut[(size_t) slot].load (std::memory_order_relaxed); }
-    void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, juce::jlimit (-1.0f, 1.0f, p)); }
+    void setPadPan     (int slot, float p)     noexcept { store (padPan,     slot, acota (-1.0f, 1.0f, p, 0.0f)); }
     //  ANCHO ESTEREO: 0 mono, 1 como viene, 2 el doble de lado. Ver Voice::ancho:
     //  el pan dice DONDE esta el sonido y esto CUANTO ocupa, y son dos cosas.
-    void setPadAncho   (int slot, float w)     noexcept { store (padAncho,   slot, juce::jlimit (0.0f, 2.0f, w)); }
+    void setPadAncho   (int slot, float w)     noexcept { store (padAncho,   slot, acota (0.0f, 2.0f, w, 1.0f)); }
     float getPadAncho (int slot) const noexcept
     {
         return (slot >= 0 && slot < kNumPads) ? padAncho[(size_t) slot].load (std::memory_order_relaxed) : 1.0f;
     }
-    void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, juce::jlimit (0.0f, 10000.0f, ms)); }
-    void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, juce::jlimit (0.0f, 20000.0f, ms)); }
+    void setPadAttack  (int slot, float ms)    noexcept { store (padAttack,  slot, acota (0.0f, 10000.0f, ms, 0.0f)); }
+    void setPadRelease (int slot, float ms)    noexcept { store (padRelease, slot, acota (0.0f, 20000.0f, ms, 0.0f)); }
 
     //  QUIEN MANDA EN LA SUELTA: el preset del instrumento o el mando CAIDA.
     //

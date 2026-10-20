@@ -9455,6 +9455,40 @@ int main()
                      "robo con el pool lleno", disparo, natural, x, ok ? "OK" : zatiFalla());
     }
 
+    //  NaN en los mandos de un pad no silencia a los demas (estabilidad#19).
+    {
+        SampleBuffer::Ptr s = new SampleBuffer(); s->buffer.setSize (2, 48000); s->sourceSampleRate = 48000.0;
+        for (int c = 0; c < 2; ++c) for (int i = 0; i < 48000; ++i) s->buffer.setSample (c, i, 0.5f * std::sin (0.05f * (float) i));
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        const char* nombres[] = { "gain", "pan", "ancho", "pitch" };
+        juce::String peor; float minimo = 1.0f;
+        for (int q = 0; q < 4; ++q)
+        {
+            const auto m = std::make_unique<AudioEngine>();
+            AudioEngine& e = *m; e.prepareToPlay (48000.0, 256); e.setPolyphony (8, 2);
+            for (int p = 0; p < 2; ++p) e.setPadGain (p, 1.0f);
+            e.publishSample (0, s);           // sigue sonando cuando entra el pad 1
+            e.publishSample (1, s);
+            if (q == 0) e.setPadGain (0, nan); else if (q == 1) e.setPadPan (0, nan);
+            else if (q == 2) e.setPadAncho (0, nan); else e.setPadPitch (0, nan);
+            juce::AudioBuffer<float> b (2, 256);
+            b.clear(); e.renderNextBlock (b, 0, 256);
+            e.postNoteOn (0, 1.0f);
+            for (int k = 0; k < 20; ++k) { b.clear(); e.renderNextBlock (b, 0, 256); }
+            e.postNoteOn (1, 1.0f);
+            float pico = 0.0f;
+            for (int k = 0; k < 50; ++k)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 256);
+                pico = std::max (pico, b.getMagnitude (0, 256));
+            }
+            if (pico < minimo) { minimo = pico; peor = nombres[q]; }
+        }
+        const bool ok = minimo > 0.1f;
+        std::printf ("%-34s NaN en gain/pan/ancho/pitch del pad 0: el pad 1 llega a %.3f (peor %s)   %s\n",
+                     "NaN en un pad no calla a otro", (double) minimo, peor.toRawUTF8(), ok ? "OK" : zatiFalla());
+    }
+
     //  TANDA 30 · CADA CANAL CON SU DLY, SU REV, SU AMB Y SU PNG.
     //
     //  «Si yo hago un envio al Canal 10 que tiene reverb, que ahi recojo el
