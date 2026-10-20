@@ -122,6 +122,11 @@ def alfa_seccion():
     return float (m.group (1))
 
 SECTION_ALPHA = alfa_seccion()
+#  La tinta de las ayudas (EXPORTAR, CARPETA); 0.75 a mano hasta accesibilidad#15.
+_m = re.search (r'alfaAyuda\s*=\s*([0-9.]+)f', re.sub (r'//[^\n]*', '', open (LNF, encoding="utf8").read()))
+HELP_ALPHA = float (_m.group (1)) if _m else 0.75
+_m = re.search (r'alfaCapitulo\s*=\s*([0-9.]+)f', re.sub (r'//[^\n]*', '', open (LNF, encoding="utf8").read()))
+CHAPTER_ALPHA = float (_m.group (1)) if _m else SECTION_ALPHA
 KNOB_ALPHA    = 0.85   # drawRotarySlider
 #  ...y el del PANEL que agrupa varios controles. Ver MainComponent::pintaPaneles.
 PANEL_ALPHA   = 0.16
@@ -404,6 +409,9 @@ def main():
             #  tenia tinta-sobre-tapa, tinta-sobre-acento, cristal y seccion,
             #  y el gris de lo secundario se colaba entre las cuatro. Un color
             #  que ya ES un gris medio no necesita alfa para quedarse corto.
+            "texto de ayuda":           (ratio (over (d['inkDim'], d['top'], HELP_ALPHA), d['top']), MIN_DIM),
+            #  El capitulo de una ficha va sobre el panel del grupo (accesibilidad#16).
+            "capitulo sobre el panel":  (ratio (over (d['ink'], panel, CHAPTER_ALPHA), panel), MIN_SECTION),
             "tinta apagada":            (ratio (d['inkDim'], d['top']), MIN_DIM),
             #  EL ANILLO DEL MANDO contra el chasis que se ve por dentro.
             "anillo del mando":         (ratio (over (d['ink'], d['panel'], KNOB_ALPHA), d['top']),

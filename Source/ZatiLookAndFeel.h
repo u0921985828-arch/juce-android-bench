@@ -847,6 +847,8 @@ namespace Metrics
     //  GRANDE, que pide 24 px en redonda y este rotulo se pinta a 12 y a 13.
     //  A 0.70 las cuatro carcasas pasan: 5.46, 6.85, 5.48 y 4.87.
     static constexpr float alfaSeccion = 0.70f;
+    static constexpr float alfaAyuda   = 1.00f;   // ayudas a tinta plena: a 0.75 daban 3.15-3.56 (accesibilidad#15)
+    static constexpr float alfaCapitulo = 1.00f;  // capitulo sobre el panel del grupo: a 0.70 LACA daba 3.40 (accesibilidad#16)
 
 
     //  LA CABECERA DE UNA FICHA: el alto del titulo y el de su subtitulo.

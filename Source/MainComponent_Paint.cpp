@@ -1098,14 +1098,14 @@ void MainComponent::paintChopSheetContent (juce::Graphics& g)
     }
 
     inner.removeFromTop (Metrics::sm);
-    g.setColour (ZatiColours::ink.withAlpha (0.75f));
+    g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaCapitulo));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
     //  Con la sangria del panel, como la maqueta: sin ella COMO y TROZOS
     //  nacian en el filo de su placa y no a plomo con sus tapas.
     pintaTitulo (g, inner.removeFromTop (Metrics::bandaSubtitulo).reduced (Metrics::panelSangria, 0), T ("COMO"), "seccion");
     inner.removeFromTop (Metrics::hit + Metrics::sm);
 
-    g.setColour (ZatiColours::ink.withAlpha (0.75f));
+    g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaCapitulo));
     g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
     //  En GOLPES el numero es un TECHO y el rotulo lo dice, porque un boton que
     //  pone 16 y produce 9 trozos parece roto si nadie lo explica.
@@ -1318,7 +1318,7 @@ void MainComponent::paintExportSheetContent (juce::Graphics& g)
     }
     else
     {
-        g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
+        g.setColour (ZatiColours::inkDim.withAlpha (Metrics::alfaAyuda));
         g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
         //  Y APUNTADA, para que `expo.py` la vea: TAPADO mira cada rotulo
         //  apuntado contra las tapas de su capa, y este texto a pelo con
@@ -2272,7 +2272,7 @@ void MainComponent::paintPadSheetContent (juce::Graphics& g)
             const auto r = padSectionArea[(size_t) i];
             if (r.isEmpty()) continue;
 
-            g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaSeccion));
+            g.setColour (ZatiColours::ink.withAlpha (Metrics::alfaCapitulo));
             g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.22f));
             //  Sitting on the bottom edge of its band put the word straight
             //  onto the control under it. It keeps its own padding now, and
@@ -2554,7 +2554,7 @@ void MainComponent::paintProjSheetContent (juce::Graphics& g)
     if (! projPathRowArea.isEmpty())
     {
         auto r = projPathRowArea;
-        g.setColour (ZatiColours::inkDim.withAlpha (0.75f));
+        g.setColour (ZatiColours::inkDim.withAlpha (Metrics::alfaAyuda));
         g.setFont (ZatiColours::monoFont (Metrics::fFine, false));
         pintaTitulo (g, Lang::takeStart (r, Metrics::canalonSeccion), T ("CARPETA"), "seccion");
         //  Y ESTA TAMBIEN SE CACHEA, por lo mismo que `destinoCache` ocho
