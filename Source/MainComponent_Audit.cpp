@@ -9425,15 +9425,7 @@ void MainComponent::auditTomas()
     std::cout << "{\"tomas\":3,\"antes\":" << antesDeGuardar
               << ",\"vuelven\":" << vuelven << "}" << std::endl;
 
-    //  5. UN REMUESTREO NO SE PIERDE NI AL IR AL FONDO NI AL LLENARSE.
-    //
-    //  appSuspended paraba el micro y no el remuestreo: la toma seguia armada,
-    //  la apertura al volver vaciaba el buffer y lo grabado se iba sin aviso
-    //  (auditoria 2026-10, estabilidad#6). Y al llenarse el buffer el motor
-    //  paraba solo, pero el temporizador solo lo recogia para el micro: la
-    //  tapa seguia en PARAR y el pad sin la toma (estabilidad#7). Por la tapa
-    //  y por los ganchos de verdad -appSuspended, timerCallback-, con dos
-    //  cifras cada caso: el remuestreo ya no esta activo Y el pad cambio.
+    //  5. Un remuestreo no se pierde al ir al fondo ni al llenarse: activo:pad cambio.
     auto remuestreo = [this] (bool alFondo) -> juce::String
     {
         pulsaTapa (&resampleButton);
@@ -12096,6 +12088,30 @@ void MainComponent::auditFeria()
     const int atras2 = cierraLoDeArriba() ? 1 : 0;
     const int atrasCerro = setSheet.isVisible() ? 0 : 1;
 
+    //  m. ATRAS en el explorador devuelve el pad y la carga tardia no lo pisa.
+    int escuchaSuena = -1, atrasDevuelve = -1, tardeNoPisa = -1;
+    {
+        const int pe = 5;
+        closeAllSheets();
+        openBrowseForPad (pe);
+        const auto antesEsc = uiSample[(size_t) pe];
+        SampleBuffer::Ptr otra;
+        for (int i = 0; i < kNumPads && otra == nullptr; ++i)
+            if (uiSample[(size_t) i] != nullptr && uiSample[(size_t) i] != antesEsc) otra = uiSample[(size_t) i];
+        const auto fEsc = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("escucha.wav");
+        if (otra != nullptr)
+        {
+            auditionedFile = fEsc;
+            aplicaEscucha (pe, fEsc, otra);
+            escuchaSuena = uiSample[(size_t) pe] == otra ? 1 : 0;
+            cierraLoDeArriba();
+            atrasDevuelve = uiSample[(size_t) pe] == antesEsc ? 1 : 0;
+            aplicaEscucha (pe, fEsc, otra);
+            tardeNoPisa = uiSample[(size_t) pe] == antesEsc ? 1 : 0;
+        }
+        closeAllSheets();
+    }
+
     //  l. UN BOTON QUE ASOMA HACE LO SUYO (J4 M9: DESHACER sobre SEC solo
     //     cerraba la ficha). DESHACER vive en la linea de estado, fuera de la
     //     tarjeta: el toque por `onFuera` cierra la ficha Y deshace.
@@ -12431,6 +12447,9 @@ void MainComponent::auditFeria()
               << ",\"atras1\":" << atras1
               << ",\"atras2\":" << atras2
               << ",\"atras_cerro\":" << atrasCerro
+              << ",\"escucha_suena\":" << escuchaSuena
+              << ",\"escucha_atras\":" << atrasDevuelve
+              << ",\"escucha_tarde\":" << tardeNoPisa
               << ",\"asoma_undo\":" << asomaUndo
               << ",\"asoma_cierra\":" << asomaCierra
               << ",\"asoma_deshace\":" << asomaDeshace

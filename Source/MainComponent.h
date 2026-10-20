@@ -2417,6 +2417,7 @@ private:
     void launchSystemPicker();
     void importIntoLibrary (const juce::URL& url);
     void cancelAudition();               // restore the pad if you leave without confirming
+    void aplicaEscucha (int slot, const juce::File& f, SampleBuffer::Ptr sb);
     juce::File        auditionedFile;
     SampleBuffer::Ptr preAuditionSample;
     juce::String      preAuditionName;

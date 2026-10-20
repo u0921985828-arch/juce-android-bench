@@ -8860,6 +8860,7 @@ bool MainComponent::cierraLoDeArriba()
 void MainComponent::closeAllSheets()
 {
     disarmConfirm();   // an armed button must not survive its own sheet closing
+    if (browseSheet.isVisible()) cancelAudition();   // ATRAS deshace la escucha como la X (estabilidad#10)
 
     juce::TextButton* mb[4] = { &padsButton, &secButton, &mixButton, &songButton };
     Sheet*            sh[4] = { &padSheet, &seqSheet, &mixSheet, &songSheet };
@@ -12995,10 +12996,17 @@ void MainComponent::selectionChanged()
         endBusy();
 
         if (! ok || sb == nullptr) { status.setText (T ("No se pudo leer: %1", detail), juce::dontSendNotification); return; }
-        assignSampleToPad (slot, sb, f.getFileName());
-        engine.postNoteOn (slot);
-        status.setText (f.getFileName(), juce::dontSendNotification);
+        aplicaEscucha (slot, f, sb);
     });
+}
+
+//  Una carga que vuelve tras ATRAS, la X u otro fichero no pisa nada (estabilidad#12).
+void MainComponent::aplicaEscucha (int slot, const juce::File& f, SampleBuffer::Ptr sb)
+{
+    if (auditionedFile != f || browseTargetPad != slot || ! browseSheet.isVisible()) return;
+    assignSampleToPad (slot, sb, f.getFileName());
+    engine.postNoteOn (slot);
+    status.setText (f.getFileName(), juce::dontSendNotification);
 }
 
 void MainComponent::fileDoubleClicked (const juce::File& f)
@@ -21180,10 +21188,7 @@ void MainComponent::appSuspended()
     //  away whatever had been captured.
     if (recordingActive)
         toggleMicSampling();
-    //  Y el remuestreo, por lo mismo: seguia armado, la apertura al volver
-    //  vaciaba el buffer y lo grabado se perdia sin aviso (auditoria 2026-10,
-    //  estabilidad#6; ver Tests/tomas.py).
-    if (resamplingActive)
+    if (resamplingActive)               // si no, volver vacia la toma (estabilidad#6)
         toggleResample();
 
     engine.postPanic();          // no voice is left ringing into the silence
@@ -23177,9 +23182,6 @@ void MainComponent::pintaCuadro (double dtMs)
                             juce::dontSendNotification);
     }
 
-    //  El remuestreo tambien se para solo al llenarse el buffer, y solo se
-    //  recogia el del micro: la tapa seguia en PARAR y el pad sin la toma
-    //  (auditoria 2026-10, estabilidad#7).
-    if (resamplingActive && ! engine.isRecording())
+    if (resamplingActive && ! engine.isRecording())   // buffer lleno (estabilidad#7)
         toggleResample();
 }

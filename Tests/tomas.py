@@ -137,10 +137,7 @@ def main():
         malas.append ("la marca de fabrica no vuelve del fichero: %d de %d"
                       % (c["vuelven"], c["antes"]))
 
-    #  5. UN REMUESTREO NO SE PIERDE NI AL IR AL FONDO NI AL LLENARSE
-    #     (auditoria 2026-10, estabilidad#6 y #7). Cada caso con dos cifras,
-    #     «activo:cambio»: el remuestreo ya no esta armado Y el pad recibio la
-    #     toma. Solo la primera la cumple tambien una parada que tira lo grabado.
+    #  5. Un remuestreo no se pierde al ir al fondo ni al llenarse (estabilidad#6 y #7).
     d = f.get (4, {})
     print ("remuestreo  al fondo %s   buffer lleno %s   (activo:pad cambio, se espera 0:1)"
            % (d.get ("fondo"), d.get ("lleno")))
