@@ -1358,7 +1358,7 @@ public:
         setColour (juce::ScrollBar::thumbColourId,      ZatiColours::ink.withAlpha (0.35f));
         setColour (juce::ScrollBar::trackColourId,      juce::Colours::transparentBlack);
         setColour (juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
-        setColour (juce::Slider::backgroundColourId, ZatiColours::key.darker (0.08f));
+        setColour (juce::Slider::backgroundColourId, pistaSlider());
         setColour (juce::Slider::thumbColourId, ZatiColours::amber);
         setColour (juce::Label::textColourId, ZatiColours::ink.withAlpha (0.9f));
         setColour (juce::TextButton::textColourOffId, ZatiColours::ink.withAlpha (0.92f));
@@ -1367,8 +1367,25 @@ public:
     }
 
     // The in-app sample browser reads these; re-applied on every skin change.
+    //  La pista mas suave que da 3:1 contra la tarjeta y la tecla (visual#1).
+    static juce::Colour pistaSlider()
+    {
+        juce::Colour mejor = ZatiColours::chassisTop;
+        float m = 0.0f;
+        for (float d = 0.30f; d <= 1.001f; d += 0.05f)
+            for (auto t : { juce::Colours::black, juce::Colours::white })
+            {
+                const auto c = ZatiColours::chassisTop.overlaidWith (t.withAlpha (d));
+                const float peor = juce::jmin (ZatiColours::contrastRatio (c, ZatiColours::chassisTop), ZatiColours::contrastRatio (c, ZatiColours::key));
+                if (peor >= 3.0f) return c;
+                if (peor > m) { m = peor; mejor = c; }
+            }
+        return mejor;
+    }
+
     void applyBrowserColours()
     {
+        setColour (juce::Slider::backgroundColourId, pistaSlider());
         setColour (juce::FileBrowserComponent::currentPathBoxBackgroundColourId, ZatiColours::key);
         setColour (juce::FileBrowserComponent::currentPathBoxTextColourId,       ZatiColours::ink);
         setColour (juce::FileBrowserComponent::currentPathBoxArrowColourId,      ZatiColours::ink);

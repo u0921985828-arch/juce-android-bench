@@ -12646,6 +12646,22 @@ void MainComponent::auditFeria()
         ZatiColours::setSkin (piel);
     }
 
+    //  ab. La pista de un deslizador se ve contra la tarjeta (visual#1).
+    float pistaSlider = 99.0f;
+    {
+        const int piel = ZatiColours::currentSkin;
+        for (int sk = 0; sk < 4; ++sk)
+        {
+            ZatiColours::setSkin (sk);
+            lnf.applyBrowserColours();
+            const auto bg = lnf.findColour (juce::Slider::backgroundColourId);
+            for (auto sup : { ZatiColours::chassisTop, ZatiColours::key })
+                pistaSlider = juce::jmin (pistaSlider, (float) ZatiColours::contrastRatio (sup.overlaidWith (bg), sup));
+        }
+        ZatiColours::setSkin (piel);
+        lnf.applyBrowserColours();
+    }
+
     //  aa. Nombres y estados para el lector (accesibilidad#22, #23, #24).
     int sinNombre = 0, simbolos = 0, cruces = 0, padsMarcables = 0, padElegido = 0;
     {
@@ -12715,7 +12731,7 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
-              << ",\"sin_nombre\":" << sinNombre << ",\"simbolos\":" << simbolos << ",\"cruces\":" << cruces
+              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"simbolos\":" << simbolos << ",\"cruces\":" << cruces
               << ",\"pads_marcables\":" << padsMarcables << ",\"pad_elegido\":" << padElegido
               << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
               << ",\"estado_anuncia\":" << estadoAnuncia

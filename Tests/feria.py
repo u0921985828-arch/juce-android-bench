@@ -163,6 +163,8 @@ def main():
            % (r.get ("cara_tapada", -1), r.get ("cara_vuelve", 0)))
     regla ("paso marcado", r.get ("paso_marca", 0) >= 3.0,
            "marca de un paso puesto contra su relleno, peor carcasa y color: %.2f (1.4.1 y 1.4.11)" % r.get ("paso_marca", 0))
+    regla ("pista", r.get ("pista_slider", 0) >= 3.0,
+           "pista de un deslizador contra la tarjeta, peor carcasa: %.2f (1.4.11 pide 3)" % r.get ("pista_slider", 0))
     regla ("con nombre", r.get ("sin_nombre", -1) == 0 and r.get ("cruces", -1) == 0,
            "cajas sin nombre %d, cruces que se leen «×» %d (botones sin letra en total: %d)"
            % (r.get ("sin_nombre", -1), r.get ("cruces", -1), r.get ("simbolos", -1)))
