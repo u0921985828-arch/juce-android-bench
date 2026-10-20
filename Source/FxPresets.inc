@@ -32,9 +32,8 @@
 //
 //  Y LOS NOMBRES DICEN LO QUE HACEN, no a que aparato se parecen.
 //  `Tests/marcas.py` barre `Source/**.{h,cpp,inc,jucer}`, asi que este fichero
-//  entra en el barrido solo. Tampoco se traducen, igual que
-//  `Sintes::Preset::nombre` y que los nombres de los propios efectos: un
-//  preset es un nombre propio, y traducirlo lo convierte en otro preset.
+//  entra en el barrido solo. El nombre es la clave: la cara lo traduce con
+//  `T (nombre + "|preset")` y las filas viven en Lang.cpp (textos#3).
 
 //  `inline` y no `static`: este `.inc` se incluye desde una CABECERA, asi que
 //  con enlace interno cada unidad de traduccion se llevaria su copia de la

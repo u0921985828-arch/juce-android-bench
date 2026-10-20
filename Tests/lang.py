@@ -164,7 +164,7 @@ def main():
             bad.append ("fila %r: «%s» sin tilde en castellano (pon la celda es)"
                         % (r[0], m.group (1)))
 
-    #  Y LOS NOMBRES DE LOS PRESETS, que salen tal cual en los cuatro (textos#3).
+    #  Y LOS NOMBRES DE LOS PRESETS, que en castellano salen tal cual (textos#3).
     inc = open (os.path.join (SRC, "FxPresets.inc"), encoding="utf8").read()
     for nom in re.findall (r'\{\s*\{\s*"([^"]+)"', inc):
         for m in re.finditer (r"(?<![\w])(" + "|".join (sin_tilde + ["mas", "avion", "telefono"]) + r")(?![\w])", nom, re.I):
@@ -222,11 +222,11 @@ def main():
         ("envolvente",   r"(?i)(?<![a-z])(envolvente|ENV)(?![a-z])",              "غلاف",          None,    None),
         ("solo",         r"(?<![A-Za-z])(SOLO|Solo|solos)(?![A-Za-z])",           "منفرد",         None,    None),
         ("bloque",       r"(?i)(?<![a-z])bloques?(?![a-z])",                      "كتل",           None,    None),
-        ("preset",       r"(?i)(?<![a-z])presets?(?![a-z])",                      "مسبق",          None,    None),
+        ("preset",       r"(?i)(?<![a-z|])presets?(?![a-z])",                      "مسبق",          None,    None),
         ("remuestrear",  r"(?i)remuestr",                                         "ريسامبل",       "إعادة", None),
         ("fader",        r"(?i)(?<![a-z])faders?(?![a-z])",                       "فيدر",          None,    None),
         ("metronomo",    r"(?i)metronomo",                                        "مترونوم",       None,    None),
-        ("semitono",     r"(?i)semitonos?|(?<![A-Z])SEMIS(?![A-Z])",              "نغم",           None,    None),
+        ("semitono",     r"(?i)semitonos?|(?<![A-Z])SEMIS(?![A-Z]|\|preset)",              "نغم",           None,    None),
         ("semicorchea",  r"(?i)semicorchea",                                      "نوتة",          None,    None),
         ("cuenta atras", r"(?i)cuenta atras",                                     u"(?<![" + letra_ar + "])(ال)?عد(?![" + letra_ar + "])", None, None),
         ("compas",       r"(?i)(?<![a-z])compas(es)?(?![a-z])",                   "مازور",         None,    None),
@@ -472,6 +472,12 @@ def main():
                 if lit: used.add (lit)
         for lit in re.findall (r'"([A-Z][A-Z0-9 ]*\|[a-z]+)"', t):
             used.add (lit)
+
+    #  Y LOS 150 NOMBRES DE PRESET, que la cara pasa por `T (nombre + "|preset")` (textos#3).
+    tabla_fx = open (os.path.join (SRC, "FxPresets.inc"), encoding="utf8").read()
+    presets_fx = set (n + "|preset" for n in re.findall (r'\{\s*"([^"]+)"\s*,\s*-?[0-9]', tabla_fx))
+    used |= presets_fx
+    used.discard ("|preset")   # el sufijo que la cara pega, no una clave
 
     for k in sorted (used - set (keys)):
         bad.append ("clave usada y NO en la tabla (sale en espanol en los cuatro): %r" % k)

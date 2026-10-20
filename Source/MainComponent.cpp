@@ -6438,7 +6438,7 @@ juce::String MainComponent::fxPresetNombre (int f) const
     const int k = fxPresetPuesto[(size_t) canalActual][(size_t) f];
     if (k == kFxPresetMovido) return T ("MOVIDO");
     if (FxPresets::esDefecto (k)) return T ("DEFECTO");   // textos#3: es interfaz, no un nombre
-    return juce::String::fromUTF8 (FxPresets::nombre (f, k));
+    return T (juce::String::fromUTF8 (FxPresets::nombre (f, k)) + "|preset");   // textos#3
 }
 
 // ---------------------------------------------------------------------------
@@ -7499,7 +7499,7 @@ void MainComponent::refrescaMenuPresets()
         if (! hay) { b->setBounds ({}); continue; }
 
         b->setButtonText (deFabrica ? (FxPresets::esDefecto (i) ? T ("DEFECTO")
-                                                                : juce::String::fromUTF8 (FxPresets::nombre (f, i)))
+                                                                : T (juce::String::fromUTF8 (FxPresets::nombre (f, i)) + "|preset"))
                                     : presetTuyosVistos[t]);
         b->setToggleState (deFabrica ? (tuyo.isEmpty() && i == puesto)
                                      : (tuyo == presetTuyosVistos[t]),

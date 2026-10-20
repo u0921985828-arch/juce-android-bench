@@ -3776,8 +3776,8 @@ void MainComponent::auditOpen (const juce::String& pedido)
                 //  identicas no dicen cual es cual.
                 int peor = 1;
                 for (int k = 1; k < FxPresets::cuantos(); ++k)
-                    if (juce::String::fromUTF8 (FxPresets::nombre (fx, k)).length()
-                          > juce::String::fromUTF8 (FxPresets::nombre (fx, peor)).length())
+                    if (T (juce::String::fromUTF8 (FxPresets::nombre (fx, k)) + "|preset").length()   // textos#3: el que sale
+                          > T (juce::String::fromUTF8 (FxPresets::nombre (fx, peor)) + "|preset").length())
                         peor = k;
                 aplicaFxPreset (fx, peor);
             }
