@@ -144,6 +144,36 @@ def corre_vivo():
     return out
 
 
+def corre_cierre():
+    """Arranca EN VIVO, deja cola en el anillo y cierra la app sin PARAR. Devuelve
+    el codigo de salida y lo que quedo en el fichero."""
+    casa = tempfile.mkdtemp (prefix="zati-vivo-cierre-")
+    env = dict (os.environ, ZATI_AUDIT="1", ZATI_VIVO="cierre",
+                DISPLAY=PANTALLA, HOME=casa, XDG_DATA_HOME=casa)
+    try:
+        try:
+            r = subprocess.run ([BIN], env=env, capture_output=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            return None, None
+        ruta, vivo = None, None
+        for l in r.stdout.decode ("utf8", "replace").splitlines():
+            l = l.strip()
+            if l.startswith ("{") and '"vivo_cierre"' in l:
+                try: ruta = json.loads (l).get ("ruta")
+                except Exception: pass
+            if l.startswith ("{") and '"vivo_al_cerrar"' in l:
+                try: vivo = json.loads (l).get ("vivo_al_cerrar")
+                except Exception: pass
+        if not ruta or not os.path.exists (ruta):
+            return r.returncode, None
+        datos = open (ruta, "rb").read()
+        cerrado = (len (datos) >= 12 and datos[:4] == b"RIFF"
+                   and int.from_bytes (datos[4:8], "little") == len (datos) - 8)
+        return r.returncode, {"bytes": len (datos), "cerrado": cerrado, "vivo": vivo}
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)
+
+
 def vivo (out):
     for l in out.splitlines():
         l = l.strip()
@@ -301,6 +331,20 @@ def main():
                pesa and limpio and igual,
                "%s %d bytes   con cuenta %d   escrito durante la cuenta %d   tiradas %d"
                  % (v["nombre"], v["bytes"], v["bytes_cuenta"], v["tras_cuenta"], v["tiradas"]))
+
+    #  Y CERRAR LA APP CON EL REBOTE GRABANDO (auditoria 2026-10,
+    #  estabilidad#1): el destructor no paraba el hilo, el motor moria antes y
+    #  el hilo leia su anillo liberado. Tres cifras: el hilo ya no existe
+    #  cuando el motor va a morir -la condicion del fallo, que la lectura
+    #  liberada solo salta si queda cola en el anillo-, la app sale con 0, y
+    #  el WAV queda cerrado -el tamano que dice su cabecera RIFF es el del
+    #  fichero- con lo que se grabo dentro.
+    rc, c = corre_cierre()
+    juzga ("vivo-cierre", rc == 0 and c is not None and c["cerrado"] and c["bytes"] > 1000
+                          and c["vivo"] == 0,
+           "sale con %s   %s" % (rc, "sin fichero" if c is None else
+                                   "%d bytes, cabecera %s, hilo vivo al morir el motor %s"
+                                   % (c["bytes"], "cerrada" if c["cerrado"] else "ABIERTA", c["vivo"])))
 
     print()
     if malas:

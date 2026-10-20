@@ -8796,6 +8796,24 @@ void MainComponent::auditVivo()
                                 f.getFileName());
     };
 
+    //  Y CERRAR LA APP CON EL REBOTE GRABANDO (ZATI_VIVO=cierre). El
+    //  destructor paraba los otros hilos y este no: `vivoJob` se declara antes
+    //  que `engine`, asi que el motor moria primero y el hilo seguia leyendo
+    //  su anillo ya liberado (auditoria 2026-10, estabilidad#1). Aqui se
+    //  arranca, se deja COLA en el anillo -los ultimos bombeos sin aire, como
+    //  arriba- y se vuelve sin tocar PARAR: lo que sigue es cerrar la app. El
+    //  banco mira que salga con 0 y que el WAV quede cerrado, con su cabecera.
+    if (UiAudit::env ("ZATI_VIVO") == "cierre")
+    {
+        engine.setClick (false);
+        pulsaTapa (&exportLiveButton);
+        for (int i = 0; i < 30; ++i) { bombeaAudioDePrueba(); juce::Thread::sleep (8); }
+        for (int i = 0; i < 10; ++i) bombeaAudioDePrueba();
+        std::cout << "{\"vivo_cierre\":1,\"grabando\":" << (vivoJob != nullptr ? 1 : 0)
+                  << ",\"ruta\":\"" << vivoFichero.getFullPathName() << "\"}" << std::endl;
+        return;
+    }
+
     const auto sinCuenta = corre (0);
     const auto conCuenta = corre (1);
 

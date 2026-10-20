@@ -8931,6 +8931,19 @@ MainComponent::~MainComponent()
     // buffers, so it must be gone before either can be.
     if (exportJob != nullptr) { exportJob->signalThreadShouldExit(); exportJob.reset(); endBusy(); }
 
+    //  Y EL REBOTE EN VIVO, que tambien lee el motor y no se paraba: el
+    //  motor moria antes y el hilo seguia vaciando su anillo ya liberado
+    //  (auditoria 2026-10, estabilidad#1). En el mismo orden que PARAR -el
+    //  grifo antes que el hilo-, asi que lo grabado hasta aqui queda en el
+    //  fichero y el WAV se cierra con su cabecera.
+    if (vivoJob != nullptr)
+    {
+        engine.vivoPara();
+        vivoJob->signalThreadShouldExit();
+        vivoJob->stopThread (4000);
+        vivoJob.reset();
+    }
+
     //  Un guardado a medias deja una carpeta con muestras y SIN project.xml:
     //  la lista de proyectos la ensena igual, y al abrirla dice "no encuentro
     //  el proyecto". Al cerrar se termina de golpe - son los pads que falten,
@@ -8955,6 +8968,12 @@ MainComponent::~MainComponent()
     abriendoAudio = false;
 
     shutdownAudio();
+    //  Lo que mide Tests/export.py (vivo-cierre): si el hilo del rebote sigue
+    //  en pie cuando el motor esta a punto de morir. El fallo de verdad es una
+    //  lectura de memoria liberada que solo salta si queda cola en el anillo,
+    //  asi que la cifra es la condicion y no la suerte.
+    if (UiAudit::env ("ZATI_VIVO") == "cierre")
+        std::cout << "{\"vivo_al_cerrar\":" << (vivoJob != nullptr ? 1 : 0) << "}" << std::endl;
     setLookAndFeel (nullptr);
 }
 
