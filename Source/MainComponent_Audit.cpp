@@ -12646,6 +12646,36 @@ void MainComponent::auditFeria()
         ZatiColours::setSkin (piel);
     }
 
+    //  aa. Nombres y estados para el lector (accesibilidad#22, #23, #24).
+    int sinNombre = 0, simbolos = 0, cruces = 0, padsMarcables = 0, padElegido = 0;
+    {
+        std::map<juce::String, int> cuales;
+        std::function<void (juce::Component&)> mira = [&] (juce::Component& c)
+        {
+            for (auto* h : c.getChildren())
+            {
+                auto* ah = h->isAccessible() ? h->getAccessibilityHandler() : nullptr;
+                const auto t = ah != nullptr ? ah->getTitle().trim() : juce::String();
+                if (ah != nullptr && (dynamic_cast<juce::ComboBox*> (h) != nullptr || dynamic_cast<juce::TextEditor*> (h) != nullptr)
+                    && t.isEmpty() && h->getParentComponent() != nullptr && dynamic_cast<juce::ComboBox*> (h->getParentComponent()) == nullptr)
+                { ++sinNombre; ++cuales["<" + juce::String (typeid (*h).name()) + ">"]; }
+                if (ah != nullptr && dynamic_cast<juce::Button*> (h) != nullptr && [&t] { for (auto ch : t) if (juce::CharacterFunctions::isLetter (ch)) return false; return true; }())
+                { ++simbolos; if (t == Metrics::cruz) ++cruces; }
+                mira (*h);
+            }
+        };
+        mira (*this);
+        for (auto& [k, v] : cuales) std::cerr << "sin nombre " << k << " x" << v << "\n";
+        for (int i = 0; i < pads.size(); ++i)
+        {
+            auto* ah = pads[i]->getAccessibilityHandler();
+            if (ah == nullptr) continue;
+            const auto st = ah->getCurrentState();
+            if (st.isCheckable()) ++padsMarcables;
+            if (i == selectedPad && st.isChecked()) padElegido = 1;
+        }
+    }
+
     auto caja = [] (juce::Rectangle<int> r)
     { return "[" + juce::String (r.getX()) + "," + juce::String (r.getY()) + ","
                  + juce::String (r.getWidth()) + "," + juce::String (r.getHeight()) + "]"; };
@@ -12685,6 +12715,8 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
+              << ",\"sin_nombre\":" << sinNombre << ",\"simbolos\":" << simbolos << ",\"cruces\":" << cruces
+              << ",\"pads_marcables\":" << padsMarcables << ",\"pad_elegido\":" << padElegido
               << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
               << ",\"estado_anuncia\":" << estadoAnuncia
               << ",\"regla_tinta\":" << reglaTinta << ",\"eq_rotulo\":" << eqRotulo

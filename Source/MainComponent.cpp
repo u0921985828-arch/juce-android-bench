@@ -10152,6 +10152,7 @@ void MainComponent::selectBank (int bank, int padDestino)
 void MainComponent::selectPad (int index)
 {
     selectedPad = index;
+    for (int i = 0; i < pads.size(); ++i) pads[i]->setToggleState (i == index, juce::dontSendNotification);   // accesibilidad#24
     //  Y EL TECLADO MIDI VA CON EL. En modo TECLADO lo que se toca es el pad
     //  ELEGIDO, y no un ajuste aparte que haya que acordarse de mover: dos
     //  numeros que significan lo mismo son dos numeros que un dia no coinciden.
@@ -11512,6 +11513,33 @@ void MainComponent::refreshAccessibleNames()
         if (auto* f = canFaders[c]) { f->setTitle (T ("Ganancia canal %1", ch)); f->setDescription (T ("del mezclador")); }
         if (auto* m = canMutes[c])  { m->setTitle (T ("Silencio canal %1", ch)); }
         if (auto* s = canSolos[c])  { s->setTitle (T ("Solo canal %1", ch)); }
+    }
+
+    //  accesibilidad#22, #23: cajas sin nombre y la cruz que se leia «×».
+    midiInBox.setTitle (T ("Entrada MIDI"));
+    midiOutBox.setTitle (T ("Salida MIDI"));
+    projNameBox.setTitle (T ("Nombre del proyecto"));
+    presetNombreBox.setTitle (T ("Nombre del preset"));
+    canNomBox.setTitle (T ("Nombre del canal"));
+    std::function<void (juce::Component&)> nombra = [&] (juce::Component& c)
+    {
+        for (auto* h : c.getChildren())
+        {
+            if (auto* b = dynamic_cast<juce::Button*> (h))
+                if (b->getButtonText() == Metrics::cruz) b->setTitle (T ("Cerrar"));
+            if (browser != nullptr && browser->isParentOf (h))
+            {
+                if (auto* cb = dynamic_cast<juce::ComboBox*> (h)) cb->setTitle (T ("CARPETA"));
+                if (auto* te = dynamic_cast<juce::TextEditor*> (h)) te->setTitle (T ("NOMBRE"));
+            }
+            nombra (*h);
+        }
+    };
+    nombra (*this);
+    for (int i = 0; i < pads.size(); ++i)   // accesibilidad#24
+    {
+        pads[i]->setToggleable (true);
+        pads[i]->setToggleState (i == selectedPad, juce::dontSendNotification);
     }
 }
 

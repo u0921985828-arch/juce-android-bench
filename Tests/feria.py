@@ -163,6 +163,11 @@ def main():
            % (r.get ("cara_tapada", -1), r.get ("cara_vuelve", 0)))
     regla ("paso marcado", r.get ("paso_marca", 0) >= 3.0,
            "marca de un paso puesto contra su relleno, peor carcasa y color: %.2f (1.4.1 y 1.4.11)" % r.get ("paso_marca", 0))
+    regla ("con nombre", r.get ("sin_nombre", -1) == 0 and r.get ("cruces", -1) == 0,
+           "cajas sin nombre %d, cruces que se leen «×» %d (botones sin letra en total: %d)"
+           % (r.get ("sin_nombre", -1), r.get ("cruces", -1), r.get ("simbolos", -1)))
+    regla ("pad elegido", r.get ("pads_marcables", 0) == 64 and r.get ("pad_elegido", 0) == 1,
+           "pads marcables %d de 64, el elegido se dice %d" % (r.get ("pads_marcables", 0), r.get ("pad_elegido", 0)))
     regla ("midi ajeno", r.get ("midi_ajeno", -1) == 0 and r.get ("midi_gordo", -1) == 0,
            "IMPORTAR MIDI con un .wav trae %d notas y con un .mid de 5 MB %d"
            % (r.get ("midi_ajeno", -1), r.get ("midi_gordo", -1)))
