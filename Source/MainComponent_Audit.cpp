@@ -12102,6 +12102,18 @@ void MainComponent::auditFeria()
         ZatiColours::setSkin (piel);
     }
 
+    //  o. El filo del pulgar de la barra se ve contra la ficha (accesibilidad#17).
+    float pulgarFilo = 99.0f;
+    {
+        const int piel = ZatiColours::currentSkin;
+        for (int sk = 0; sk < 4; ++sk)
+        {
+            ZatiColours::setSkin (sk);
+            pulgarFilo = juce::jmin (pulgarFilo, (float) ZatiColours::contrastRatio (BarraVista::filoPulgar(), ZatiColours::chassisTop));
+        }
+        ZatiColours::setSkin (piel);
+    }
+
     //  m. ATRAS en el explorador devuelve el pad y la carga tardia no lo pisa.
     int escuchaSuena = -1, atrasDevuelve = -1, tardeNoPisa = -1;
     {
@@ -12465,6 +12477,7 @@ void MainComponent::auditFeria()
               << ",\"escucha_atras\":" << atrasDevuelve
               << ",\"escucha_tarde\":" << tardeNoPisa
               << ",\"rojo_tinta\":" << rojoTinta
+              << ",\"pulgar_filo\":" << pulgarFilo
               << ",\"asoma_undo\":" << asomaUndo
               << ",\"asoma_cierra\":" << asomaCierra
               << ",\"asoma_deshace\":" << asomaDeshace

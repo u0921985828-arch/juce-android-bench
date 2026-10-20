@@ -110,6 +110,8 @@ public:
     //  hace `drawButtonBackground`- y el cabezal es `playhead`, que es el token
     //  del cabezal de tiempo en las tres rejillas. Un control nuevo que elige
     //  sus propios colores es como se acaba con dos paletas.
+    static juce::Colour filoPulgar() { return ZatiColours::inkDim; }   // 3:1 contra la ficha; la ranura daba 2.14 (accesibilidad#17)
+
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
@@ -170,7 +172,7 @@ public:
         //  Y una tapa APAGADA lleva una RANURA y no un filo claro: es lo que
         //  la casa dibuja en el estado apagado y lo que separa un pulgar de
         //  una tapa encendida en las cuatro carcasas.
-        g.setColour (ZatiColours::groove (0.42f));
+        g.setColour (filoPulgar());
         g.drawRoundedRectangle (cara.reduced (0.5f), Metrics::radio, Metrics::filo);
 
         //  Y LAS ESTRIAS SON LAS DE UN MANDO, o sea la tinta MEDIDA sobre la
