@@ -1312,7 +1312,9 @@ void MainComponent::resized()
     //  short of the status bar reads as a panel with a gap behind it.
     auto sheetFromBottom = [&full, this] (Sheet& s, int desiredH)
     {
-        desiredH += Metrics::panelAireY;   // visual#6: el aire de abajo de la ultima caja
+        //  visual#6: el aire de abajo de la ultima caja; se pide solo si cabe, se deja siempre
+        const int aire = Metrics::panelAireY;
+        if (s.desplazable || desiredH + aire <= altoTarjeta (full)) desiredH += aire;
         s.setBounds (getLocalBounds());
         //  APAISADO, LA TARJETA PUEDE SER MAS ALTA.
         //
@@ -1366,7 +1368,7 @@ void MainComponent::resized()
 
         //  LA QUE NO SE DESPLAZA, EXACTAMENTE COMO ESTABA. Ver Sheet::hazDesplazable.
         if (! s.desplazable)
-            return dentro.withTrimmedBottom (Metrics::panelAireY);
+            return dentro.withTrimmedBottom (aire);
 
         //  Y LA QUE SI: la tarjeta sigue midiendo lo que el tope permite -no
         //  tapa la maquina entera- pero el CONTENIDO mide lo que pidio, y lo
@@ -1388,7 +1390,7 @@ void MainComponent::resized()
         s.cuerpo.setSize (juce::jmax (40, zonaVista.getWidth()),
                           juce::jmax (zonaVista.getHeight(), pedido));
         s.sincronizaBarra();
-        return s.cuerpo.getLocalBounds().withTrimmedBottom (Metrics::panelAireY);
+        return s.cuerpo.getLocalBounds().withTrimmedBottom (aire);
     };
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver abrePadPicker.
     //

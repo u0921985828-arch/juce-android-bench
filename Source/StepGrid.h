@@ -123,7 +123,7 @@ public:
         if (encaje > 0 && getWidth() > kGutter)
         {
             const float cabe = (float) (getWidth() - kGutter) / (float) encaje;
-            if (cabe < nominal && cabe >= nominal * 0.75f) return cabe;
+            if (cabe < nominal && cabe >= juce::jmax (nominal * 0.75f, kSuelo)) return cabe;   // nunca bajo el suelo de 12
         }
         return nominal;
     }
@@ -623,6 +623,7 @@ private:
     int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
     int carriles = kLanes, medio = 0;   // la ventana de pistas. Ver setVentana.
     float zoomW = 1.0f;                 // el ancho de la celda contra su alto
+    static constexpr float kSuelo = 12.0f;   // la celda mas pequena que se pinta (expo.py MIN_CELL)
     int   encaje = 0;                   // pasos que tienen que entrar sin barra; 0 = los que quepan
     float phase = 0.0f;   // how far through the live step, 0..1
 
