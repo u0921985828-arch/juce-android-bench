@@ -136,6 +136,15 @@ def main():
     if r.get ("fxp_nuevos") != "37.0:3100.0":
         malas.append ("los mandos nuevos volvieron del fichero como %s" % r.get ("fxp_nuevos"))
 
+    #  6. Y MANTENER PULSADO SE DESHACE. Borra toda la automatizacion de un
+    #     gesto que tambien sale sin querer; DESHACER tiene que devolverla
+    #     entera, al espejo y al motor (auditoria 2026-10, accesibilidad#2).
+    n = ESPERADO.count (";")
+    m = r.get ("mantener", "")
+    print ("mantener antes:tras:deshacer:motor = %s   (se espera %d:0:%d:%d)" % (m, n, n, n))
+    if m != "%d:0:%d:%d" % (n, n, n):
+        malas.append ("mantener AUTO y DESHACER dejo %s: la automatizacion no vuelve" % (m or "(nada)"))
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

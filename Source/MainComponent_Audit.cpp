@@ -8503,6 +8503,19 @@ void MainComponent::auditAuto()
     for (const auto& e : autoEventos)
         vuelta << e.paso << ":" << (int) e.fx << ":" << (int) e.par << ":"
                << juce::String (e.valor, 2) << ":" << (int) e.canal << ";";
+    const int motorVuelta = engine.numAuto();
+
+    //  6. Y MANTENER PULSADO SE DESHACE. Por la tapa -el mismo `onHold` que
+    //     dispara el dedo- y con TRES cifras: vacia, DESHACER la devuelve
+    //     entera al espejo y al motor. «vacia» solo lo cumple tambien el
+    //     borrado sin vuelta que habia (auditoria 2026-10, accesibilidad#2).
+    const int antesMantener = (int) autoEventos.size();
+    if (autoBtn.onHold) autoBtn.onHold();
+    const int trasMantener = (int) autoEventos.size();
+    performUndo();
+    bombeaAudioDePrueba();
+    const int trasDeshacer = (int) autoEventos.size();
+    const int motorDeshacer = engine.numAuto();
 
     std::cout << "{\"auto\":1"
               << ",\"armado_tras_tocar\":" << armadoTrasTocar
@@ -8514,7 +8527,9 @@ void MainComponent::auditAuto()
               << ",\"ultimo\":"            << juce::String (ultimo, 0)
               << ",\"armado_tras_parar\":" << armadoTrasParar
               << ",\"vuelta\":\""          << vuelta << "\""
-              << ",\"motor\":"             << engine.numAuto()
+              << ",\"motor\":"             << motorVuelta
+              << ",\"mantener\":\""         << antesMantener << ":" << trasMantener << ":"
+                                           << trasDeshacer << ":" << motorDeshacer << "\""
               << ",\"fxp_nuevos\":\""       << juce::String (engine.getFxParam (4, AudioEngine::kFxCmp, 4), 1) << ":"
                                            << juce::String (engine.getFxParam (4, AudioEngine::kFxCmp, AudioEngine::kParAgudos), 1) << "\""
               << "}" << std::endl;

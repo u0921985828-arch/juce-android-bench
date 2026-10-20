@@ -4344,6 +4344,12 @@ MainComponent::MainComponent()
             //  Desarmar antes de vaciar: si no, el primer mando que se toque
             //  despues vuelve a escribir sobre lo que se acaba de borrar.
             if (autoArmado) ponAutoArmado (false);
+            //  Y CON DESHACER: mantener pulsado borra toda la automatizacion de
+            //  la cancion de un gesto que tambien sale sin querer, y era lo unico
+            //  destructivo de esta hoja que no volvia (auditoria 2026-10,
+            //  accesibilidad#2). El estado ya la lleva en <song auto>, asi que
+            //  una foto antes de vaciar basta para devolverla. Ver Tests/auto.py.
+            if (! autoEventos.empty()) pushUndo (T ("AUTO"));
             vaciaAutomacion();
         };
         songSheet.addAndMakeVisible (autoBtn);
