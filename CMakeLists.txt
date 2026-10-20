@@ -14,6 +14,15 @@ project(Zati VERSION 1.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+#  estabilidad#33: build con sanitizador, -DZATI_SANITIZE=address|undefined|thread.
+set(ZATI_SANITIZE "" CACHE STRING "Sanitizador para la app y los bancos (address, undefined, thread)")
+if(ZATI_SANITIZE)
+    add_compile_options(-fsanitize=${ZATI_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${ZATI_SANITIZE})
+    set(ZATI_LTO OFF CACHE BOOL "" FORCE)
+    message(STATUS "Zati: sanitizador ${ZATI_SANITIZE}, sin LTO")
+endif()
+
 # --- Fetch JUCE (PINNED tag — never track master/develop) -------------------
 include(FetchContent)
 FetchContent_Declare(

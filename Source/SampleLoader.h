@@ -13,6 +13,7 @@ class SampleLoader
 {
 public:
     explicit SampleLoader (AudioEngine& engineToLoadInto);
+    ~SampleLoader() { pool.removeAllJobs (true, 2000); }   // la carga en vuelo se corta por trozos (estabilidad#24)
 
     // Decode `url` in the background into pad `slot`. On Android the file picker
     // returns a content:// URL opened via AndroidDocument. `onFinished(success,

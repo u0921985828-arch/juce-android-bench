@@ -61,6 +61,10 @@ def main():
     print ("mp3      formatos registrados en el cargador: %s" % mp3.get ("mp3_cargador"))
     if mp3.get ("mp3_cargador") != 1:
         malas.append ("MP3 registrado %s veces" % mp3.get ("mp3_cargador"))
+    corte = next ((r for r in filas if "cerrar_ms" in r), {})
+    print ("cerrar   a media carga: %s ms, la carga entera %s ms" % (corte.get ("cerrar_ms"), corte.get ("carga_entera_ms")))
+    if not corte or corte["cerrar_ms"] * 4 > corte["carga_entera_ms"]:   # estabilidad#24
+        malas.append ("cerrar a media carga espera %s ms de %s" % (corte.get ("cerrar_ms"), corte.get ("carga_entera_ms")))
     for r in filas:
         if "f" not in r: continue
         if r["via"] == "detalle":

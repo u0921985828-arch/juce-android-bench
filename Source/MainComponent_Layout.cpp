@@ -1005,8 +1005,8 @@ void MainComponent::resized()
             //  la que se quedara vieja dejaria el visor comiendole el dedo al
             //  mando sin que nada fallara. Ver Metrics::margenPlato.
             const int cellMin = Metrics::hit + 2 * Metrics::margenPlato;
-            const int visorW  = juce::jlimit (0, juce::jmin (120, mrow.getWidth() - 3 * cellMin),
-                                              mrow.getWidth() / 3);
+            const int techoV  = juce::jmax (0, juce::jmin (120, mrow.getWidth() - 3 * cellMin));   // estabilidad#18
+            const int visorW  = juce::jlimit (0, techoV, mrow.getWidth() / 3);
             //  EN MODO PAD el visor no tiene efecto que ensenar y su sitio es
             //  de la tapa que dice de que pad son los mandos -y los devuelve
             //  al efecto-. El mismo rectangulo, un inquilino a la vez.
@@ -1312,6 +1312,7 @@ void MainComponent::resized()
     //  short of the status bar reads as a panel with a gap behind it.
     auto sheetFromBottom = [&full, this] (Sheet& s, int desiredH)
     {
+        desiredH += Metrics::panelAireY;   // visual#6: el aire de abajo de la ultima caja
         s.setBounds (getLocalBounds());
         //  APAISADO, LA TARJETA PUEDE SER MAS ALTA.
         //
@@ -1365,7 +1366,7 @@ void MainComponent::resized()
 
         //  LA QUE NO SE DESPLAZA, EXACTAMENTE COMO ESTABA. Ver Sheet::hazDesplazable.
         if (! s.desplazable)
-            return dentro;
+            return dentro.withTrimmedBottom (Metrics::panelAireY);
 
         //  Y LA QUE SI: la tarjeta sigue midiendo lo que el tope permite -no
         //  tapa la maquina entera- pero el CONTENIDO mide lo que pidio, y lo
@@ -1387,7 +1388,7 @@ void MainComponent::resized()
         s.cuerpo.setSize (juce::jmax (40, zonaVista.getWidth()),
                           juce::jmax (zonaVista.getHeight(), pedido));
         s.sincronizaBarra();
-        return s.cuerpo.getLocalBounds();
+        return s.cuerpo.getLocalBounds().withTrimmedBottom (Metrics::panelAireY);
     };
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver abrePadPicker.
     //
@@ -2854,6 +2855,7 @@ void MainComponent::resized()
         auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
         auto titleRow = inner.removeFromTop (Metrics::hit);
         browseCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
+        colocaBusy();
 
         //  CUATRO ACCIONES NO CABEN EN UNA FILA ESTRECHA, igual que las cuatro
         //  pestanas de AJUSTES. Eran tres y entraban; FABRICA las puso en
@@ -3037,7 +3039,7 @@ void MainComponent::resized()
         //  donde no cabe.
         const int anchoChip = (dosColumnasSet ? setInnerW / 2 - Metrics::sm : setInnerW)
                             - Metrics::canalonSeccion - Metrics::xs;
-        auto chipsCaben = [this, anchoChip] (juce::OwnedArray<juce::TextButton>& btns)
+        auto chipsCaben = [this, anchoChip] (juce::OwnedArray<Boton>& btns)
         {
             juce::TextButton* arr[8] {};
             const int n = juce::jmin (8, btns.size());
@@ -3340,7 +3342,7 @@ void MainComponent::resized()
             //  dos filas cuando ni asi caben. `partir` viene de arriba, de
             //  donde se pidio la altura: decidirlo aqui otra vez con otro
             //  ancho es como una fila se queda con altura cero.
-            auto chipRow = [this, &columnaChips] (juce::OwnedArray<juce::TextButton>& btns,
+            auto chipRow = [this, &columnaChips] (juce::OwnedArray<Boton>& btns,
                                                   int labelW, bool partir)
             {
                 juce::TextButton* arr[8] {};
@@ -3469,7 +3471,7 @@ void MainComponent::resized()
             //  nace pegado al primer chip. Ver Metrics::panelSangria.
             juce::Rectangle<int> columnaChips = inner;
             columnaChips.reduce (Metrics::panelSangria, 0);
-            auto chipRow = [this, &columnaChips] (juce::OwnedArray<juce::TextButton>& btns,
+            auto chipRow = [this, &columnaChips] (juce::OwnedArray<Boton>& btns,
                                                   int labelW, bool partir)
             {
                 juce::TextButton* arr[8] {};
@@ -4078,7 +4080,7 @@ void MainComponent::resized()
         //  del RACK y la de la cara- y escribirla dos veces son dos reglas.
         //  De abajo arriba: el 01 abajo a la izquierda. Numerar al reves aqui
         //  seria un mapa distinto del mismo instrumento.
-        auto pon4x4 = [] (juce::Rectangle<int> caja, juce::OwnedArray<juce::TextButton>& bs)
+        auto pon4x4 = [] (juce::Rectangle<int> caja, juce::OwnedArray<Boton>& bs)
         {
             for (int r = 0; r < 4; ++r)
             {
@@ -4106,7 +4108,7 @@ void MainComponent::resized()
         //  Son dos preguntas distintas y ahora tambien se ven distintas, que
         //  era la otra mitad del problema: dos rejillas de cuatro por cuatro,
         //  una encima de la otra, se leen como dos mitades de lo mismo.
-        auto pon2col = [this] (juce::Rectangle<int> caja, juce::OwnedArray<juce::TextButton>& bs)
+        auto pon2col = [this] (juce::Rectangle<int> caja, juce::OwnedArray<Boton>& bs)
         {
             //  Y EL TOPE ES EL POZO DE TAPAS, no un 16 escrito aqui. Con el
             //  16 esta lambda colocaba seis, seis, cuatro y CERO: la cuarta
@@ -8246,4 +8248,5 @@ void MainComponent::resized()
         UiAudit::tourSigCierra = tourSigCierra() ? 1 : 0;
     }
 
+    anilloFoco.vuelveASituar();   // accesibilidad#7
 }

@@ -216,6 +216,10 @@ def main():
            "%s ficheros y %s mudas para %s pads con muestra"
              % (p.get ("ficheros", "?"), p.get ("mudas", "?"), p.get ("pads", "?")))
 
+    #  LA COLA NO TRAE EL GOLPE DEL COMPAS SIGUIENTE (producto#3).
+    juzga ("cola", p.get ("golpe_cola_db", 99) < 3,
+           "pad 0: %+.1f dB tras la raya contra antes" % p.get ("golpe_cola_db", 99))
+
     #  LO QUE DICE LA FICHA ES LO QUE TRAE EL FICHERO (feria, J1 J2 J5: decia
     #  10,7 s y entregaba 13,7, con un clic de -23 dBFS en los ultimos 5 ms y
     #  el pico real en 0,0 dBTP).

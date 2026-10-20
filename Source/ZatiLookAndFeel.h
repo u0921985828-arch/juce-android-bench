@@ -404,12 +404,12 @@ namespace ZatiColours
     // Condensed display face (Oswald) — big pad numerals / wordmark.
     inline juce::Font displayFont (float h, bool bold = true)
     {
-        return juce::Font (juce::FontOptions().withTypeface (bold ? oswaldBold() : oswaldMedium()).withHeight (h));
+        return juce::Font (juce::FontOptions (bold ? oswaldBold() : oswaldMedium()).withHeight (h));   // estabilidad#17
     }
     // Monospaced UI/LCD face (JetBrains Mono).
     inline juce::Font monoFont (float h, bool bold = false)
     {
-        return juce::Font (juce::FontOptions().withTypeface (bold ? monoBold() : monoRegular()).withHeight (h));
+        return juce::Font (juce::FontOptions (bold ? monoBold() : monoRegular()).withHeight (h));   // estabilidad#17
     }
 
     //  The NAME of a thing, as opposed to its value.
@@ -846,7 +846,7 @@ namespace Metrics
     //  viejo de la prueba era 3.00 y se justificaba con la excepcion de TEXTO
     //  GRANDE, que pide 24 px en redonda y este rotulo se pinta a 12 y a 13.
     //  A 0.70 las cuatro carcasas pasan: 5.46, 6.85, 5.48 y 4.87.
-    static constexpr float alfaSeccion = 0.70f;
+    static constexpr float alfaSeccion = 0.92f;   // sobre el panel de la caja 0.70 daba 3.40 en LACA (visual#3)
     static constexpr float alfaAyuda   = 1.00f;   // ayudas a tinta plena: a 0.75 daban 3.15-3.56 (accesibilidad#15)
     static constexpr float alfaCapitulo = 1.00f;  // capitulo sobre el panel del grupo: a 0.70 LACA daba 3.40 (accesibilidad#16)
 
@@ -1401,6 +1401,26 @@ public:
         setColour (juce::ComboBox::textColourId,       ZatiColours::ink);
         setColour (juce::ComboBox::arrowColourId,      ZatiColours::ink);
         setColour (juce::ComboBox::outlineColourId,    ZatiColours::panelLo);
+        setColour (juce::TextEditor::backgroundColourId,     ZatiColours::screenBg);   // visual#2
+        setColour (juce::TextEditor::textColourId,           ZatiColours::lcdFg);
+        setColour (juce::TextEditor::outlineColourId,        ZatiColours::ink.withAlpha (0.35f));
+        setColour (juce::TextEditor::focusedOutlineColourId, ZatiColours::ink);
+        setColour (juce::TextEditor::highlightColourId,      ZatiColours::accent.withAlpha (0.35f));
+    }
+
+    //  La flecha de subir con la tinta de la carcasa, no el negro al 40 de V2 (visual#2).
+    juce::Button* createFileBrowserGoUpButton() override
+    {
+        auto* b = new juce::DrawableButton ("up", juce::DrawableButton::ImageOnButtonBackground);
+        juce::Path flecha;
+        flecha.addArrow ({ 50.0f, 100.0f, 50.0f, 0.0f }, 40.0f, 100.0f, 50.0f);
+        juce::DrawablePath dibujo;
+        dibujo.setFill (ZatiColours::ink);
+        dibujo.setPath (flecha);
+        b->setImages (&dibujo);
+        b->setColour (juce::TextButton::buttonColourId,   ZatiColours::key);
+        b->setColour (juce::TextButton::buttonOnColourId, ZatiColours::key);
+        return b;
     }
 
     //  EL ROTULO DE LA CAJA DEL NOMBRE, con su ancho. JUCE pone la caja a 50

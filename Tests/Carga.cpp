@@ -47,6 +47,36 @@ int main (int argc, char** argv)
         std::printf ("{\"mp3_basicos\":%d,\"mp3_cargador\":%d}\n", mp3, loader.formatosMp3());
     }
 
+    {   //  Cerrar a media carga no espera a la decodificacion entera (estabilidad#24).
+        const auto largo = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("zati-largo", ".wav");
+        {
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::OutputStream> flujo (new juce::FileOutputStream (largo));
+            auto w = wav.createWriterFor (flujo, juce::AudioFormatWriterOptions{}.withSampleRate (48000.0).withNumChannels (2).withBitsPerSample (16));
+            juce::AudioBuffer<float> b (2, 48000);
+            for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, 0.3f * std::sin (0.03f * (float) i)), b.setSample (1, i, b.getSample (0, i));
+            for (int seg = 0; seg < 340; ++seg) w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+        }
+        double entero = 0.0, cerrar = 0.0;
+        {
+            SampleLoader l (e); bool hecho = false;
+            const double t0 = juce::Time::getMillisecondCounterHiRes();
+            l.loadAsync (juce::URL (largo), 5, [&] (bool, juce::String, SampleBuffer::Ptr) { hecho = true; });
+            while (! hecho) juce::MessageManager::getInstance()->runDispatchLoopUntil (2);
+            entero = juce::Time::getMillisecondCounterHiRes() - t0;
+        }
+        {
+            auto l = std::make_unique<SampleLoader> (e);
+            l->loadAsync (juce::URL (largo), 5, [] (bool, juce::String, SampleBuffer::Ptr) {});
+            juce::Thread::sleep (juce::jmax (1, (int) (entero / 8.0)));
+            const double t0 = juce::Time::getMillisecondCounterHiRes();
+            l.reset();
+            cerrar = juce::Time::getMillisecondCounterHiRes() - t0;
+        }
+        largo.deleteFile();
+        std::printf ("{\"carga_entera_ms\":%.0f,\"cerrar_ms\":%.0f}\n", entero, cerrar);
+    }
+
     juce::Array<juce::File> fs;
     juce::File (juce::String (argv[1])).findChildFiles (fs, juce::File::findFiles, false);
     fs.sort();

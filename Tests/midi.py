@@ -112,6 +112,18 @@ def main():
     #     una nota del compas noventa escrita en el paso cero-, y solo la
     #     segunda la cumple uno que no deja pasar ninguna.
     # ------------------------------------------------------------------
+    #  SMPTE en su sitio y tres avisos distintos (estabilidad#20, #22).
+    sm = filas.get ("smpte")
+    if sm is None:
+        malas.append ("la app no publico la lectura SMPTE")
+    else:
+        print ("smpte    negra en el paso %d; avisos: basura «%s» · vacio «%s» · tarde «%s»"
+               % (sm["paso_de_la_negra"], sm["basura"], sm["vacio"], sm["tarde"]))
+        if sm["paso_de_la_negra"] != 4:
+            malas.append ("con division SMPTE la negra cae en el paso %d y no en el 4" % sm["paso_de_la_negra"])
+        if len ({sm["basura"], sm["vacio"], sm["tarde"]}) != 3:
+            malas.append ("un fichero roto, uno sin notas y uno con notas que no caben reciben el mismo aviso")
+
     h = filas.get ("hostil")
     if h is None:
         malas.append ("la app no publico la lectura del fichero hostil")

@@ -178,7 +178,7 @@ public:
     {
         if (! juce::isPositiveAndBelow (b, kBands)) return;
         const float nueva = juce::jlimit (kQMin, kQMax, v);
-        if (! juce::exactlyEqual (nueva, q[(size_t) b])) { q[(size_t) b] = nueva; sucio = true; }
+        if (! juce::exactlyEqual (nueva, (float) q[(size_t) b])) { q[(size_t) b] = nueva; sucio = true; }
     }
     Tipo  tipoDe (int b) const noexcept
     {
@@ -221,7 +221,7 @@ public:
     void ponAncho (float a) noexcept
     {
         const float v = juce::jlimit (kAnchoMin, kAnchoMax, a);
-        if (! juce::exactlyEqual (v, ancho)) { ancho = v; sucio = true; }
+        if (! juce::exactlyEqual (v, (float) ancho)) { ancho = v; sucio = true; }
     }
     void ponSalida (float dB) noexcept
     {
@@ -380,7 +380,7 @@ private:
 
             const double A  = std::pow (10.0, (double) dB / 40.0);
             const double w  = 2.0 * juce::MathConstants<double>::pi
-                                * (double) juce::jlimit (kFreqMin, topeUtil(), freq[(size_t) b]) / fs;
+                                * (double) juce::jlimit (kFreqMin, topeUtil(), (float) freq[(size_t) b]) / fs;
             const double cw = std::cos (w), sw = std::sin (w);
             //  La Q de la banda por el mando ANCHO de la fila, que las escala
             //  todas: dos numeros con dos dueños distintos -uno de la banda y
@@ -442,15 +442,21 @@ private:
 
     double fs = 48000.0;
     std::array<Banda, kBands> banda {};
-    //  Los diez numeros. No son atomicos: los escribe el hilo de mensajes y los
-    //  lee el de audio a traves de `sucio`, que si lo es y se baja ANTES de
-    //  leerlos: un cambio a mitad de recalcula la vuelve a subir.
-    std::array<float, kBands> freq {};
-    std::array<float, kBands> gain {};
-    std::array<Tipo,  kBands> tipo {};
-    std::array<float, kBands> q {};
-    float ancho  = kAnchoDef;
-    float salida = 0.0f;          // dB
+    //  Los diez numeros. Los escribe el hilo de mensajes y los leen el de audio
+    //  -a traves de `sucio`, que se baja ANTES de leerlos- y el del rebote:
+    //  atomicos relajados, que cuestan lo que un float (estabilidad#25).
+    template <typename T> struct Num
+    {
+        std::atomic<T> v;
+        operator T() const noexcept { return v.load (std::memory_order_relaxed); }
+        Num& operator= (T x) noexcept { v.store (x, std::memory_order_relaxed); return *this; }
+    };
+    std::array<Num<float>, kBands> freq {};
+    std::array<Num<float>, kBands> gain {};
+    std::array<Num<Tipo>,  kBands> tipo {};
+    std::array<Num<float>, kBands> q {};
+    Num<float> ancho  { kAnchoDef };
+    Num<float> salida { 0.0f };   // dB
     float smSalida = 1.0f;        // lineal, solo del hilo de audio
     std::atomic<bool> sucio { true };
 };

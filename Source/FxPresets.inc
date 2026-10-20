@@ -128,7 +128,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "NEGRA",     0.80f, 0.70f, 0.55f,  4.0f } },
 
     //  FLA  rate 0.05..8 Hz, realimentacion 0..1
-    { { "AVION",     0.15f, 0.85f, 0.55f,  0.0f },
+    { { "AVIÓN",     0.15f, 0.85f, 0.55f,  0.0f },
       { "METAL",     0.35f, 0.20f, 0.50f,  0.0f },
       { "LENTO",     0.08f, 0.60f, 0.45f,  0.0f },
       { "COMPÁS",    0.25f, 0.55f, 0.50f, 16.0f },
@@ -177,7 +177,7 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "FUERTE",    2000.0f, 0.85f, 1.00f, 0.0f } },
 
     //  TRN  ataque -1..+1, caida -1..+1 (el centro es no hacer nada)
-    { { "MAS GOLPE",  0.70f, -0.20f, 1.00f, 0.0f },
+    { { "MÁS GOLPE",  0.70f, -0.20f, 1.00f, 0.0f },
       { "SIN GOLPE", -0.60f,  0.20f, 1.00f, 0.0f },
       { "MÁS COLA",   0.10f,  0.70f, 1.00f, 0.0f },
       { "SECO",       0.40f, -0.80f, 1.00f, 0.0f },

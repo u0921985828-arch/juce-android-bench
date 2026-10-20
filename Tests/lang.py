@@ -120,6 +120,18 @@ def main():
             if not r[i].strip():
                 bad.append ("fila %r sin %s" % (r[0], lg))
 
+    #  UN CONCEPTO, UNA PALABRA EN CHINO (textos#15 y #16): patron=乐句,
+    #  SEC=音序器, banco=音色库, kit=套件, proyecto=工程, pad=音垫,
+    #  master=总输出, biblioteca=素材库. Los sinonimos no pasan.
+    SINONIMOS_ZH = ("图案", "音型", "样式", "乐句库", "音垫组", "音色组", "项目",
+                    "打击垫", "主输出", "主控", "总线", "资料库")
+    for r in rows:
+        for w in SINONIMOS_ZH:
+            if w in r[3]:
+                bad.append ("zh %r usa %s, que el glosario no admite" % (r[0][:40], w))
+        if re.search (r"(?<![色材])库", r[3]) or (r[0] in ("SEC", "PATRONES") and r[3] == "音序"):
+            bad.append ("zh %r: banco/patron fuera del glosario (%s)" % (r[0][:40], r[3][:20]))
+
     #  EL CASTELLANO TAMBIEN LLEVA TILDES.
     #
     #  La CLAVE se escribe sin tildes a proposito -es un identificador y vive
@@ -151,6 +163,12 @@ def main():
         for m in sin_tilde_re.finditer (es):
             bad.append ("fila %r: «%s» sin tilde en castellano (pon la celda es)"
                         % (r[0], m.group (1)))
+
+    #  Y LOS NOMBRES DE LOS PRESETS, que salen tal cual en los cuatro (textos#3).
+    inc = open (os.path.join (SRC, "FxPresets.inc"), encoding="utf8").read()
+    for nom in re.findall (r'\{\s*\{\s*"([^"]+)"', inc):
+        for m in re.finditer (r"(?<![\w])(" + "|".join (sin_tilde + ["mas", "avion", "telefono"]) + r")(?![\w])", nom, re.I):
+            bad.append ("preset %r: «%s» sin tilde" % (nom, m.group (1)))
 
     #  EL ARABE: UN CONCEPTO, UNA PALABRA, Y LA PALABRA LATINA NO VA PRIMERO.
     #

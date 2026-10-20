@@ -53,7 +53,7 @@ using Clock = std::chrono::steady_clock;
 //  `realloc` del proceso -`operator new` pasa por `malloc`, y el `HeapBlock` de
 //  JUCE tambien- mientras el hilo que lo pide tenga la cuenta abierta. Por
 //  hilo y no global: el motor tiene hebras propias que si pueden reservar.
-#if defined (__GLIBC__)
+#if defined (__GLIBC__) && ! defined (__SANITIZE_THREAD__)   // TSan arranca antes y su malloc no se puede envolver (estabilidad#25)
 static thread_local bool zatiCuenta = false;
 static std::atomic<long> zatiReservas { 0 };
 static std::atomic<long> zatiBytes    { 0 };
@@ -4674,6 +4674,40 @@ int main()
         const bool ok = clones > 10 && raros == 0;
         std::printf ("%-34s %d clones, %d con una tabla a medias   %s\n",
                      "exportar con AUTO sin carrera", clones, raros, ok ? "OK" : zatiFalla());
+    }
+
+    //  EXPORTAR MIENTRAS SE MUEVE UN EQ Y SUENA UN CANAL (estabilidad#25): bajo TSan, sin carrera.
+    {
+        const auto monton_s = std::make_unique<AudioEngine>();
+        AudioEngine& s = *monton_s; s.prepareToPlay (48000.0, 256); s.setPolyphony (8, 2);
+        s.setPadCanal (0, 0);
+        std::atomic<bool> fin { false };
+        std::thread audio ([&]
+        {
+            juce::AudioBuffer<float> b (2, 256);
+            while (! fin.load()) { b.clear(); s.renderNextBlock (b, 0, 256); }
+        });
+        std::thread mensajes ([&]
+        {
+            for (int k = 0; ! fin.load(); ++k)
+            {
+                s.setEqBand (0, k % Eq5::kBands, 200.0f + (float) (k % 50) * 40.0f, (float) (k % 13) - 6.0f);
+                s.setCanalGain (0, (k & 1) ? 0.5f : 1.0f);
+            }
+        });
+        int clones = 0;
+        const auto hasta = juce::Time::getMillisecondCounter() + 400;
+        while (juce::Time::getMillisecondCounter() < hasta)
+        {
+            const auto monton_d = std::make_unique<AudioEngine>();
+            monton_d->prepareToPlay (48000.0, 256);
+            monton_d->copyStateFrom (s);
+            ++clones;
+        }
+        fin = true;
+        audio.join(); mensajes.join();
+        const bool ok = clones > 0;   // lo que juzga es TSan: bajo el, cada clon cuesta cien veces mas
+        std::printf ("%-34s %d clones   %s\n", "exportar moviendo un EQ", clones, ok ? "OK" : zatiFalla());
     }
 
     //  UN GOLPE FLOJO NO ES UN GOLPE FUERTE BAJADO DE VOLUMEN.

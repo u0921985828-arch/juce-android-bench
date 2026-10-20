@@ -199,7 +199,10 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                                 const int numSamples = (int) lengthIn;
                                 SampleBuffer::Ptr sb = new SampleBuffer();
                                 sb->buffer.setSize (numChannels, numSamples);
-                                reader->read (&sb->buffer, 0, numSamples, 0, true, true);
+                                auto* job = juce::ThreadPoolJob::getCurrentThreadPoolJob();   // por trozos, y se sale si cierran (estabilidad#24)
+                                for (int i = 0; i < numSamples && ! (job != nullptr && job->shouldExit()); i += 1 << 16)
+                                    reader->read (&sb->buffer, i, juce::jmin (1 << 16, numSamples - i), i, true, true);
+                                if (job != nullptr && job->shouldExit()) return;
                                 sb->sourceSampleRate = rate;
                                 const float pico = SampleBuffer::sanea (sb->buffer);
                                 if (pico > SampleBuffer::kPicoMax)

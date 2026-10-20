@@ -184,10 +184,10 @@ public:
             //  desde una hebra: escribir en lo publico es justo lo que puede
             //  tardar sin tope.
             if (Bitacora::textoPrevio.isNotEmpty())
-                std::thread ([vieja, texto = Bitacora::textoPrevio]
-                {
-                    vieja.replaceWithText (texto + "\n");
-                }).detach();
+            {
+                copiaBitacora.destino = vieja; copiaBitacora.texto = Bitacora::textoPrevio + "\n";
+                copiaBitacora.startThread();   // con dueno: shutdown la espera (estabilidad#30)
+            }
         }
        #else
         Bitacora::instalar (ProjectStore::home());
@@ -997,8 +997,10 @@ public:
     void shutdown() override
     {
         mainWindow = nullptr;
+        UiAudit::lienzo = {};   // estabilidad#28
         //  La ultima linea. Sin ella, "el ultimo paso" no significa nada: es la
         //  que separa cerrarse a la mitad de cerrarse bien.
+        copiaBitacora.stopThread (1500);   // estabilidad#30
         Bitacora::finLimpio();
         //  Y el vigilante de atascos, que mira el descriptor que esto acaba de
         //  dejar de usar. Ver Bitacora::para.
@@ -1066,6 +1068,13 @@ public:
     };
 
 private:
+    struct CopiaBitacora final : juce::Thread
+    {
+        CopiaBitacora() : juce::Thread ("zati-copia-bitacora") {}
+        void run() override { destino.replaceWithText (texto); }
+        juce::File destino; juce::String texto;
+    } copiaBitacora;
+
     MainComponent* content() const
     {
         return mainWindow != nullptr

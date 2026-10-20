@@ -412,6 +412,8 @@ def main():
             "texto de ayuda":           (ratio (over (d['inkDim'], d['top'], HELP_ALPHA), d['top']), MIN_DIM),
             #  El capitulo de una ficha va sobre el panel del grupo (accesibilidad#16).
             "capitulo sobre el panel":  (ratio (over (d['ink'], panel, CHAPTER_ALPHA), panel), MIN_SECTION),
+            #  El titulo de caja (PATRON, LARGO, GOLPE...) va sobre el panel (visual#3).
+            "rotulo de caja":           (ratio (over (d['ink'], panel, SECTION_ALPHA), panel), MIN_SECTION),
             "tinta apagada":            (ratio (d['inkDim'], d['top']), MIN_DIM),
             #  EL ANILLO DEL MANDO contra el chasis que se ve por dentro.
             "anillo del mando":         (ratio (over (d['ink'], d['panel'], KNOB_ALPHA), d['top']),

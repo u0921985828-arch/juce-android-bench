@@ -35,7 +35,7 @@
 #
 #      python3 Tests/feria.py
 # ============================================================================
-import json, os, shutil, subprocess, sys, tempfile
+import json, os, re, shutil, subprocess, sys, tempfile
 
 from kits import PANTALLA                                          # noqa: E402
 
@@ -173,6 +173,54 @@ def main():
     regla ("paso16", r.get ("sec_barra", 0) == 1 or r.get ("sec_cols", 0) >= r.get ("sec_largo", 99),
            "sin barra la rejilla ensena %d columnas enteras de un patron de %d (secuenciador#16)"
            % (r.get ("sec_cols", 0), r.get ("sec_largo", 0)))
+    parte = r.get ("parte_en", "")
+    jerga = [w for w in ("ATASCO", "CAIDA", "senal", " en ", "/", "se paro", "ficha") if w in parte]
+    regla ("parte", parte != "" and not jerga,
+           "el parte de la vez anterior en ingles: %r%s (textos#2)"
+           % (parte, (" lleva " + ", ".join (jerga)) if jerga else ""))
+    #  visual#2: ruta, subir y NOMBRE cambian con la carcasa y no son el V4 oscuro.
+    pc = [t.split() for t in r.get ("piel_cajas", "").split ("|") if t.strip()]
+    v4 = {"FF323E44", "FF263238", "323E44", "263238"}
+    malpiel = [] if len (pc) == 3 and all (len (f) == 4 for f in pc) else ["sin medida"]
+    if not malpiel:
+        for i, n in enumerate (("ruta", "subir", "nombre canal", "nombre preset")):
+            col = [f[i].upper() for f in pc]
+            if any (c in v4 for c in col) or len (set (col)) < 3:
+                malpiel.append ("%s %s" % (n, "/".join (col)))
+    regla ("piel cajas", not malpiel and r.get ("nombre_fuente", -1) == 1,
+           "ruta, subir y cajas NOMBRE siguen a la carcasa%s; fuente de NOMBRE como la del proyecto: %s (visual#2)"
+           % ((": " + ", ".join (malpiel)) if malpiel else "", "si" if r.get ("nombre_fuente", -1) == 1 else "NO"))
+    regla ("talkback", r.get ("deslizadores", 0) > 20 and r.get ("pasos_finos", -1) == 0 and r.get ("cifra_cruda", -1) == 0,
+           "de %d deslizadores, %d piden mas de 100 gestos de punta a punta y %d leen una cifra cruda%s (accesibilidad#20, #21)"
+           % (r.get ("deslizadores", 0), r.get ("pasos_finos", -1), r.get ("cifra_cruda", -1),
+              (": " + r.get ("crudos", "")) if r.get ("crudos") else ""))
+    regla ("foco", r.get ("foco_boton", -1) > 20 and r.get ("foco_mando", -1) > 20 and r.get ("foco_dedo", -1) == 0,
+           "el foco de teclado cambia %d pixeles en un boton y %d en un mando (y %d con el dedo abajo) (accesibilidad#7)"
+           % (r.get ("foco_boton", -1), r.get ("foco_mando", -1), r.get ("foco_dedo", -1)))
+    regla ("negras", r.get ("negra_min", 0) >= 24,
+           "la tecla negra mas estrecha se toca en %d px, con 24 de minimo (accesibilidad#18)" % r.get ("negra_min", 0))
+    regla ("cifras", r.get ("sin_letra", -1) == 0,
+           "%d botones se leen como una cifra o un signo, sin decir de que son (accesibilidad#23)" % r.get ("sin_letra", -1))
+    regla ("on/off", r.get ("en_ingles", -1) == 0,
+           "%d conmutadores le dicen On u Off al lector en cualquier idioma (accesibilidad#32)" % r.get ("en_ingles", -1))
+    regla ("toque", r.get ("toque_sube", 0) == 3 and r.get ("toque_baja", 0) == 3,
+           "un toque sin arrastre sube %d/3 y baja %d/3 mandos (giro, barra, fader) (accesibilidad#19)"
+           % (r.get ("toque_sube", 0), r.get ("toque_baja", 0)))
+    regla ("bitacora", r.get ("bitacora_abre", "") == "proyecto/fin",
+           "tras abrir un proyecto la bitacora dice «%s» (estabilidad#27)" % r.get ("bitacora_abre", ""))
+    with open (os.path.join (os.path.dirname (os.path.dirname (os.path.abspath (__file__))), "Source", "MainComponent.cpp")) as fuente:
+        crudos_async = sum (1 for l in fuente if re.search (r"(callAsync|loadAsync) \(.*\[this[,\]]", l))
+    regla ("async", crudos_async == 0,
+           "%d callAsync/loadAsync capturan this crudo y no un SafePointer (estabilidad#32)" % crudos_async)
+    raiz_src = os.path.join (os.path.dirname (os.path.dirname (os.path.abspath (__file__))), "Source")
+    with open (os.path.join (raiz_src, "Main.cpp")) as fuente: sueltos = fuente.read().count (".detach()")
+    with open (os.path.join (raiz_src, "MidiIo.h")) as fuente: midi_io = fuente.read()
+    ciego = len (re.findall (r"\n\s*stopThread \(\d+\);\s*\n\s*allNotesOff\(\);", midi_io))
+    regla ("hilos", sueltos == 0 and ciego == 0,
+           "%d hilos sueltos en Main.cpp y %d allNotesOff tras un stopThread sin mirar (estabilidad#29, #30)" % (sueltos, ciego))
+    regla ("x carga", r.get ("x_tapada", -1) == 0,
+           "con Cargando encima la X del navegador %s (estabilidad#11)"
+           % ("se toca" if r.get ("x_tapada", -1) == 0 else "queda TAPADA"))
     regla ("con nombre", r.get ("sin_nombre", -1) == 0 and r.get ("cruces", -1) == 0,
            "cajas sin nombre %d, cruces que se leen «×» %d (botones sin letra en total: %d)"
            % (r.get ("sin_nombre", -1), r.get ("cruces", -1), r.get ("simbolos", -1)))

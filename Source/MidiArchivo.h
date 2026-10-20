@@ -67,6 +67,7 @@ namespace MidiArchivo
         int tarde     = 0;   // el paso cae mas alla de kNumSteps
         int apiladas  = 0;   // mas de cuatro a la vez en la misma columna
         int pasos     = 0;   // cuantos pasos ocupa lo que entro, para el largo
+        bool leido    = false;   // el fichero es un MIDI que se pudo leer (estabilidad#22)
     };
 
     static constexpr int kRaizMidi  = 60;    // do central = semitono 0
@@ -140,7 +141,7 @@ namespace MidiArchivo
     //  la 1 es solo el tempo-, asi que quedarse con una es la forma mas barata
     //  de que un fichero perfectamente valido entre vacio. Lo que esta pagina
     //  edita son las notas de UN pad: se juntan y se cuantizan.
-    inline std::vector<Nota> lee (const juce::File& origen, int maxPasos, Parte& parte, int u = 12)
+    inline std::vector<Nota> lee (const juce::File& origen, int maxPasos, Parte& parte, int u = 12, double bpm = 120.0)
     {
         parte = {};
         std::vector<Nota> salida;
@@ -150,11 +151,15 @@ namespace MidiArchivo
 
         juce::MidiFile mf;
         if (! mf.readFrom (in)) return salida;
+        parte.leido = true;
         //  A NEGRAS Y NO A TICKS, que es lo unico que hace que la cuenta no
         //  dependa del PPQ del fichero: `convertTimestampTicksToSeconds` haria
         //  falta el tempo, y aqui el tempo no importa — lo que importa es la
         //  posicion MUSICAL. `getTimeFormat` positivo es ticks por negra.
-        const int ppq = mf.getTimeFormat() > 0 ? mf.getTimeFormat() : kPpq;
+        //  SMPTE cuenta en segundos: a negras con el tempo del proyecto (estabilidad#20).
+        const bool smpte = mf.getTimeFormat() < 0;
+        if (smpte) mf.convertTimestampTicksToSeconds();
+        const double ppq = smpte ? 60.0 / juce::jlimit (20.0, 300.0, bpm) : (double) (mf.getTimeFormat() > 0 ? mf.getTimeFormat() : kPpq);
 
         juce::MidiMessageSequence todo;
         for (int t = 0; t < mf.getNumTracks(); ++t)
@@ -172,7 +177,7 @@ namespace MidiArchivo
             auto* ev = todo.getEventPointer (i);
             if (ev == nullptr || ! ev->message.isNoteOn() || ev->message.getVelocity() == 0) continue;
 
-            const double negras = ev->message.getTimeStamp() / (double) ppq;
+            const double negras = ev->message.getTimeStamp() / ppq;
             const double pasosNegra = 48.0 / (double) juce::jmax (1, u);
             const int    paso   = (int) std::lround (negras * pasosNegra);
             const int    semis  = ev->message.getNoteNumber() - kRaizMidi;
@@ -188,7 +193,7 @@ namespace MidiArchivo
             //  tiene cuatro noteOn seguidos y cada uno se apaga cuando le toca.
             //  `updateMatchedPairs` es quien las empareja, y sin el una nota sin
             //  su noteOff -que un fichero cortado tiene- duraria hasta el final.
-            double dur = ticksPaso (u);
+            double dur = ppq * (double) juce::jmax (1, u) / 48.0;   // un paso, en la unidad del fichero
             if (auto* off = ev->noteOffObject)
                 dur = juce::jmax (1.0, off->message.getTimeStamp() - ev->message.getTimeStamp());
 
@@ -201,7 +206,7 @@ namespace MidiArchivo
             //  en vez de envolverse: una nota que da la vuelta suena en el sitio
             //  equivocado, que es peor que una corta.
             n.largo = juce::jlimit (0, 63,
-                        (int) std::lround (dur / (double) ppq * pasosNegra * 4.0));
+                        (int) std::lround (dur / ppq * pasosNegra * 4.0));
 
             //  Y UN PASO TIENE UNA SOLA ORTOGRAFIA: el CERO.
             //

@@ -2037,6 +2037,24 @@ void MainComponent::auditExport()
                     break;
                 }
         }
+        //  Lo que suena justo despues de la raya contra lo que sonaba justo antes, en el pad 0 (producto#3)
+        float golpeColaDb = 0.0f;
+        if (pistas)
+        {
+            juce::AudioFormatManager fm; fm.registerBasicFormats();
+            const double cuerpo = Exporter::planDe (engine, 48000.0).cuerpo;
+            for (auto& f : hechos)
+                if (f.getFileName().contains ("_01_"))
+                    if (std::unique_ptr<juce::AudioFormatReader> r { fm.createReaderFor (f) })
+                    {
+                        juce::AudioBuffer<float> b ((int) r->numChannels, (int) r->lengthInSamples);
+                        r->read (&b, 0, b.getNumSamples(), 0, true, true);
+                        const int raya = (int) std::llround (cuerpo * r->sampleRate), v = (int) (0.02 * r->sampleRate);
+                        if (raya - v >= 0 && raya + v <= b.getNumSamples())
+                            golpeColaDb = juce::Decibels::gainToDecibels (b.getMagnitude (raya, v), -200.0f)
+                                        - juce::Decibels::gainToDecibels (b.getMagnitude (raya - v, v), -200.0f);
+                    }
+        }
 
         std::cout << "{\"export\":\"" << (fuerte ? "fuerte" : comprimido ? "ogg" : pistas ? "pistas" : "master")
                   << "\",\"pads\":" << cargados
@@ -2047,6 +2065,7 @@ void MainComponent::auditExport()
                   << ",\"anunciado\":" << anunciado
                   << ",\"pico_db\":" << picoDb
                   << ",\"final_db\":" << finalDb
+                  << ",\"golpe_cola_db\":" << golpeColaDb
                   << ",\"ok\":" << (job.resultOk ? 1 : 0)
                   << ",\"ficheros\":" << hechos.size()
                   << ",\"bytes\":" << bytes
@@ -9331,6 +9350,45 @@ void MainComponent::auditMidi()
                   << ",\"largo_de_un_paso\":" << largo2 << "}" << std::endl;
     }
 
+    //  SMPTE y avisos (estabilidad#20, #22): 25 fps x 40 = 1000 ticks/s; a 120 la nota del tick 500 es una negra.
+    {
+        juce::MidiMessageSequence pista;
+        pista.addEvent (juce::MidiMessage::noteOn  (1, 60, (juce::uint8) 100), 0.0);
+        pista.addEvent (juce::MidiMessage::noteOff (1, 60), 100.0);
+        pista.addEvent (juce::MidiMessage::noteOn  (1, 62, (juce::uint8) 100), 500.0);
+        pista.addEvent (juce::MidiMessage::noteOff (1, 62), 600.0);
+        pista.updateMatchedPairs();
+        pista.addEvent (juce::MidiMessage::endOfTrack(), 700.0);
+        juce::MidiFile mf; mf.setSmpteTimeFormat (25, 40); mf.addTrack (pista);
+        const auto smpte = ProjectStore::exports().getChildFile ("smpte.mid");
+        smpte.deleteFile();
+        if (auto out = std::unique_ptr<juce::FileOutputStream> (smpte.createOutputStream())) { mf.writeTo (*out); out->flush(); }
+        MidiArchivo::Parte parte;
+        const auto leidas = MidiArchivo::lee (smpte, AudioEngine::kNumSteps, parte, 12, 120.0);
+
+        const auto basura = ProjectStore::exports().getChildFile ("basura.mid");
+        basura.replaceWithText ("esto no es un midi");
+        juce::MidiMessageSequence sola; sola.addEvent (juce::MidiMessage::endOfTrack(), 10.0);
+        juce::MidiFile mv; mv.setTicksPerQuarterNote (MidiArchivo::kPpq); mv.addTrack (sola);
+        const auto vacio = ProjectStore::exports().getChildFile ("vacio.mid");
+        vacio.deleteFile();
+        if (auto out = std::unique_ptr<juce::FileOutputStream> (vacio.createOutputStream())) { mv.writeTo (*out); out->flush(); }
+        juce::MidiMessageSequence lejos;
+        lejos.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), (double) MidiArchivo::kTicksPaso * 5000.0);
+        lejos.addEvent (juce::MidiMessage::noteOff (1, 60), (double) MidiArchivo::kTicksPaso * 5001.0);
+        lejos.updateMatchedPairs();
+        juce::MidiFile ml; ml.setTicksPerQuarterNote (MidiArchivo::kPpq); ml.addTrack (lejos);
+        const auto tarde = ProjectStore::exports().getChildFile ("tarde.mid");
+        tarde.deleteFile();
+        if (auto out = std::unique_ptr<juce::FileOutputStream> (tarde.createOutputStream())) { ml.writeTo (*out); out->flush(); }
+
+        auto aviso = [this] (const juce::File& f) { importaMidiPatron (f); return midiParte.replace ("\"", "'"); };
+        const auto aB = aviso (basura), aV = aviso (vacio), aT = aviso (tarde);
+        closeAllSheets();
+        std::cout << "{\"midi\":\"smpte\",\"paso_de_la_negra\":" << (leidas.size() > 1 ? leidas[1].paso : -1)
+                  << ",\"basura\":\"" << aB << "\",\"vacio\":\"" << aV << "\",\"tarde\":\"" << aT << "\"}" << std::endl;
+    }
+
     //  Y CON LA REJILLA A 1/32T: el paso 12 es UNA negra en el fichero y vuelve al 12 (secuenciador#7).
     {
         const int patR = selectedPattern, padR = selectedPad;
@@ -12394,7 +12452,9 @@ void MainComponent::auditFeria()
     };
     saveProject ("FERIA_UNO");  acaba();
     saveProject ("FERIA_DOS");  acaba();
+    Bitacora::paso ("feria/antes de abrir");
     loadProject ("FERIA_DOS");  acaba();
+    const juce::String bitacoraAbre (Bitacora::ultimo);   // estabilidad#27
     refreshProjectList();
     const int filaUno = projModel.names.indexOf ("FERIA_UNO");
     int borraFuera = 0, borraDice = 0, borraAbierto = 0;
@@ -12731,7 +12791,7 @@ void MainComponent::auditFeria()
     }
 
     //  aa. Nombres y estados para el lector (accesibilidad#22, #23, #24).
-    int sinNombre = 0, simbolos = 0, cruces = 0, padsMarcables = 0, padElegido = 0;
+    int sinNombre = 0, simbolos = 0, sinLetra = 0, enIngles = 0, cruces = 0, padsMarcables = 0, padElegido = 0;
     {
         std::map<juce::String, int> cuales;
         std::function<void (juce::Component&)> mira = [&] (juce::Component& c)
@@ -12743,8 +12803,10 @@ void MainComponent::auditFeria()
                 if (ah != nullptr && (dynamic_cast<juce::ComboBox*> (h) != nullptr || dynamic_cast<juce::TextEditor*> (h) != nullptr)
                     && t.isEmpty() && h->getParentComponent() != nullptr && dynamic_cast<juce::ComboBox*> (h->getParentComponent()) == nullptr)
                 { ++sinNombre; ++cuales["<" + juce::String (typeid (*h).name()) + ">"]; }
-                if (ah != nullptr && dynamic_cast<juce::Button*> (h) != nullptr && [&t] { for (auto ch : t) if (juce::CharacterFunctions::isLetter (ch)) return false; return true; }())
-                { ++simbolos; if (t == Metrics::cruz) ++cruces; }
+                if (ah != nullptr && dynamic_cast<juce::Button*> (h) != nullptr && [&t] { for (auto ch : t) if (juce::CharacterFunctions::isLetter (ch) || ch >= 0x0590) return false; return true; }())
+                { ++simbolos; if (t == Metrics::cruz) ++cruces; if (t.isNotEmpty()) { ++sinLetra; ++cuales["sin letra " + t]; } }
+                if (auto* vi = ah != nullptr ? ah->getValueInterface() : nullptr)   // accesibilidad#32
+                    if (dynamic_cast<juce::Button*> (h) != nullptr && (vi->getCurrentValueAsString() == "On" || vi->getCurrentValueAsString() == "Off")) ++enIngles;
                 mira (*h);
             }
         };
@@ -12788,6 +12850,174 @@ void MainComponent::auditFeria()
         closeAllSheets(); resized();
     }
 
+    //  ab5. El parte de la vez anterior, en ingles, sin jerga (textos#2).
+    juce::String parteEn;
+    {
+        const auto antes = Lang::current();
+        Lang::set (Lang::en);
+        parteEn = parteVezAnterior ("ATASCO 12999 ms en banco/espera-fabrica") + " || "
+                + parteVezAnterior ("CAIDA senal 11 en ficha set");
+        Lang::set (antes);
+    }
+
+    //  ab4. Con «Cargando» encima, la X del navegador sigue siendo la X (estabilidad#11).
+    int xTapada = -1;
+    {
+        const auto tam = getBounds(); setSize (393, 851);   // la captura del hallazgo
+        openBrowseForPad (selectedPad); resized();
+        beginBusy (T ("Cargando"));
+        const auto x = getLocalArea (&browseSheet, browseCloseButton.getBounds());
+        xTapada = (busyBar.isVisible() && busyBar.getBounds().intersects (x)) ? 1 : 0;
+        endBusy(); cancelAudition(); closeAllSheets(); setBounds (tam); resized();
+    }
+
+    //  ab6. Ruta, subir y cajas NOMBRE con el color de la carcasa (visual#2).
+    juce::String pielCajas; int nombreFuente = -1;
+    {
+        auto moda = [] (juce::Component& c)
+        {
+            if (c.getWidth() <= 0 || c.getHeight() <= 0) return juce::Colour();
+            const auto im = c.createComponentSnapshot (c.getLocalBounds(), true, 1.0f);
+            std::map<juce::uint32, int> n;
+            for (int y = 0; y < im.getHeight(); ++y)
+                for (int x = 0; x < im.getWidth(); ++x) ++n[im.getPixelAt (x, y).getARGB()];
+            auto m = n.begin();
+            for (auto i = n.begin(); i != n.end(); ++i) if (i->second > m->second) m = i;
+            return juce::Colour (m->first);
+        };
+        const auto tam = getBounds(); setSize (393, 851);
+        const int piel = ZatiColours::currentSkin;
+        const auto bn = canNomBox.getBounds(), bp = presetNombreBox.getBounds();
+        for (int sk : { 0, 1, 3 })
+        {
+            ZatiColours::setSkin (sk); applySkin();
+            openBrowseForPad (selectedPad); resized();
+            juce::Component* ruta = nullptr; juce::Component* subir = nullptr;
+            if (browser != nullptr)
+                for (auto* h : browser->getChildren())
+                {
+                    if (dynamic_cast<juce::ComboBox*> (h) != nullptr) ruta = h;
+                    if (dynamic_cast<juce::DrawableButton*> (h) != nullptr) subir = h;
+                }
+            canNomBox.setBounds (0, 0, 200, 40); presetNombreBox.setBounds (0, 0, 200, 40);
+            juce::Component* cs[] = { ruta, subir, &canNomBox, &presetNombreBox };
+            for (auto* c : cs) pielCajas << (c != nullptr ? moda (*c).toDisplayString (false) : juce::String ("-")) << " ";
+            pielCajas << "|";
+            cancelAudition(); closeAllSheets();
+        }
+        nombreFuente = (juce::approximatelyEqual (canNomBox.getFont().getHeight(), projNameBox.getFont().getHeight())
+                        && juce::approximatelyEqual (presetNombreBox.getFont().getHeight(), projNameBox.getFont().getHeight())
+                        && canNomBox.getJustificationType().getFlags() == projNameBox.getJustificationType().getFlags()
+                        && presetNombreBox.getJustificationType().getFlags() == projNameBox.getJustificationType().getFlags()) ? 1 : 0;
+        canNomBox.setBounds (bn); presetNombreBox.setBounds (bp);
+        ZatiColours::setSkin (piel); applySkin(); setBounds (tam); resized();
+    }
+
+    //  ab7. Lo que TalkBack lee y cuanto mueve un gesto (accesibilidad#20, #21).
+    int deslizadores = 0, pasosFinos = 0, cifraCruda = 0; juce::String crudos;
+    {
+        std::function<void (juce::Component&)> mira = [&] (juce::Component& c)
+        {
+            for (auto* h : c.getChildren())
+            {
+                if (auto* sl = dynamic_cast<juce::Slider*> (h))
+                {
+                    ++deslizadores;
+                    if (auto* ah = sl->getAccessibilityHandler())
+                        if (auto* vi = ah->getValueInterface())
+                        {
+                            const auto r = vi->getRange();
+                            if (r.getInterval() > 0.0 && (r.getMaximumValue() - r.getMinimumValue()) / r.getInterval() > 100.5) ++pasosFinos;
+                            const auto t = vi->getCurrentValueAsString().trim();
+                            if (t.isNotEmpty() && t.containsOnly ("-0123456789.") && t.containsChar ('.'))
+                            { ++cifraCruda; if (crudos.length() < 160) crudos << (sl->getTitle().isNotEmpty() ? sl->getTitle() : sl->getName()).replace ("\"", "") << "=" << t << " "; }
+                        }
+                }
+                mira (*h);
+            }
+        };
+        mira (*this);
+    }
+
+    //  ab8. El foco de teclado se ve (accesibilidad#7): pixeles que cambian
+    //  al darle el foco a un boton y a un mando de la cara, y con el dedo abajo.
+    int focoBoton = -1, focoMando = -1, focoDedo = -1;
+    {
+        juce::Button* bt = nullptr; juce::Slider* sl = nullptr;
+        std::function<void (juce::Component&)> busca = [&] (juce::Component& c)
+        {
+            for (auto* h : c.getChildren())
+            {
+                if (! h->isShowing() || h->getWidth() < 16 || h->getHeight() < 16) continue;
+                if (bt == nullptr) if (auto* b = dynamic_cast<juce::Button*> (h)) if (b->getWantsKeyboardFocus()) bt = b;
+                if (sl == nullptr) if (auto* d = dynamic_cast<juce::Slider*> (h)) if (d->getWantsKeyboardFocus()) sl = d;
+                busca (*h);
+            }
+        };
+        busca (*this);
+        auto cambian = [this] (juce::Component* c, bool dedo)
+        {
+            if (c == nullptr) return -1;
+            juce::Component::unfocusAllComponents(); sigueFoco (nullptr, false);
+            const auto zona = getLocalArea (c, c->getLocalBounds()).expanded (4).getIntersection (getLocalBounds());
+            const auto antes = createComponentSnapshot (zona, true, 1.0f);
+            c->grabKeyboardFocus(); sigueFoco (c, dedo);
+            const auto luego = createComponentSnapshot (zona, true, 1.0f);
+            int n = 0;
+            for (int y = 0; y < antes.getHeight(); ++y)
+                for (int x = 0; x < antes.getWidth(); ++x)
+                    if (antes.getPixelAt (x, y) != luego.getPixelAt (x, y)) ++n;
+            juce::Component::unfocusAllComponents(); sigueFoco (nullptr, false);
+            return n;
+        };
+        focoBoton = cambian (bt, false); focoMando = cambian (sl, false); focoDedo = cambian (bt, true);
+    }
+
+    //  ab9. La negra mas estrecha del teclado, por donde se toca (accesibilidad#18).
+    int negraMin = 1000;
+    for (int ancho : { 240, 280, 320 })
+    {
+        Teclado t; t.setSize (ancho, 90);
+        int corrida = 0, previa = -1000;
+        for (int x = 0; x < ancho; ++x)
+        {
+            const int n = t.notaPara ((float) x, 20.0f);
+            const int d = n - t.getBase();
+            const bool negra = d == 1 || d == 3 || d == 6 || d == 8 || d == 10;
+            if (negra && n == previa) ++corrida;
+            else { if (previa != -1000 && corrida > 0) negraMin = juce::jmin (negraMin, corrida); corrida = negra ? 1 : 0; }
+            previa = negra ? n : -1000;
+        }
+    }
+
+    //  ab10. Un toque sin arrastre mueve el mando un paso (accesibilidad#19, WCAG 2.5.7).
+    int toqueSube = 0, toqueBaja = 0;
+    {
+        auto toca = [] (juce::Slider& sl, juce::Point<float> q)
+        {
+            const double antes = sl.getValue();
+            const auto t = juce::Time::getCurrentTime();
+            juce::MouseEvent me (juce::Desktop::getInstance().getMainMouseSource(), q, juce::ModifierKeys(),
+                                 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sl, &sl, t, q, t, 1, false);
+            sl.mouseDown (me); sl.mouseUp (me);
+            return sl.getValue() - antes;
+        };
+        ZatiSlider giro (juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox);
+        giro.setRange (0.0, 1.0, 0.001); giro.setValue (0.5); giro.setSize (60, 60);
+        ZatiSlider barra (juce::Slider::LinearHorizontal, juce::Slider::NoTextBox);
+        barra.setRange (-60.0, 12.0, 0.1); barra.setValue (0.0); barra.setSize (200, 30);
+        barra.setSliderSnapsToMousePosition (false);
+        ZatiSlider alto (juce::Slider::LinearVertical, juce::Slider::NoTextBox);
+        alto.setRange (-60.0, 12.0, 0.1); alto.setValue (0.0); alto.setSize (30, 200);
+        alto.setSliderSnapsToMousePosition (false);
+        if (toca (giro, { 55.0f, 30.0f }) > 0.0) ++toqueSube;
+        if (toca (barra, { 190.0f, 15.0f }) > 0.0) ++toqueSube;
+        if (toca (alto, { 15.0f, 5.0f }) > 0.0) ++toqueSube;
+        if (toca (giro, { 5.0f, 30.0f }) < 0.0) ++toqueBaja;
+        if (toca (barra, { 10.0f, 15.0f }) < 0.0) ++toqueBaja;
+        if (toca (alto, { 15.0f, 195.0f }) < 0.0) ++toqueBaja;
+    }
+
     auto caja = [] (juce::Rectangle<int> r)
     { return "[" + juce::String (r.getX()) + "," + juce::String (r.getY()) + ","
                  + juce::String (r.getWidth()) + "," + juce::String (r.getHeight()) + "]"; };
@@ -12827,7 +13057,7 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
-              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"cruces\":" << cruces
+              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"x_tapada\":" << xTapada << ",\"deslizadores\":" << deslizadores << ",\"pasos_finos\":" << pasosFinos << ",\"cifra_cruda\":" << cifraCruda << ",\"foco_boton\":" << focoBoton << ",\"foco_mando\":" << focoMando << ",\"foco_dedo\":" << focoDedo << ",\"negra_min\":" << negraMin << ",\"bitacora_abre\":\"" << bitacoraAbre << "\"" << ",\"toque_sube\":" << toqueSube << ",\"toque_baja\":" << toqueBaja << ",\"crudos\":\"" << crudos.trim() << "\"" << ",\"piel_cajas\":\"" << pielCajas << "\",\"nombre_fuente\":" << nombreFuente << ",\"parte_en\":\"" << parteEn.replace ("\"", "'").replace ("\u2066", "").replace ("\u2069", "") << "\"" << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"sin_letra\":" << sinLetra << ",\"en_ingles\":" << enIngles << ",\"cruces\":" << cruces
               << ",\"pads_marcables\":" << padsMarcables << ",\"pad_elegido\":" << padElegido
               << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
               << ",\"estado_anuncia\":" << estadoAnuncia

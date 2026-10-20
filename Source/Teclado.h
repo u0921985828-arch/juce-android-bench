@@ -121,6 +121,8 @@ public:
     }
     void mouseUp (const juce::MouseEvent&) override { suelta(); }
 
+    int notaPara (float x, float y) const noexcept { return notaEn (x, y); }   // auditoria (accesibilidad#18)
+
 private:
     int base = 0;
     int viva = -100;
@@ -137,12 +139,14 @@ private:
 
         //  LAS NEGRAS PRIMERO, que estan encima. Preguntar por las blancas
         //  antes seria un teclado en el que las negras no se pueden tocar.
+        //  Se toca en 24 px aunque se pinte mas estrecha (accesibilidad#18).
+        const float medio = juce::jmin (anchoB * 0.42f, juce::jmax (anchoB * 0.30f, 12.5f));
         if (y - r.getY() < altoN)
             for (int i = 0; i < 5; ++i)
             {
                 const int hueco = (i < 2) ? i + 1 : i + 2;
                 const float cx = r.getX() + (float) hueco * anchoB;
-                if (std::abs (x - cx) <= anchoB * 0.30f) return base + negras[i];
+                if (std::abs (x - cx) <= medio) return base + negras[i];
             }
 
         const int i = juce::jlimit (0, 7, (int) ((x - r.getX()) / anchoB));

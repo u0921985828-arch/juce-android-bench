@@ -239,8 +239,7 @@ namespace MidiIo
             //  puntero que acaba de morir.
             signalThreadShouldExit();
             notify();
-            stopThread (1000);
-            allNotesOff();
+            if (stopThread (1000)) allNotesOff();   // con el hilo muerto no se escribe en su salida (estabilidad#29)
             out.reset();
         }
 
@@ -281,8 +280,7 @@ namespace MidiIo
             if (out == nullptr) return;
             signalThreadShouldExit();
             notify();
-            stopThread (1000);
-            allNotesOff();
+            if (stopThread (1000)) allNotesOff();   // con el hilo muerto no se escribe en su salida (estabilidad#29)
             out.reset();
         }
 

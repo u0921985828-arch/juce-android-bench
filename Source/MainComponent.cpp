@@ -243,7 +243,7 @@ MainComponent::MainComponent()
     //  controls cost the face no height at all.
     for (int b = 0; b < kNumBanks; ++b)
     {
-        auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         styleButton (*t, kStepOff);
         litAccent (*t);
         t->setClickingTogglesState (true);
@@ -311,7 +311,7 @@ MainComponent::MainComponent()
     //  Y las cuatro de banco, dentro de la ficha. Ver seqBankButtons.
     for (int b = 0; b < kNumBanks; ++b)
     {
-        auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         styleButton (*t, kStepOff);
         litAccent (*t);
         t->setClickingTogglesState (true);
@@ -437,7 +437,7 @@ MainComponent::MainComponent()
 
         for (int i = 0; i < kNumPads; ++i)
         {
-            auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
+            auto* b = new Boton (juce::String (i + 1).paddedLeft ('0', 2));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -451,7 +451,7 @@ MainComponent::MainComponent()
 
         for (int b = 0; b < kNumBanks; ++b)
         {
-            auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
             styleButton (*t, kStepOff);
             litAccent (*t);
             t->setClickingTogglesState (true);
@@ -485,7 +485,7 @@ MainComponent::MainComponent()
 
         for (int i = 0; i < kNumCanales; ++i)
         {
-            auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
+            auto* b = new Boton (juce::String (i + 1).paddedLeft ('0', 2));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -540,7 +540,7 @@ MainComponent::MainComponent()
         //  cara tiene con los pads: `ponCanalBanco` no mueve el canal del pad.
         for (int b = 0; b < kNumCanalBancos; ++b)
         {
-            auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
             styleButton (*t, kStepOff);
             litAccent (*t);
             t->setClickingTogglesState (true);
@@ -571,7 +571,7 @@ MainComponent::MainComponent()
         for (int i = 0; i < kNumFx; ++i)
         {
             const int f = ordenFx()[i];
-            auto* b = new juce::TextButton (fxDefs[f].name);
+            auto* b = new Boton (fxDefs[f].name);
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->getProperties().set ("icono", (int) iconoDeFx (f));
@@ -632,7 +632,7 @@ MainComponent::MainComponent()
         //  desaparece del arbol no lo puede medir el volcado de la interfaz.
         for (int i = 0; i < FxPresets::kPresets + kFxPresetsTuyosMax; ++i)
         {
-            auto* b = new juce::TextButton ("");
+            auto* b = new Boton ("");
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->onClick = [this, i]
@@ -669,8 +669,9 @@ MainComponent::MainComponent()
         //  nadie: esta es la tapa que le da dueno.
         presetNombreBox.setMultiLine (false);
         presetNombreBox.setReturnKeyStartsNewLine (false);
-        presetNombreBox.setTextToShowWhenEmpty (T ("NOMBRE"),
-                                                ZatiColours::ink.withAlpha (0.45f));
+        presetNombreBox.setJustification (juce::Justification::centredLeft);   // visual#2
+        presetNombreBox.setFont (ZatiColours::monoFont (Metrics::fValue, true));
+        pintaCajaNombre (presetNombreBox);
         presetSheet.addAndMakeVisible (presetNombreBox);
 
         styleButton (presetGuardarBtn, kKey);
@@ -703,7 +704,9 @@ MainComponent::MainComponent()
         canNomBox.setMultiLine (false);
         canNomBox.setReturnKeyStartsNewLine (false);
         canNomBox.setInputRestrictions (24);
-        canNomBox.setTextToShowWhenEmpty (T ("NOMBRE"), ZatiColours::ink.withAlpha (0.45f));
+        canNomBox.setJustification (juce::Justification::centredLeft);   // visual#2
+        canNomBox.setFont (ZatiColours::monoFont (Metrics::fValue, true));
+        pintaCajaNombre (canNomBox);
         canNomBox.onReturnKey = [this] { canNomGuardarBtn.triggerClick(); };
         canNomSheet.addAndMakeVisible (canNomBox);
 
@@ -727,7 +730,7 @@ MainComponent::MainComponent()
         //  dibujo. El nombre de la familia va en el titulo accesible.
         for (int f = 0; f < Sintes::kFamilias; ++f)
         {
-            auto* b = new juce::TextButton();
+            auto* b = new Boton();
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->getProperties().set ("icono", (int) Iconos::deFamilia (f));
@@ -803,7 +806,7 @@ MainComponent::MainComponent()
         //  PADS y la tira del paso.
         for (int t = 0; t < Eq5::kNumTipos; ++t)
         {
-            auto* b = new juce::TextButton (T (Eq5::nombreTipo (t)));
+            auto* b = new Boton (T (Eq5::nombreTipo (t)));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->onClick = [this, t] { ponTipoEq (eqBandaSel, t); refrescaBandaEq(); };
@@ -828,7 +831,7 @@ MainComponent::MainComponent()
         //  un segundo sitio que hay que acordarse de refrescar, que es
         //  exactamente lo que le paso a la tira del paso.
         eqQKnob.textFromValueFunction = [] (double v)
-        { return Lang::ltr (juce::String (v, 2)); };
+        { return Lang::ltr ("Q " + juce::String (v, 2)); };   // accesibilidad#21: lo que se pinta
         eqQKnob.onValueChange = [this]
         {
             ponQEq (eqBandaSel, (float) eqQKnob.getValue());
@@ -893,7 +896,7 @@ MainComponent::MainComponent()
             const char* kCuenta[] = { "OFF", "1", "2" };
             for (int i = 0; i < 3; ++i)
             {
-                auto* b = new juce::TextButton (i == 0 ? T ("off").toUpperCase() : juce::String (kCuenta[i]));
+                auto* b = new Boton (i == 0 ? T ("off").toUpperCase() : juce::String (kCuenta[i]));
                 styleButton (*b, kStepOff);
                 litAccent (*b);
                 b->setClickingTogglesState (true);
@@ -921,7 +924,7 @@ MainComponent::MainComponent()
         {
             for (int b4 = 0; b4 < kNumBanks; ++b4)
             {
-                auto* b = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b4)));
+                auto* b = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b4)));
                 styleButton (*b, kStepOff);
                 litAccent (*b);
                 b->setClickingTogglesState (true);
@@ -956,7 +959,7 @@ MainComponent::MainComponent()
                 //  las dos dicen encendido o apagado y nada mas. Aqui el
                 //  encendido es el segundo, que es el orden de la cuenta atras
                 //  -lo apagado primero-.
-                auto* b = new juce::TextButton (T (i == 1 ? "SI|chip" : "NO|chip"));
+                auto* b = new Boton (T (i == 1 ? "SI|chip" : "NO|chip"));
                 styleButton (*b, kStepOff);
                 litAccent (*b);
                 b->setClickingTogglesState (true);
@@ -1203,7 +1206,7 @@ MainComponent::MainComponent()
         //  dieciseis y los otros dieciseis se alcanzan con un chip.
         for (int i = 0; i < kNumCanales; ++i)
         {
-            auto* b = new juce::TextButton (juce::String (i + 1).paddedLeft ('0', 2));
+            auto* b = new Boton (juce::String (i + 1).paddedLeft ('0', 2));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -1221,7 +1224,7 @@ MainComponent::MainComponent()
         //  dejaria el rack abriendose en el 1-16 despues de mover un pad al 20.
         for (int b = 0; b < kNumCanalBancos; ++b)
         {
-            auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
             styleButton (*t, kStepOff);
             litAccent (*t);
             t->setClickingTogglesState (true);
@@ -1236,7 +1239,7 @@ MainComponent::MainComponent()
         //  parte, o sea un mando que no puede hacer nada.
         for (int f = 0; f < kNumRanuras; ++f)
         {
-            auto* sl = new juce::Slider();
+            auto* sl = new ZatiSlider();
             sl->setSliderStyle (juce::Slider::LinearHorizontal);
             sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, Metrics::readout);
             sl->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
@@ -1304,7 +1307,7 @@ MainComponent::MainComponent()
             //  mismo. `reparteTapa` ya admite ese caso -con el rotulo vacio el
             //  dibujo se lleva la tapa entera- y `Tests/planos.py` no la
             //  cuenta como gemela por lo mismo: sin texto no hay homonimo.
-            auto* m = new juce::TextButton();
+            auto* m = new Boton();
             styleButton (*m, kStepOff);
             litAccent (*m);
             m->onClick = [this, f]
@@ -1363,7 +1366,7 @@ MainComponent::MainComponent()
         //  cosas, que es lo que la regla dice y lo que media app hacia a medias.
         for (int i = 0; i < Instrumentos::kMaxInstr; ++i)
         {
-            auto* b = new juce::TextButton();
+            auto* b = new Boton();
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->onClick = [this, i] { cargaInstrumento (i); };
@@ -1375,7 +1378,7 @@ MainComponent::MainComponent()
         //  app la vez que la caja negra sirvio para algo.
         for (int i = 0; i < kPadsPerBank; ++i)
         {
-            auto* b = new juce::TextButton();
+            auto* b = new Boton();
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->onClick = [this, i]
@@ -1389,7 +1392,7 @@ MainComponent::MainComponent()
         }
         for (int b4 = 0; b4 < kNumBanks; ++b4)
         {
-            auto* b = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b4)));
+            auto* b = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b4)));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->onClick = [this, b4]
@@ -1502,7 +1505,7 @@ MainComponent::MainComponent()
         //  framework ya cubre es una regla escrita dos veces.
         for (int i = 0; i < Sintes::kMandos; ++i)
         {
-            auto* s = new juce::Slider();
+            auto* s = new ZatiSlider();
             vstMandos.add (s);
             s->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
             s->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
@@ -1624,7 +1627,7 @@ MainComponent::MainComponent()
         for (int i = 0; i < 4; ++i)
         {
             const int n = kChopCounts[i];
-            auto* b = new juce::TextButton (juce::String (n));
+            auto* b = new Boton (juce::String (n));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -1726,7 +1729,7 @@ MainComponent::MainComponent()
         {
             //  fromUTF8, not the char* constructor: juce::String (const char*)
             //  is documented as ASCII-only and turns 中文 into mojibake.
-            auto* b = new juce::TextButton (juce::String::fromUTF8 (Lang::nativeName ((Lang::Id) i)));
+            auto* b = new Boton (juce::String::fromUTF8 (Lang::nativeName ((Lang::Id) i)));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -1765,7 +1768,7 @@ MainComponent::MainComponent()
         //  three chips, one lit, and picking one repaints the whole machine.
         for (int i = 0; i < 4; ++i)
         {
-            auto* b = new juce::TextButton (T (ZatiColours::skinName (i)));
+            auto* b = new Boton (T (ZatiColours::skinName (i)));
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -1797,7 +1800,7 @@ MainComponent::MainComponent()
         //  se ve la maquina», que es de lo que trata esta pagina.
         for (int i = 0; i < 2; ++i)
         {
-            auto* b = new juce::TextButton (T (i == 0 ? "SI|chip" : "NO|chip"));
+            auto* b = new Boton (T (i == 0 ? "SI|chip" : "NO|chip"));
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -1874,7 +1877,7 @@ MainComponent::MainComponent()
         //  que ya funcionaba sigue igual sin tocar nada.
         for (int i = 0; i < 2; ++i)
         {
-            auto* b = new juce::TextButton (T (i == 0 ? "PADS|chip" : "TECLADO|chip"));
+            auto* b = new Boton (T (i == 0 ? "PADS|chip" : "TECLADO|chip"));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -2744,7 +2747,7 @@ MainComponent::MainComponent()
     // to just looping whichever bank is being edited (unchanged behaviour).
     for (int i = 0; i < kNumPatterns; ++i)
     {
-        auto* b = new juce::TextButton (juce::String (i + 1));
+        auto* b = new Boton (juce::String (i + 1));
         styleButton (*b, kKey);
         b->setColour (juce::TextButton::buttonOnColourId, patternRowColour (i));
         b->setClickingTogglesState (true);
@@ -3302,7 +3305,7 @@ MainComponent::MainComponent()
         for (int pi = 0; pi < 3; ++pi)
         {
             const auto& sp = fxDefs[f].spec[pi];
-            auto* sl = new juce::Slider (juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox);
+            auto* sl = new ZatiSlider (juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox);
             sl->setRange (sp.lo, sp.hi, sp.step);
             if (sp.skewMid > 0.0) sl->setSkewFactorFromMidPoint (sp.skewMid);
             sl->setValue (sp.def, juce::dontSendNotification);
@@ -3322,6 +3325,7 @@ MainComponent::MainComponent()
         for (int i = 0; i < 3; ++i)
         {
             ks[i]->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);   // the readout row measures
+            ks[i]->textFromValueFunction = [this, i] (double) { return macroReadout (i); };   // accesibilidad#21
             ks[i]->onDragStart = [this, i] { setMacroTouched (i, true); };
             ks[i]->onDragEnd   = [this, i] { setMacroTouched (i, false); };
         }
@@ -3367,7 +3371,7 @@ MainComponent::MainComponent()
 
         for (int k = 0; k < 3; ++k)
         {
-            auto* b = new juce::TextButton (T ("MANDO %1", Lang::ltr (juce::String (k + 1))));
+            auto* b = new Boton (T ("MANDO %1", Lang::ltr (juce::String (k + 1))));
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->onClick = [this, k] { mandosPara = k; refrescaFichaMandos(); };
@@ -3380,7 +3384,7 @@ MainComponent::MainComponent()
         //  es un giro, son seis posiciones.
         for (int i = 0; i < (int) std::size (kDivSync); ++i)
         {
-            auto* b = new juce::TextButton (kDivSync[i] == 0 ? T ("LIBRE")
+            auto* b = new Boton (kDivSync[i] == 0 ? T ("LIBRE")
                                                              : Lang::ltr ("1/" + juce::String (kDivSync[i])));
             styleButton (*b, kStepOff);
             litAccent (*b);
@@ -3404,7 +3408,7 @@ MainComponent::MainComponent()
 
         for (int i = 0; i < kMandosFichaMax; ++i)
         {
-            auto* k = new juce::Slider();
+            auto* k = new ZatiSlider();
             k->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
             k->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
             k->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
@@ -3561,7 +3565,7 @@ MainComponent::MainComponent()
     //  that are already sounding, so they work as performance controls too.
     for (int i = 0; i < kNumPads; ++i)
     {
-        auto* f = new juce::Slider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+        auto* f = new ZatiSlider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
         //  En decibelios, igual que el mando GANANCIA de la ficha del pad: es
         //  el MISMO numero visto en dos sitios, y tenerlo en dos escalas
         //  distintas era pedir que uno de los dos mintiera. El fader llega
@@ -3623,11 +3627,12 @@ MainComponent::MainComponent()
         //  getSliderLayout en ZatiLookAndFeel-. El knob se arrastra como los
         //  de EL PAD, con el mismo recorrido de 320 px para la vuelta entera,
         //  y se pinta en el ramal "pan" de drawRotarySlider.
-        auto* p = new juce::Slider();
+        auto* p = new ZatiSlider();
         p->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         p->setMouseDragSensitivity (320);
         p->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         p->setRange (-1.0, 1.0, 0.01);
+        p->textFromValueFunction = panSlider.textFromValueFunction;   // accesibilidad#21: L/C/R
         p->setValue (padPan[(size_t) i], juce::dontSendNotification);
         p->setDoubleClickReturnValue (true, 0.0);
         p->setColour (juce::Slider::trackColourId, ZatiColours::inkDim.withAlpha (0.55f));
@@ -3650,7 +3655,7 @@ MainComponent::MainComponent()
         //  abertura». Las tres tapas se pintan en el ramal "switch" de
         //  ZatiLookAndFeel: una ranura con una paleta que corre de un lado al
         //  otro, con la lampara -roja, amarilla- en la ranura al encender.
-        auto* m = new juce::TextButton ("M");
+        auto* m = new Boton ("M");
         styleButton (*m, kStepOff);
         m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
         m->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
@@ -3660,7 +3665,7 @@ MainComponent::MainComponent()
         mixRows.addAndMakeVisible (m);
         mixMutes.add (m);
 
-        auto* so = new juce::TextButton ("S");
+        auto* so = new Boton ("S");
         styleButton (*so, kStepOff);
         so->setColour (juce::TextButton::buttonOnColourId, ZatiColours::yellow);
         so->setClickingTogglesState (true);
@@ -3693,7 +3698,7 @@ MainComponent::MainComponent()
         //  telefono: «sigue poniendo ST, ¿no cambia o que pasa?» y «mo de
         //  mono y st de estereo». Lo pone `sincronizaMixEstereo`, la unica
         //  que escribe el switch, tambien tras el toque.
-        auto* st = new juce::TextButton ("ST");
+        auto* st = new Boton ("ST");
         styleButton (*st, kStepOff);
         st->setClickingTogglesState (true);
         st->setToggleState (padAnchoUI[(size_t) i] > 0.0f, juce::dontSendNotification);
@@ -3729,7 +3734,7 @@ MainComponent::MainComponent()
         mixRows.addAndMakeVisible (rot);
         canRotulos.add (rot);
 
-        auto* f = new juce::Slider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+        auto* f = new ZatiSlider (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
         f->setRange (kGainMinDb, kGainMaxDb, 0.1);
         f->setValue (0.0, juce::dontSendNotification);
         f->setSkewFactorFromMidPoint (-9.0);
@@ -3752,7 +3757,7 @@ MainComponent::MainComponent()
         //  CANALES se quedo con las tapas cuando la de PADS paso a corredera,
         //  y del telefono llego la foto: «¿por que la pantalla de canales
         //  sigue siendo asi?». Una ficha, una gramatica.
-        auto* m = new juce::TextButton ("M");
+        auto* m = new Boton ("M");
         styleButton (*m, kStepOff);
         m->setColour (juce::TextButton::buttonOnColourId, ZatiColours::red);
         m->setColour (juce::TextButton::textColourOnId, juce::Colours::white);
@@ -3775,7 +3780,7 @@ MainComponent::MainComponent()
         //  lean sin leerlas: el rojo de esta casa es GRABANDO y ya lo lleva el
         //  mute; el solo no calla este canal, calla los demas. Dos tapas del
         //  mismo color en la misma fila son una tapa con dos letras.
-        auto* s = new juce::TextButton ("S");
+        auto* s = new Boton ("S");
         styleButton (*s, kStepOff);
         s->setColour (juce::TextButton::buttonOnColourId, ZatiColours::yellow);
         s->setColour (juce::TextButton::textColourOnId,
@@ -3934,7 +3939,7 @@ MainComponent::MainComponent()
     manualSheet.addAndMakeVisible (guiaTodoBtn);
     for (int c = 0; c < kManualChapterCount; ++c)
     {
-        auto* b = new juce::TextButton ("ENSENAMELO");
+        auto* b = new Boton ("ENSENAMELO");
         styleButton (*b, kKey);
         b->onClick = [this, c] { ensenaCapitulo (c); };
         manualBody.addAndMakeVisible (b);
@@ -3964,7 +3969,7 @@ MainComponent::MainComponent()
     //  "bank C" means one thing everywhere in the app.
     for (int b = 0; b < kNumBanks; ++b)
     {
-        auto* t = new juce::TextButton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         styleButton (*t, kKey);
         litAccent (*t);
         t->setClickingTogglesState (true);
@@ -4087,7 +4092,7 @@ MainComponent::MainComponent()
     //  place it, tap it again to clear.
     for (int i = 0; i < kNumPatterns; ++i)
     {
-        auto* b = new juce::TextButton ("P" + juce::String (i + 1));
+        auto* b = new Boton ("P" + juce::String (i + 1));
         styleButton (*b, kStepOff);
         b->setColour (juce::TextButton::buttonOnColourId, Zati::colour (i));
         b->setClickingTogglesState (true);
@@ -4249,7 +4254,7 @@ MainComponent::MainComponent()
     {
         for (int i = 0; i < kNumHerramientas; ++i)
         {
-            auto* b = new juce::TextButton();
+            auto* b = new Boton();
             styleButton (*b, kStepOff);
             litAccent (*b);
             b->getProperties().set ("icono", (int) kHerramientas[i].ico);
@@ -4846,7 +4851,7 @@ MainComponent::MainComponent()
         //  PUESTO, que es lo que un panel de directo puede tocar.
         for (int r = 0; r < kNumRanuras; ++r)
         {
-            auto* b = new juce::TextButton();
+            auto* b = new Boton();
             styleButton (*b, kKey);
             litAccent (*b);
             b->setClickingTogglesState (true);
@@ -5131,6 +5136,8 @@ MainComponent::MainComponent()
     //  Ver `OidoDeToques`: cada dedo que se levanta deja el estado encargado.
     oidoDeToques.alSoltar = [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; };
     juce::Desktop::getInstance().addGlobalMouseListener (&oidoDeToques);
+    addChildComponent (anilloFoco);
+    juce::Desktop::getInstance().addFocusChangeListener (&anilloFoco);
 
     //  Ver textoInvalidoConserva: todos los mandos de la cara y de las fichas.
     textoInvalidoConserva (*this);
@@ -5517,6 +5524,19 @@ void MainComponent::ponIconos()
 }
 
 
+//  Una caja NOMBRE con la cara de la del proyecto, releida en cada carcasa (visual#2).
+void MainComponent::pintaCajaNombre (juce::TextEditor& e)
+{
+    e.setColour (juce::TextEditor::backgroundColourId, ZatiColours::screenBg);
+    e.setColour (juce::TextEditor::textColourId,       ZatiColours::lcdFg);
+    e.setColour (juce::TextEditor::outlineColourId,    ZatiColours::ink.withAlpha (0.35f));
+    e.setColour (juce::TextEditor::highlightColourId,  ZatiColours::accent.withAlpha (0.35f));
+    e.setColour (juce::TextEditor::focusedOutlineColourId, ZatiColours::ink);
+    e.setTextToShowWhenEmpty (T ("NOMBRE"), ZatiColours::lcdFg.withAlpha (0.6f));
+    e.applyColourToAllText (ZatiColours::lcdFg, true);
+    e.repaint();
+}
+
 void MainComponent::applySkin()
 {    const Bitacora::Tarea marca ("carcasa");
 
@@ -5547,6 +5567,7 @@ void MainComponent::applySkin()
     projNameBox.setColour (juce::TextEditor::focusedOutlineColourId, ZatiColours::ink);
     projNameBox.applyColourToAllText (ZatiColours::lcdFg, true);
     projNameBox.repaint();
+    pintaCajaNombre (canNomBox); pintaCajaNombre (presetNombreBox);   // visual#2
     masterLabel.setColour (juce::Label::textColourId, ZatiColours::ink);
     status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
 
@@ -5586,6 +5607,7 @@ void MainComponent::applySkin()
     lnf.setColour (juce::Slider::trackColourId, acc);
     lnf.setColour (juce::Slider::thumbColourId, acc);
     lnf.applyBrowserColours();                     // the file list follows the skin too
+    if (browser != nullptr) browser->sendLookAndFeelChange();   // visual#2: ruta y subir
     styleButton (browseLoadButton, acc);
     browseLoadButton.setColour (juce::TextButton::textColourOffId, onTxt);
 
@@ -6415,6 +6437,7 @@ juce::String MainComponent::fxPresetNombre (int f) const
     if (tuyo.isNotEmpty()) return tuyo;
     const int k = fxPresetPuesto[(size_t) canalActual][(size_t) f];
     if (k == kFxPresetMovido) return T ("MOVIDO");
+    if (FxPresets::esDefecto (k)) return T ("DEFECTO");   // textos#3: es interfaz, no un nombre
     return juce::String::fromUTF8 (FxPresets::nombre (f, k));
 }
 
@@ -7148,7 +7171,7 @@ void MainComponent::refrescaRanuras()
         //  El signo de una ranura vacia. No pasa por T() a proposito: «+» es
         //  el mismo caracter en los cuatro idiomas, igual que la cruz de
         //  cerrar, y la regla de traduccion del banco ya lo da por bueno.
-        b->setButtonText (fx < 0 ? "+" : fxDefs[fx].name);
+        b->setButtonText (fx < 0 ? "+" : fxDefs[fx].name); b->setTitle (fx < 0 ? T ("EFECTO") + " +" : juce::String());   // accesibilidad#23
 
         //  Y LLEVA LA MARCA `valor`, que es lo que separa «aqui no cabia el
         //  dibujo» de «aqui no hay dibujo que poner». Sin ella, una fila con
@@ -7182,7 +7205,7 @@ void MainComponent::refrescaRanuras()
         //  dos reglas.
         if (auto* rb = (s < rackSlotBtns.size() ? rackSlotBtns[s] : nullptr))
         {
-            rb->setButtonText (fx < 0 ? "+" : fxDefs[fx].name);
+            rb->setButtonText (fx < 0 ? "+" : fxDefs[fx].name); rb->setTitle (fx < 0 ? T ("EFECTO") + " +" : juce::String());   // accesibilidad#23 b->setTitle (fx < 0 ? T ("EFECTO") + " +" : juce::String());   // accesibilidad#23
             if (fx < 0)
             {
                 rb->getProperties().remove ("icono");
@@ -7271,7 +7294,7 @@ void MainComponent::refrescaRanuras()
         //  informacion, es ruido.
         if (auto* xb = (s < xyFxButtons.size() ? xyFxButtons[s] : nullptr))
         {
-            xb->setButtonText (fx < 0 ? "+" : fxDefs[fx].name);
+            xb->setButtonText (fx < 0 ? "+" : fxDefs[fx].name); xb->setTitle (fx < 0 ? T ("EFECTO") + " +" : juce::String());   // accesibilidad#23 b->setTitle (fx < 0 ? T ("EFECTO") + " +" : juce::String());   // accesibilidad#23
             if (fx < 0)
             {
                 xb->getProperties().remove ("icono");
@@ -7475,7 +7498,8 @@ void MainComponent::refrescaMenuPresets()
         b->setVisible (hay);
         if (! hay) { b->setBounds ({}); continue; }
 
-        b->setButtonText (deFabrica ? juce::String::fromUTF8 (FxPresets::nombre (f, i))
+        b->setButtonText (deFabrica ? (FxPresets::esDefecto (i) ? T ("DEFECTO")
+                                                                : juce::String::fromUTF8 (FxPresets::nombre (f, i)))
                                     : presetTuyosVistos[t]);
         b->setToggleState (deFabrica ? (tuyo.isEmpty() && i == puesto)
                                      : (tuyo == presetTuyosVistos[t]),
@@ -8927,6 +8951,7 @@ void MainComponent::closeAllSheets()
 MainComponent::~MainComponent()
 {
     juce::Desktop::getInstance().removeGlobalMouseListener (&oidoDeToques);
+    juce::Desktop::getInstance().removeFocusChangeListener (&anilloFoco);
 
     //  EL PUENTE MIDI SE CIERRA ANTES QUE NADA, y no es una precaucion: es un
     //  uso despues de liberar, todas las veces, con la salida encendida.
@@ -10178,6 +10203,7 @@ void MainComponent::selectPad (int index)
         pianoPadPickBtn.setButtonText (dosCifras);
         padPadPickBtn  .setButtonText (dosCifras);
         chopPadPickBtn .setButtonText (dosCifras);
+        for (auto* b : { &pianoPadPickBtn, &padPadPickBtn, &chopPadPickBtn }) b->setTitle (T ("PAD") + " " + dosCifras);   // accesibilidad#23
     }
     updateControlsFromPad (index);
     waveform.setSample (uiSample[(size_t) index]);
@@ -10860,8 +10886,9 @@ void MainComponent::denoisePad()
             clean->buffer.applyGain (recupera);
         }
 
-        juce::MessageManager::callAsync ([this, clean, keepSrc, pad, len, keepStart, keepEnd, keepName, before, after, recupera]
+        juce::MessageManager::callAsync ([yo = juce::Component::SafePointer<MainComponent> (this), this, clean, keepSrc, pad, len, keepStart, keepEnd, keepName, before, after, recupera]
         {
+            if (yo == nullptr) return;   // estabilidad#32
             denoiseBusy = false;
             denoiseButton.setEnabled (true);
             endBusy();
@@ -11546,6 +11573,18 @@ void MainComponent::refreshAccessibleNames()
         }
     };
     nombra (*this);
+    //  Ningun boton se lee solo como cifra o signo (accesibilidad#23).
+    auto deQue = [] (juce::OwnedArray<Boton>& bs, const juce::String& de)
+    { for (auto* b : bs) b->setTitle (de + " " + b->getButtonText()); };
+    deQue (padPickBtns, T ("PAD"));       deQue (canalBtns, T ("CANAL"));
+    deQue (rackPadBtns, T ("CANAL"));     deQue (chopCountBtns, T ("TROZOS"));
+    deQue (patternButtons, T ("PATRON")); deQue (mandosSyncBtns, T ("SYNC"));
+    deQue (cuentaButtons, T ("CUENTA"));  deQue (tomasButtons, T ("TOMAS"));
+    for (auto* bs : { &padPickBankBtns, &canalBankBtns, &seqBankButtons, &bankButtons, &rackBankBtns, &instBancoBtns, &mixBankBtns })
+        deQue (*bs, T ("BANCO"));
+    pianoOctDownBtn.setTitle (T ("OCTAVA") + " -"); pianoOctUpBtn.setTitle (T ("OCTAVA") + " +");
+    vstPreDown.setTitle (T ("PRESET") + " -");      vstPreUp.setTitle (T ("PRESET") + " +");
+    zoomOutButton.setTitle (T ("LUPA") + " -");     zoomInButton.setTitle (T ("LUPA") + " +");
     for (int i = 0; i < pads.size(); ++i)   // accesibilidad#24
     {
         pads[i]->setToggleable (true);
@@ -12006,6 +12045,7 @@ void MainComponent::retranslateUi()
         }
     };
     nombra (*this);
+    refreshAccessibleNames();   // otra vez, con los textos ya traducidos (accesibilidad#23)
 
     resized();
     repaint();
@@ -13057,8 +13097,9 @@ void MainComponent::selectionChanged()
 
     const int slot = browseTargetPad;
     beginBusy (T ("Cargando"));
-    loader.loadAsync (juce::URL (f), slot, [this, slot, f] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+    loader.loadAsync (juce::URL (f), slot, [yo = juce::Component::SafePointer<MainComponent> (this), this, slot, f] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
     {
+        if (yo == nullptr) return;   // estabilidad#32
         endBusy();
 
         if (! ok || sb == nullptr) { status.setText (T ("No se pudo leer: %1", detail), juce::dontSendNotification); return; }
@@ -14691,6 +14732,7 @@ void MainComponent::finishProjectSave (PadSaveJob& job)
 
 void MainComponent::loadProject (const juce::String& name)
 {    const Bitacora::Tarea marca ("proyecto/abrir");
+    Bitacora::paso ("proyecto/abre");   // estabilidad#27
 
     if (padsBusy()) return;
 
@@ -14730,6 +14772,7 @@ void MainComponent::loadProject (const juce::String& name)
 
 void MainComponent::finishProjectOpen (const juce::String& name, const juce::ValueTree& tree, int restored)
 {
+    Bitacora::paso ("proyecto/fin");   // estabilidad#27
     int missing = 0;
     vaciaDeshacer();
     applyState (tree);
@@ -17749,6 +17792,21 @@ int MainComponent::manualContentHeight (int width) const
 //  decodificacion por fichero y la barra tiene que seguir puesta hasta la
 //  ultima, no irse con la primera que termine.
 // ============================================================================
+void MainComponent::colocaBusy()
+{
+    auto r = busyArea;
+    if (browseSheet.isVisible())
+    {
+        const auto x = getLocalArea (&browseSheet, browseCloseButton.getBounds()).expanded (Metrics::xs);
+        if (r.intersects (x))
+        {
+            if (x.getCentreX() > r.getCentreX()) r.setRight (x.getX());
+            else                                 r.setLeft (x.getRight());
+        }
+    }
+    busyBar.setBounds (r);
+}
+
 void MainComponent::beginBusy (const juce::String& what)
 {
     if (busyJobs == 0)
@@ -17763,6 +17821,7 @@ void MainComponent::beginBusy (const juce::String& what)
     }
 
     ++busyJobs;
+    colocaBusy();
     busyBar.setVisible (true);
     busyBar.toFront (false);
     busyBar.repaint();
@@ -18082,6 +18141,7 @@ void MainComponent::aplicaPistas (int modo)
     stepGrid.setVentana (n, desde);
     seqPistasBtn.setButtonText (Lang::ltr (pistasVista == 0 ? "1-16"
                                          : pistasVista == 1 ? "1-8" : "9-16"));
+    seqPistasBtn.setTitle (T ("PISTAS") + " " + seqPistasBtn.getButtonText());   // accesibilidad#23
     resized();
     refreshStepGrid();
 }
@@ -18096,6 +18156,7 @@ void MainComponent::aplicaZoomPasos (float z)
     seqZoomW = stepGrid.getZoomAncho();
     seqZoomBtn.setButtonText (Lang::ltr (seqZoomW > 1.5f ? "2:1"
                                        : seqZoomW < 0.9f ? "3:4" : "1:1"));
+    seqZoomBtn.setTitle (T ("LUPA") + " " + seqZoomBtn.getButtonText());   // accesibilidad#23
     seqPrimerCelda = juce::jlimit (0, juce::jmax (0, celdasDePatron (selectedPattern) - stepGrid.numCols()),
                                    seqPrimerCelda);
     refreshStepGrid();
@@ -19602,7 +19663,8 @@ void MainComponent::refreshAudioOptions()
 
         for (int v : pick)
         {
-            auto* b = new juce::TextButton (juce::String (v) + (v == natBuf ? "*" : ""));
+            auto* b = new Boton (juce::String (v) + (v == natBuf ? "*" : ""));
+            b->setTitle (T ("BUFER") + " " + b->getButtonText());   // accesibilidad#23
             styleButton (*b, ZatiColours::key);
             litAccent (*b);
             b->setToggleState (v == curBuf, juce::dontSendNotification);
@@ -19625,7 +19687,7 @@ void MainComponent::refreshAudioOptions()
     for (double r : rates)
     {
         if (rateButtons.size() >= 4) break;
-        auto* b = new juce::TextButton (juce::String (r / 1000.0, juce::exactlyEqual (r, (double) (int) (r / 1000.0) * 1000.0) ? 0 : 1) + "k");
+        auto* b = new Boton (juce::String (r / 1000.0, juce::exactlyEqual (r, (double) (int) (r / 1000.0) * 1000.0) ? 0 : 1) + "k");
         styleButton (*b, ZatiColours::key);
         litAccent (*b);
         b->setToggleState (std::abs (r - curRate) < 1.0, juce::dontSendNotification);
@@ -19792,8 +19854,9 @@ void MainComponent::launchSystemPicker()
             //  otherwise a folder tree with nothing in it.
             importIntoLibrary (url);
             beginBusy (T ("Cargando"));
-    loader.loadAsync (url, index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+    loader.loadAsync (url, index, [yo = juce::Component::SafePointer<MainComponent> (this), this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
             {
+        if (yo == nullptr) return;   // estabilidad#32
         endBusy();
 
                 if (ok)
@@ -19955,8 +20018,9 @@ void MainComponent::repartePorBanco (const juce::Array<juce::File>& files, const
         //  asi que dieciseis peticiones se atienden en fila y ninguna se pisa
         //  con otra; lo que no se puede es dar por hecho el orden de llegada,
         //  y por eso cada respuesta lleva su propio slot.
-        loader.loadAsync (juce::URL (f), slot, [this, slot, f, n, done] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+        loader.loadAsync (juce::URL (f), slot, [yo = juce::Component::SafePointer<MainComponent> (this), this, slot, f, n, done] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
         {
+            if (yo == nullptr) return;   // estabilidad#32
             ++(*done);
             setBusyProgress ((float) *done / (float) juce::jmax (1, n));
             if (*done >= n) endBusy();
@@ -20251,7 +20315,7 @@ void MainComponent::pasoPack (int d)
 //
 //  Y se decide para las dieciseis a la vez, por lo mismo que una fila decide
 //  junta: media rejilla con dibujo y media sin el se lee como una celda rota.
-void MainComponent::rejillaDeIconos (juce::OwnedArray<juce::TextButton>& celdas, int n)
+void MainComponent::rejillaDeIconos (juce::OwnedArray<Boton>& celdas, int n)
 {
     const int cuantas = juce::jmin (n, celdas.size());
     //  La marca se borra ANTES de preguntar, o la respuesta de la pasada
@@ -20290,6 +20354,7 @@ void MainComponent::refreshInst()
     {
         const int pad = bancoDestino() * kPadsPerBank + i;
         instDestBtns[i]->setButtonText (juce::String (pad + 1).paddedLeft ('0', 2));
+        instDestBtns[i]->setTitle (T ("PAD") + " " + instDestBtns[i]->getButtonText());   // accesibilidad#23
         const auto id = padEsInstrumento (pad)
                             ? Iconos::deFamilia (uiSample[(size_t) pad]->familia)
                             : Iconos::Id::ninguno;
@@ -20898,11 +20963,14 @@ void MainComponent::importaMidiPatron (const juce::File& f)
 {
     MidiArchivo::Parte parte;
     const bool esMidi = f.hasFileExtension ("mid;midi;rmi;kar") && f.getSize() <= 4 * 1024 * 1024;   // estabilidad#21
-    const auto notas = esMidi ? MidiArchivo::lee (f, AudioEngine::kNumSteps, parte, engine.pasoUnidades()) : decltype (MidiArchivo::lee (f, 0, parte)) {};
+    const auto notas = esMidi ? MidiArchivo::lee (f, AudioEngine::kNumSteps, parte, engine.pasoUnidades(), engine.getBpm()) : decltype (MidiArchivo::lee (f, 0, parte)) {};
 
     if (notas.empty())
     {
-        midiParte = T ("Ese fichero no trae notas que quepan en el patron");
+        //  Roto, sin notas o con notas que no caben: tres avisos (estabilidad#22).
+        midiParte = ! parte.leido ? T ("Ese fichero no es un MIDI que se pueda leer")
+                  : parte.fuera + parte.tarde + parte.apiladas == 0 ? T ("Ese MIDI no trae notas")
+                  : T ("Ese fichero no trae notas que quepan en el patron");
         closeAllSheets();
         abreMidiSheet();
         return;
@@ -21146,8 +21214,9 @@ void MainComponent::loadBrowserSelection()
 
     status.setText (T ("Cargando pad %1...", juce::String (index + 1)), juce::dontSendNotification);
     beginBusy (T ("Cargando"));
-    loader.loadAsync (juce::URL (f), index, [this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
+    loader.loadAsync (juce::URL (f), index, [yo = juce::Component::SafePointer<MainComponent> (this), this, index, fileName] (bool ok, juce::String detail, SampleBuffer::Ptr sb)
     {
+        if (yo == nullptr) return;   // estabilidad#32
         endBusy();
 
         if (ok)
@@ -21550,6 +21619,7 @@ void MainComponent::lanzaHebraPads (PadLoadJob& j)
 void MainComponent::stepPadJob()
 {
     if (padJob == nullptr) return;
+    if (std::strcmp (Bitacora::ultimo, "proyecto/pads") != 0) Bitacora::paso ("proyecto/pads");   // estabilidad#27
 
     const Bitacora::Tarea marca ("pads/cargar");
 
@@ -21783,13 +21853,36 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
         status.setText (T ("Android la cerro la vez anterior: %1", Lang::ltr (salidaPrevia)),
                         juce::dontSendNotification);
     else if (Bitacora::atascoPrevio.isNotEmpty())
-        status.setText (T ("La vez anterior se paro: %1", Lang::ltr (Bitacora::atascoPrevio)),
-                        juce::dontSendNotification);
+        status.setText (parteVezAnterior (Bitacora::atascoPrevio), juce::dontSendNotification);
     else if (Bitacora::previa.isNotEmpty())
-        //  En palabras primero (feria J4: «se cerro en: audio/abrir» era jerga) y
-        //  la tarea detras, que es lo que hace falta para arreglarlo.
-        status.setText (T ("No se cerro bien la ultima vez: %1", Bitacora::previa),
-                        juce::dontSendNotification);
+        status.setText (parteVezAnterior (Bitacora::previa), juce::dontSendNotification);
+}
+
+//  textos#2: la linea cruda de la bitacora se queda en AJUSTES · AUDIO; aqui va
+//  en palabras del idioma, con la cifra y la tarea traducidas.
+juce::String MainComponent::parteVezAnterior (const juce::String& linea)
+{
+    const auto donde = linea.fromLastOccurrenceOf (" en ", false, false).trim();
+    const auto seg   = donde.upToFirstOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (" ", false, false);
+    juce::String que;
+    if      (seg == "audio")                          que = T ("abriendo el audio");
+    else if (seg == "banco" || seg == "fabrica")      que = T ("cargando el banco de fabrica");
+    else if (seg == "pads")                           que = T ("cargando los pads");
+    else if (donde == "proyecto/abrir")               que = T ("abriendo el proyecto");
+    else if (seg == "proyecto" || seg == "guardar")   que = T ("guardando");
+    else if (seg == "sesion")                         que = T ("recuperando la sesion");
+    else if (seg == "carcasa")                        que = T ("cambiando la carcasa");
+    else if (seg == "idioma")                         que = T ("cambiando el idioma");
+    else if (seg == "foco" || seg == "pausa" || seg == "reanudar") que = T ("volviendo de otra app");
+    else if (seg == "ficha")                          que = T ("con una ficha abierta");
+    else                                              que = T ("con la pantalla en marcha");
+
+    if (linea.startsWith ("ATASCO"))
+    {
+        const int ms = linea.fromFirstOccurrenceOf ("ATASCO", false, false).trim().getIntValue();
+        return T ("La vez anterior se quedo parada %1 s, %2", Lang::ltr (juce::String (ms / 1000.0, 1)), que);
+    }
+    return T ("No se cerro bien la ultima vez, %1", que);
 }
 
 //  EL PARTE DE ANDROID. Solo se ensena lo que es un fallo: una salida pedida

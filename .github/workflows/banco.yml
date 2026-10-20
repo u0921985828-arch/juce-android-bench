@@ -43,7 +43,7 @@ jobs:
             libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
             libxinerama-dev libxrandr-dev libxrender-dev \
             libcurl4-openssl-dev libgl1-mesa-dev mesa-common-dev libglu1-mesa-dev \
-            libwebkit2gtk-4.1-dev ninja-build xvfb x11-utils imagemagick
+            libwebkit2gtk-4.1-dev ninja-build xvfb x11-utils imagemagick strace
 
       #  LAS FUENTES, QUE NO SON UN ADORNO: este banco mide ANCHOS DE TEXTO
       #  -TRUNC, SQUEEZE y CORTADO- asi que sin las mismas caras instaladas la
@@ -78,7 +78,7 @@ jobs:
       - name: Compilar la app y los bancos del motor
         run: |
           cmake -B build -G Ninja -DZATI_BENCH=ON -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target Zati StressTest -j"$(nproc)"
+          cmake --build build --target Zati StressTest Carga -j"$(nproc)"
 
       #  Sin pantalla virtual JUCE se cae en Component::centreWithSize y parece
       #  un fallo del codigo. Ver .claude/skills/banco/SKILL.md.
@@ -300,6 +300,73 @@ jobs:
       #  Es la mas larga del banco despues de expo: su regla 4 abre las 39
       #  fichas y aprieta las 2442 tapas y mandos, una por una, reabriendo la
       #  ficha entre apretada y apretada. Del orden de doce minutos.
+      #  LOS QUE NO CORRIAN (codigo#2): quince bancos dependian de acordarse.
+      #  Los que se quedan fuera estan en la lista del paso de abajo, con motivo.
+      - name: La feria, hallazgo por hallazgo
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/feria.py
+      - name: Lo que pisa un pad pasa por deshacer
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/deshacer.py
+      - name: Lo que se lleva el proyecto avisa antes
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/proyecto.py
+      - name: Las dos selecciones de rango
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/sel.py
+      - name: Los limites de las fichas, en la tinta
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/limites.py
+      - name: Los presets de cada efecto
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/presets.py
+      - name: Guardar sin huecos
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/guardado.py
+      - name: El plato que se elige
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/plato.py
+      - name: Los pasos no se pisan
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/pasos.py
+      - name: Un proyecto roto no tumba la app
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/hostil.py
+      - name: Lo que se decide con lo que contesta el telefono
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/audio.py
+      - name: Que la latencia vuelva sola
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/buffer.py
+      - name: Cuantos toques hasta cada ficha
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/profundidad.py
+      - name: Lo que entra del disco no rompe el audio
+        if: '!cancelled()'
+        run: DISPLAY=:99 python3 Tests/muestras.py build/Carga_artefacts/Release/Carga
+
+      #  Ningun Tests/*.py fuera de CI sin decir por que (codigo#2).
+      - name: Todo banco corre aqui o dice por que no
+        if: '!cancelled()'
+        run: |
+          python3 - <<'PY'
+          import glob, os, re, sys
+          FUERA = {
+              "cpu":     "mide por reloj: medidas.yml, con el runner solo",
+              "fluidez": "mide la cadencia por reloj, como cpu.py",
+              "entrega": "herramienta de entrega: compara la rama publicada, no juzga la app",
+              "informe": "genera el informe del plano, no da veredicto",
+          }
+          ci = "".join (open (f).read() for f in glob.glob (".github/workflows/*.yml"))
+          dentro = set (re.findall (r"Tests/(\w+)\.py", ci)) - set (FUERA)
+          sueltos = sorted (os.path.basename (f)[:-3] for f in glob.glob ("Tests/*.py")
+                            if os.path.basename (f)[:-3] not in dentro and os.path.basename (f)[:-3] not in FUERA
+                            and not os.path.basename (f).startswith ("_"))
+          for t in sueltos: print ("FALLA  Tests/%s.py no corre en CI ni dice por que" % t)
+          print ("VEREDICTO:", "OK" if not sueltos else "%d FALLA" % len (sueltos))
+          sys.exit (1 if sueltos else 0)
+          PY
+
       - name: El hilo de mensajes, y las 2442 tapas
         if: '!cancelled()'
         run: DISPLAY=:99 python3 Tests/atasco.py

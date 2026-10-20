@@ -4028,6 +4028,15 @@ private:
     //  solo?» una vez por pad y por bloque, y recorrer treinta y dos atomicos
     //  ahi seria treinta y dos lecturas para contestar un bit.
     std::atomic<bool> canalSoloActive { false };
+    //  La ganancia a la que va el canal de un pad: fader, mute y solo.
+    float destinoCanal (int canal) const noexcept
+    {
+        const bool en    = tieneCanal (canal);
+        const bool calla = en && (canalMute[(size_t) canal].load (std::memory_order_relaxed)
+                                   || (canalSoloActive.load (std::memory_order_relaxed)
+                                        && ! canalSolo[(size_t) canal].load (std::memory_order_relaxed)));
+        return calla ? 0.0f : en ? canalGain[(size_t) canal].load (std::memory_order_relaxed) : 1.0f;
+    }
     void refreshCanalSolo() noexcept
     {
         bool any = false;

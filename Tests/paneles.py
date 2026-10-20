@@ -187,9 +187,10 @@ def juzga (rows, tag, lang):
     marcos = {}
     for t in rows:
         if not t.get ("tarjeta"): continue
-        if t.get ("desplaza"): continue
+        #  Desplazarse solo excusa a la que ya llego a su tope (visual#6).
+        if t.get ("desplaza") and t.get ("pedido", 0) >= t.get ("tope", 0): continue
         if t.get ("w", 0) <= 0 or t.get ("h", 0) <= 0: continue
-        marcos[t.get ("capa", 0)] = (t["x"], t["y"], t["w"], t["h"])
+        marcos[t.get ("capa", 0)] = (t["x"], t["y"], t["w"], t["h"], t.get ("marcoY", 0))
 
     #  Y LOS MISMOS RECTANGULOS SIN LA EXENCION DE DESPLAZAR, para la pregunta
     #  de los LADOS. Una ficha que se desplaza lo hace en vertical: por abajo un
@@ -294,7 +295,10 @@ def juzga (rows, tag, lang):
         #     copiada aqui.
         marco = marcos.get (capa)
         if marco is not None:
-            mx, my, mw, mh = marco
+            mx, my, mw, mh, mmy = marco
+            #  visual#6: la ultima caja no se come el margen de abajo de la ficha.
+            if py + ph > my + mh - mmy and not (px + pw > mx + mw or py + ph > my + mh):
+                fallos.append (("BAJO", tag, f"{quien} acaba en {py+ph} y la ficha deja de pintar en {my+mh-mmy}"))
             if px < mx or py < my or px + pw > mx + mw or py + ph > my + mh:
                 fallos.append (("MARCO", tag,
                                 f"{quien} [{px},{py},{px+pw},{py+ph}] se sale del marco "
@@ -497,7 +501,7 @@ def main():
     porclase = defaultdict (list)
     for kind, tag, que in todos: porclase[kind].append ((tag, que))
 
-    for kind in ("CRASH", "VACIO", "FUERA", "RELLENO", "AJENO", "MARCO", "FILO", "FILAS", "PEGADOS"):
+    for kind in ("CRASH", "VACIO", "FUERA", "RELLENO", "AJENO", "MARCO", "BAJO", "FILO", "FILAS", "PEGADOS"):
         if not porclase[kind]: continue
         print (f"\n{kind}  ({len (porclase[kind])})")
         #  Uno por texto distinto: el mismo panel torcido sale en 28 corridas y

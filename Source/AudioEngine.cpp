@@ -1111,12 +1111,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  sin envios -la mascara ya lo deja fuera en `refrescaSendMask`-. La
         //  guarda es ademas lo que impide indexar `canalGain[255]`.
         const bool en   = AudioEngine::tieneCanal (canal);
-        const bool calla = en && (canalMute[(size_t) canal].load (std::memory_order_relaxed)
-                                   || (canalSoloActive.load (std::memory_order_relaxed)
-                                        && ! canalSolo[(size_t) canal].load (std::memory_order_relaxed)));
-        const float gCan  = calla ? 0.0f
-                          : en    ? canalGain[(size_t) canal].load (std::memory_order_relaxed)
-                                  : 1.0f;
+        const float gCan  = destinoCanal (canal);
         float& smCan = smCanalDePad[(size_t) p];
         smCan += kSend * (gCan - smCan);
         const bool canalHot = std::abs (smCan - gCan) > 0.0005f;
@@ -1891,6 +1886,11 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             return best;
         };
 
+        if (stepAccum >= samplesPerStep - 1.0e-9)   // el borde que cayo al final del bloque anterior (producto#3)
+        {
+            stepAccum -= samplesPerStep;
+            fireStep();
+        }
         fireDueHits();
 
         int offset    = startSample;
@@ -1933,7 +1933,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             for (int i = 0; i < numPending; ++i)
                 pending[(size_t) i].countdown -= seg;
 
-            if (stepAccum >= samplesPerStep - 1.0e-9)
+            if (remaining > 0 && stepAccum >= samplesPerStep - 1.0e-9)   // en la raya del bloque espera al siguiente (producto#3)
             {
                 stepAccum -= samplesPerStep;
                 fireStep();   // voices started here render from the next segment on
@@ -5571,7 +5571,6 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (canalGain, s.canalGain);
     copyArr (canalMute, s.canalMute);
     copyArr (canalSolo, s.canalSolo);
-    smCanalDePad = s.smCanalDePad;
     //  Y LA MASCARA CON ELLOS. El motor del rebote no pasa nunca por
     //  setCanalSend - se le copia el estado entero de golpe - asi que sin esta
     //  linea arrancaba con la mascara a cero, se saltaba los 64 pads y
@@ -5596,6 +5595,8 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  sin ellos el rebote tendria el estado y no la pregunta que lo usa.
     refreshSolo();
     refreshCanalSolo();
+    for (int p = 0; p < kNumPads; ++p)   // el suavizado es del hilo de audio: arranca en su destino (estabilidad#25)
+        smCanalDePad[(size_t) p] = destinoCanal ((int) padCanal[(size_t) p].load (std::memory_order_relaxed));
 
     bpm.store (s.bpm.load (std::memory_order_relaxed), std::memory_order_relaxed);
     stepBeats.store (s.stepBeats.load (std::memory_order_relaxed), std::memory_order_relaxed);

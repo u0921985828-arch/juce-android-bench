@@ -16,6 +16,9 @@
 #include "WaveformDisplay.h"
 #include "SpectrumDisplay.h"
 #include "ZatiLookAndFeel.h"
+#include "ZatiSlider.h"
+#include "AnilloFoco.h"
+#include "Boton.h"
 #include "PadButton.h"
 #include "ProjectStore.h"
 #include "StepGrid.h"
@@ -464,14 +467,14 @@ private:
     //  mando: un semitono, un paso, un viaje - y tres acordes son treinta y
     //  seis viajes, que es por lo que nadie los escribia.
     PianoRoll pianoGrid;
-    juce::TextButton pianoOctDownBtn { "OCTAVA -" }, pianoOctUpBtn { "OCTAVA +" };
-    juce::TextButton pianoClearBtn   { "VACIAR" };
-    juce::TextButton pianoButton     { "PIANO" };
+    Boton pianoOctDownBtn { "OCTAVA -" }, pianoOctUpBtn { "OCTAVA +" };
+    Boton pianoClearBtn   { "VACIAR" };
+    Boton pianoButton     { "PIANO" };
     //  CAMBIAR DE PAD SIN CERRAR. La ficha tapa la rejilla de pads, asi que
     //  escribir el bajo y luego la campana costaba cerrar, elegir y abrir por
     //  cada instrumento. Y saltan los pads VACIOS: en un kit de cinco sonidos,
     //  avanzar de uno en uno por sesenta y cuatro es no tener el boton.
-    juce::TextButton pianoPadDownBtn { "PAD -" }, pianoPadUpBtn { "PAD +" };
+    Boton pianoPadDownBtn { "PAD -" }, pianoPadUpBtn { "PAD +" };
 
     //  Y LA REJILLA DE DIECISEIS, que es lo que las flechas no pueden ser.
     //
@@ -491,12 +494,12 @@ private:
     //  Es un Sheet y no una clase nueva: asi trae ya su capa para el banco -lo
     //  mismo que le faltaba a XyPanel-, su velo, y el cierre al tocar fuera.
     Sheet padPickSheet;
-    juce::TextButton padPickCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::OwnedArray<juce::TextButton> padPickBtns;
+    Boton padPickCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    juce::OwnedArray<Boton> padPickBtns;
     //  Y LOS CUATRO BANCOS DEBAJO, porque si no la rejilla llega a dieciseis
     //  pads y no a sesenta y cuatro - y PAD -/+, que es lo que viene a
     //  sustituir, si arrastran la vista de bancos.
-    juce::OwnedArray<juce::TextButton> padPickBankBtns;
+    juce::OwnedArray<Boton> padPickBankBtns;
     void paintPadPickContent (juce::Graphics& g);
     void refrescaPadPicker();
     //  Las dos puertas: la cabecera del piano y la de la ficha del pad. Dos
@@ -505,7 +508,7 @@ private:
     //  Y la tercera: el troceado tambien es de UN pad -«va a pads: 5 6 7 8»- y
     //  hasta ahora la unica forma de cambiarlo era cerrar, elegir y volver a
     //  abrir. Es exactamente el viaje que esta puerta existe para quitar.
-    juce::TextButton pianoPadPickBtn { "PAD" }, padPadPickBtn { "PAD" }, chopPadPickBtn { "PAD" };
+    Boton pianoPadPickBtn { "PAD" }, padPadPickBtn { "PAD" }, chopPadPickBtn { "PAD" };
     bool padPickAbierto = false;
     void abrePadPicker (bool abrir);
 
@@ -519,20 +522,20 @@ private:
     //  puertas. Encima cuesta CERO de alto permanente y una tapa en la fila que
     //  ya estaba.
     Sheet canalSheet;
-    juce::TextButton canalCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::OwnedArray<juce::TextButton> canalBtns;
+    Boton canalCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    juce::OwnedArray<Boton> canalBtns;
     //  LOS DOS CHIPS DE BANCO, que es lo que treinta y dos canales obligan a
     //  tener: la rejilla enseña dieciseis y el resto sigue estando. El indice
     //  es UNO para los dos selectores -el de aqui y el del RACK- porque el
     //  canal elegido tambien es uno: con un banco por selector, abrir el rack
     //  despues de mover un pad al canal 20 enseñaria la rejilla del 1 al 16 con
     //  el elegido fuera de ella.
-    juce::OwnedArray<juce::TextButton> canalBankBtns;
+    juce::OwnedArray<Boton> canalBankBtns;
     //  La celda de SALIR de la mesa. Aparte de las treinta y dos a proposito:
     //  no es un canal numero cero, es no estar en ninguno. Ver
     //  AudioEngine::kSinCanal.
-    juce::TextButton canalNingunoBtn { "SIN CANAL" };
-    juce::TextButton padCanalBtn { "CANAL" };
+    Boton canalNingunoBtn { "SIN CANAL" };
+    Boton padCanalBtn { "CANAL" };
     int  canalBanco = 0;
     void ponCanalBanco (int b);
     bool canalPickAbierto = false;
@@ -550,11 +553,11 @@ private:
     bool pasoEditable() const;       // el paso que la tira edita esta encendido
     //  Las dos herramientas del piano. Excluyentes: con las dos apagadas se
     //  dibuja, que es lo que hace falta el 90% del tiempo.
-    juce::TextButton pianoLapizBtn { "LAPIZ" }, pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
+    Boton pianoLapizBtn { "LAPIZ" }, pianoGomaBtn { "GOMA" }, pianoCorteBtn { "TIJERAS" };
     //  CUANTAS OCTAVAS SE VEN. Su rotulo dice el estado y no la accion, que es
     //  lo que hace falta cuando el estado no se puede deducir mirando: trece
     //  filas y veinticinco se distinguen contando, y nadie cuenta.
-    juce::TextButton pianoVerBtn { "1 OCTAVA" };
+    Boton pianoVerBtn { "1 OCTAVA" };
     static juce::File pianoPrefFile();
     void  loadPianoPref();
     void  savePianoPref() const;
@@ -631,7 +634,7 @@ private:
 
     //  LA TIRA DE ACCIONES DE LA SELECCION. Ver el reparto en
     //  MainComponent_Layout.cpp: solo existe con notas seleccionadas.
-    juce::TextButton pianoSelBtn { "SEL" }, pianoCopiaBtn { "COPIAR" }, pianoPegaBtn { "PEGAR" },
+    Boton pianoSelBtn { "SEL" }, pianoCopiaBtn { "COPIAR" }, pianoPegaBtn { "PEGAR" },
                      pianoCorteSelBtn { "CORTE" }, pianoBorraSelBtn { "BORRAR" };
 
     //  CUANTAS COLUMNAS SE VEN. Ocho es medio compas con celdas del doble de
@@ -639,7 +642,7 @@ private:
     //  treinta y dos son dos compases para ver la frase. Con el suelo de la
     //  celda decidiendo, como todo lo demas.
     int pianoCols = StepGrid::kBarSteps;
-    juce::TextButton pianoZoomBtn { "1 COMPAS" };
+    Boton pianoZoomBtn { "1 COMPAS" };
     //  LA ESCALERA DEL ZOOM, de medio compas a cuatro, y cada peldano solo
     //  donde la celda del paso no baja de su suelo. La tapa la recorre en
     //  ciclo; el pellizco va un peldano arriba o abajo. Ver pianoZoomPaso.
@@ -731,7 +734,7 @@ private:
     //  que contiene.
     enum SetPage { pageAudio = 0, pageMidi, pageAspecto, pageProjects, pageGestures };
     int setPage = pageAudio;
-    juce::TextButton pageAudioBtn { "AUDIO" }, pageMidiBtn { "MIDI" },
+    Boton pageAudioBtn { "AUDIO" }, pageMidiBtn { "MIDI" },
                      pageAspBtn { "ASPECTO" },
                      pageProjBtn { "PROYECTOS" }, pageGestBtn  { "GESTOS" };
     void paintGesturesPage (juce::Graphics& g, juce::Rectangle<int> area);
@@ -790,17 +793,17 @@ private:
     //  La segunda pestana se llama PATRON y no PASO desde que los mandos del
     //  paso viven debajo de la rejilla: lo que queda aqui -cadena, desplazar,
     //  doblar, humanizar, swing, rejilla- es del patron entero.
-    juce::TextButton seqGridBtn { "PASOS" }, seqPianoBtn { "PIANO" }, seqStepBtn { "PATRON" };
+    Boton seqGridBtn { "PASOS" }, seqPianoBtn { "PIANO" }, seqStepBtn { "PATRON" };
     //  EL TRANSPORTE, DENTRO DE LA FICHA, igual que en CANCION y en PIANO.
     //  Escribir un paso y OIRLO es el mismo gesto, y la tapa de PLAY de la
     //  cara se queda debajo del velo: habia que cerrar, tocar, y volver a
     //  abrir buscando por donde ibas.
-    juce::TextButton seqPlayBtn { "PLAY" };
+    Boton seqPlayBtn { "PLAY" };
     //  EL INTERRUPTOR DE LO QUE TOCA PLAY, en la fila del transporte y no en
     //  otra ficha: es la pregunta que se hace justo antes de pulsar PLAY. Ver
     //  ponModoCancion - el estado es UNO y las tapas son tres, igual que ya
     //  pasa con PLAY (la cara, la cancion y el secuenciador).
-    juce::TextButton modoBtn { "PATRON" }, seqModoBtn { "PATRON" };
+    Boton modoBtn { "PATRON" }, seqModoBtn { "PATRON" };
     //  HUMANIZAR y SEGUIR, las dos que faltaban del editor de patrones.
     //
     //  HUMANIZAR escribe un empujon distinto en cada paso y una fuerza
@@ -812,16 +815,16 @@ private:
     //  SEGUIR mueve la vista al compas que suena. Con patrones de cuatro
     //  compases, mirar el 1 mientras suena el 3 es la mitad del tiempo
     //  mirando una rejilla que no se mueve.
-    juce::TextButton seqHumanBtn  { "HUMANIZAR" };
+    Boton seqHumanBtn  { "HUMANIZAR" };
     //  EUCLIDES: reparte N golpes lo mas uniformemente posible en la fila del
     //  pad elegido. Ver euclidesPattern.
-    juce::Slider euclidSlider;
+    ZatiSlider euclidSlider;
     void euclidesPattern (int golpes);
 
     //  COPIAR Y PEGAR LA FILA DE UN PAD, que es lo que no se podia hacer:
     //  copiar el bombo del patron 1 al 3 obligaba a copiar el BANCO entero -y
     //  con el los otros quince pads- o a ir casilla por casilla.
-    juce::TextButton copyRowBtn { "COPIAR FILA" }, pasteRowBtn { "PEGAR FILA" };
+    Boton copyRowBtn { "COPIAR FILA" }, pasteRowBtn { "PEGAR FILA" };
     //  El paso entero lo define AudioEngine::Paso: esta lista estuvo escrita
     //  aqui y era la unica completa de la app, asi que COPIAR PATRON,
     //  DESPLAZAR y DOBLAR tenian cada uno la suya, mas corta.
@@ -843,11 +846,11 @@ private:
     //  Es el MISMO modelo que las otras dos y no uno nuevo: SEL arma, el
     //  arrastre marca, un toque suelto vacia, y la tira de cuatro aparece con
     //  la banda. Un solo gesto de seleccion en las tres pantallas.
-    juce::TextButton seqSelBtn { "SEL" };
+    Boton seqSelBtn { "SEL" };
     //  LA TIRA DE ACCIONES DE LA BANDA. Ver el reparto en
     //  MainComponent_Layout.cpp: solo existe con banda puesta, y PEGAR ademas
     //  pide portapapeles - pegar lo que no se ha copiado no es nada.
-    juce::TextButton seqCopiaBtn { "COPIAR" }, seqCorteSelBtn { "CORTE" },
+    Boton seqCopiaBtn { "COPIAR" }, seqCorteSelBtn { "CORTE" },
                      seqPegaBtn { "PEGAR" }, seqBorraSelBtn { "BORRAR" };
     //  La banda en las coordenadas de la rejilla: `pad0/pad1` son CARRILES del
     //  banco que se ve -0..15- y `paso0/paso1` son CASILLAS DE LA VISTA, que
@@ -894,7 +897,7 @@ private:
     //  `vaciaBanda` tiene en la cancion.
     void vaciaBandaPasos (int lane0, int lane1, int st0, int st1);
 
-    juce::TextButton seqFollowBtn { "SEGUIR" };
+    Boton seqFollowBtn { "SEGUIR" };
     bool seqFollow = false;
     void humanizePattern();
     //  EL BLOQUEO DEL CORTE DE ESTE PASO. Ver AudioEngine::setStepLock: el
@@ -902,7 +905,7 @@ private:
     //  patron puede abrir y cerrar el filtro solo. En el mando, el extremo de
     //  abajo no es 20 Hz sino APAGADO - que es lo que vale un paso que no
     //  toca el filtro, y sin esa posicion haria falta un interruptor al lado.
-    juce::Slider lockSlider;
+    ZatiSlider lockSlider;
     //  Y LOS OTROS CUATRO BLOQUEOS del paso: ataque, caida, punto de inicio y
     //  pan. Ver AudioEngine::setStepPLock. Van en una SOLA fila de la tira -
     //  cuatro mandos donde las otras dos filas llevan dos- porque cada fila
@@ -913,7 +916,7 @@ private:
     //  Y giratorios, no de + y -, por la misma cuenta pero de ancho: cuatro
     //  cajas de IncDecButtons piden 122 px cada una -dos teclas de 40, el aire
     //  y la casilla- y en 412 les tocan 103.
-    juce::Slider atkPasoSlider, relPasoSlider, iniPasoSlider, panPasoSlider;
+    ZatiSlider atkPasoSlider, relPasoSlider, iniPasoSlider, panPasoSlider;
     //  LAS TRES HERRAMIENTAS DEL PATRON.
     //
     //  Viven en la pagina PASO y no en PASOS por una razon medida: la pagina
@@ -932,9 +935,9 @@ private:
     //  seguida de dos huecos, y una flecha a la izquierda en arabe -que se
     //  lee de derecha a izquierda- apunta a lo que viene DESPUES. Un simbolo
     //  que cambia de significado con el idioma no es un simbolo.
-    juce::TextButton patLeftBtn  { "ATRAS" };
-    juce::TextButton patRightBtn { "ADELANTE" };
-    juce::TextButton patDoubleBtn { "DOBLAR" };
+    Boton patLeftBtn  { "ATRAS" };
+    Boton patRightBtn { "ADELANTE" };
+    Boton patDoubleBtn { "DOBLAR" };
     void rotatePattern (int by);
     void doublePattern();
     //  LAS CUATRO TAPAS DE BANCO, OTRA VEZ, DENTRO DEL SECUENCIADOR.
@@ -945,7 +948,7 @@ private:
     //  del banco A y un bajo del D habia que cerrar, cambiar y volver a abrir -
     //  tres gestos para lo que un secuenciador hace todo el rato. Estas son las
     //  mismas: llaman a selectBank y se quedan al dia con las de la cara.
-    juce::OwnedArray<juce::TextButton> seqBankButtons;
+    juce::OwnedArray<Boton> seqBankButtons;
     //  El suelo de alto de una pista de la rejilla de pasos. Es el mismo numero
     //  que vigila Tests/expo.py (MIN_CELL): si cambia alli, cambia aqui.
     static constexpr int kMinLaneH = 12;
@@ -976,7 +979,7 @@ private:
     //  adivinarlo.
     enum PadPage { padPageSound = 0, padPageTrim, padPageRig };
     int padPage = padPageSound;
-    juce::TextButton padSoundBtn { "SONIDO" }, padTrimBtn { "RECORTE" }, padRigBtn { "EL PAD" };
+    Boton padSoundBtn { "SONIDO" }, padTrimBtn { "RECORTE" }, padRigBtn { "EL PAD" };
     void showPadPage (int page);
     bool padSourceWraps (int rowWidth) const;
     //  LO QUE MIDE EL CONTENIDO DE LA PAGINA "EL PAD", en un solo sitio.
@@ -1046,7 +1049,7 @@ private:
     //  Se quedo el RACK, que apaga el envio cuyo efecto esta cerrado y trae su
     //  propio selector de pad; aqui queda una tapa que lo abre en el pad que
     //  se esta editando, y 86 px de alto que vuelven a la pagina mas apretada.
-    juce::TextButton padRackBtn { "RACK" };
+    Boton padRackBtn { "RACK" };
 
     //  DIECISEIS NIVELES.
     //
@@ -1059,7 +1062,7 @@ private:
     //  El pad se CAPTURA al encender y no se lee del selector en cada golpe:
     //  si se leyera, tocar un pad cambiaria el pad de destino y el modo se
     //  perseguiria a si mismo.
-    juce::TextButton nivelesButton { "16 NIVELES" };
+    Boton nivelesButton { "16 NIVELES" };
     bool nivel16 = false;
     int  nivelPad = 0;
 
@@ -1362,19 +1365,19 @@ private:
     };
     ProjectList  projModel;
     juce::ListBox projList { "proyectos", &projModel };
-    juce::TextButton setCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::TextButton projSaveButton { "GUARDAR" };
-    juce::TextButton projLoadButton { "ABRIR" };
-    juce::TextButton projNewButton  { "NUEVO" };
+    Boton setCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton projSaveButton { "GUARDAR" };
+    Boton projLoadButton { "ABRIR" };
+    Boton projNewButton  { "NUEVO" };
     //  GUARDAR EL BANCO DE DELANTE COMO KIT. Ver guardarKit: sale a la
     //  biblioteca con la forma de un banco descargado, para que vuelva a entrar
     //  por CARGAR KIT igual que cualquier pack de internet.
-    juce::TextButton projKitButton  { "GUARDAR KIT" };
+    Boton projKitButton  { "GUARDAR KIT" };
     //  LA VENTANA DE PISTAS de la rejilla de pasos. Su rotulo es el RANGO y no
     //  una palabra -"1-16", "1-8", "9-16"- por dos razones: dice el estado, que
     //  contando carriles no se deduce, y es el mismo en los cuatro idiomas, o
     //  sea que no puede quedarse sin traducir ni cortarse en chino.
-    juce::TextButton seqPistasBtn { "1-16" };
+    Boton seqPistasBtn { "1-16" };
     int  pistasVista = 0;               // 0 = las dieciseis, 1 = 1-8, 2 = 9-16
     static juce::File pistasPrefFile();
 
@@ -1383,7 +1386,7 @@ private:
     //  dice el estado y es el mismo en los cuatro idiomas. La celda es CUADRADA
     //  de arranque, que es lo que se pidio, y este multiplicador es lo unico
     //  que la separa de serlo.
-    juce::TextButton seqZoomBtn { "1:1" };
+    Boton seqZoomBtn { "1:1" };
     void aplicaZoomPasos (float z);
 
     //  EL METRONOMO Y LA CUENTA ATRAS SON DEL APARATO, NO DE UNA FICHA.
@@ -1404,11 +1407,11 @@ private:
     //  que su estado se recordara. Dos sitios para una decision es lo que esta
     //  casa llama ruido.
     int  cuentaCompases = 1;               // 0, 1 o 2
-    juce::OwnedArray<juce::TextButton> cuentaButtons;   // SIN / 1 / 2
+    juce::OwnedArray<Boton> cuentaButtons;   // SIN / 1 / 2
 
     //  Y LOS CUATRO CHIPS DEL BANCO DE TOMAS, en la misma pagina y por la misma
     //  razon. Ver `padParaToma` y `bancoTomas`.
-    juce::OwnedArray<juce::TextButton> tomasButtons;    // A B C D
+    juce::OwnedArray<Boton> tomasButtons;    // A B C D
 
     //  MONITOR: oirte por los cascos mientras grabas. Ver
     //  `AudioEngine::setMonitor` y `RutaAudio::porAltavoz`.
@@ -1417,12 +1420,12 @@ private:
     //  atras: es una preferencia de la PERSONA y de su aparato -si llevas
     //  cascos o no-, no del proyecto ni de la toma. Y ademas esa fila ya se
     //  parte en dos en 280x653 con las tres palabras que tiene.
-    juce::OwnedArray<juce::TextButton> monButtons;      // OFF / ON
+    juce::OwnedArray<Boton> monButtons;      // OFF / ON
     juce::Rectangle<int> monRowArea;
 
     //  COMO SE LEE LO QUE ENTRA POR MIDI: PADS o TECLADO. Ver MidiIo::Modo.
     //  Dos chips en la pagina MIDI, con el defecto en PADS -lo de siempre-.
-    juce::OwnedArray<juce::TextButton> midiModoButtons;  // PADS / TECLADO
+    juce::OwnedArray<Boton> midiModoButtons;  // PADS / TECLADO
     juce::Rectangle<int> midiModoRowArea;
     bool monitorOn = false;
     static juce::File monitorPrefFile();
@@ -1453,8 +1456,8 @@ private:
     void savePistasPref() const;
     void aplicaPistas (int modo);
     void guardarKit (const juce::String& nombre);
-    juce::TextButton projDeleteButton { "BORRAR" };
-    juce::TextButton projExportButton { "EXPORTAR" };
+    Boton projDeleteButton { "BORRAR" };
+    Boton projExportButton { "EXPORTAR" };
 
 
     juce::String currentProject;
@@ -1540,10 +1543,10 @@ private:
     //  The bounce runs on its own thread through a clone of the engine (see
     //  Exporter.h). The UI only starts it, polls its progress from the timer
     //  that is already running, and reports what came out.
-    juce::TextButton exportCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::TextButton exportMasterButton { "MASTER" };
-    juce::TextButton exportStemsButton  { "PISTAS" };
-    juce::TextButton exportCancelButton { "CANCELAR" };
+    Boton exportCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton exportMasterButton { "MASTER" };
+    Boton exportStemsButton  { "PISTAS" };
+    Boton exportCancelButton { "CANCELAR" };
     std::unique_ptr<Exporter> exportJob;
 
     //  EL REBOTE EN VIVO: la cancion suena y lo que suena se escribe.
@@ -1557,16 +1560,16 @@ private:
     //  aparte- y esto es otro MODO. Ademas de que la fila se reparte por el
     //  texto y una cuarta palabra le quita ancho a las tres que ya estan
     //  medidas.
-    juce::TextButton exportLiveButton { "EN VIVO" };
+    Boton exportLiveButton { "EN VIVO" };
     //  QUE SE EXPORTA, elegido en la ficha y no en la pagina CANCION: el modo
     //  solo cambiaba con CICLO/ARREGLO y nadie lo encontraba (feria 2026-10,
     //  J5). Es el mismo estado que el modo de PLAY; ver `ponModoCancion`.
-    juce::TextButton exportFuenteBtn { "PATRON" };
+    Boton exportFuenteBtn { "PATRON" };
     //  COMPARTIR comparte fila con EN VIVO y solo aparece cuando hay un
     //  `content://` que mandar. Fila propia no cabia: la ficha ya pide
     //  Metrics::hit*4 + btn*2 y en 915x412 la tarjeta da 370 px para 432
     //  pedidos — lo que falta se lo come lo ultimo que se maqueta.
-    juce::TextButton exportShareBtn { "COMPARTIR" };
+    Boton exportShareBtn { "COMPARTIR" };
     std::unique_ptr<RebotVivo> vivoJob;
     juce::File vivoFichero;
     void alternaRebotVivo();
@@ -1585,10 +1588,10 @@ private:
     //  que se acepta al final y QUE se enseña, que lo decide `FiltroBrowse`.
     enum ModoBrowse { browsePad = 0, browseCarpeta, browseMidi };
     ModoBrowse browseModo = browsePad;
-    juce::TextButton browseUseDirBtn { "USAR ESTA CARPETA" };
+    Boton browseUseDirBtn { "USAR ESTA CARPETA" };
     //  Y la unica accion del modo MIDI: traerse el fichero senalado.
-    juce::TextButton browseMidiBtn { "IMPORTAR" };
-    juce::TextButton exportDirBtn { "REBOTE" };
+    Boton browseMidiBtn { "IMPORTAR" };
+    Boton exportDirBtn { "REBOTE" };
     //  LAS DOS CARPETAS QUE SE PIDIERON DESPUES, y la que las tres comparten.
     //
     //  «Molaria poder elegir cual es la carpeta predeterminada para apertura y
@@ -1597,12 +1600,12 @@ private:
     //  tres preguntas —donde empieza el navegador, que se escribe al aceptar, a
     //  que ficha se vuelve— asi que van por el MISMO gesto: ver
     //  `openBrowseForFolder` y `ProjectStore::Carpeta`.
-    juce::TextButton projDirBtn    { "PROYECTOS" };
-    juce::TextButton samplesDirBtn { "SONIDOS" };
+    Boton projDirBtn    { "PROYECTOS" };
+    Boton samplesDirBtn { "SONIDOS" };
     //  Y LA DE LOS KITS, del mismo mensaje que las de arriba vuelto a pedir:
     //  «elegir la carpeta en la que se alojan los proyectos guardados y kits
     //  y demas». Cuarta tapa del mismo gesto, ver `ProjectStore::Carpeta`.
-    juce::TextButton kitsDirBtn    { "KITS" };
+    Boton kitsDirBtn    { "KITS" };
     //  Cual de las tres se esta eligiendo. El navegador es uno solo, asi que
     //  sin esto «usar esta carpeta» tendria que adivinar de donde vino — que es
     //  como estaba y por eso el destino estaba escrito dentro de la funcion.
@@ -1613,7 +1616,7 @@ private:
     void publicarExport (const juce::File& carpeta, const juce::File& solo = {});
     void usarCarpetaDeExport();
 
-    juce::TextButton exportFmtBtn { "WAV" };
+    Boton exportFmtBtn { "WAV" };
     bool exportOgg = false;
     double deviceSampleRate = 44100.0;
 
@@ -1761,11 +1764,11 @@ private:
     //  ...and the two knobs that actually move it. Buffer and clock are the
     //  only settings in the app that change how the instrument FEELS rather
     //  than how it sounds, so they sit next to the number they affect.
-    juce::OwnedArray<juce::TextButton> bufButtons, rateButtons;
+    juce::OwnedArray<Boton> bufButtons, rateButtons;
     //  THE CHASSIS. Three bodies the same machine can be made of; see
     //  ZatiColours::skinTable. It sits beside the language because both are
     //  the same kind of question - what this app is, rather than what it does.
-    juce::OwnedArray<juce::TextButton> skinButtons;
+    juce::OwnedArray<Boton> skinButtons;
 
     //  APAGAR EL MOVIMIENTO, Y LO QUE NO SE APAGA.
     //
@@ -1791,7 +1794,7 @@ private:
     //  Es preferencia de la PERSONA y no del proyecto, como el idioma, la
     //  carcasa, el master y la cuenta atras.
     bool movimiento = true;
-    juce::OwnedArray<juce::TextButton> movButtons;      // SI / NO
+    juce::OwnedArray<Boton> movButtons;      // SI / NO
     juce::Rectangle<int> movRowArea;
     static juce::File movPrefFile();
     void saveMovPref() const;
@@ -1913,11 +1916,11 @@ private:
 
     //  The measurement. Everything else in this panel is the device's own
     //  claim about itself; this is a click emitted and heard back.
-    juce::TextButton measureButton { "MEDIR" };
+    Boton measureButton { "MEDIR" };
     //  Cuantizar el disparo en directo. Vive en AJUSTES / AUDIO porque es una
     //  preferencia de como responde la maquina, no un ajuste de la obra: si la
     //  quieres puesta, la quieres puesta en todos tus proyectos.
-    juce::TextButton quantButton { "CUADRAR" };
+    Boton quantButton { "CUADRAR" };
     float measuredMs = -1.0f;          // last round trip, -1 = never measured
     double measuredRate = 0.0;         // the clock it was actually taken at
     float measuredOutMs = 0.0f;        // what the device claimed while measuring
@@ -2252,7 +2255,7 @@ private:
     //  MIDI. Ver MidiIo.h: la entrada llega por su propia cola y la salida
     //  la escribe el hilo de audio y la envia el hilo del puente.
     MidiIo::Bridge midi;
-    juce::TextButton midiOutBtn { "MIDI OUT" }, midiInBtn { "MIDI IN" };
+    Boton midiOutBtn { "MIDI OUT" }, midiInBtn { "MIDI IN" };
     juce::ComboBox   midiOutBox, midiInBox;
     void refreshMidiDevices();
     void applyMidiChoice();
@@ -2288,6 +2291,7 @@ private:
         void mouseUp (const juce::MouseEvent&) override { if (alSoltar) alSoltar(); }
     };
     OidoDeToques oidoDeToques;
+    AnilloFoco anilloFoco;
     double estadoTrasToqueMs = -1.0;
     static constexpr double kEstadoTrasToqueMs = 1500.0;
 
@@ -2410,17 +2414,17 @@ private:
     //  navegador -es un hijo suyo- y ademas un componente lo ve el banco.
     juce::Label browseVacio;
     void refrescaBrowseVacio();
-    juce::TextButton browseCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::TextButton browseLoadButton  { "CARGAR" };
+    Boton browseCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton browseLoadButton  { "CARGAR" };
     //  CARGAR UNA CARPETA ENTERA COMO KIT. Dieciseis samples es un kit, y
     //  montarlo de uno en uno son dieciseis viajes a la biblioteca por cada
     //  banco. Coge los audios de la carpeta que estas viendo, en el orden en
     //  que se ven, y los reparte por el banco que tengas delante.
-    juce::TextButton browseKitButton { "CARGAR KIT" };
+    Boton browseKitButton { "CARGAR KIT" };
     //  Los sonidos de fabrica del banco que se esta viendo. Ver Kits.h.
-    juce::TextButton browseFactoryButton { "FABRICA" };
+    Boton browseFactoryButton { "FABRICA" };
     void loadFolderAsKit();
-    juce::TextButton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
+    Boton browseSystemButton { "SISTEMA" };   // SAF / OS picker fallback
     //  LA BIBLIOTECA DE KITS TENIA SITIO Y NO TENIA PUERTA.
     //
     //  GUARDAR KIT escribe en ZATI/Kits y la app no volvia alli JAMAS: para
@@ -2428,7 +2432,7 @@ private:
     //  hasta la carpeta a mano. Un sitio donde la maquina deja cosas y del que
     //  no sabe volver es medio funcion, como el troceado que volvia sin ser un
     //  troceado.
-    juce::TextButton browseKitsDirButton { "MIS KITS" };
+    Boton browseKitsDirButton { "MIS KITS" };
     std::unique_ptr<juce::FileChooser> chooser;          // only for that fallback
     void launchSystemPicker();
     void importIntoLibrary (const juce::URL& url);
@@ -2476,10 +2480,10 @@ private:
     //  fire on one tap, always cut sixteen ways, and write over all sixteen
     //  pads including everything already on them. Now it asks: how many, and
     //  whether pads that already hold a sound are off limits.
-    juce::TextButton chopCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) },
+    Boton chopCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) },
                      chopGoButton    { "CORTAR" },
                      chopSafeButton  { "RESPETAR PADS CON SONIDO" };
-    juce::OwnedArray<juce::TextButton> chopCountBtns;
+    juce::OwnedArray<Boton> chopCountBtns;
     static constexpr int kChopCounts[4] = { 2, 4, 8, 16 };
     int  chopSlices    = 8;
     bool chopOnlyEmpty = true;
@@ -2489,7 +2493,7 @@ private:
     //  IGUALES divide por aritmetica: vale para un loop cuadrado y no vale para
     //  nada mas. GOLPES busca donde empieza cada golpe (Onsets.h) y corta ahi,
     //  que es lo que hace un troceador de verdad y lo que esta app no tenia.
-    juce::TextButton chopEvenBtn { "IGUALES" }, chopHitsBtn { "GOLPES" };
+    Boton chopEvenBtn { "IGUALES" }, chopHitsBtn { "GOLPES" };
     bool chopByHits = false;
 
     //  Los golpes del pad seleccionado, calculados una vez al abrir la ficha o
@@ -2553,7 +2557,7 @@ private:
     juce::Rectangle<int> safeArea() const;
     void refreshSystemInsets();
 
-    juce::OwnedArray<juce::TextButton> langButtons;
+    juce::OwnedArray<Boton> langButtons;
     juce::Rectangle<int> langRowArea;
 
 
@@ -2605,7 +2609,7 @@ private:
     //  cuatro no es un tempo, es un accidente; mas de cuatro y el primero ya no
     //  se parece al ultimo. Un hueco de mas de dos segundos empieza cuenta
     //  nueva, porque nadie marca un tempo cada dos segundos.
-    juce::TextButton tapButton { "TAP" };
+    Boton tapButton { "TAP" };
     static constexpr int kTapSlots = 4;
     double tapTimes[kTapSlots] {};
     int    tapCount = 0;
@@ -2614,15 +2618,15 @@ private:
     //  COPIAR Y PEGAR UN PATRON entre los ocho bancos. Rehacer a mano un
     //  patron para probarlo con otro sonido es la friccion mas tonta que tiene
     //  un secuenciador de ocho bancos.
-    juce::TextButton copyPatBtn { "COPIAR" }, pastePatBtn { "PEGAR" };
+    Boton copyPatBtn { "COPIAR" }, pastePatBtn { "PEGAR" };
     bool patClipFull = false;
     std::array<std::array<AudioEngine::Paso, AudioEngine::kNumPads>,
                AudioEngine::kNumSteps> patClip {};
     int patClipLen = 16;
     void copyPattern();
     void pastePattern();
-    juce::TextButton undoButton { "DESHACER" };
-    juce::TextButton redoButton { "REHACER" };
+    Boton undoButton { "DESHACER" };
+    Boton redoButton { "REHACER" };
     void rebuildChain();
     int  firstEmptyPad() const;
 
@@ -2698,7 +2702,7 @@ private:
     //  `padDestino` >= 0 es «y quedate en ESE pad», que ahorra el cuerpo
     //  entero de un segundo `selectPad`: ver la cabecera de selectBank.
     void selectBank (int bank, int padDestino = -1);
-    juce::OwnedArray<juce::TextButton> bankButtons;
+    juce::OwnedArray<Boton> bankButtons;
     //  Two chips at each end of the seam, not four bunched at one end: the
     //  engraved PADS sits between them and the seam reads as balanced.
     //  paint() needs BOTH rectangles to know where the rule may run.
@@ -2743,11 +2747,11 @@ private:
 
     // Module bar — rule of three: PADS / SEC / FX, each opening its floating
     // sheet (never a mode switch). CHOP lives inside PADS; CHAIN inside SEC.
-    juce::TextButton padsButton  { "PADS" };
-    juce::TextButton secButton   { "SEC" };
-    juce::TextButton mixButton      { "MIX" };   // the 16-channel mixer sheet
-    juce::TextButton songButton     { "SONG" };  // the arrangement timeline
-    juce::TextButton xyButton       { "XY" };    // the live performance surface
+    Boton padsButton  { "PADS" };
+    Boton secButton   { "SEC" };
+    Boton mixButton      { "MIX" };   // the 16-channel mixer sheet
+    Boton songButton     { "SONG" };  // the arrangement timeline
+    Boton xyButton       { "XY" };    // the live performance surface
 
     //  EL PANEL XY: LO QUE CONVIERTE SEIS EFECTOS EN UN INSTRUMENTO.
     //
@@ -2766,9 +2770,9 @@ private:
     //  dejarlo puesto, y es lo que hacen los tres mandos, asi que no es el que
     //  hace falta por defecto.
     XyPad xyPad;
-    juce::OwnedArray<juce::TextButton> xyFxButtons;   // que efecto toca el panel
-    juce::TextButton xyLatchButton { "FIJO" };
-    juce::TextButton xyCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    juce::OwnedArray<Boton> xyFxButtons;   // que efecto toca el panel
+    Boton xyLatchButton { "FIJO" };
+    Boton xyCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     int  xyFx = 0;                 // el efecto que el panel esta tocando
     bool xyLatch = false;          // false = momentaneo (entra al tocar, sale al soltar)
     //  Solo se apaga lo que encendio el XY. Antes era `xyWasOn`, como estaba el
@@ -2791,29 +2795,29 @@ private:
     //  first and placing second beats drag-and-drop on a phone — a drag from a
     //  palette to a 20px cell is a gesture you lose halfway.
     Playlist songGrid;
-    juce::OwnedArray<juce::TextButton> songPatBtns;   // P1..P8
-    juce::TextButton songPadModeBtn { "SONIDO" };     // place a one-shot instead
-    juce::TextButton songModeBtn    { "CANCION" };    // song transport vs pattern/chain
+    juce::OwnedArray<Boton> songPatBtns;   // P1..P8
+    Boton songPadModeBtn { "SONIDO" };     // place a one-shot instead
+    Boton songModeBtn    { "CANCION" };    // song transport vs pattern/chain
     //  DOBLAR: la operacion que convierte esta pagina en un arreglo.
     //
     //  Una cancion se construye repitiendo y variando, no escribiendo sesenta y
     //  cuatro compases a mano. Sin esto, montar ocho compases a partir de
     //  cuatro es tocar treinta y dos celdas una por una, que es la razon por la
     //  que una pagina de arreglo se abandona.
-    juce::TextButton songDoubleBtn  { "DOBLAR" };
+    Boton songDoubleBtn  { "DOBLAR" };
     //  Las cinco herramientas de arreglo. Ver songCursor.
-    juce::TextButton songInsertBtn  { "INSERTAR" };
-    juce::TextButton songRemoveBtn  { "QUITAR" };
+    Boton songInsertBtn  { "INSERTAR" };
+    Boton songRemoveBtn  { "QUITAR" };
     //  COPIAR y PEGAR DE COMPAS SE RETIRARON, y no por sitio: copiaban UNA
     //  columna de cuatro celdas sin sus clips y sin poder decir «de aqui a
     //  aqui». Lo que se pidio es copiar MEDIO patron, y medio patron no es un
     //  compas. Las sustituye la tira de la banda -COPIAR · CORTE · PEGAR ·
     //  BORRAR- que recorta por los filos de lo seleccionado. Ver songCopiaSel.
-    juce::TextButton songLoopBtn    { "LOOP" };
-    juce::TextButton songLeftBtn    { "ATRAS" };
-    juce::TextButton songRightBtn   { "ADELANTE" };
-    juce::TextButton songShortBtn   { "ACORTAR" };
-    juce::TextButton songLongBtn    { "ALARGAR" };
+    Boton songLoopBtn    { "LOOP" };
+    Boton songLeftBtn    { "ATRAS" };
+    Boton songRightBtn   { "ADELANTE" };
+    Boton songShortBtn   { "ACORTAR" };
+    Boton songLongBtn    { "ALARGAR" };
     //  EL TRANSPORTE, DENTRO DE LA FICHA.
     //
     //  Montar un arreglo es poner un bloque y OIRLO, y la tapa de PLAY se
@@ -2821,9 +2825,9 @@ private:
     //  abrirla y buscar por donde ibas. Esta enciende ademas el modo CANCION,
     //  porque darle a play en la pagina de la cancion y que suene el patron
     //  suelto es la respuesta a una pregunta que nadie hizo.
-    juce::TextButton songPlayBtn { "PLAY" };
-    juce::TextButton songCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::Slider     songLenSlider;
+    Boton songPlayBtn { "PLAY" };
+    Boton songCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    ZatiSlider       songLenSlider;
     //  LA BARRA DE LA LINEA DE TIEMPO, donde estaba la fila de paginas
     //  -1, 9, 17...-. Ocho tapas numeradas saltaban de pagina en pagina, asi
     //  que un estribillo que cruzara el compas 8 no se podia mirar entero;
@@ -2858,7 +2862,7 @@ private:
     //  pregunta que ya deciden BANCO y PADS. Vive en el renglon del titulo,
     //  al lado del interruptor de vista, asi que cuesta CERO de alto - que es
     //  lo unico que en esta ficha no sobra.
-    juce::TextButton songZoomBtn { "8 COMPASES" };
+    Boton songZoomBtn { "8 COMPASES" };
 
     //  LA BARRA DE HERRAMIENTAS DE LA LINEA DE TIEMPO: MANO, LAPIZ, GOMA y
     //  MUTE, en iconos y sin rotulo.
@@ -2872,7 +2876,7 @@ private:
     //  Y son MODOS y no acciones: con el lapiz armado la rejilla se comporta
     //  exactamente como siempre, y cada gesto tiene UN significado. Ver
     //  `Playlist::Herramienta`.
-    juce::OwnedArray<juce::TextButton> songToolBtns;
+    juce::OwnedArray<Boton> songToolBtns;
     int songHerramienta = 0;   // Playlist::hLapiz
 
     // ------------------------------------------------------------------
@@ -2892,8 +2896,8 @@ private:
     //  no en la cara: alli REC ya significa otra cosa -grabar pads en el
     //  patron- y dos verbos iguales con dos significados es lo que esta casa
     //  llama ruido.
-    juce::TextButton songRecBtn  { "GRABAR" };
-    juce::TextButton songClickBtn { "CLIC" };
+    Boton songRecBtn  { "GRABAR" };
+    Boton songClickBtn { "CLIC" };
     bool grabandoAlArreglo = false;
     int  pistaGrabacion = 0;
     void grabaAlArreglo();
@@ -3007,8 +3011,8 @@ private:
     //  oiria como un salto. Es la misma cuenta que `parteClip` con muestras.
     void parteBloque (int indice, int paso);
     void toggleSongLane (int lane);
-    juce::TextButton setButton      { "SET" };   // skins + proyectos (spec: SET)
-    juce::TextButton seqCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) },
+    Boton setButton      { "SET" };   // skins + proyectos (spec: SET)
+    Boton seqCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) },
                      padCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) },
                      mixCloseButton   { juce::CharPointer_UTF8 (Metrics::cruz) };
     //  A studio is where a track gets finished, and nothing gets finished
@@ -3029,11 +3033,11 @@ private:
     //  which is the feedback; the release afterwards is swallowed so the hold
     //  never also counts as a tap. A finger that slides off the cap cancels
     //  it, the same as every other press on the face.
-    class HoldButton : public juce::TextButton,
+    class HoldButton : public Boton,
                        private juce::Timer
     {
     public:
-        using juce::TextButton::TextButton;
+        using Boton::Boton;
         std::function<void()> onHold;
         std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
         { return std::make_unique<AccionMantener> (*this, onHold); }   // accesibilidad#3
@@ -3090,11 +3094,11 @@ private:
     //  The rack: one pad's six sends, opened from the mixer. An effect here
     //  is not on or off, it is how much of THIS channel goes into it - which
     //  is the only place where "the delay belongs to the snare" can be said.
-    juce::TextButton rackButton { "RACK" },
+    Boton rackButton { "RACK" },
                  rackCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::OwnedArray<juce::TextButton> rackPadBtns;
+    juce::OwnedArray<Boton> rackPadBtns;
     //  Y sus dos chips de banco. Ver `canalBankBtns`: el indice es compartido.
-    juce::OwnedArray<juce::TextButton> rackBankBtns;
+    juce::OwnedArray<Boton> rackBankBtns;
     juce::OwnedArray<juce::Slider>     rackSends;
     //  El canalon de la izquierda de cada fila. Era texto PINTADO -el nombre
     //  del efecto y su dibujo- y ahora es una tapa, porque el RACK pasa a ser
@@ -3126,7 +3130,7 @@ private:
     //  cara: las tres ventanas -cara, rack y XY- siguen siendo tapas de un
     //  estado y `refrescaRanuras` ya las reparte. Un segundo camino a
     //  `setFxEnabled` seria la misma regla escrita dos veces.
-    juce::OwnedArray<juce::TextButton> rackMuteBtns;
+    juce::OwnedArray<Boton> rackMuteBtns;
     //  Y LA TAPA DEL PRESET, EN LA MISMA FILA.
     //
     //  Del telefono, con la foto del rack delante: *«ahi falta un cuadrado o
@@ -3161,18 +3165,18 @@ private:
     //  el nombre, su numero, o solo el dibujo. Ver el cuerpo.
     void rotulaFxPreset (HoldButton& b, int fx);
     void refreshRack();
-    juce::OwnedArray<juce::TextButton> mixMutes, mixSolos;
+    juce::OwnedArray<Boton> mixMutes, mixSolos;
     //  Y EL TERCER SWITCH DE LA FILA: mono o estereo, «por la abertura». Es
     //  una ventana de dos posiciones al MISMO numero que el mando ANCHO de EL
     //  PAD -ver padAnchoUI-: apagado lo pone a cero, encendido lo devuelve a
     //  lo que tenia (padAnchoMemo). Sustituye al deslizador de ancho que solo
     //  salia en pantallas anchas: un switch entra en la fila del movil.
-    juce::OwnedArray<juce::TextButton> mixEstereos;
+    juce::OwnedArray<Boton> mixEstereos;
     //  Lo que el switch devuelve al encenderse: el ancho que el pad tenia
     //  antes de apagarlo, uno -«como viene»- si nunca lo tuvo.
     std::array<float, kNumPads> padAnchoMemo {};
     void sincronizaMixEstereo (int pad);
-    juce::TextButton mixClearSolo { "SIN SOLO" };
+    Boton mixClearSolo { "SIN SOLO" };
 
     //  INSTRUMENTOS - el contenido descargable. Ver Instrumentos.h para el
     //  formato y para por que la fabrica es el primer pack.
@@ -3189,14 +3193,14 @@ private:
     //  caja negra sirvio para algo. Es ademas el idioma que la app ya usa para
     //  lo mismo - PAD -/+ en el piano - y aguanta cualquier numero de packs.
     Sheet instSheet;
-    juce::TextButton instCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::TextButton instPackDownBtn { "PACK -" }, instPackUpBtn { "PACK +" };
-    juce::OwnedArray<juce::TextButton> instBtns;      // los instrumentos: lista o rejilla
+    Boton instCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton instPackDownBtn { "PACK -" }, instPackUpBtn { "PACK +" };
+    juce::OwnedArray<Boton> instBtns;      // los instrumentos: lista o rejilla
     //  LA REJILLA DEL DESTINO: los dieciseis pads de un banco, cada uno con el
     //  dibujo de lo que lleva. Es un MAPA, no una lista: se elige DONDE va el
     //  instrumento tocando el sitio donde va a estar.
-    juce::OwnedArray<juce::TextButton> instDestBtns;
-    juce::OwnedArray<juce::TextButton> instBancoBtns;   // A B C D, para el destino
+    juce::OwnedArray<Boton> instDestBtns;
+    juce::OwnedArray<Boton> instBancoBtns;   // A B C D, para el destino
     int instDestPad  = AudioEngine::kNumBanks * AudioEngine::kPadsPerBank - 16;   // D01
     //  EL BANCO DEL DESTINO SE DERIVA Y NO SE GUARDA. Era un campo, y los seis
     //  sitios que lo escribian tenian que acordarse de escribirlo derivado: el
@@ -3233,19 +3237,19 @@ private:
     //  que es como se elige un sonido de verdad, y la ficha pasa de 700 px de
     //  lista a un renglon - o sea que el teclado y la cabecera dejan de estar
     //  al final de un desplazamiento.
-    juce::TextButton vstPreDown { "-" }, vstPreUp { "+" };
+    Boton vstPreDown { "-" }, vstPreUp { "+" };
     juce::Rectangle<int> vstPreArea;
-    juce::TextButton vstCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton vstCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     //  LA PUERTA A EL PAD, en la cabecera y del lado del cierre, que es donde
     //  esta ficha ya tiene sus tapas. Existe desde que la pestaña PAD de la
     //  cara abre LO QUE EL PAD ES: un pad de instrumento llega aqui y no a EL
     //  PAD, y la ganancia, el pan, el filtro y la envolvente son suyos igual
     //  que de una muestra. La que va al reves ya existia y se queda -
     //  `vstButton`, en EL PAD · RIG -: dos puertas y ninguna copia.
-    juce::TextButton vstPadBtn { "PAD" };
-    juce::TextButton vstOctDown { "OCT -" }, vstOctUp { "OCT +" };
+    Boton vstPadBtn { "PAD" };
+    Boton vstOctDown { "OCT -" }, vstOctUp { "OCT +" };
     //  Y LA PUERTA, en EL PAD y solo cuando el pad lleva instrumento.
-    juce::TextButton vstButton { "PRESETS" };
+    Boton vstButton { "PRESETS" };
     Teclado vstTeclado;
     int vstPad = 0;
     juce::Rectangle<int> vstTitleArea, vstIconArea, vstNombreArea, vstOctArea;
@@ -3272,7 +3276,7 @@ private:
     //  contar toques: deshacer devuelve UN paso y esto devuelve la receta de
     //  fabrica de ese preset. Solo existe con la receta movida - un control que
     //  no puede hacer nada no es informacion, es ruido.
-    juce::TextButton vstVolver { "VOLVER" };
+    Boton vstVolver { "VOLVER" };
     //  DOS PANELES Y NO UNO para los doce mandos: los cuatro de FORMA -cuyo
     //  nombre y recorrido los dice la FAMILIA- y los cuatro COMUNES, que son
     //  los mismos en las dieciseis. Esa particion es la que hace que haya
@@ -3299,7 +3303,7 @@ private:
     //  Y CHOP, MIC y REMUESTREAR tampoco: las tres ESCRIBEN una muestra en el
     //  pad, o sea que se llevarian por delante el instrumento que esta ficha
     //  edita.
-    juce::TextButton vstCanalBtn { "CANAL" }, vstRackBtn { "RACK" }, vstPianoBtn { "PIANO" };
+    Boton vstCanalBtn { "CANAL" }, vstRackBtn { "RACK" }, vstPianoBtn { "PIANO" };
     juce::Rectangle<int> vstPanelRig;
     //  Y LAS DOS ACCIONES, escritas una vez porque ahora las piden dos tapas.
     //  Dos caminos que abren la misma ficha por su cuenta se separan, y el
@@ -3323,10 +3327,10 @@ private:
     //  de herramientas del piano ya sale de once tapas y se parte en dos en
     //  media pantalla — meter dos mas ahi es quitarle sitio a la rejilla, que
     //  es lo unico que esa pagina no tiene.
-    juce::TextButton midiBtn { "MIDI" };
+    Boton midiBtn { "MIDI" };
     Sheet midiSheet;
-    juce::TextButton midiExportBtn { "EXPORTAR" }, midiImportBtn { "IMPORTAR" };
-    juce::TextButton midiCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton midiExportBtn { "EXPORTAR" }, midiImportBtn { "IMPORTAR" };
+    Boton midiCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::Rectangle<int> midiTitleArea, midiAyudaArea, midiParteArea, midiPanel;
     //  Lo ultimo que paso, para que la ficha lo diga donde se actua y no en el
     //  renglon de estado de la cara, que queda detras de la tarjeta.
@@ -3384,7 +3388,7 @@ private:
     //  lo lleva. Es filaDeIconos por el otro lado - alli se cae el dibujo y
     //  aqui la palabra - y por la misma razon: media rejilla con nombre y media
     //  sin el se lee peor que ninguna.
-    void rejillaDeIconos (juce::OwnedArray<juce::TextButton>& celdas, int n);
+    void rejillaDeIconos (juce::OwnedArray<Boton>& celdas, int n);
     void eligePreset (int pre);
 
     //  EL BANCO DE LOS INSTRUMENTOS. Los otros tres son de percusion y este es
@@ -3414,7 +3418,7 @@ private:
     //
     //  FUERA del Viewport: los dieciseis canales se desplazan y el master no.
     //  Un master que hay que buscar arrastrando no es un master.
-    juce::Slider     masterFader;
+    ZatiSlider       masterFader;
     //  El rotulo es un Label y no texto pintado como los nombres de canal: lo
     //  pintado no existe para UiAudit, asi que un rotulo pintado no se mide ni
     //  se comprueba que este traducido. Si hay forma de que el banco lo vea, se
@@ -3439,7 +3443,7 @@ private:
     //  and a mixer that jumped whenever the face changed bank would be a mixer
     //  you cannot leave open.
     int mixBank = 0;
-    juce::OwnedArray<juce::TextButton> mixBankBtns;
+    juce::OwnedArray<Boton> mixBankBtns;
     void showMixBank (int bank);
     //  Y LOS DOS BANCOS DE LA PAGINA DE CANALES, A y B de dieciseis. Del
     //  telefono, con la foto de las dos paginas: «en el pop-up de canales se
@@ -3478,11 +3482,11 @@ private:
     //  fila de chips de los bancos deja los cuatro en 29 px de ancho en
     //  280x653 -medido: 35 TOUCH nuevos en pantallas que ya estaban-. La tapa
     //  dice el ESTADO -PADS o CANALES-, como `songVistaBtn` y `modoTapa`.
-    juce::TextButton mixVistaBtn { "PADS" };
+    Boton mixVistaBtn { "PADS" };
     void showMixPage (MixPage p);
     juce::OwnedArray<juce::Slider>     canFaders;
-    juce::OwnedArray<juce::TextButton> canMutes;
-    juce::OwnedArray<juce::TextButton> canSolos;
+    juce::OwnedArray<Boton> canMutes;
+    juce::OwnedArray<Boton> canSolos;
     //  Donde empieza cada tira, por lo mismo que `mixRowX`: el chip de color, el
     //  numero y la cuenta de pads se PINTAN, asi que el pintor necesita saber
     //  donde el maquetado los dejo.
@@ -3576,15 +3580,15 @@ private:
 
     //  LA FICHA DEL CANAL: nombre, icono de la tabla o dibujo.
     Sheet canNomSheet;
-    juce::TextButton canNomCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton canNomCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::TextEditor canNomBox;
-    juce::TextButton canNomGuardarBtn { "GUARDAR" };
-    juce::OwnedArray<juce::TextButton> canIconoBtns;     // las 24 familias
-    juce::TextButton canNumeroBtn  { "NUMERO" };
-    juce::TextButton canDibujarBtn { "DIBUJAR" };
+    Boton canNomGuardarBtn { "GUARDAR" };
+    juce::OwnedArray<Boton> canIconoBtns;     // las 24 familias
+    Boton canNumeroBtn  { "NUMERO" };
+    Boton canDibujarBtn { "DIBUJAR" };
     LienzoIcono      canLienzo;
-    juce::TextButton canBorrarBtn  { "BORRAR" };
-    juce::TextButton canUsarBtn    { "USAR" };
+    Boton canBorrarBtn  { "BORRAR" };
+    Boton canUsarBtn    { "USAR" };
     int  canEditado = -1;
     bool canDibujando = false;
     juce::Rectangle<int> canNomTituloBanda;
@@ -3863,6 +3867,10 @@ private:
     void finishSessionRestore (const juce::ValueTree& tree, int restored);
     void finishProjectOpen (const juce::String& name, const juce::ValueTree& tree, int restored);
 
+    static juce::String parteVezAnterior (const juce::String& lineaBitacora);   // textos#2
+
+    void colocaBusy();   // estabilidad#11: la barra no tapa la X de la ficha
+
     void beginBusy (const juce::String& what);
     void setBusyProgress (float p);
     void endBusy();
@@ -3874,7 +3882,7 @@ private:
     //  desplazan, ver Sheet::barra.
     BarraVista     manualBarra;
     Sheet          manualSheet;
-    juce::TextButton manualButton { "GUIA" },
+    Boton manualButton { "GUIA" },
                  manualCloseButton { juce::CharPointer_UTF8 (Metrics::cruz) };
 
     //  EL TOUR DE BIENVENIDA, que no es el manual.
@@ -3887,7 +3895,7 @@ private:
     //  proyecto, y tiene que poder leerse antes de que ProjectStore haya
     //  decidido donde esta la biblioteca.
     Sheet tourSheet;
-    juce::TextButton tourNextBtn { "SIGUIENTE" }, tourBackBtn { "TOUR ATRAS" },
+    Boton tourNextBtn { "SIGUIENTE" }, tourBackBtn { "TOUR ATRAS" },
                      tourSkipBtn { "SALTAR" }, tourButton { "TOUR" };
     //  Si la pagina PATRON se quedo con la banda de los cuatro bloqueos. Lo
     //  decide la cuenta de la altura y lo usa la maqueta: preguntarlo dos
@@ -3939,14 +3947,14 @@ private:
     //  El texto de la guia con sus cifras puestas: `%1` efectos por canal y
     //  `%2` canales, en LTR. Ver ZatiTour::cuerpos.
     static juce::String guiaTexto (const char* clave);
-    juce::OwnedArray<juce::TextButton> guiaVerBtns;      // ENSENAMELO, una por capitulo
+    juce::OwnedArray<Boton> guiaVerBtns;      // ENSENAMELO, una por capitulo
     //  EL ANCHO DE SU TEXTO, MEDIDO UNA VEZ POR TEXTO. resized() corre en cada
     //  toque, y medir «أرني» en la fuente mono pasa por el respaldo de
     //  fontconfig -la mono no tiene arabe- a unos 5 ms la medida: diecinueve
     //  por resized eran ~100 ms en CADA tapa de la app en arabe, y atasco.py
     //  subio de la banda de 250 ms a 289 apretadas contra un tope de 200.
     std::map<juce::String, int> guiaAnchoTexto;
-    juce::TextButton guiaTodoBtn { "RECORRER TODO" };
+    Boton guiaTodoBtn { "RECORRER TODO" };
     //  Lo que el paso senala, en coordenadas de MainComponent. Vacio = sin
     //  objetivo: ni anillo ni numero, y el muelle se centra.
     juce::Rectangle<int> tourFoco;
@@ -4008,7 +4016,7 @@ private:
     //  pasaba: la tabla tenia diez filas, manualContentHeight las recorria
     //  todas y el pintado se paraba en nueve. Una cuenta escrita al lado de la
     //  tabla no es la tabla; las dos funciones la recorren ahora.
-    juce::OwnedArray<juce::TextButton> patternButtons;  // P1..P8 — chain include toggles
+    juce::OwnedArray<Boton> patternButtons;  // P1..P8 — chain include toggles
 
     // --- FX slots (spec Zone 5) -------------------------------------------
     //  Four one-tap effects that live next to the pads and never cover them,
@@ -4266,9 +4274,9 @@ private:
     //  banco -lo que le faltaba a XyPanel-, su velo y el cierre al tocar
     //  fuera.
     Sheet ranuraSheet;
-    juce::TextButton ranuraCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::OwnedArray<juce::TextButton> ranuraBtns;     // un tipo por celda
-    juce::TextButton ranuraVaciarBtn { "VACIAR" };
+    Boton ranuraCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    juce::OwnedArray<Boton> ranuraBtns;     // un tipo por celda
+    Boton ranuraVaciarBtn { "VACIAR" };
     int  ranuraEditada = -1;               // que ranura se esta eligiendo, o -1
     void abreMenuRanura (int ranura);      // -1 lo cierra
     void refrescaMenuRanura();
@@ -4283,11 +4291,11 @@ private:
     //  tapa de cuarenta la dejaria en 79. Cero gestos nuevos y cero pixeles
     //  nuevos donde no hay.
     Sheet presetSheet;
-    juce::TextButton presetCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton presetCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     //  Y la puerta, en el renglon del titulo del menu de ranura. Solo con un
     //  tipo puesto: sobre una ranura vacia no hay presets que elegir, que es la
     //  misma regla que ya tiene VACIAR.
-    juce::TextButton ranuraPresetsBtn { "PRESETS" };
+    Boton ranuraPresetsBtn { "PRESETS" };
 
     //  CUANTOS TUYOS CABEN EN LA LISTA. Un tope y no una lista sin fin: la
     //  rejilla se reparte en columnas con `menuRanuraColumnas`, que pide el
@@ -4295,7 +4303,7 @@ private:
     //  devuelve una ficha de mil pixeles que `sheetFromBottom` recorta en
     //  silencio — que es la causa de la fila de CADENA y de la REJILLA a 217x0.
     static constexpr int kFxPresetsTuyosMax = 12;
-    juce::OwnedArray<juce::TextButton> presetBtns;   // 6 de fabrica + los tuyos
+    juce::OwnedArray<Boton> presetBtns;   // 6 de fabrica + los tuyos
     //  Y LA CURVA DE CADA UNO, que es la mitad legible de la ficha.
     //
     //  Del telefono: *«hay que mejorar el tema de los presets para los efectos,
@@ -4312,7 +4320,7 @@ private:
     //  escrita dos veces, y esta casa ya sabe como acaba eso.
     juce::OwnedArray<FxMini> presetCurvas;
     juce::TextEditor presetNombreBox;
-    juce::TextButton presetGuardarBtn { "GUARDAR" };
+    Boton presetGuardarBtn { "GUARDAR" };
     int presetEditado = -1;                 // que efecto se esta eligiendo, o -1
     juce::StringArray presetTuyosVistos;    // los que la rejilla esta ensenando
     //  Y SUS TRES NUMEROS, leidos cuando se leyo la carpeta y no en cada
@@ -4327,7 +4335,7 @@ private:
     void refrescaMenuPresets();
     void paintPresetContent (juce::Graphics& g);
 
-    juce::OwnedArray<juce::TextButton> fxButtons;
+    juce::OwnedArray<Boton> fxButtons;
 
     std::vector<AudioEngine::EventoAuto> autoEventos;
     HoldButton autoBtn { "AUTO" };
@@ -4493,11 +4501,11 @@ private:
     juce::OwnedArray<juce::Slider> mandosFicha;
     std::array<TocaMando, kMandosFichaMax> tocaMandoFicha;
     juce::Array<Destino> mandosFichaDestino;
-    juce::OwnedArray<juce::TextButton> mandosParaBtns;   // MANDO 1-3: a cual se lleva
-    juce::OwnedArray<juce::TextButton> mandosSyncBtns;   // LIBRE, 1/1 ... 1/16
-    juce::TextButton mandosPresetsBtn { "PRESETS" };
-    juce::TextButton mandosCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
-    juce::TextButton platoPadBtn;                        // el visor en modo PAD
+    juce::OwnedArray<Boton> mandosParaBtns;   // MANDO 1-3: a cual se lleva
+    juce::OwnedArray<Boton> mandosSyncBtns;   // LIBRE, 1/1 ... 1/16
+    Boton mandosPresetsBtn { "PRESETS" };
+    Boton mandosCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    Boton platoPadBtn;                        // el visor en modo PAD
     juce::Rectangle<int> mandosTituloBanda, mandosAyudaBanda;
     int mandosPara = 0;
     void abreFichaMandos (int mando);                    // -1 la cierra
@@ -4579,6 +4587,8 @@ private:
     juce::AudioBuffer<float> bancoBloque;
     void bombeaAudioDePrueba();
     void applySkin();
+    void pintaCajaNombre (juce::TextEditor&);
+    void sigueFoco (juce::Component* c, bool dedo) { anilloFoco.sigue (c, dedo); }   // accesibilidad#7
 
     //  Si hay una ficha (o el panel XY) delante de la maquina. Ver el cuerpo.
     bool caraTapada();
@@ -4586,8 +4596,8 @@ private:
     //  Two of the transport keys carry a second gesture (see the GESTOS page):
     //  hold CARGAR to open the library, hold PLAY to cut everything.
     HoldButton loadButton { "LOAD" };
-    juce::TextButton testButton { "TEST" };
-    juce::TextButton recButton  { "REC" };
+    Boton testButton { "TEST" };
+    Boton recButton  { "REC" };
 
     //  SOLO DESDE LA CARA, que es el gesto mas repetido de una sesion y estaba
     //  en la mesa — a un toque, y la mesa TAPA la rejilla: aislar un sonido
@@ -4616,26 +4626,26 @@ private:
     const char* claveDeMando (const juce::Slider& s);
     void refrescaRejillaModo();
     HoldButton playButton { "PLAY" };
-    juce::TextButton clearButton { "VACIAR" };
-    juce::TextButton reverseButton { "REV" };
-    juce::TextButton loopButton { "LOOP" };
-    juce::TextButton autocutButton { "AUTOCUT" };
+    Boton clearButton { "VACIAR" };
+    Boton reverseButton { "REV" };
+    Boton loopButton { "LOOP" };
+    Boton autocutButton { "AUTOCUT" };
     //  BOMBEO: este pad hace agacharse a todo lo demas. Vive en la ficha del
     //  PAD y no en el mezclador porque es una propiedad del pad - cual de los
     //  sesenta y cuatro manda - y no una del canal.
-    juce::TextButton duckButton { "BOMBEO" };
-    juce::TextButton chopButton { "AUTO CHOP" };
-    juce::TextButton micButton  { "GRABAR MIC" };
+    Boton duckButton { "BOMBEO" };
+    Boton chopButton { "AUTO CHOP" };
+    Boton micButton  { "GRABAR MIC" };
     //  RESAMPLE. The move this whole lineage is built on: play something,
     //  catch it, play the catch. Engine side in AudioEngine::startRecording.
-    juce::TextButton resampleButton { "REMUESTREAR" };
+    Boton resampleButton { "REMUESTREAR" };
     bool resamplingActive = false;
     void toggleResample();
     int  resamplingSlot = 0;   // lives in the PADS sheet
 
     //  Auditioning from the PADS sheet: the wave answers a tap, and this plays
     //  it from the top without having to reach past the sheet for the pad.
-    juce::TextButton previewButton { "OIR" };   // el triangulo es ahora un icono, ver oirTapa
+    Boton previewButton { "OIR" };   // el triangulo es ahora un icono, ver oirTapa
     bool previewSounding = false;
 
     //  NORMALIZAR: la ganancia que pone el pico del RECORTE a -0.3 dBFS.
@@ -4646,7 +4656,7 @@ private:
     //  un buffer nuevo por el intercambio de punteros y a soltar el viejo por
     //  el temporizador. La ganancia es un atomic float, se aplica en el mismo
     //  bloque, se deshace y no gasta memoria.
-    juce::TextButton normButton { "NORMALIZAR" };
+    Boton normButton { "NORMALIZAR" };
     void normalisePad();
 
     //  QUITAR RUIDO. Resta espectral con el perfil sacado de la propia
@@ -4654,7 +4664,7 @@ private:
     //  en el hilo de mensajes sobre una COPIA, y la copia sustituye a la
     //  muestra del pad por el mismo camino que un corte o un remuestreo: el
     //  audio nunca ve un buffer a medio escribir.
-    juce::TextButton denoiseButton { "QUITAR RUIDO" };
+    Boton denoiseButton { "QUITAR RUIDO" };
     void denoisePad();
 
     //  RECORTAR: tira lo que queda fuera de las asas y deja el trozo.
@@ -4671,7 +4681,7 @@ private:
     //  reescribir el buffer le cambiaria el sonido a los otros quince sin que
     //  nadie los haya tocado. La copia cuesta el trozo, que es menos que el
     //  original por definicion.
-    juce::TextButton recorteButton { "RECORTAR" };
+    Boton recorteButton { "RECORTAR" };
     void recortaPad();
     //  Un hilo para limpiar, porque la limpieza NO cabe en el hilo de la
     //  interfaz: son 7 ms por segundo de audio medidos en el banco, o sea 2.1 s
@@ -4718,7 +4728,7 @@ private:
     //  Los tres del zoom, encima de la propia onda y no en una fila suya: la
     //  ficha ya iba justa de alto y una fila mas se la habria quitado a lo
     //  unico que este zoom existe para mirar.
-    juce::TextButton zoomOutButton { "-" }, zoomInButton { "+" }, zoomFitButton { "x1" };
+    Boton zoomOutButton { "-" }, zoomInButton { "+" }, zoomFitButton { "x1" };
 
     //  The project name you type, and where the folder actually is. GUARDAR
     //  used to invent "PROYECTO N" with no way to say otherwise, so every save
@@ -4733,26 +4743,26 @@ private:
     void setZati (int z);
     bool recArmed = false;                          // REC writes hits into the pattern
 
-    juce::Slider pitchSlider, fineSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
+    ZatiSlider pitchSlider, fineSlider, volSlider, startSlider, endSlider, bpmSlider, chokeSlider;
     //  CINTA moves pitch and length together, TONO keeps the length.
-    juce::TextButton modeButton { "CINTA" };
-    juce::Slider panSlider, anchoSlider, attackSlider, releaseSlider;
+    Boton modeButton { "CINTA" };
+    ZatiSlider panSlider, anchoSlider, attackSlider, releaseSlider;
     //  El filtro del pad. Ver AudioEngine::setPadCutoff: no lleva interruptor
     //  porque el corte arriba del todo ya es "sin filtro".
-    juce::Slider cutSlider, resoSlider;
+    ZatiSlider cutSlider, resoSlider;
     //  El fundido de los bordes del recorte. Va en RECORTE y no en SONIDO
     //  porque es de la muestra y no del pad: lo que suaviza es el sitio por el
     //  que se corto. Ver AudioEngine::setPadFadeIn.
-    juce::Slider fadeInSlider, fadeOutSlider;
+    ZatiSlider fadeInSlider, fadeOutSlider;
     //  What a step DOES, not just which pads it fires: how hard, how many
     //  times, and how far off the grid the odd ones sit.
-    juce::Slider patternSlider, noteSlider, lengthSlider, velSlider, rollSlider, swingSlider;
+    ZatiSlider patternSlider, noteSlider, lengthSlider, velSlider, rollSlider, swingSlider;
     //  LA REJILLA: cuanto dura un paso. Cinco posiciones y no un mando libre,
     //  porque los valores utiles son cinco y estan a distancias que no son
     //  regulares - entre 1/16 y su tresillo hay un factor de 1.5 y entre 1/16
     //  y 1/32 hay uno de 2. Un dial con esos cinco puntos seria un dial que
     //  hay que acertar; dos teclas los recorren y ademas dicen cual es.
-    juce::Slider gridSlider;
+    ZatiSlider gridSlider;
     //  LA REJILLA QUE SE MIRA, QUE NO ES EL PASO QUE SE GUARDA.
     //
     //  Ver `AudioEngine::remapeaPaso`: el motor guarda el patron con un paso
@@ -4797,8 +4807,8 @@ private:
     //  LA COLUMNA QUE SE VE -0 es la primera de la ventana- EN PASO GUARDADO.
     //  Es la unica forma de escribir `seqPrimerCelda + columna` en esta app.
     int pasoDeColumna (int columna) const;
-    juce::TextButton chainClearButton { "QUITAR CADENA" };
-    juce::Slider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
+    Boton chainClearButton { "QUITAR CADENA" };
+    ZatiSlider macroCtrl1, macroCtrl2, macroCtrl3;   // CTRL 1-3, bank-dependent
 
     //  LA CARA PROPIA DE UN EFECTO, y el EQ es la primera que la trae.
     //
@@ -4842,9 +4852,9 @@ private:
     //  trae la capa, el velo y el cierre al tocar fuera de serie.
     Sheet eqBandaSheet;
     int   eqBandaSel = 0;
-    juce::OwnedArray<juce::TextButton> eqTipoBtns;
-    juce::Slider eqQKnob;
-    juce::TextButton eqBandaCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
+    juce::OwnedArray<Boton> eqTipoBtns;
+    ZatiSlider eqQKnob;
+    Boton eqBandaCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::Rectangle<int> eqBandaTituloBanda;
     void abreBandaEq (int b);
     void refrescaBandaEq();
@@ -5071,7 +5081,7 @@ private:
     //  LA TIRA DE ACCIONES DE LA BANDA. Ver el reparto en
     //  MainComponent_Layout.cpp: solo existe con seleccion, y PEGAR solo con
     //  portapapeles. Calco de la tira del piano.
-    juce::TextButton songCopiaBtn { "COPIAR" }, songPegaBtn { "PEGAR" },
+    Boton songCopiaBtn { "COPIAR" }, songPegaBtn { "PEGAR" },
                      songCorteSelBtn { "CORTE" }, songBorraSelBtn { "BORRAR" };
 
     //  LA VISTA DE ANTES DE LA LUPA. Un toque sin arrastre vuelve a donde
