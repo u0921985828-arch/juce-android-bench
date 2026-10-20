@@ -11,7 +11,7 @@ veces, T("KIT") habia quedado apuntando a una clave que se renombro, y el texto
 que explica MASTER contra PISTAS en la ficha de exportacion no estaba en la
 tabla - o sea, en espanol en las cuatro compilaciones.
 """
-import re, sys, os, glob, collections
+import re, sys, os, glob, collections, unicodedata
 
 HERE = os.path.dirname (os.path.abspath (__file__))
 SRC  = os.path.join (HERE, "..", "Source")
@@ -151,6 +151,107 @@ def main():
         for m in sin_tilde_re.finditer (es):
             bad.append ("fila %r: «%s» sin tilde en castellano (pon la celda es)"
                         % (r[0], m.group (1)))
+
+    #  EL ARABE: UN CONCEPTO, UNA PALABRA, Y LA PALABRA LATINA NO VA PRIMERO.
+    #
+    #  La columna ar la escribio nadie que la leyera entera: el pad tenia cuatro
+    #  nombres -باد, الوسادات (cojines), اللوح (que ademas es el plato)-, PRESET
+    #  y AJUSTES eran los dos «إعداد», REMUESTREAR y REHACER los dos «إعادة», el
+    #  fader era un cerrojo y el metronomo un acelerador (auditoria 2026-10,
+    #  textos #6, #7, #10 y #11). Ninguna regla lo veia: cada celda es legal por
+    #  separado. El glosario vive en un comentario de Lang.cpp -una lista, un
+    #  dueño- y esto lo lee: la palabra prohibida no sale en ninguna celda ar, y
+    #  la fila cuya clave nombra el concepto lleva la palabra buena. Medido
+    #  antes de escribir una sola celda: 143 celdas contra el glosario en 1015 filas.
+    #
+    #  Y LA DIRECCION. Una celda ar que empieza por palabra latina -«REC
+    #  يسجل…», «TAP…», «AUTO…»- toma base LTR, porque en JUCE 8 el nivel del
+    #  parrafo lo decide siempre el primer caracter fuerte (SheenBidi, regla
+    #  P2) y `ReadingDirection::rightToLeft` solo manda cuando no hay ninguno.
+    #  La palabra latina se pinta en el extremo IZQUIERDO, o sea al FINAL de
+    #  la lectura: «يسجل ما يسمعه الميكروفون في الباد المختار REC» (textos #4,
+    #  medido con la foto del manual en ar a 393x851, ZATI_OPEN=manual). Se
+    #  exige que la celda empiece por palabra arabe; las celdas enteramente
+    #  latinas (XY, AUTO, mmap) no entran, porque sin arabe dentro no hay nada
+    #  que reordenar. Medido antes: 13 celdas.
+    def ar_de (lit):
+        """La celda ar como texto. La fila de la cuenta atras esta escrita con
+        escapes \\xNN y el barrido de arriba la lee con los escapes puestos."""
+        def bytes_de (m):
+            return bytes (int (h, 16) for h in re.findall (r"\\x([0-9a-fA-F]{2})", m.group (0))).decode ("utf8", "replace")
+        return re.sub (r"(\\x[0-9a-fA-F]{2})+", bytes_de, lit)
+
+    letra_ar = u"ء-يٱ-ۓ"
+    glos = re.findall (r"^\s*//\s+([a-z][a-z ]*?)\s+=\s+(\S.*?)\s+\|\s+no:[ \t]*(.*?)[ \t]*$",
+                       lang[:lang.index ("const Row kTable[]")], re.M)
+    if len (glos) < 15:
+        bad.append ("Lang.cpp: no encuentro el glosario del arabe (%d entradas)" % len (glos))
+    #  La prohibida se busca como palabra: pegada por delante admite el
+    #  clitico (والرف, للخلاط) y por detras no puede seguir letra, para que
+    #  «اللوح» (pad) no cace «اللوحة» (plato).
+    prohibidas = [(c, p, re.compile (p + "(?![" + letra_ar + "])")) for c, _, nos in glos for p in nos.split()]
+    #  concepto -> la clave que lo nombra, lo que la celda ar tiene que llevar,
+    #  lo que no puede llevar, y la salvedad (una clave con TONO y NOTA a la
+    #  vez lleva las dos palabras a proposito).
+    conceptos = [
+        ("pad",          r"(?i)(?<![a-z])pads?(?![a-z])",                         "باد",           None,    None),
+        ("mezclador",    r"(?i)(?<![a-z])(mezclador|mesa)(?![a-z])|^(MIX|MEZCLA Y CANALES)$", "مازج", None, None),
+        ("rack",         r"(?<![A-Za-z])RACK(?![A-Za-z])",                        "الراك",         None,    None),
+        ("ranura",       r"(?i)(?<![a-z])ranuras?(?![a-z])",                      "خان",           None,    None),
+        ("casilla",      r"(?i)(?<![a-z])(casillas?|celdas?)(?![a-z])",           "خلي",           None,    None),
+        ("nota",         r"(?i)(?<![a-z])notas?(?![a-z])",                        "نوت",           "نغم",   r"(?i)(?<![a-z])tonos?(?![a-z])"),
+        ("carcasa",      r"(?i)(?<![a-z])carcasas?(?![a-z])",                     "هيكل|هياكل",    "غلاف",  None),
+        ("envolvente",   r"(?i)(?<![a-z])(envolvente|ENV)(?![a-z])",              "غلاف",          None,    None),
+        ("solo",         r"(?<![A-Za-z])(SOLO|Solo|solos)(?![A-Za-z])",           "منفرد",         None,    None),
+        ("bloque",       r"(?i)(?<![a-z])bloques?(?![a-z])",                      "كتل",           None,    None),
+        ("preset",       r"(?i)(?<![a-z])presets?(?![a-z])",                      "مسبق",          None,    None),
+        ("remuestrear",  r"(?i)remuestr",                                         "ريسامبل",       "إعادة", None),
+        ("fader",        r"(?i)(?<![a-z])faders?(?![a-z])",                       "فيدر",          None,    None),
+        ("metronomo",    r"(?i)metronomo",                                        "مترونوم",       None,    None),
+        ("semitono",     r"(?i)semitonos?|(?<![A-Z])SEMIS(?![A-Z])",              "نغم",           None,    None),
+        ("semicorchea",  r"(?i)semicorchea",                                      "نوتة",          None,    None),
+        ("cuenta atras", r"(?i)cuenta atras",                                     u"(?<![" + letra_ar + "])(ال)?عد(?![" + letra_ar + "])", None, None),
+        ("compas",       r"(?i)(?<![a-z])compas(es)?(?![a-z])",                   "مازور",         None,    None),
+    ]
+    conceptos = [(c, re.compile (k), re.compile (si), no and re.compile (no), salvo and re.compile (salvo))
+                 for c, k, si, no, salvo in conceptos]
+    glosario = 0
+    for r in rows:
+        ar = ar_de (r[4])
+        if not ar: continue
+        clave = r[0]
+        for c, p, rx in prohibidas:
+            if rx.search (ar):
+                glosario += 1
+                bad.append ("fila %r: «%s» en arabe es %s y el glosario lo prohibe" % (clave[:50], p, c))
+        for c, k, si, no, salvo in conceptos:
+            if not k.search (clave): continue
+            if not si.search (ar):
+                glosario += 1
+                bad.append ("fila %r: nombra %s y la celda ar no dice «%s»" % (clave[:50], c, si.pattern))
+            if no and no.search (ar) and not (salvo and salvo.search (clave)):
+                glosario += 1
+                bad.append ("fila %r: nombra %s y la celda ar dice «%s», que es otra cosa" % (clave[:50], c, no.pattern))
+            #  PRESET lleva siempre el adjetivo: un «إعداد» sin «مسبق» detras
+            #  es AJUSTES, que es la confusion que esto existe para parar.
+            if c == "preset":
+                for m in re.finditer (u"إعداد", ar):
+                    if not re.match (u"[^\\s]*\\s+(?:ال)?مسبق", ar[m.end():]):
+                        glosario += 1
+                        bad.append ("fila %r: «إعداد» sin «مسبق» en una fila de PRESET" % clave[:50]); break
+    bidi = 0
+    for r in rows:
+        ar = ar_de (r[4])
+        if not re.search ("[" + letra_ar + "]", ar): continue
+        for ch in ar:
+            b = unicodedata.bidirectional (ch)
+            if b in ("R", "AL"): break
+            if b == "L":
+                bidi += 1
+                bad.append ("fila %r: la celda ar empieza por palabra latina y se pinta LTR: %r"
+                            % (r[0][:50], ar[:40])); break
+    print ("glosario arabe: %d entradas, %d celdas contra el glosario, %d celdas ar que empiezan en latino"
+           % (len (glos), glosario, bidi))
 
     code = ""
     for f in sorted (glob.glob (os.path.join (SRC, "*.cpp")) + glob.glob (os.path.join (SRC, "*.h"))):
