@@ -14644,10 +14644,17 @@ void MainComponent::finishProjectOpen (const juce::String& name, const juce::Val
         if (auto* p = pads[i])
             p->setSampleInfo (uiSample[(size_t) i], padName[(size_t) i], padStart01[(size_t) i], padEnd01[(size_t) i]);
 
+    //  CON EL RANGO MIRADO, como en la restauracion de sesion: el `i` viene
+    //  del fichero, y un project.xml editado o corrupto con i=2147483647
+    //  tumbaba la app al abrirlo (auditoria 2026-10, estabilidad#0; ver
+    //  Tests/hostil.py). Un pad que no existe no es un pad sin audio.
     for (const auto& c : tree.getChildWithName ("PADS"))
-        if ((bool) c.getProperty ("has", false)
-            && uiSample[(size_t) (int) c.getProperty ("i", 0)] == nullptr)
+    {
+        const int i = (int) c.getProperty ("i", -1);
+        if (juce::isPositiveAndBelow (i, kNumPads) && (bool) c.getProperty ("has", false)
+            && uiSample[(size_t) i] == nullptr)
             ++missing;
+    }
 
     apuntaProyecto (name);
     closeAllSheets();
