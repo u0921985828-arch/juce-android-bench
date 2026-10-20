@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 // ============================================================================
 //  QUITAR RUIDO — resta espectral con perfil sacado de la propia muestra.
@@ -74,11 +75,13 @@ namespace Denoise
     //  fuerza 0..1. 0 es una limpieza suave que no se nota; 1 es agresiva y
     //  deja el suelo 40 dB por debajo, a costa de comerse las colas mas
     //  flojas. El valor de la app es 0.6.
-    inline void process (juce::AudioBuffer<float>& buf, float strength01)
+    //  `corta` se pregunta cada 64 ventanas; si dice que si, devuelve false y la muestra queda a medias (estabilidad#24).
+    inline bool process (juce::AudioBuffer<float>& buf, float strength01,
+                         const std::function<bool()>& corta = {})
     {
         const int numCh = buf.getNumChannels();
         const int len   = buf.getNumSamples();
-        if (numCh < 1 || len < 2048) return;
+        if (numCh < 1 || len < 2048) return true;
 
         const float strength = juce::jlimit (0.0f, 1.0f, strength01);
 
@@ -99,7 +102,7 @@ namespace Denoise
         constexpr int kProfileFrames = 1024;
 
         const int frames = (len - fft) / hop + 1;
-        if (frames < 4) return;
+        if (frames < 4) return true;
 
         juce::dsp::FFT engine (order);
 
@@ -132,7 +135,7 @@ namespace Denoise
         }
         catch (const std::bad_alloc&)
         {
-            return;                     // la muestra se queda como estaba
+            return true;                // la muestra se queda como estaba
         }
 
         //  Cuanto se sobre-estima el ruido y hasta donde se deja bajar.
@@ -171,6 +174,7 @@ namespace Denoise
             // --- Pasada 1: el perfil, de profFrames ventanas repartidas. ----
             for (int q = 0; q < profFrames; ++q)
             {
+                if ((q & 63) == 0 && corta && corta()) return false;
                 //  Repartidas de verdad: la ultima cae en la ultima ventana,
                 //  no a un tercio del fichero.
                 const int f  = (profFrames == frames) ? q
@@ -255,6 +259,7 @@ namespace Denoise
 
             for (int f = 0; f < frames; ++f)
             {
+                if ((f & 63) == 0 && corta && corta()) return false;
                 const int at = f * hop;
                 flush (at);                     // deja acc[0] apuntando a `at`
 
@@ -332,5 +337,6 @@ namespace Denoise
             //  escribir.
             flush (juce::jmin (len, (frames - 1) * hop + fft));
         }
+        return true;
     }
 }

@@ -791,6 +791,32 @@ int main()
                      (! nan && addedMb < 32.0) ? "OK" : zatiFalla());
     }
 
+    //  CERRAR CON QUITAR RUIDO EN VUELO (estabilidad#24): el pool espera al trabajo, y el trabajo tiene que oir que se cierra.
+    {
+        const int len = (int) (300.0 * 48000.0);
+        juce::AudioBuffer<float> b (2, len);
+        juce::Random rng (78);
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < len; ++i) b.setSample (c, i, 0.02f * (rng.nextFloat() * 2.0f - 1.0f));
+
+        std::atomic<bool> empezo { false }, cortado { false };
+        auto pool = std::make_unique<juce::ThreadPool> (1);
+        pool->addJob ([&]
+        {
+            auto* job = juce::ThreadPoolJob::getCurrentThreadPoolJob();
+            empezo = true;
+            cortado = ! Denoise::process (b, 0.6f, [job] { return job != nullptr && job->shouldExit(); });
+        });
+        while (! empezo) juce::Thread::sleep (1);
+        juce::Thread::sleep (50);
+        const auto t0 = std::chrono::steady_clock::now();
+        pool->removeAllJobs (true, 20000);
+        pool.reset();
+        const double ms = std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - t0).count();
+        std::printf ("%-34s %.0f ms   cortado %s   %s\n", "cerrar con quitar ruido en vuelo", ms,
+                     cortado ? "si" : "no", (cortado && ms < 250.0) ? "OK" : zatiFalla());
+    }
+
     //  MUESTRAS HOSTILES.
     //
     //  El unico dato que entra en esta app desde fuera es un fichero de audio

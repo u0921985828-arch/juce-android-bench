@@ -91,7 +91,7 @@ namespace
                                  : (int) (rate * 0.15);
         const int ch = r.nextBool() ? 2 : 1;
         sb->buffer.setSize (ch, juce::jmax (8, n));
-        sb->sourceSampleRate = r.nextBool() ? rate : (rate == 48000.0 ? 44100.0 : 48000.0);
+        sb->sourceSampleRate = r.nextBool() ? rate : (juce::approximatelyEqual (rate, 48000.0) ? 44100.0 : 48000.0);
 
         const float amp = forma == 3 ? 0.02f : 0.9f;
         const float hz  = 40.0f + r.nextFloat() * 6000.0f;

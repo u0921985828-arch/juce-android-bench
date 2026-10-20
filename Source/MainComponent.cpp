@@ -10856,7 +10856,9 @@ void MainComponent::denoisePad()
     denoisePool.addJob ([this, clean, keepSrc, pad, len, keepStart, keepEnd, keepName]
     {
         const float before = clean->buffer.getMagnitude (0, len);
-        Denoise::process (clean->buffer, 0.6f);
+        auto* job = juce::ThreadPoolJob::getCurrentThreadPoolJob();
+        if (! Denoise::process (clean->buffer, 0.6f, [job] { return job != nullptr && job->shouldExit(); }))
+            return;   // estabilidad#24: se cierra la app, lo limpiado a medias no es de nadie
         const float after = clean->buffer.getMagnitude (0, len);
 
         //  Y SE DEVUELVE EL NIVEL QUE LA LIMPIEZA SE LLEVO.
