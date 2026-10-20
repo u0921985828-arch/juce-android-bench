@@ -23,8 +23,9 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat().reduced (grosor * 0.5f);
-        g.setColour (ZatiColours::screenBg); g.drawRoundedRectangle (r.expanded (1.0f), 4.0f, 1.0f);
-        g.setColour (ZatiColours::ink);      g.drawRoundedRectangle (r, 4.0f, (float) grosor);
+        const float esquina = Metrics::radio + Metrics::filo;   // la del control, un punto mas fuera
+        g.setColour (ZatiColours::screenBg); g.drawRoundedRectangle (r.expanded (Metrics::filo), esquina, Metrics::filo);
+        g.setColour (ZatiColours::ink);      g.drawRoundedRectangle (r, esquina, (float) grosor);
     }
 
     void globalFocusChanged (juce::Component* c) override

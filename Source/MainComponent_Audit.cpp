@@ -12959,7 +12959,7 @@ void MainComponent::auditFeria()
         {
             if (c == nullptr) return -1;
             juce::Component::unfocusAllComponents(); sigueFoco (nullptr, false);
-            const auto zona = getLocalArea (c, c->getLocalBounds()).expanded (4).getIntersection (getLocalBounds());
+            const auto zona = getLocalArea (c, c->getLocalBounds()).expanded (Metrics::xs).getIntersection (getLocalBounds());
             const auto antes = createComponentSnapshot (zona, true, 1.0f);
             c->grabKeyboardFocus(); sigueFoco (c, dedo);
             const auto luego = createComponentSnapshot (zona, true, 1.0f);
