@@ -441,6 +441,28 @@ void AudioEngine::releaseResources() noexcept
     fallbackTriggers.store (0, std::memory_order_relaxed);
 }
 
+std::pair<int, int> AudioEngine::ventanaDe (int slot, const SampleBuffer* sb) noexcept
+{
+    //  estabilidad#31: la ventana vale si es de ESTA muestra, leida entre dos miradas al dueno; si no, la ultima buena.
+    const int len = sb->buffer.getNumSamples();
+    auto& viva = ventanaViva[(size_t) slot];
+    if (ventanaPara[(size_t) slot].load() == sb)
+    {
+        const int s0 = padStart[(size_t) slot].load(), e0 = padEnd[(size_t) slot].load();
+        if (ventanaPara[(size_t) slot].load() == sb) viva = { s0, e0 };
+    }
+    int st = viva.first, en = viva.second;
+    if (en <= 0 || en > len) en = len;
+    if (st < 0 || st >= en)  st = 0;
+    return { st, en };
+}
+
+std::pair<int, int> AudioEngine::ventanaQueSuena (int slot) noexcept
+{
+    if (! juce::isPositiveAndBelow (slot, kNumPads) || padSample[(size_t) slot] == nullptr) return { 0, 0 };
+    return ventanaDe (slot, padSample[(size_t) slot]);
+}
+
 void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola,
                               int gate, std::uint32_t plock) noexcept
 {
@@ -507,10 +529,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     const int pctPan    = plockPct (plockPan);
 
     const int len = sb->buffer.getNumSamples();
-    int st = padStart[(size_t) slot].load (std::memory_order_relaxed);
-    int en = padEnd[(size_t) slot].load (std::memory_order_relaxed);
-    if (en <= 0 || en > len) en = len;
-    if (st < 0 || st >= en)  st = 0;
+    auto [st, en] = ventanaDe (slot, sb);
 
     // ------------------------------------------------------------------------
     //  UN PAD QUE LLEVA INSTRUMENTO. Ver SampleBuffer::Zona y Sintes.h.
@@ -976,14 +995,16 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
 
             retired.push (padSample[(size_t) slot]);
             padSample[(size_t) slot] = nullptr;
-            padStart[(size_t) slot].store (0, std::memory_order_relaxed);
-            padEnd[(size_t) slot].store (0, std::memory_order_relaxed);
+            ventanaViva[(size_t) slot] = { 0, 0 };   // estabilidad#31: la ventana compartida ya no la toca este hilo
         }
+
+        if (padSample[(size_t) slot] != nullptr) ventanaDe (slot, padSample[(size_t) slot]);   // estabilidad#31: recoge el recorte de la que suena
 
         if (auto* incoming = pendingPad[(size_t) slot].exchange (nullptr, std::memory_order_acquire))
         {
             retired.push (padSample[(size_t) slot]);
             padSample[(size_t) slot] = incoming;
+            ventanaViva[(size_t) slot] = { 0, incoming->buffer.getNumSamples() };
         }
     }
 
@@ -4683,9 +4704,11 @@ void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept
     if (slot < 0 || slot >= kNumPads || newBuffer == nullptr)
         return;
 
-    // Reset this pad's trim window to the full new sample.
-    padStart[(size_t) slot].store (0, std::memory_order_relaxed);
-    padEnd[(size_t) slot].store (newBuffer->buffer.getNumSamples(), std::memory_order_relaxed);
+    // Reset this pad's trim window to the full new sample, stamped with its owner (estabilidad#31).
+    ventanaPara[(size_t) slot].store (nullptr);
+    padStart[(size_t) slot].store (0);
+    padEnd[(size_t) slot].store (newBuffer->buffer.getNumSamples());
+    ventanaPara[(size_t) slot].store (newBuffer.get());
 
     newBuffer->incReferenceCount();
     if (auto* old = pendingPad[(size_t) slot].exchange (newBuffer.get(), std::memory_order_release))

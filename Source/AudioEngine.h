@@ -720,6 +720,10 @@ public:
     void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, acota (0.0f, 4.0f, g, 1.0f)); }
     void setPadStart   (int slot, int s)       noexcept { store (padStart,   slot, s); }
     void setPadEnd     (int slot, int e)       noexcept { store (padEnd,     slot, e); }
+    int  getPadStart   (int slot) const noexcept { return juce::isPositiveAndBelow (slot, kNumPads) ? padStart[(size_t) slot].load() : 0; }
+    int  getPadEnd     (int slot) const noexcept { return juce::isPositiveAndBelow (slot, kNumPads) ? padEnd[(size_t) slot].load() : 0; }
+    //  La ventana con la que sonaria ahora un golpe del pad, en el hilo de audio (estabilidad#31; la usa el banco).
+    std::pair<int, int> ventanaQueSuena (int slot) noexcept;
     void setPadLoop    (int slot, bool b)      noexcept { store (padLoop,    slot, b); }
     void setPadReverse (int slot, bool b)      noexcept { store (padReverse, slot, b); }
     //  Whether pitch drags the length with it (tape) or not (tone).
@@ -922,7 +926,12 @@ public:
     void clearPad (int slot) noexcept
     {
         if (juce::isPositiveAndBelow (slot, kNumPads))
+        {
+            ventanaPara[(size_t) slot].store (nullptr);   // estabilidad#31: la ventana la escribe solo este hilo
+            padStart[(size_t) slot].store (0);
+            padEnd[(size_t) slot].store (0);
             pendingClear[(size_t) slot].store (true, std::memory_order_release);
+        }
     }
     void collectRetiredSamples() noexcept;
 
@@ -2628,6 +2637,10 @@ private:
     std::array<SampleBuffer*, kNumPads>              padSample {};
     std::array<std::atomic<SampleBuffer*>, kNumPads> pendingPad {};
     std::array<std::atomic<bool>, kNumPads> pendingClear {};
+    std::pair<int, int> ventanaDe (int slot, const SampleBuffer* sb) noexcept;
+    //  De que muestra es la ventana de `padStart/padEnd` (la escribe solo el hilo de mensajes), y la ultima buena de la que suena (solo audio).
+    std::array<std::atomic<const SampleBuffer*>, kNumPads> ventanaPara {};
+    std::array<std::pair<int, int>, kNumPads>              ventanaViva {};
     RetiredQueue retired;
 
     //  LAS TABLAS RETIRADAS SON UNA COLA Y NO UN HUECO.

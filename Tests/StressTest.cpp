@@ -791,6 +791,34 @@ int main()
                      (! nan && addedMb < 32.0) ? "OK" : zatiFalla());
     }
 
+    //  LA VENTANA VIAJA CON SU MUESTRA (estabilidad#31): vaciar, cargar y recortar en el mismo bloque, y recortar la nueva antes de que llegue.
+    {
+        const auto m = std::make_unique<AudioEngine>();
+        AudioEngine& e = *m;
+        e.prepareToPlay (srBase, bs);
+        juce::AudioBuffer<float> eb (2, bs);
+        e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
+        runBlocks (e, eb, bs, 1);
+        e.clearPad (0);
+        e.publishSample (0, makeSample (48000.0, 2.0, 330.0f));
+        e.setPadStart (0, 1000); e.setPadEnd (0, 5000);
+        runBlocks (e, eb, bs, 1);
+        const int rs = e.getPadStart (0), re = e.getPadEnd (0);
+        const bool recorte = rs == 1000 && re == 5000;
+
+        e.setPadStart (0, 100); e.setPadEnd (0, 200);                 // el recorte de la que suena
+        runBlocks (e, eb, bs, 1);
+        e.publishSample (0, makeSample (48000.0, 2.0, 440.0f));       // y llega otra, sin bloque en medio
+        e.setPadStart (0, 30000); e.setPadEnd (0, 40000);
+        const auto antes = e.ventanaQueSuena (0);                      // suena aun la vieja: con SU recorte
+        runBlocks (e, eb, bs, 1);
+        const auto despues = e.ventanaQueSuena (0);
+        const bool viaja = antes == std::make_pair (100, 200) && despues == std::make_pair (30000, 40000);
+        std::printf ("%-34s recorte %d..%d tras vaciar   vieja %d..%d  nueva %d..%d   %s\n", "la ventana viaja con su muestra",
+                     rs, re, antes.first, antes.second, despues.first, despues.second,
+                     (recorte && viaja) ? "OK" : zatiFalla());
+    }
+
     //  CERRAR CON QUITAR RUIDO EN VUELO (estabilidad#24): el pool espera al trabajo, y el trabajo tiene que oir que se cierra.
     {
         const int len = (int) (300.0 * 48000.0);
