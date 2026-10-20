@@ -191,7 +191,7 @@ public:
                 //  4. Escribir de vuelta: entrada + realimentacion amortiguada.
                 for (int i = 0; i < kLines; ++i)
                 {
-                    float v = x + fb * hz[i];
+                    float v = signo (c, i) * x + fb * hz[i];
                     //  Un polo por linea: la cola se oscurece con cada vuelta,
                     //  que es lo que hace el aire de una sala de verdad.
                     damp[i][c] += dampC * (v - damp[i][c]);
@@ -211,7 +211,7 @@ public:
 
                 //  5. La salida es la suma de las lineas, atenuada para que
                 //     cuatro lineas sumadas no lleguen cuatro veces mas fuerte.
-                w[c][n] = 0.35f * (s[0] + s[1] + s[2] + s[3]);
+                w[c][n] = 0.35f * (signo (c, 0) * s[0] + signo (c, 1) * s[1] + signo (c, 2) * s[2] + signo (c, 3) * s[3]);
             }
 
             //  Los indices avanzan UNA vez por muestra, no una por canal: son
@@ -252,6 +252,9 @@ public:
 
 private:
     static constexpr float kDiffG = 0.62f;
+
+    //  El derecho entra y sale con otros signos: otra red, la cola abre (audio-dsp#16).
+    static float signo (int c, int i) noexcept { return (c == 1 && (i == 1 || i == 2)) ? -1.0f : 1.0f; }
 
     double fs = 44100.0;
     int    chans = 2;

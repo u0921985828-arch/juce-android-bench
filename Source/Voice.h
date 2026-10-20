@@ -247,6 +247,8 @@ struct Voice
     float  abreBuf[kAbreCap] {};
     int    abreIdx   = 0;
     int    abreLen   = 1;
+    //  Paso alto de dos polos a 300 Hz en el lado fabricado: el grave mono no se peina (audio-dsp#3).
+    float  abreHpA = 0.0f, abreX1 = 0.0f, abreY1 = 0.0f, abreX2 = 0.0f, abreY2 = 0.0f;
 
     //  ESTEREO SE ESCALA, MONO SE ABRE. Es la unica rama del lado: con dos
     //  canales en la fuente `Estereo::ancho`; con uno, la linea y
@@ -254,9 +256,12 @@ struct Voice
     inline void lado (float& l, float& r, bool fuenteEstereo) noexcept
     {
         if (fuenteEstereo) { Estereo::ancho (l, r, ancho); return; }
-        const float retardada = abreBuf[abreIdx];
+        const float d = abreBuf[abreIdx];
         abreBuf[abreIdx] = l;
         if (++abreIdx >= abreLen) abreIdx = 0;
+        abreY1 = abreHpA * (abreY1 + d - abreX1);           abreX1 = d;
+        abreY2 = abreHpA * (abreY2 + abreY1 - abreX2);      abreX2 = abreY1;
+        const float retardada = abreY2;
         Estereo::abre (l, r, ancho, retardada);
     }
 
@@ -424,6 +429,8 @@ struct Voice
                                 (int) std::lround (Estereo::kAbreMs * 0.001 * juce::jmax (1.0, fSys)));
         abreIdx = 0;
         std::fill (abreBuf, abreBuf + abreLen, 0.0f);
+        abreHpA = (float) std::exp (-juce::MathConstants<double>::twoPi * 300.0 / juce::jmax (8000.0, (double) fSys));
+        abreX1 = abreY1 = abreX2 = abreY2 = 0.0f;
         gate      = -1;          // el que dispara la pone si el paso lleva largo
         panPropio = false;       // idem: solo si el paso trae bloqueo de pan
         nota      = 0;           // idem: lo escribe triggerPad tras start

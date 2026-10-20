@@ -1081,7 +1081,8 @@ def main():
         malas.append ("con ancho 0 la muestra mono deja lado %.6f: cerrada tiene que ser mono, lado cero" % lado0)
     if centro0 <= 0.01:
         malas.append ("con ancho 0 el centro es %.6f: el pad no sono, la medida no vale" % centro0)
-    if k <= 0 or lado1 <= 0 or abs (lado1 - k * centro1) > 0.05 * k * centro1:
+    # El lado pasa por un paso alto a 300 Hz (audio-dsp#3): llega a k sin el grave, nunca por encima.
+    if k <= 0 or lado1 <= 0 or lado1 > 1.05 * k * centro1 or lado1 < 0.80 * k * centro1:
         malas.append ("con ancho 1 la muestra mono deja lado %.6f y tiene que ser k=%.3f veces el centro (%.6f): "
                       "no se abre" % (lado1, k, k * centro1))
     if centro0 <= 0 or abs (centro1 - centro0) > 0.005 * centro0:

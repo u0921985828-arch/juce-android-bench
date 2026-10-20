@@ -3002,6 +3002,7 @@ int main()
             e.setPadAttack  (0, 0.0f);
             e.setPadFadeIn  (0, inMs);
             e.setPadFadeOut (0, outMs);
+            e.setPadAncho   (0, 0.0f);   // se mide la envolvente, no el lado fabricado (audio-dsp#3)
 
             auto* sb = new SampleBuffer();
             sb->sourceSampleRate = fSrc;
@@ -7416,9 +7417,10 @@ int main()
 
             const double armonico = db (amp (con, a, b, 6000.0), amp (sin_, a, b, 6000.0));
             const double grave    = db (amp (con, a, b,  200.0), amp (sin_, a, b,  200.0));
-            const bool ok = (armonico > 12.0) && (std::abs (grave) < 0.5);
-            std::printf ("%-34s tercer armonico %+.1f dB   grave %+.2f dB   %s\n",
-                         "EXC", armonico, grave, ok ? "OK" : zatiFalla());
+            const double fund     = db (amp (con, a, b, 2000.0), amp (sin_, a, b, 2000.0));   // audio-dsp#17
+            const bool ok = (armonico > 12.0) && (std::abs (grave) < 0.5) && fund > -0.5;
+            std::printf ("%-34s tercer armonico %+.1f dB   grave %+.2f dB   agudo %+.2f dB   %s\n",
+                         "EXC", armonico, grave, fund, ok ? "OK" : zatiFalla());
         }
 
         // --- TRN --------------------------------------------------------------
@@ -8144,8 +8146,8 @@ int main()
                     if (blk >= 4 && blk <= 7) { izq = juce::jmax (izq, l); der = juce::jmax (der, r); }
                     if (blk >= 20)
                     {
-                        colaIzq = juce::jmax (colaIzq, l);
-                        colaDer = juce::jmax (colaDer, r);
+                        colaIzq += l * l;   // energia y no pico: una cola que abre no tiene picos gemelos (audio-dsp#16)
+                        colaDer += r * r;
                     }
                 }
             }
@@ -8154,7 +8156,7 @@ int main()
             //  sala— asi que pedirle silencio en un lado seria pedirle que no
             //  fuera una reverb. Lo que dice de donde se tomo la copia es que la
             //  cola salga mas fuerte del lado al que el canal esta paneado.
-            colaDer = colaIzq / juce::jmax (1.0e-9, colaDer);
+            colaDer = std::sqrt (colaIzq / juce::jmax (1.0e-18, colaDer));
         };
 
         double i0 = 0, d0 = 0, c0 = 0, iL = 0, dL = 0, cL = 0, nada = 0;
@@ -9254,6 +9256,19 @@ int main()
                          "PNG rebota con fuente centrada", l2, r2, ok2 ? "OK" : zatiFalla());
         }
 
+        // --- REV abre con fuente centrada (audio-dsp#16). -------------
+        {
+            auto clic = [] (juce::AudioBuffer<float>& b, double)
+            { for (int i = 0; i < 96; ++i) { b.setSample (0, i, 1.0f); b.setSample (1, i, 1.0f); } };
+            corre6 (AudioEngine::kFxRev, 0.6f, 0.4f, clic, aL, aR, 60);
+            double ll = 0.0, rr = 0.0, lr = 0.0;
+            for (size_t i = 4800; i < aL.size(); ++i) { ll += aL[i] * aL[i]; rr += aR[i] * aR[i]; lr += aL[i] * aR[i]; }
+            const double cor = (ll > 1.0e-12 && rr > 1.0e-12) ? lr / std::sqrt (ll * rr) : 1.0;
+            const bool ok = ll > 1.0e-6 && cor < 0.5;
+            std::printf ("%-34s correlacion L/R de la cola %.3f   %s\n",
+                         "REV abre con fuente centrada", cor, ok ? "OK" : zatiFalla());
+        }
+
         // --- DUC: el bombeo baja lo que dice. -------------------------
         //
         //  Con un tono sostenido, la envolvente tiene que caer a `1-prof` y
@@ -9904,7 +9919,9 @@ int main()
 #endif
     }
 
-    //  EL SWING AL MAXIMO deja el golpe impar al 75 % del par (audio-dsp#5).
+    //  EL SWING AL MAXIMO deja el golpe impar al 75 % del par (audio-dsp#5),
+    //  mire la rejilla que mire (secuenciador#3).
+    for (int u : { 12, 6, 4 })
     {
         const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
         e.prepareToPlay (48000.0, 64); e.setPolyphony (8, 2); enCanalCero (e);
@@ -9913,8 +9930,8 @@ int main()
         for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 2000; ++i) sb->buffer.setSample (ch, i, 0.5f);
         sb->sourceSampleRate = 48000.0;
         e.publishSample (0, sb); e.setPadGain (0, 1.0f);
-        e.setBpm (120.0); e.setPatternLength (0, 16); e.setEditPattern (0);
-        e.setStep (0, 0, 0, true); e.setStep (0, 1, 0, true);
+        e.setBpm (120.0); e.setPasoUnidades (u); e.setPatternLength (0, 64); e.setEditPattern (0);
+        e.setStep (0, 0, 0, true); e.setStep (0, 12 / u, 0, true);
         e.setSwing (0.75f);
         juce::AudioBuffer<float> b (2, 64);
         b.clear(); e.renderNextBlock (b, 0, 64);
@@ -9934,8 +9951,111 @@ int main()
         e.setPlaying (false);
         const double paso = 48000.0 * 60.0 / 120.0 / 4.0;
         const double par = golpes.size() == 2 ? (double) (golpes[1] - golpes[0]) / (2.0 * paso) : 0.0;
-        std::printf ("%-34s el impar cae al %.1f %% del par (75), %d golpes   %s\n", "swing maximo es 75 %",
+        const juce::String nom = "swing maximo es 75 % en " + juce::String (u == 12 ? "1/16" : u == 6 ? "1/32" : "1/32T");
+        std::printf ("%-34s el impar cae al %.1f %% del par (75), %d golpes   %s\n", nom.toRawUTF8(),
                      par * 100.0, (int) golpes.size(), std::abs (par * 100.0 - 75.0) < 1.0 ? "OK" : zatiFalla());
+    }
+
+    //  EL BOMBEO A NEGRA cae donde cae el bombo, este parado lo que este (audio-dsp#18).
+    {
+        auto hondo = [] (int parado)
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            e.prepareToPlay (48000.0, 512); e.setPolyphony (8, 2); enCanalCero (e);
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->buffer.setSize (2, 96000);
+            for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 96000; ++i)
+                sb->buffer.setSample (ch, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / 48000.0f));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, sb); e.setPadGain (0, 1.0f);
+            e.setFxParam (0, AudioEngine::kFxDuc, 1, 0.70f);
+            e.setFxParam (0, AudioEngine::kFxDuc, 2, 1.0f);
+            e.setFxParam (0, AudioEngine::kFxDuc, 3, 4.0f);
+            e.setCanalSend (0, AudioEngine::kFxDuc, 1.0f);
+            e.setBpm (120.0); e.setPatternLength (0, 16); e.setEditPattern (0);
+            e.setStep (0, 0, 0, true);
+            juce::AudioBuffer<float> b (2, 512);
+            for (int i = 0; i < 30 + parado; ++i) { b.clear(); e.renderNextBlock (b, 0, 512); }
+            e.setPlaying (true);
+            std::vector<float> v;
+            for (int blk = 0; blk < 47; ++blk)
+            {
+                b.clear(); e.renderNextBlock (b, 0, 512);
+                for (int i = 0; i < 512; ++i) v.push_back (std::abs (b.getSample (0, i)));
+            }
+            long donde = -1; float menor = 1.0e9f;
+            for (size_t i = 0; i + 256 < 24000; i += 128)
+            {
+                float mx = 0.0f;
+                for (size_t k = 0; k < 256; ++k) mx = juce::jmax (mx, v[i + k]);
+                if (mx > 0.005f && mx < menor) { menor = mx; donde = (long) i; }
+            }
+            return donde;
+        };
+        const long h0 = hondo (0), h37 = hondo (37);
+        std::printf ("%-34s hondo en %ld con 0 bloques parado y en %ld con 37   %s\n", "DUC a negra anclado al PLAY",
+                     h0, h37, (h0 >= 0 && std::abs (h0 - h37) <= 512) ? "OK" : zatiFalla());
+    }
+
+    //  EL REMUESTREO LLEVA EL BOMBEO que se oye (audio-dsp#12).
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& r = *m;
+        r.prepareToPlay (48000.0, 256); r.setPolyphony (32, 4); enCanalCero (r);
+        r.setPadGain (0, 0.85f); r.setPadGain (1, 0.05f);
+        r.publishSample (0, makeSample (48000.0, 4.0, 220.0f, false));
+        r.publishSample (1, makeSample (48000.0, 0.2, 880.0f, false));
+        r.setDuckPad (1); r.setDuckAmount (0.8f); r.setDuckRelease (300.0f);
+        juce::AudioBuffer<float> rb (2, 256);
+        runBlocks (r, rb, 256, 4);
+        r.postNoteOn (0, 1.0f);
+        runBlocks (r, rb, 256, 20);
+        double heard = 0.0;
+        r.startRecording (5, true);
+        for (int b = 0; b < 300; ++b)
+        {
+            if (b % 50 == 0) r.postNoteOn (1, 1.0f);
+            r.renderNextBlock (rb, 0, 256);
+            for (int i = 0; i < 256; ++i) heard += (double) rb.getSample (0, i) * rb.getSample (0, i);
+        }
+        heard = std::sqrt (heard / (300.0 * 256));
+        auto sb = r.finishRecording();
+        double printed = 0.0; int len = 0;
+        if (sb != nullptr)
+        {
+            len = sb->buffer.getNumSamples();
+            for (int i = 0; i < len; ++i) printed += (double) sb->buffer.getSample (0, i) * sb->buffer.getSample (0, i);
+            printed = std::sqrt (printed / juce::jmax (1, len));
+        }
+        const double ratio = heard > 0 ? printed / heard : 0.0;
+        std::printf ("%-34s heard %.4f  printed %.4f  ratio %.3f   %s\n", "remuestreo con bombeo",
+                     heard, printed, ratio, (sb != nullptr && ratio > 0.95 && ratio < 1.05) ? "OK" : zatiFalla());
+    }
+
+    //  UN BOMBO MONO SALE CENTRADO con el ancho a 1 (audio-dsp#3).
+    {
+        double peor = 0.0;
+        for (float hz : { 50.0f, 100.0f, 150.0f })
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            e.prepareToPlay (48000.0, 512); e.setSafetyLimiter (false);
+            SampleBuffer::Ptr sb = new SampleBuffer();
+            sb->sourceSampleRate = 48000.0; sb->buffer.setSize (1, 48000);
+            for (int i = 0; i < 48000; ++i) sb->buffer.setSample (0, i, 0.4f * std::sin (juce::MathConstants<float>::twoPi * hz * (float) i / 48000.0f));
+            e.publishSample (0, sb); e.setPadGain (0, 1.0f); e.setPadPan (0, 0.0f); e.setPadAncho (0, 1.0f);
+            juce::AudioBuffer<float> out (2, 512);
+            out.clear(); e.renderNextBlock (out, 0, 512);
+            e.postNoteOn (0, 1.0f);
+            double l = 0.0, r = 0.0;
+            for (int blk = 0; blk < 40; ++blk)
+            {
+                out.clear(); e.renderNextBlock (out, 0, 512);
+                if (blk < 10) continue;
+                for (int i = 0; i < 512; ++i) { l += out.getSample (0, i) * out.getSample (0, i); r += out.getSample (1, i) * out.getSample (1, i); }
+            }
+            peor = juce::jmax (peor, std::abs (10.0 * std::log10 (juce::jmax (1.0e-12, l) / juce::jmax (1.0e-12, r))));
+        }
+        std::printf ("%-34s 50/100/150 Hz con el ancho a 1: L-R peor %.2f dB   %s\n", "grave mono sale centrado",
+                     peor, peor < 1.5 ? "OK" : zatiFalla());
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

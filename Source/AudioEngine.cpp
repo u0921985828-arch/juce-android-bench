@@ -1477,6 +1477,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     if (isPlaying && ! wasPlaying)
     {
         currentStep = -1; stepAccum = 0.0; chainPos = 0; numPending = 0;
+        relojPaso = 0.0;   // el LFO a tempo arranca con el bombo (audio-dsp#18)
         songStep = -1; songBar.store (-1, std::memory_order_relaxed);
         //  Y el paso de la automatizacion, que si no quien graba seguiria
         //  escribiendo en el ultimo paso que sono antes de parar.
@@ -1533,7 +1534,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         //  a roll makes it speak several times, so what a step produces is a
         //  little list of hits with sample offsets, and the render loop below
         //  stops at each of them.
-        auto firePatternStep = [this, samplesPerStep] (int bank, int stepInPattern) noexcept
+        auto firePatternStep = [this, samplesPerStep, beatsPerStep] (int bank, int stepInPattern) noexcept
         {
             const std::uint64_t mask = patternBank[(size_t) bank][(size_t) stepInPattern].load (std::memory_order_relaxed);
             if (mask == 0) return;
@@ -1542,8 +1543,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             //  The even ones never move - that is what keeps the bar where it
             //  was while the feel changes.
             const float sw = swing.load (std::memory_order_relaxed);
-            const int lateBy = ((stepInPattern & 1) != 0)
-                                 ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep)   // 75 % es 75 % del par (audio-dsp#5)
+            const int u = juce::jmax (1, (int) std::lround (beatsPerStep * kUnidadesPorPulso));
+            const int lateBy = ((stepInPattern * u) % 24 == 12)   // la segunda semicorchea, mire la rejilla que mire (secuenciador#3)
+                                 ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep * 12.0 / (double) u)   // 75 % es 75 % del par (audio-dsp#5)
                                  : 0;
 
             for (int p = 0; p < kNumPads; ++p)
@@ -3080,7 +3082,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                                 Dinamica::cruza (w[i], I.excAlta[ch], I.excBaja[ch],
                                                  cr.a1, cr.a2, cr.a3, cr.k, b, a);
                                 const float sat = AudioEngine::fastTanh (a * emp) / emp;
-                                const float y = b + a + I.smExcFuerza * (sat - a) * 4.0f;
+                                const float y = b + a + I.smExcFuerza * sat;   // suma armonicos, no resta el agudo (audio-dsp#17)
                                 w[i] = std::isfinite (y) ? y : 0.0f;
                             }
                         }
@@ -4145,6 +4147,41 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         notaRecorte (recorte);
     }
 
+    // 5c-bombeo. El sidechain del pad elegido, antes del ducking del sistema
+    //  y antes de las tomas: el bombeo es musica y se imprime (audio-dsp#12).
+    //
+    //  Va aqui y no en 5b porque tiene que agachar el MASTER entero, colas de
+    //  delay y reverb incluidas - un bombeo que deja la reverb a tope no abre
+    //  ningun hueco. Y va antes del saturador por la misma razon que el duck
+    //  del sistema: bajar lo que ENTRA al limitador, no lo que sale.
+    //  Y SOLO CON ENVOLVENTE. Estaba tambien con «o hay un pad armado», y con
+    //  el pad armado y quieto la envolvente vale CERO: la ganancia sale 1.0 y
+    //  se recorria la salida entera, los dos canales, multiplicando por uno.
+    //  Quien arma el bombeo lo deja armado toda la sesion, asi que era en cada
+    //  bloque y para siempre. Lo que el pad armado decide es si la envolvente
+    //  se DISPARA, y eso pasa en triggerPad, no aqui.
+    if (duckEnv > 0.0001f)
+    {
+        const float amt = juce::jlimit (0.0f, 1.0f, duckAmt.load (std::memory_order_relaxed));
+        const float rel = juce::jmax (20.0f, duckRel.load (std::memory_order_relaxed));
+        //  Recuperacion exponencial: es la forma de una envolvente de
+        //  compresor y la que no deja escalon al volver.
+        const float k = 1.0f - std::exp (-1000.0f / (rel * (float) juce::jmax (8000.0, systemSampleRate)));
+        const int   outCh = juce::jmin (2, out.getNumChannels());
+
+        float* w[2] = { nullptr, nullptr };
+        for (int ch = 0; ch < outCh; ++ch) w[ch] = out.getWritePointer (ch, startSample);
+
+        float env = duckEnv;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float g = 1.0f - amt * env;
+            for (int ch = 0; ch < outCh; ++ch) w[ch][i] *= g;
+            env -= k * env;
+        }
+        duckEnv = (env < 1.0e-5f) ? 0.0f : env;
+    }
+
     //  5e-vivo. EL REBOTE EN VIVO, en el MISMO sitio que el remuestreo y por
     //           la misma razon: despues de los efectos y del saturador, antes
     //           del fader del master y del ducking. Ver `vivoArma`.
@@ -4223,40 +4260,6 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
         if (rp >= cap)
             recording.store (false, std::memory_order_release);
-    }
-
-    // 5c-bombeo. El sidechain del pad elegido, antes del ducking del sistema.
-    //
-    //  Va aqui y no en 5b porque tiene que agachar el MASTER entero, colas de
-    //  delay y reverb incluidas - un bombeo que deja la reverb a tope no abre
-    //  ningun hueco. Y va antes del saturador por la misma razon que el duck
-    //  del sistema: bajar lo que ENTRA al limitador, no lo que sale.
-    //  Y SOLO CON ENVOLVENTE. Estaba tambien con «o hay un pad armado», y con
-    //  el pad armado y quieto la envolvente vale CERO: la ganancia sale 1.0 y
-    //  se recorria la salida entera, los dos canales, multiplicando por uno.
-    //  Quien arma el bombeo lo deja armado toda la sesion, asi que era en cada
-    //  bloque y para siempre. Lo que el pad armado decide es si la envolvente
-    //  se DISPARA, y eso pasa en triggerPad, no aqui.
-    if (duckEnv > 0.0001f)
-    {
-        const float amt = juce::jlimit (0.0f, 1.0f, duckAmt.load (std::memory_order_relaxed));
-        const float rel = juce::jmax (20.0f, duckRel.load (std::memory_order_relaxed));
-        //  Recuperacion exponencial: es la forma de una envolvente de
-        //  compresor y la que no deja escalon al volver.
-        const float k = 1.0f - std::exp (-1000.0f / (rel * (float) juce::jmax (8000.0, systemSampleRate)));
-        const int   outCh = juce::jmin (2, out.getNumChannels());
-
-        float* w[2] = { nullptr, nullptr };
-        for (int ch = 0; ch < outCh; ++ch) w[ch] = out.getWritePointer (ch, startSample);
-
-        float env = duckEnv;
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float g = 1.0f - amt * env;
-            for (int ch = 0; ch < outCh; ++ch) w[ch][i] *= g;
-            env -= k * env;
-        }
-        duckEnv = (env < 1.0e-5f) ? 0.0f : env;
     }
 
     // 5c-duck. The master level, ramped.
