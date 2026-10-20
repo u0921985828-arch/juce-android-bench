@@ -57,7 +57,6 @@ public:
     std::function<void()> onHold;
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
     { return std::make_unique<AccionMantener> (*this, onHold); }   // accesibilidad#3
-    static constexpr int kHoldMs = Metrics::holdMs;
 
     // ------------------------------------------------------------------------
     //  MODO TECLA: el pad deja de ser un golpe y pasa a ser una nota.
@@ -151,6 +150,7 @@ public:
     //  Solo si cambia: `refreshPad` lo pide para los 64 al elegir un pad, y
     //  sin la guarda eran dieciseis tapas repintadas por un toque en una.
     void setFlash    (float f) { if (! juce::exactlyEqual (flash, f)) { flash = f; repaint(); } }
+    float getFlash() const noexcept { return flash; }
 
     //  CALLADO POR UN SOLO DE OTRO. Un solo se pone en la mesa, y la mesa tapa
     //  la rejilla: hasta hoy la cara no decia nada de que doce pads estuvieran
@@ -218,7 +218,7 @@ public:
         //  Y EN MODO TECLA SI LO HAY, que es la mitad que faltaba: ver el
         //  parrafo de `onHold`. La nota no se interrumpe — la suelta el
         //  `mouseUp`, que llega igual con la ficha delante.
-        if (modoTinte.isTransparent()) startTimer (kHoldMs);
+        if (modoTinte.isTransparent()) startTimer (Metrics::pulsacion());
 
         if (e.isPressureValid())
         {

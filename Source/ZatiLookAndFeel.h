@@ -482,6 +482,9 @@ namespace Metrics
     //  medio segundo, asi que el hueco es lo bastante ancho para que ninguno
     //  de los dos caiga en el otro.
     static constexpr int holdMs = 420;
+    //  El de VERDAD es el del sistema (accesibilidad#31): `Sistema` lo pone al arrancar y cada dos segundos.
+    inline std::atomic<int> holdMsVivo { holdMs };
+    inline int pulsacion() noexcept { return holdMsVivo.load (std::memory_order_relaxed); }
 
     //  EL CANAL DE UNA REJILLA: la tira del borde que NO es una celda, y en la
     //  que un toque significa otra cosa. Son tres numeros y no uno a proposito,

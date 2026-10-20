@@ -63,6 +63,7 @@ target_sources(Zati PRIVATE
     Source/AudioFocus.cpp
     Source/Lang.cpp
     Source/SystemInsets.cpp
+    Source/Sistema.cpp
     Source/DeviceTier.cpp
     Source/SessionKeeper.cpp
     Source/AppStorage.cpp

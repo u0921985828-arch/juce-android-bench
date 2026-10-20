@@ -5210,6 +5210,7 @@ MainComponent::MainComponent()
     loadCuentaPref();
     loadTomasPref();
     loadMovPref();
+    Metrics::holdMsVivo = Sistema::pulsacionLargaMs (Metrics::holdMs);   // accesibilidad#31
     //  Y el monitor. `aplicaMonitor` sin avisar: en el constructor no hay
     //  nadie a quien decirselo, y la linea de estado la escribe lo que la
     //  persona toque despues.
@@ -10047,7 +10048,7 @@ void MainComponent::refreshPad (int index)
     if (auto* p = pads[index])
     {
         p->setSelected (index == selectedPad);
-        p->setFlash (padFlash[(size_t) index]);
+        p->setFlash (movimiento ? padFlash[(size_t) index] : 0.0f);   // accesibilidad#28: quieta es quieta
         //  Callado por el solo de OTRO. Se pregunta al motor y no a un espejo:
         //  el solo se pone tambien desde la mesa y desde un proyecto, y una
         //  copia aqui seria la tercera version de la misma verdad.
@@ -12172,6 +12173,63 @@ void MainComponent::refreshSystemInsets()
     systemInsets = now;
     resized();
     repaint();
+}
+
+//  EL GESTO DE ATRAS NO SE COME UN ARRASTRE (accesibilidad#29).
+//
+//  Con navegacion por gestos, un arrastre horizontal que empieza en la franja
+//  del filo es «atras». Se le pide al sistema que no lo sea encima de lo que
+//  se arrastra en horizontal -faders y deslizadores, la rejilla, el piano, la
+//  cancion, el XY, la curva-, y como mucho 200 de alto por lado, que es lo que
+//  Android concede: se quedan los de mas abajo, que es donde va el pulgar.
+void MainComponent::excluyeGestosDeAtras()
+{
+    const auto g = Sistema::gestos();
+    juce::Array<juce::Rectangle<int>> zonas;
+    if (g.getLeft() > 0 || g.getRight() > 0)
+    {
+        const auto todo = getLocalBounds();
+        const auto izq = todo.withWidth (g.getLeft());
+        const auto der = todo.withLeft (todo.getRight() - g.getRight());
+        juce::Array<juce::Rectangle<int>> enIzq, enDer;
+
+        std::function<void (juce::Component&)> mira = [&] (juce::Component& c)
+        {
+            for (auto* h : c.getChildren())
+            {
+                if (! h->isShowing()) continue;
+                bool horizontal = dynamic_cast<StepGrid*> (h) != nullptr || dynamic_cast<PianoRoll*> (h) != nullptr
+                               || dynamic_cast<Playlist*> (h) != nullptr || dynamic_cast<XyPad*> (h) != nullptr
+                               || dynamic_cast<EqCurve*> (h) != nullptr;
+                if (auto* s = dynamic_cast<juce::Slider*> (h))
+                    horizontal = s->isHorizontal();
+                if (horizontal)
+                {
+                    const auto r = getLocalArea (h, h->getLocalBounds());
+                    if (g.getLeft()  > 0 && r.intersects (izq)) enIzq.add (r.getIntersection (izq));
+                    if (g.getRight() > 0 && r.intersects (der)) enDer.add (r.getIntersection (der));
+                }
+                else mira (*h);
+            }
+        };
+        mira (*this);
+
+        const auto hasta200 = [&zonas] (juce::Array<juce::Rectangle<int>>& lado)
+        {
+            std::sort (lado.begin(), lado.end(), [] (const auto& a, const auto& b) { return a.getBottom() > b.getBottom(); });
+            int queda = 200;
+            for (auto r : lado)
+            {
+                if (queda <= 0) break;
+                if (r.getHeight() > queda) r = r.withTop (r.getBottom() - queda);
+                queda -= r.getHeight();
+                zonas.add (r);
+            }
+        };
+        hasta200 (enIzq);
+        hasta200 (enDer);
+    }
+    Sistema::excluyeGestos (zonas);
 }
 
 //  LA PREGUNTA DE ABRIR, que con cambios sin guardar es otra. «ABRIR X?»
@@ -17940,7 +17998,7 @@ void MainComponent::loadMovPref()
     //  Lo que no esta escrito vale lo de antes: la app latia, asi que sin
     //  fichero late. Quien ya la usaba no nota el cambio.
     const auto f = movPrefFile();
-    if (! f.existsAsFile()) return;
+    if (! f.existsAsFile()) { movimiento = Sistema::escalaAnimaciones() > 0.0f; return; }   // accesibilidad#28
     movimiento = f.loadFileAsString().trim().getIntValue() != 0;
 }
 
@@ -22672,6 +22730,8 @@ void MainComponent::timerCallback()
         sessionSyncMs = 0.0;
         session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
         refreshSystemInsets();
+        Metrics::holdMsVivo = Sistema::pulsacionLargaMs (Metrics::holdMs);   // accesibilidad#31: cambia en Ajustes sin reiniciar
+        excluyeGestosDeAtras();
 
         //  ...and the state itself every twenty seconds or so. onPause writes
         //  it too, but a process killed without one - a crash, a battery pull,

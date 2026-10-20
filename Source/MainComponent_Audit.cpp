@@ -4019,6 +4019,26 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  Se escribe DE VERDAD -autosave y flush- y no se falsea el reloj: lo que
     //  se quiere medir es que el campo sale cuando el fichero esta en disco, y
     //  poner el instante a mano mediria el `if` y no la escritura.
+    //  LO QUE EL SISTEMA DECIDE, con la curva del EQ en la cara, que va de filo a filo (Tests/sistema.py; accesibilidad #28, #29 y #31).
+    else if (which == "sistema")
+    {
+        closeAllSheets();
+        ponEnRanura (0, kFxEq);
+        setFxEnabled (kFxEq, true);
+        focusFx (kFxEq);
+        resized();
+        excluyeGestosDeAtras();
+        const bool mov = movimiento;
+        movimiento = false; padFlash[0] = 0.5f; refreshPad (0);
+        const float quieto = pads[0] != nullptr ? pads[0]->getFlash() : -1.0f;
+        movimiento = mov; padFlash[0] = 0.0f; refreshPad (0);
+        std::cout << "{\"sistema\":1,\"pulsacion\":" << Metrics::pulsacion() << ",\"movimiento\":" << (mov ? 1 : 0)
+                  << ",\"destello_quieto\":" << quieto << ",\"excluye\":[";
+        const auto z = Sistema::ultimaExclusion();
+        for (int i = 0; i < z.size(); ++i)
+            std::cout << (i ? "," : "") << "[" << z[i].getX() << "," << z[i].getY() << "," << z[i].getWidth() << "," << z[i].getHeight() << "]";
+        std::cout << "]}" << std::endl;
+    }
     else if (which == "salvo")
     {
         closeAllSheets();

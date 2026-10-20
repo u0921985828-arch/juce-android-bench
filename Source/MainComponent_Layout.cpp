@@ -8251,4 +8251,5 @@ void MainComponent::resized()
     }
 
     anilloFoco.vuelveASituar();   // accesibilidad#7
+    excluyeGestosDeAtras();       // accesibilidad#29
 }

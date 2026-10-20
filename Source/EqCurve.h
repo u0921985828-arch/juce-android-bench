@@ -201,7 +201,7 @@ public:
         //  El menu de la banda se arma al APOYAR y se cancela en cuanto el dedo
         //  se mueve: si no, cada arrastre acabaria abriendo un menu al soltar.
         bajoDedo = e.position;
-        if (agarrada >= 0) reloj.arma (Metrics::holdMs, [this] { avisaNodo(); });
+        if (agarrada >= 0) reloj.arma (Metrics::pulsacion(), [this] { avisaNodo(); });
         mueve (e);
         repaint();
     }

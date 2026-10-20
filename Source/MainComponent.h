@@ -2556,6 +2556,7 @@ private:
     juce::BorderSize<int> systemInsets;
     juce::Rectangle<int> safeArea() const;
     void refreshSystemInsets();
+    void excluyeGestosDeAtras();   // accesibilidad#29
 
     juce::OwnedArray<Boton> langButtons;
     juce::Rectangle<int> langRowArea;
@@ -3044,12 +3045,10 @@ private:
         //  Long enough not to fire on a firm tap, short enough that it lands
         //  while you still think of yourself as pressing. Android's own
         //  long-press is 500; a control you play with wants to be under it.
-        static constexpr int kHoldMs = Metrics::holdMs;
-
         void mouseDown (const juce::MouseEvent& e) override
         {
             held = false;
-            startTimer (kHoldMs);
+            startTimer (Metrics::pulsacion());
             juce::TextButton::mouseDown (e);
         }
 
@@ -4482,7 +4481,7 @@ private:
     struct MantenMando : public juce::MouseListener, private juce::Timer
     {
         std::function<void()> onHold;
-        void mouseDown (const juce::MouseEvent&) override { startTimer (Metrics::holdMs); }
+        void mouseDown (const juce::MouseEvent&) override { startTimer (Metrics::pulsacion()); }
         void mouseDrag (const juce::MouseEvent& e) override
         { if (e.getDistanceFromDragStart() > Metrics::xs) stopTimer(); }
         void mouseUp (const juce::MouseEvent&) override { stopTimer(); }
