@@ -22,6 +22,7 @@
 //  component. Fonts: Oswald/JetBrains Mono, bundled.
 // ============================================================================
 #include "Iconos.h"
+#include "Texturas.h"
 
 namespace ZatiColours
 {
@@ -334,6 +335,13 @@ namespace ZatiColours
         return alfa[((skin % 4) + 4) % 4];
     }
 
+    //  textura: cuanto relieve lleva cada carcasa, en alfa por desviacion tipica.
+    inline float relieveDelChasis (int skin) noexcept
+    {
+        static const float alfa[4] = { 0.011f, 0.010f, 0.014f, 0.036f };
+        return alfa[((skin % 4) + 4) % 4];
+    }
+
     //  acabado: el fondo horneado, degradado mas un brillo radial desde arriba a la izquierda.
     inline void pintaFondo (juce::Graphics& g, float w, float h)
     {
@@ -348,6 +356,28 @@ namespace ZatiColours
                                      juce::Colours::white.withAlpha (0.0f),
                                      w * 0.2f + r, h * 0.05f, true);
         g.setGradientFill (brillo);
+        g.fillRect (full);
+
+        //  textura: la baldosa de PixelLab a x4 con remuestreo suave, luz y sombra sobre el color.
+        const float amp = relieveDelChasis (currentSkin);
+        //  x4 bilineal hecho aqui, que el relleno en mosaico de JUCE escala a escalones.
+        constexpr int n = Texturas::kLado, k = 4, lado = n * k;
+        const auto* rel = Texturas::kRelieve[currentSkin];
+        const auto en = [rel] (int x, int y) { return (float) rel[((y + n) % n) * n + ((x + n) % n)]; };
+        juce::Image t (juce::Image::ARGB, lado, lado, true);
+        for (int y = 0; y < lado; ++y)
+            for (int x = 0; x < lado; ++x)
+            {
+                const float fx = (float) x / k, fy = (float) y / k;
+                const int x0 = (int) fx, y0 = (int) fy;
+                const float ax = fx - (float) x0, ay = fy - (float) y0;
+                const float v = (en (x0, y0) * (1 - ax) + en (x0 + 1, y0) * ax) * (1 - ay)
+                              + (en (x0, y0 + 1) * (1 - ax) + en (x0 + 1, y0 + 1) * ax) * ay;
+                const float d = v / 40.0f;
+                const auto c = d >= 0.0f ? juce::Colours::white : juce::Colours::black;
+                t.setPixelAt (x, y, c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp)));
+            }
+        g.setTiledImageFill (t, 0, 0, 1.0f);
         g.fillRect (full);
     }
 
