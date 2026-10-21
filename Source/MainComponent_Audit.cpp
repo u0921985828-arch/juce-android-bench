@@ -6698,6 +6698,17 @@ void MainComponent::auditCanales()
     const int mesaSalta = mixScroll.getViewPositionY() / juce::jmax (1, mixFilaAlto);
     tocaBarra (mixBarra, 0.95f);                      // la cabeza: vuelve
     const int mesaVuelve = mixScroll.getViewPositionY();
+    //  codigo#5: la tapa de la mitad pone delante el pad 9 y quita el 1; y vuelve.
+    const int mesaParte = mixParte ? 1 : 0;
+    const int mesaMitadTapa = mixMitadBtn.isVisible() ? mixMitadBtn.getHeight() : 0;
+    int mesaMitad9 = -1, mesaMitadVuelve = -1;
+    if (mixParte && mixFaders[8] != nullptr && mixFaders[0] != nullptr)
+    {
+        pulsaTapa (&mixMitadBtn);
+        mesaMitad9 = (mixFaders[8]->isVisible() && mixFaders[8]->getWidth() > 0 && ! mixFaders[0]->isVisible()) ? 1 : 0;
+        pulsaTapa (&mixMitadBtn);
+        mesaMitadVuelve = (mixFaders[0]->isVisible() && mixFaders[0]->getWidth() > 0) ? 1 : 0;
+    }
 
     //  19. EL GESTO SOBRE UN MANDO ES DEL MANDO, NO DE LA LISTA.
     //
@@ -7083,6 +7094,8 @@ void MainComponent::auditCanales()
               << ",\"mesa_st_vuelve\":" << juce::String (mesaStVuelve, 2)
               << ",\"mesa_st_rotulo\":\"" << mesaStRotulo.joinIntoString (",") << "\""
               << ",\"mesa_fila\":" << mesaFila << ",\"mesa_sobra\":" << mesaSobra
+              << ",\"mesa_parte\":" << mesaParte << ",\"mesa_mitad_tapa\":" << mesaMitadTapa
+              << ",\"mesa_mitad_9\":" << mesaMitad9 << ",\"mesa_mitad_vuelve\":" << mesaMitadVuelve
               << ",\"mesa_vista_alto\":" << mesaVistaAlto << ",\"mesa_filas_alto\":" << mesaFilasAlto
               << ",\"mesa_vista\":" << mesaVista << ",\"mesa_filas\":" << mesaFilas
               << ",\"mesa_barra\":" << mesaBarra << ",\"mesa_borde\":" << mesaBorde

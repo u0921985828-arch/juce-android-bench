@@ -4253,11 +4253,14 @@ void MainComponent::cableaPads()
     {
         showMixPage (mixPage == mixPageCanales ? mixPagePads : mixPageCanales);
     };
+    styleButton (mixMitadBtn, kKey);
+    mixMitadBtn.onClick = [this] { ponMixMitad (1 - mixMitad); };   // codigo#5
 }
 
 void MainComponent::cableaMezcla()
 {
     mixSheet.addAndMakeVisible (mixVistaBtn);
+    mixSheet.addChildComponent (mixMitadBtn);   // codigo#5
 
     //  The strips live in a scrolled panel and paint their own chips and
     //  names: those used to be drawn on the sheet behind the sliders, using
@@ -8857,6 +8860,15 @@ void MainComponent::showMixPage (MixPage p)
     showMixBank (mixBank);       // apaga y vacia las tiras de pad si toca
     showCanBank (canBank);       // y las de canal del otro banco, o todas
     refreshMixStrip();
+}
+
+//  codigo#5: la otra mitad del banco delante; la maqueta apaga la que no se ve.
+void MainComponent::ponMixMitad (int m)
+{
+    mixMitad = juce::jlimit (0, 1, m);
+    mixScroll.setViewPosition (0, 0);
+    resized();
+    mixRows.repaint();
 }
 
 //  EL BANCO DE LA PAGINA DE CANALES, con la misma regla que `showMixBank`:

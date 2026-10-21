@@ -3548,6 +3548,11 @@ private:
     //  dice el ESTADO -PADS o CANALES-, como `songVistaBtn` y `modoTapa`.
     Boton mixVistaBtn { "PADS" };
     void showMixPage (MixPage p);
+    //  codigo#5: si dieciseis filas no caben a un dedo, van en dos paginas de ocho.
+    Boton mixMitadBtn { "1-8" };
+    int  mixMitad = 0;
+    bool mixParte = false;
+    void ponMixMitad (int m);
     juce::OwnedArray<juce::Slider>     canFaders;
     juce::OwnedArray<Boton> canMutes;
     juce::OwnedArray<Boton> canSolos;
