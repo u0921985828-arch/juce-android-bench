@@ -5673,8 +5673,12 @@ void MainComponent::maquetaMix()
         const int masterH = Metrics::btn + Metrics::xs;
         const int mixFurniture = Ficha::cromoConPestanas (tabsH)
                                + Metrics::btn + masterH + Metrics::lg;
-        auto inner = sheetFromBottom (mixSheet,
-                                      mixFurniture + (wideFace ? kMixFilas / 2 : kMixFilas) * filaPlena);
+        const int columnas = wideFace ? 2 : 1;
+        juce::Rectangle<int> inner, mixTabs;
+        //  codigo#6: la tarjeta se monta para las filas que lleva; partida, para ocho.
+        auto montaFicha = [&] (int filas)
+        {
+        inner = sheetFromBottom (mixSheet, mixFurniture + filas * filaPlena);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         mixCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (Metrics::sm);
@@ -5697,7 +5701,6 @@ void MainComponent::maquetaMix()
             layoutModuleBar (zona, vb, 2, 1);
         }
 
-        juce::Rectangle<int> mixTabs;
         {
             //  Y LA FILA DE CHIPS ES LA DE LOS BANCOS, con sus cuatro tapas
             //  de siempre en PADS y las dos primeras -A y B- en CANALES, que
@@ -5754,9 +5757,11 @@ void MainComponent::maquetaMix()
         //  Dos columnas de ocho parten el arrastre por la mitad y usan el
         //  ancho que la pantalla ya tiene. Cada fila sigue siendo la misma
         //  fila: no se quita ningun control, se reparte el sitio.
-        const int columnas = wideFace ? 2 : 1;
+        };
+        montaFicha (kMixFilas / columnas);
         //  codigo#5: dieciseis que no caben a un dedo van en dos paginas de ocho.
         mixParte = inner.getHeight() / (kPadsPerBank / columnas) < Metrics::hit;
+        if (mixParte) montaFicha (kMixFilas / 2 / columnas);   // codigo#6
         //  Dieciseis pads de un banco o dieciseis canales de un banco: la
         //  cuenta es la misma, que es lo que hace que la pagina de canales no
         //  traiga geometria nueva.

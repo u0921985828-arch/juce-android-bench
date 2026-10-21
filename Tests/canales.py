@@ -870,6 +870,10 @@ def main():
                % (nombre, parte, tapa, m9, vuelve))
         if fila < 40:
             malas.append ("en %s la fila de la mesa mide %d: nunca por debajo del dedo, 40" % (nombre, fila))
+        #  codigo#6: partida, la tarjeta se ajusta a las ocho; filas de 64 y 72 eran aire.
+        if parte == 1 and fila > 48:
+            malas.append ("en %s la mesa partida deja filas de %d: la tarjeta tiene que ajustarse a las ocho, "
+                          "no repartir el aire (48 como mucho)" % (nombre, fila))
         if parte != 1 or tapa < 40 or m9 != 1 or vuelve != 1:
             malas.append ("en %s dieciseis filas no caben a 40 y la mesa no va en dos paginas de ocho (partida %d, "
                           "tapa %d, pad 9 %d, vuelve %d)" % (nombre, parte, tapa, m9, vuelve))
