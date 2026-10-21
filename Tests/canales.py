@@ -628,19 +628,11 @@ def main():
                   hueco, borde, salta, vuelve))
         if barra != 0:
             malas.append ("en 360x640 la mesa sigue ensenando la barra de JUCE, de %d px" % barra)
-        if barraApp < 36:
-            malas.append ("en 360x640 la barra de la casa de la mesa mide %d px: tiene que estar (hay "
-                          "dieciseis filas en una tarjeta de siete) y medir un dedo" % barraApp)
-        if not 1 <= hueco <= 8:
-            malas.append ("en 360x640 la S de la primera fila queda a %d px de la barra: pide aire, y no "
-                          "mas de sm" % hueco)
+        #  barra#1: tampoco aqui hay barra; las dieciseis entran mas finas.
+        if barraApp != 0:
+            malas.append ("en 360x640 la mesa lleva barra de la casa de %d px: sin barras en la mesa" % barraApp)
         if borde != 0:
-            malas.append ("en 360x640 la barra acaba %d px antes que la cruz del titulo" % borde)
-        if salta < 1:
-            malas.append ("en 360x640 un toque en el pie de la barra no mueve la mesa (salta %d filas)" % salta)
-        if vuelve != 0:
-            malas.append ("en 360x640 un toque en la cabeza de la barra no vuelve a la primera fila "
-                          "(queda en %d px)" % vuelve)
+            malas.append ("en 360x640 la S acaba %d px antes que la cruz del titulo" % borde)
 
     #  11. EN LA FILA DE UN PAD ENTRA TODO: pan, fader, M y S.
     #
@@ -873,6 +865,18 @@ def main():
             malas.append ("en %s la mesa lleva barra de %d px con las dieciseis filas a la vista: no hay nada "
                           "que arrastrar" % (nombre, barraApp))
 
+    #     barra#1: «no quiero barras en el Mixer», tampoco en pantallas
+    #     pequenas ni girado: las dieciseis entran mas finas.
+    for z in ("360x640", "280x653", "915x412"):
+        rz = corre ({"ZATI_SIZE": z})
+        if rz is None:
+            malas.append ("la app no publico la linea de canales en %s" % z); continue
+        print ("sinbarra en %s filas de %d, miden %d y el Viewport ensena %d; barra %d"
+               % (z, rz.get ("mesa_fila", -1), rz.get ("mesa_filas_alto", -1),
+                  rz.get ("mesa_vista_alto", -1), rz.get ("mesa_barra_app", -1)))
+        if rz.get ("mesa_barra_app", -1) != 0 or rz.get ("mesa_filas_alto", 1) > rz.get ("mesa_vista_alto", 0):
+            malas.append ("en %s la mesa lleva barra o no entran las dieciseis" % z)
+
     # 16. Y LOS HUECOS DE LA FILA SON TODOS EL MISMO. Del telefono, con la
     #     foto del knob en su celda de 44: «la distancia que quiero que
     #     guarden es la que hay entre los botones M y S». La app mide los
@@ -940,7 +944,7 @@ def main():
     if r360 is not None:
         print ("switch   en 360x640 la fila del pad 0 lleva %d switches y el pan mide %d"
                % (r360.get ("mesa_sw", -1), r360.get ("mesa_pan", -1)))
-        if r360.get ("mesa_sw", -1) != 2 or r360.get ("mesa_pan", 0) < 30:
+        if r360.get ("mesa_sw", -1) not in (2, 3) or r360.get ("mesa_pan", 0) < 30:   # barra#1
             malas.append ("en 360x640 la fila del pad 0 lleva %d switches y el pan mide %d: el ST se cae antes "
                           "que el pan, y el pan se queda" % (r360.get ("mesa_sw", -1), r360.get ("mesa_pan", 0)))
 
@@ -1005,12 +1009,13 @@ def main():
             ven = r360.get (kv, 0) // max (1, fila)
             print ("canales  en 360x640 la pagina de %s, con la barra de %d: filas de %d, %d a la vista y %d px al aire"
                    % (pagina, barraApp, fila, ven, sobra))
-            if fila < 44 or ven < 1 or sobra < 0 or sobra >= ven:
-                malas.append ("en 360x640 la pagina de %s deja %d px al aire con %d filas de %d a la vista"
-                              % (pagina, sobra, ven, fila))
-            if barraApp < 36:
-                malas.append ("en 360x640 la pagina de %s no lleva la barra de la casa (%d px) con filas que no "
-                              "entran" % (pagina, barraApp))
+            #  barra#1: las dieciseis a la vista y sin barra.
+            if ven < 16:
+                malas.append ("en 360x640 la pagina de %s ensena %d filas de %d: tienen que estar las dieciseis"
+                              % (pagina, ven, fila))
+            if barraApp != 0:
+                malas.append ("en 360x640 la pagina de %s lleva barra de %d px: sin barras en la mesa"
+                              % (pagina, barraApp))
 
     # 19. EL GESTO SOBRE UN MANDO ES DEL MANDO, NO DE LA LISTA. Del telefono:
     #     «es una jodienda para girar los knobs de paneo». Estaba escrito -los
@@ -1035,9 +1040,8 @@ def main():
         if knob != 0 or abs (pan) < 0.05:
             malas.append ("en 360x640 el dedo sobre el knob del pan mueve la lista %d px y el pan %.3f: el giro es "
                           "del knob y la lista se queda" % (knob, pan))
-        if nombre < 40:
-            malas.append ("en 360x640 el dedo sobre el nombre mueve la lista %d px: por el nombre SI se arrastra, "
-                          "o el dedo no llega" % nombre)
+        if nombre != 0:   # barra#1: sin barra no hay lista que arrastrar
+            malas.append ("en 360x640 el dedo sobre el nombre mueve la lista %d px: no hay nada que arrastrar" % nombre)
     for nombre_p, rr in (("360x640", r360),):
         if rr is None: continue
         fader, nombre, dio = rr.get ("mesa_c_arr_fader", -1), rr.get ("mesa_c_arr_nombre", -1), rr.get ("mesa_c_arr_dio", 0)
@@ -1048,9 +1052,9 @@ def main():
         if fader != 0:
             malas.append ("en %s el dedo sobre el fader del canal 0 mueve la lista %d px: el arrastre es del fader"
                           % (nombre_p, fader))
-        if nombre < 40:
-            malas.append ("en %s el dedo sobre el nombre del canal mueve la lista %d px: por el nombre SI se "
-                          "arrastra, o el dedo no llega" % (nombre_p, nombre))
+        if nombre != 0:   # barra#1
+            malas.append ("en %s el dedo sobre el nombre del canal mueve la lista %d px: no hay nada que arrastrar"
+                          % (nombre_p, nombre))
 
     # 20. LA MUESTRA MONO SE ABRE. Del telefono: «con una mono, todas son
     #     mono» y «dale, que abra los canales mono». Hasta aqui el ST y el

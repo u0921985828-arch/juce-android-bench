@@ -5796,7 +5796,8 @@ void MainComponent::maquetaMix()
         //  que la de canales va en dos bancos de dieciseis (canBank) son las
         //  mismas dieciseis filas que la de pads, y entran igual: del
         //  telefono, «asi entraria en una pantalla como esta en los pads».
-        const bool reparte = inner.getHeight() / porCol >= Metrics::xl;
+        //  barra#1: sin barra en ninguna pantalla; donde no entran a 24, entran mas finas.
+        const bool reparte = inner.getHeight() / porCol >= Metrics::xs;
         int rowH = reparte ? juce::jmin (filaPlena, inner.getHeight() / porCol) : filaPlena;
         //  Y DONDE HAY ARRASTRE, LAS FILAS QUE SE VEN SE REPARTEN EL CAJON.
         //
