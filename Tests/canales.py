@@ -699,7 +699,7 @@ def main():
         if r400.get ("fader_ancho", 0) < 64:
             malas.append ("en 400x900 el fader del pad 0 mide %d: el pan no se paga con el fader (suelo 64)"
                           % r400.get ("fader_ancho", 0))
-        if r.get ("mesa_ms", 0) != 40:
+        if r.get ("mesa_ms", 0) < 40:   # visual#5: 44 donde cabe, nunca menos de 40
             malas.append ("en 412x915 M mide %d y la fila entera entraba con 40: estrechar donde no hace "
                           "falta es pagar sin cobrar" % r.get ("mesa_ms", 0))
 

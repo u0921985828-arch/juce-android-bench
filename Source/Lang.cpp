@@ -1173,6 +1173,10 @@ namespace
           "SAVE KIT saves just the sounds into the KITS folder, for another project",
           "保存套件只把声音保存到「套件」文件夹，便于用于其他工程",
           "حفظ الطقم يحفظ الأصوات فقط في مجلد الأطقم، لمشروع آخر" },
+        { "ZIP copia la biblioteca entera a un fichero, para guardarla fuera", "",
+          "ZIP copies the whole library into one file, to keep it elsewhere",
+          "ZIP 把整个素材库复制成一个文件，便于存到别处",
+          "ينسخ زر ZIP المكتبة كلها في ملف واحد، لحفظها خارج الهاتف" },
         { "GUARDAR mete el proyecto con sus muestras en la biblioteca", "",
           "SAVE puts the project, samples included, in the library",
           "保存会把工程连同采样放进素材库",
@@ -1841,8 +1845,20 @@ namespace
         { "SUAVE",          "",         "SMOOTH",     "平滑",        "النعومة" },
         { "GUARDAR KIT",    "",         "SAVE KIT",   "保存套件",   "حفظ الطقم" },
         { "ZIP",            "",         "ZIP",        "ZIP",        "ZIP" },
-        { "Copia de la biblioteca", "", "Library backup", "资料库备份", "نسخة من المكتبة" },
-        { "Biblioteca copiada: %1 ficheros", "", "Library copied: %1 files", "资料库已复制：%1 个文件", "نُسخت المكتبة: %1 ملفًا" },
+        { "DO", "", "C", "C", "دو" },   // accesibilidad#0: notas del teclado
+        { "DO#", "", "C#", "C#", "دو#" },   // accesibilidad#0: notas del teclado
+        { "RE", "", "D", "D", "ري" },   // accesibilidad#0: notas del teclado
+        { "RE#", "", "D#", "D#", "ري#" },   // accesibilidad#0: notas del teclado
+        { "MI", "", "E", "E", "مي" },   // accesibilidad#0: notas del teclado
+        { "FA", "", "F", "F", "فا" },   // accesibilidad#0: notas del teclado
+        { "FA#", "", "F#", "F#", "فا#" },   // accesibilidad#0: notas del teclado
+        { "SOL", "", "G", "G", "صول" },   // accesibilidad#0: notas del teclado
+        { "SOL#", "", "G#", "G#", "صول#" },   // accesibilidad#0: notas del teclado
+        { "LA", "", "A", "A", "لا" },   // accesibilidad#0: notas del teclado
+        { "LA#", "", "A#", "A#", "لا#" },   // accesibilidad#0: notas del teclado
+        { "SI", "", "B", "B", "سي" },   // accesibilidad#0: notas del teclado
+        { "Copia de la biblioteca", "", "Library backup", "素材库备份", "نسخة من المكتبة" },
+        { "Biblioteca copiada: %1 ficheros", "", "Library copied: %1 files", "素材库已复制：%1 个文件", "نُسخت المكتبة: %1 ملفًا" },
         { "No se pudo escribir la copia", "", "Could not write the backup", "无法写入备份", "تعذّرت كتابة النسخة" },
         { "Esta carpeta se borra al desinstalar: guarda una copia con ZIP", "", "This folder is erased on uninstall: keep a copy with ZIP", "卸载时此文件夹会被删除：用 ZIP 保存一份副本", "يُحذف هذا المجلد عند إلغاء التثبيت: احفظ نسخة بزر ZIP" },
         { "Guardando kit",  "",         "Saving kit", "正在保存套件", "جارٍ حفظ الطقم" },
@@ -2471,7 +2487,7 @@ namespace
         { "Rejilla de pasos",    "",    "Step grid",          "步进网格",   "شبكة الخطوات" },
         { "Piano roll",          "",    "Piano roll",         "钢琴卷帘",   "لفافة البيانو" },
         { "Cancion por pistas",  "Canción por pistas", "Song by tracks", "按音轨的歌曲", "الأغنية حسب المسارات" },
-        { "Pad XY",              "",    "XY pad",             "XY 面板",    "لوحة XY" },
+        { "Pad XY",              "",    "XY pad",             "XY 面板",    "باد XY" },
         { "Curva del EQ",        "",    "EQ curve",           "均衡曲线",   "منحنى المعادل" },
         { "Teclado",             "",    "Keyboard",           "键盘",       "لوحة المفاتيح" },
         { "Desliza arriba o abajo para moverte; toque doble para tocar", "",

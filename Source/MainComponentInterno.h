@@ -927,6 +927,7 @@ namespace
             "ABRIR y NUEVO avisan antes de tirar lo que no esta guardado",
             "GUARDAR KIT guarda solo los sonidos en la carpeta KITS, para otro proyecto",
             "BORRAR quita un proyecto de la lista",
+            "ZIP copia la biblioteca entera a un fichero, para guardarla fuera",   // android#2
             "COMPARTIR, en EXPORTAR, manda el ultimo rebote a otra app",
             nullptr }, 19, 19 },
         { "MIDI", {

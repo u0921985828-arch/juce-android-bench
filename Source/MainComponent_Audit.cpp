@@ -9297,6 +9297,11 @@ void MainComponent::auditMidi()
     const int pad = 0;
     selectedPattern = pat;
     selectedPad = pad;
+    for (int s0 = 0; s0 < AudioEngine::kNumSteps; ++s0)   // producto#1: sin el compas de demo debajo
+    {
+        engine.vaciaPaso (pat, s0, pad);
+        pattern[(size_t) pat][(size_t) s0][(size_t) pad] = false;
+    }
     engine.setPatternLength (pat, 16);
 
     //  UN PATRON QUE SE LEE DE UN VISTAZO, y con las cuatro cosas que un .mid

@@ -36,7 +36,7 @@ public:
         acc.dice = [this] (int i)
         {
             static const char* nombres[12] = { "DO", "DO#", "RE", "RE#", "MI", "FA", "FA#", "SOL", "SOL#", "LA", "LA#", "SI" };
-            return T ("Tecla %1", juce::String (nombres[i % 12]) + juce::String (i == 12 ? " +1" : ""));
+            return T ("Tecla %1", T (nombres[i % 12]) + juce::String (i == 12 ? " +1" : ""));
         };
         acc.pulsa = [this] (int i)
         {
