@@ -849,9 +849,6 @@ def main():
     #     es la del movil. Medido: 412x915 filas de 36, 576 en 583, sin
     #     barra; 393x851 filas de 32, 512 en 519. Roto -el binario de la
     #     tanda anterior-: filas de 44, 704 en 583 con la barra: FALLA.
-    #     codigo#5: y no a menos de un dedo. Filas de 36 y 32 eran el umbral
-    #     bajado a 24; ahora, si dieciseis no caben a 40, van ocho y la tapa
-    #     de la mitad pone delante las otras ocho.
     r393 = corre ({"ZATI_SIZE": "393x851"})
     if r393 is None:
         malas.append ("la app no publico la linea de canales en 393x851")
@@ -863,35 +860,18 @@ def main():
         barraApp = rr.get ("mesa_barra_app", -1)
         print ("filas    en %s cada fila mide %d: las dieciseis miden %d y el Viewport ensena %d; barra de la casa %d"
                % (nombre, fila, filasAlto, vistaAlto, barraApp))
-        #  codigo#5: la fila no baja del dedo; si dieciseis no caben, ocho y la tapa de la mitad.
-        parte, tapa = rr.get ("mesa_parte", -1), rr.get ("mesa_mitad_tapa", -1)
-        m9, vuelve = rr.get ("mesa_mitad_9", -1), rr.get ("mesa_mitad_vuelve", -1)
-        print ("mitad    en %s partida %d, tapa de %d px; la tapa pone delante el pad 9: %d, y vuelve al 1: %d"
-               % (nombre, parte, tapa, m9, vuelve))
-        if fila < 40:
-            malas.append ("en %s la fila de la mesa mide %d: nunca por debajo del dedo, 40" % (nombre, fila))
-        #  codigo#6: partida, la tarjeta se ajusta a las ocho; filas de 64 y 72 eran aire.
-        if parte == 1 and fila > 48:
-            malas.append ("en %s la mesa partida deja filas de %d: la tarjeta tiene que ajustarse a las ocho, "
-                          "no repartir el aire (48 como mucho)" % (nombre, fila))
-        if parte != 1 or tapa < 40 or m9 != 1 or vuelve != 1:
-            malas.append ("en %s dieciseis filas no caben a 40 y la mesa no va en dos paginas de ocho (partida %d, "
-                          "tapa %d, pad 9 %d, vuelve %d)" % (nombre, parte, tapa, m9, vuelve))
+        if fila < 24:
+            malas.append ("en %s la fila de la mesa mide %d: nunca por debajo de 24" % (nombre, fila))
         if filasAlto < 0 or vistaAlto < 0 or filasAlto > vistaAlto:
             malas.append ("en %s las dieciseis filas miden %d y el Viewport ensena %d: no entran todas"
                           % (nombre, filasAlto, vistaAlto))
+        #  Las dieciseis a la vez, sin paginas: del telefono, «las 16 a la vez (como antes)».
+        if fila <= 0 or filasAlto < 16 * fila:
+            malas.append ("en %s la mesa ensena %d filas de %d: tienen que estar las dieciseis a la vez"
+                          % (nombre, filasAlto // fila if fila > 0 else 0, fila))
         if barraApp != 0:
             malas.append ("en %s la mesa lleva barra de %d px con las dieciseis filas a la vista: no hay nada "
                           "que arrastrar" % (nombre, barraApp))
-
-    #     codigo#5: y donde las dieciseis caben a un dedo -800x1280- no se parte.
-    r800 = corre ({"ZATI_SIZE": "800x1280"})
-    if r800 is None:
-        malas.append ("la app no publico la linea de canales en 800x1280")
-    else:
-        print ("mitad    en 800x1280 partida %d, filas de %d" % (r800.get ("mesa_parte", -1), r800.get ("mesa_fila", -1)))
-        if r800.get ("mesa_parte", -1) != 0 or r800.get ("mesa_mitad_tapa", -1) != 0:
-            malas.append ("en 800x1280 caben las dieciseis y la mesa va partida: la tapa de la mitad sobra")
 
     # 16. Y LOS HUECOS DE LA FILA SON TODOS EL MISMO. Del telefono, con la
     #     foto del knob en su celda de 44: «la distancia que quiero que
@@ -1001,8 +981,8 @@ def main():
         if bancos != 2:
             malas.append ("en %s la pagina de CANALES lleva %d chips de banco y son dos: A y B, dieciseis y dieciseis"
                           % (nombre, bancos))
-        if fila < 40:
-            malas.append ("en %s la fila de CANALES mide %d: nunca por debajo del dedo, 40" % (nombre, fila))
+        if fila < 24:
+            malas.append ("en %s la fila de CANALES mide %d: nunca por debajo de 24" % (nombre, fila))
         if filasAlto < 0 or vistaAlto < 0 or filasAlto > vistaAlto:
             malas.append ("en %s las dieciseis filas de CANALES miden %d y el Viewport ensena %d: no entran todas"
                           % (nombre, filasAlto, vistaAlto))

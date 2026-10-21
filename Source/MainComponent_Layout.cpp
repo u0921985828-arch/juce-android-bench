@@ -5673,12 +5673,8 @@ void MainComponent::maquetaMix()
         const int masterH = Metrics::btn + Metrics::xs;
         const int mixFurniture = Ficha::cromoConPestanas (tabsH)
                                + Metrics::btn + masterH + Metrics::lg;
-        const int columnas = wideFace ? 2 : 1;
-        juce::Rectangle<int> inner, mixTabs;
-        //  codigo#6: la tarjeta se monta para las filas que lleva; partida, para ocho.
-        auto montaFicha = [&] (int filas)
-        {
-        inner = sheetFromBottom (mixSheet, mixFurniture + filas * filaPlena);
+        auto inner = sheetFromBottom (mixSheet,
+                                      mixFurniture + (wideFace ? kMixFilas / 2 : kMixFilas) * filaPlena);
         auto titleRow = inner.removeFromTop (Metrics::hit);
         mixCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
         inner.removeFromTop (Metrics::sm);
@@ -5707,8 +5703,19 @@ void MainComponent::maquetaMix()
             //  son los treinta y dos canales en dos de dieciseis (canBank).
             //  Las mismas tapas, el mismo sitio y las mismas letras: «banco
             //  B» es lo mismo en las dos paginas de la ficha.
-            //  codigo#5: se maquetan abajo, cuando ya se sabe si va la tapa de la mitad.
-            mixTabs = inner.removeFromTop (Metrics::tab);
+            auto tabs = inner.removeFromTop (Metrics::tab);
+            if (mixPage == mixPageCanales)
+            {
+                juce::TextButton* pb[kCanBancos] = { mixBankBtns[0], mixBankBtns[1] };
+                layoutModuleBar (tabs, pb, 0, kCanBancos);
+                for (int b = kCanBancos; b < kNumBanks; ++b) mixBankBtns[b]->setBounds ({});
+            }
+            else
+            {
+                juce::TextButton* pb[kNumBanks] = { mixBankBtns[0], mixBankBtns[1],
+                                                   mixBankBtns[2], mixBankBtns[3] };
+                layoutModuleBar (tabs, pb, 0, kNumBanks);
+            }
             inner.removeFromTop (Metrics::sm);
         }
 
@@ -5757,35 +5764,12 @@ void MainComponent::maquetaMix()
         //  Dos columnas de ocho parten el arrastre por la mitad y usan el
         //  ancho que la pantalla ya tiene. Cada fila sigue siendo la misma
         //  fila: no se quita ningun control, se reparte el sitio.
-        };
-        montaFicha (kMixFilas / columnas);
-        //  codigo#5: dieciseis que no caben a un dedo van en dos paginas de ocho.
-        mixParte = inner.getHeight() / (kPadsPerBank / columnas) < Metrics::hit;
-        if (mixParte) montaFicha (kMixFilas / 2 / columnas);   // codigo#6
+        const int columnas = wideFace ? 2 : 1;
         //  Dieciseis pads de un banco o dieciseis canales de un banco: la
         //  cuenta es la misma, que es lo que hace que la pagina de canales no
         //  traiga geometria nueva.
-        const int cuantas  = mixParte ? kPadsPerBank / 2 : kPadsPerBank;
+        const int cuantas  = kPadsPerBank;
         const int porCol   = cuantas / columnas;
-        const int desde    = mixParte ? mixMitad * cuantas : 0;
-        {
-            const int bancos = mixPage == mixPageCanales ? kCanBancos : kNumBanks;
-            juce::TextButton* pb[kNumBanks + 1] = {};
-            int n = 0;
-            for (int b = 0; b < bancos; ++b) pb[n++] = mixBankBtns[b];
-            for (int b = bancos; b < kNumBanks; ++b) mixBankBtns[b]->setBounds ({});
-            mixMitadBtn.setVisible (mixParte);
-            if (mixParte)
-            {
-                const int base = (mixPage == mixPageCanales ? canBank : mixBank) * kPadsPerBank + desde;
-                mixMitadBtn.setButtonText (juce::String (base + 1) + "-" + juce::String (base + cuantas));
-                mixMitadBtn.setTitle (T (mixPage == mixPageCanales ? "CANAL" : "PAD") + " " + mixMitadBtn.getButtonText());   // accesibilidad#23
-                pb[n++] = &mixMitadBtn;
-            }
-            else
-                mixMitadBtn.setBounds ({});
-            layoutModuleBar (mixTabs, pb, 0, n);
-        }
         //  LA FILA MIDE LO QUE LA TARJETA DA, para que entren todas. Del
         //  telefono: «tienen que entrar todos los canales en el pop up del
         //  mixer, o si no es una jodienda para girar los knobs de paneo». Lo
@@ -5812,14 +5796,8 @@ void MainComponent::maquetaMix()
         //  que la de canales va en dos bancos de dieciseis (canBank) son las
         //  mismas dieciseis filas que la de pads, y entran igual: del
         //  telefono, «asi entraria en una pantalla como esta en los pads».
-        const bool reparte = inner.getHeight() / porCol >= (mixParte ? (int) Metrics::hit : (int) Metrics::xl);
-        //  codigo#5: partida, las ocho llenan el cajon y los mandos se quedan a su dedo.
-        int rowH = reparte ? (mixParte ? inner.getHeight() / porCol : juce::jmin (filaPlena, inner.getHeight() / porCol))
-                           : filaPlena;
-        auto alDedo = [] (juce::Rectangle<int> r)
-        {
-            return r.withSizeKeepingCentre (r.getWidth(), juce::jmin (r.getHeight(), (int) Metrics::dedoPrincipal));
-        };
+        const bool reparte = inner.getHeight() / porCol >= Metrics::xl;
+        int rowH = reparte ? juce::jmin (filaPlena, inner.getHeight() / porCol) : filaPlena;
         //  Y DONDE HAY ARRASTRE, LAS FILAS QUE SE VEN SE REPARTEN EL CAJON.
         //
         //  El cajon encajaba a un numero entero de filas PLENAS y lo que
@@ -5907,12 +5885,7 @@ void MainComponent::maquetaMix()
             //  dieciseis pads del suyo mas abajo.
             for (int c = canBank * kPadsPerBank; c < (canBank + 1) * kPadsPerBank; ++c)
             {
-                const int enBanco = c - canBank * kPadsPerBank - desde;
-                const bool aLaVista = enBanco >= 0 && enBanco < cuantas;   // codigo#5
-                for (juce::Component* k : { (juce::Component*) canFaders[c], (juce::Component*) canMutes[c],
-                                            (juce::Component*) canSolos[c], (juce::Component*) canRotulos[c] })
-                    if (k != nullptr) { k->setVisible (aLaVista); if (! aLaVista) k->setBounds ({}); }
-                if (! aLaVista) continue;
+                const int enBanco = c - canBank * kPadsPerBank;
                 if (enBanco % porCol == 0)
                     columna = (enBanco / porCol < columnas - 1)
                                 ? Lang::takeStart (rows, anchoCol) : rows;
@@ -5926,9 +5899,9 @@ void MainComponent::maquetaMix()
                 //  al reves -la M en el borde y la S a un pixel- con el
                 //  parrafo de arriba diciendo que no; la foto del telefono lo
                 //  enseno. Tests/canales.py, regla 18.
-                canSolos[c]->setBounds (alDedo (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa)));
+                canSolos[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
-                canMutes[c]->setBounds (alDedo (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa)));
+                canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
 
                 canFaders[c]->setBounds (row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
@@ -5937,13 +5910,7 @@ void MainComponent::maquetaMix()
         else
         for (int i = mixBank * kPadsPerBank; i < (mixBank + 1) * kPadsPerBank; ++i)
         {
-            const int enBanco = i - mixBank * kPadsPerBank - desde;
-            const bool aLaVista = enBanco >= 0 && enBanco < cuantas;   // codigo#5
-            for (juce::Component* k : { (juce::Component*) mixFaders[i], (juce::Component*) mixPans[i],
-                                        (juce::Component*) mixEstereos[i], (juce::Component*) mixMutes[i],
-                                        (juce::Component*) mixSolos[i] })
-                if (k != nullptr) { k->setVisible (aLaVista); if (! aLaVista) k->setBounds ({}); }
-            if (! aLaVista) continue;
+            const int enBanco = i - mixBank * kPadsPerBank;
             if (enBanco % porCol == 0)
                 columna = (enBanco / porCol < columnas - 1)
                             ? Lang::takeStart (rows, anchoCol) : rows;
@@ -6051,9 +6018,9 @@ void MainComponent::maquetaMix()
             if (sw < 0) { conPan = false; sw = anchoSw (2, false); }
             if (sw < 0) sw = kSwMin;
 
-            mixSolos[i]->setBounds (alDedo (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa)));
+            mixSolos[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));
             row.removeFromRight (Metrics::halfGap);
-            mixMutes[i]->setBounds (alDedo (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa)));
+            mixMutes[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));
             row.removeFromRight (Metrics::halfGap);
             //  Y EL ST ACTIVO EN TODA MUESTRA. Estuvo apagado en la de un
             //  canal -«no hay lado que abrir ni cerrar»- y del telefono llego
@@ -6063,7 +6030,7 @@ void MainComponent::maquetaMix()
             mixEstereos[i]->setEnabled (true);
             if (conST)
             {
-                mixEstereos[i]->setBounds (alDedo (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa)));
+                mixEstereos[i]->setBounds (row.removeFromRight (sw).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
             }
             else

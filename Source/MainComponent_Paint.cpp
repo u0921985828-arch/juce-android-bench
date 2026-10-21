@@ -1888,13 +1888,12 @@ void MainComponent::paintMixRows (juce::Graphics& g)
     //  coordinates they were left holding - straight over the sixteen in front.
     for (int i = mixBank * kPadsPerBank; i < (mixBank + 1) * kPadsPerBank; ++i)
     {
-        if (mixFaders[i] == nullptr || mixFaders[i]->getBounds().isEmpty()) continue;   // codigo#5
+        if (mixFaders[i] == nullptr) continue;
         const auto fr = mixFaders[i]->getBounds();
         const auto frag = Zati::colour (padZati[(size_t) i]);
         const bool has = padHasSample[(size_t) i];
 
-        auto chip = juce::Rectangle<int> (mixRowX[(size_t) i] + 4, fr.getY() + 4, 22, fr.getHeight() - 8)
-                        .withSizeKeepingCentre (22, juce::jmin (fr.getHeight() - 8, Metrics::hit - 8));   // codigo#5
+        auto chip = juce::Rectangle<int> (mixRowX[(size_t) i] + 4, fr.getY() + 4, 22, fr.getHeight() - 8);
         //  El chip de un canal sin sonido: marca medida contra la tarjeta, no
         //  el borde de la placa de pads - que en carcasa oscura sale mas claro
         //  que el fondo y hace que un canal vacio destaque mas que uno cargado.
