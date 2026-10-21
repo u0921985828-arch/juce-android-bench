@@ -359,7 +359,6 @@ void MainComponent::resized()
     maquetaSeq (full);
     maquetaTour();
 
-    anilloFoco.vuelveASituar();   // accesibilidad#7
     excluyeGestosDeAtras();       // accesibilidad#29
 }
 

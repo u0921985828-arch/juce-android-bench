@@ -194,13 +194,10 @@ def main():
            "de %d deslizadores, %d piden mas de 100 gestos de punta a punta y %d leen una cifra cruda%s (accesibilidad#20, #21)"
            % (r.get ("deslizadores", 0), r.get ("pasos_finos", -1), r.get ("cifra_cruda", -1),
               (": " + r.get ("crudos", "")) if r.get ("crudos") else ""))
-    regla ("foco", r.get ("foco_boton", -1) > 20 and r.get ("foco_mando", -1) > 20 and r.get ("foco_dedo", -1) == 0,
-           "el foco de teclado cambia %d pixeles en un boton y %d en un mando (y %d con el dedo abajo) (accesibilidad#7)"
-           % (r.get ("foco_boton", -1), r.get ("foco_mando", -1), r.get ("foco_dedo", -1)))
-    #  accesibilidad#29: en el telefono el recuadro se quedaba en PAD sin teclado ninguno.
-    regla ("foco tras toque", r.get ("foco_toque", -1) == 0 and r.get ("foco_tecla", -1) > 20,
-           "el foco que llega tras un toque cambia %d pixeles (0) y tras una tecla %d (accesibilidad#29)"
-           % (r.get ("foco_toque", -1), r.get ("foco_tecla", -1)))
+    #  accesibilidad#29: sin recuadro de foco; lo pulsado ya se ve y el recuadro flotaba sobre otras capas.
+    regla ("sin recuadro", r.get ("foco_boton", -1) == 0 and r.get ("foco_mando", -1) == 0,
+           "darle el foco cambia %d pixeles en un boton y %d en un mando (0: no hay recuadro)"
+           % (r.get ("foco_boton", -1), r.get ("foco_mando", -1)))
     regla ("negras", r.get ("negra_min", 0) >= 24,
            "la tecla negra mas estrecha se toca en %d px, con 24 de minimo (accesibilidad#18)" % r.get ("negra_min", 0))
     regla ("cifras", r.get ("sin_letra", -1) == 0,

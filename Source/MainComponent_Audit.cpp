@@ -13145,9 +13145,9 @@ void MainComponent::auditFeria()
         mira (*this);
     }
 
-    //  ab8. El foco de teclado se ve (accesibilidad#7): pixeles que cambian
-    //  al darle el foco a un boton y a un mando de la cara, y con el dedo abajo.
-    int focoBoton = -1, focoMando = -1, focoDedo = -1, focoToque = -1, focoTecla = -1;
+    //  ab8. Darle el foco no pinta nada (accesibilidad#29): pixeles que cambian
+    //  al darle el foco a un boton y a un mando de la cara.
+    int focoBoton = -1, focoMando = -1;
     {
         juce::Button* bt = nullptr; juce::Slider* sl = nullptr;
         std::function<void (juce::Component&)> busca = [&] (juce::Component& c)
@@ -13161,41 +13161,22 @@ void MainComponent::auditFeria()
             }
         };
         busca (*this);
-        auto cambian = [this] (juce::Component* c, bool dedo)
+        auto cambian = [this] (juce::Component* c)
         {
             if (c == nullptr) return -1;
-            juce::Component::unfocusAllComponents(); sigueFoco (nullptr, false);
+            juce::Component::unfocusAllComponents();
             const auto zona = getLocalArea (c, c->getLocalBounds()).expanded (Metrics::xs).getIntersection (getLocalBounds());
             const auto antes = createComponentSnapshot (zona, true, 1.0f);
-            c->grabKeyboardFocus(); sigueFoco (c, dedo);
+            c->grabKeyboardFocus();
             const auto luego = createComponentSnapshot (zona, true, 1.0f);
             int n = 0;
             for (int y = 0; y < antes.getHeight(); ++y)
                 for (int x = 0; x < antes.getWidth(); ++x)
                     if (antes.getPixelAt (x, y) != luego.getPixelAt (x, y)) ++n;
-            juce::Component::unfocusAllComponents(); sigueFoco (nullptr, false);
+            juce::Component::unfocusAllComponents();
             return n;
         };
-        focoBoton = cambian (bt, false); focoMando = cambian (sl, false); focoDedo = cambian (bt, true);
-        //  accesibilidad#29: por el camino real; el foco que llega tras un toque, sin tecla, no pinta.
-        auto real = [this, &cambian] (juce::Component* c, bool tecla)
-        {
-            if (c == nullptr) return -1;
-            juce::Component::unfocusAllComponents(); sigueFoco (nullptr, false);
-            const auto zona = getLocalArea (c, c->getLocalBounds()).expanded (Metrics::xs).getIntersection (getLocalBounds());
-            const auto antes = createComponentSnapshot (zona, true, 1.0f);
-            if (tecla) anilloFoco.marcaTecla(); else anilloFoco.marcaToque();
-            anilloFoco.globalFocusChanged (c);
-            const auto luego = createComponentSnapshot (zona, true, 1.0f);
-            int n = 0;
-            for (int y = 0; y < antes.getHeight(); ++y)
-                for (int x = 0; x < antes.getWidth(); ++x)
-                    if (antes.getPixelAt (x, y) != luego.getPixelAt (x, y)) ++n;
-            sigueFoco (nullptr, false);
-            juce::ignoreUnused (cambian);
-            return n;
-        };
-        focoToque = real (bt, false); focoTecla = real (bt, true);
+        focoBoton = cambian (bt); focoMando = cambian (sl);   // accesibilidad#29: sin recuadro
     }
 
     //  ab9. La negra mas estrecha del teclado, por donde se toca (accesibilidad#18).
@@ -13282,7 +13263,7 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
-              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"x_tapada\":" << xTapada << ",\"deslizadores\":" << deslizadores << ",\"pasos_finos\":" << pasosFinos << ",\"cifra_cruda\":" << cifraCruda << ",\"foco_boton\":" << focoBoton << ",\"foco_mando\":" << focoMando << ",\"foco_dedo\":" << focoDedo << ",\"foco_toque\":" << focoToque << ",\"foco_tecla\":" << focoTecla << ",\"negra_min\":" << negraMin << ",\"bitacora_abre\":\"" << bitacoraAbre << "\"" << ",\"toque_sube\":" << toqueSube << ",\"toque_baja\":" << toqueBaja << ",\"crudos\":\"" << crudos.trim() << "\"" << ",\"piel_cajas\":\"" << pielCajas << "\",\"nombre_fuente\":" << nombreFuente << ",\"parte_en\":\"" << parteEn.replace ("\"", "'").replace ("\u2066", "").replace ("\u2069", "") << "\"" << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"sin_letra\":" << sinLetra << ",\"en_ingles\":" << enIngles << ",\"cruces\":" << cruces
+              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"x_tapada\":" << xTapada << ",\"deslizadores\":" << deslizadores << ",\"pasos_finos\":" << pasosFinos << ",\"cifra_cruda\":" << cifraCruda << ",\"foco_boton\":" << focoBoton << ",\"foco_mando\":" << focoMando << ",\"negra_min\":" << negraMin << ",\"bitacora_abre\":\"" << bitacoraAbre << "\"" << ",\"toque_sube\":" << toqueSube << ",\"toque_baja\":" << toqueBaja << ",\"crudos\":\"" << crudos.trim() << "\"" << ",\"piel_cajas\":\"" << pielCajas << "\",\"nombre_fuente\":" << nombreFuente << ",\"parte_en\":\"" << parteEn.replace ("\"", "'").replace ("\u2066", "").replace ("\u2069", "") << "\"" << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"sin_letra\":" << sinLetra << ",\"en_ingles\":" << enIngles << ",\"cruces\":" << cruces
               << ",\"pads_marcables\":" << padsMarcables << ",\"pad_elegido\":" << padElegido
               << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
               << ",\"estado_anuncia\":" << estadoAnuncia

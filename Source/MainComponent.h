@@ -17,7 +17,6 @@
 #include "SpectrumDisplay.h"
 #include "ZatiLookAndFeel.h"
 #include "ZatiSlider.h"
-#include "AnilloFoco.h"
 #include "Boton.h"
 #include "PadButton.h"
 #include "ProjectStore.h"
@@ -2358,7 +2357,6 @@ private:
         void mouseUp (const juce::MouseEvent&) override { if (alSoltar) alSoltar(); }
     };
     OidoDeToques oidoDeToques;
-    AnilloFoco anilloFoco;
     double estadoTrasToqueMs = -1.0;
     static constexpr double kEstadoTrasToqueMs = 1500.0;
 
@@ -4656,7 +4654,6 @@ private:
     void bombeaAudioDePrueba();
     void applySkin();
     void pintaCajaNombre (juce::TextEditor&);
-    void sigueFoco (juce::Component* c, bool dedo) { anilloFoco.sigue (c, dedo); }   // accesibilidad#7
 
     //  Si hay una ficha (o el panel XY) delante de la maquina. Ver el cuerpo.
     bool caraTapada();

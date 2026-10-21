@@ -514,10 +514,6 @@ MainComponent::MainComponent()
     //  Ver `OidoDeToques`: cada dedo que se levanta deja el estado encargado.
     oidoDeToques.alSoltar = [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; };
     juce::Desktop::getInstance().addGlobalMouseListener (&oidoDeToques);
-    addChildComponent (anilloFoco);
-    juce::Desktop::getInstance().addFocusChangeListener (&anilloFoco);
-    juce::Desktop::getInstance().addGlobalMouseListener (&anilloFoco);   // accesibilidad#29
-    addKeyListener (&anilloFoco);
 
     //  Ver textoInvalidoConserva: todos los mandos de la cara y de las fichas.
     textoInvalidoConserva (*this);
@@ -9089,9 +9085,6 @@ void MainComponent::closeAllSheets()
 MainComponent::~MainComponent()
 {
     juce::Desktop::getInstance().removeGlobalMouseListener (&oidoDeToques);
-    juce::Desktop::getInstance().removeFocusChangeListener (&anilloFoco);
-    juce::Desktop::getInstance().removeGlobalMouseListener (&anilloFoco);
-    removeKeyListener (&anilloFoco);
 
     //  EL PUENTE MIDI SE CIERRA ANTES QUE NADA, y no es una precaucion: es un
     //  uso despues de liberar, todas las veces, con la salida encendida.
