@@ -6,14 +6,15 @@
 #
 #      ZATI_FONDO=x.png ZATI_SKIN=n ./Zati
 #
-#  1. SE VE: en la misma fila, el punto del brillo contra el extremo opuesto, dE >= 1.
-#  2. NO ENSUCIA: ningun pixel se separa de su vecino mas de 3 niveles por canal (el
-#     degradado salta de uno en uno, la textura suave suma dos; el grano, seis), y una fila
-#     entera no abre mas de 6 dE (muy leve).
+#  1. SE VE: en la misma fila, el punto del brillo contra el extremo opuesto, dE >= 1,
+#     medido sobre la media de 31 px para que la textura no tape el brillo.
+#  2. NO ENSUCIA: ningun pixel se separa de su vecino mas de 8 niveles por canal (sin
+#     escalones; el grano lo caza la forma de la regla 4), y una fila de la media de 31 px
+#     no abre mas de 12 dE (el degradado da 3 a 5; las manchas grandes del material, el resto).
 #  3. NO COME CONTRASTE: la tinta contra el pixel mas claro del fondo sigue en MIN_TEXT.
 #  4. LA TEXTURA SE LEE COMO MATERIAL: quitado el degradado (media de 31 px), lo que
-#     queda tiene cuerpo (desviacion >= 0.8 niveles, pico <= 6) y es una forma y no
-#     ruido (autocorrelacion a 3 px >= 0.4; el grano de antes da ~0).
+#     queda tiene cuerpo a un palmo (desviacion >= 3 niveles, pico <= 24) y es una forma y
+#     no ruido (autocorrelacion a 3 px >= 0.4; el grano de antes da ~0).
 #
 #      python3 Tests/acabado.py
 #      ACABADO_RUIDO=1 python3 Tests/acabado.py     # el grano de antes: tiene que fallar
@@ -56,6 +57,24 @@ def fondo (skin):
                 q[y][x] = sum (max (0, min (255, ((p >> s) & 255) + d)) << s for s in (16, 8, 0))
     return q
 
+def media (q, R=15):
+    #  acabado: media de 31 px por canal, con el borde recortado a la imagen.
+    out = [[0] * W for _ in range (H)]
+    for s in (16, 8, 0):
+        col = [[0] * (W + 1) for _ in range (H + 1)]
+        for y in range (H):
+            fila, acc = q[y], 0
+            for x in range (W):
+                acc += (fila[x] >> s) & 255
+                col[y + 1][x + 1] = col[y][x + 1] + acc
+        for y in range (H):
+            y0, y1 = max (0, y - R), min (H, y + R + 1)
+            for x in range (W):
+                x0, x1 = max (0, x - R), min (W, x + R + 1)
+                v = (col[y1][x1] - col[y0][x1] - col[y1][x0] + col[y0][x0]) / ((y1 - y0) * (x1 - x0))
+                out[y][x] |= int (round (v)) << s
+    return out
+
 def textura (nombre, q):
     #  acabado: residuo tras quitar el degradado, en la ventana central de 200x200.
     lv = [[(((p >> 16) & 255) + ((p >> 8) & 255) + (p & 255)) / 3.0 for p in r] for r in q]
@@ -75,8 +94,8 @@ def textura (nombre, q):
     cov = sum ((res[y][x] - m) * (res[y][x + L] - m) + (res[y][x] - m) * (res[y + L][x] - m)
                for y in range (N - L) for x in range (N - L)) / (2.0 * (N - L) ** 2)
     ac = cov / var if var > 1e-9 else 0.0
-    mide ("%s: la textura se lee como material" % nombre, sd >= 0.8 and pico <= 6.0 and ac >= 0.4,
-          "desviacion %.2f (>= 0.8)  pico %.1f (<= 6)  forma %.2f (>= 0.4)" % (sd, pico, ac))
+    mide ("%s: la textura se lee como material" % nombre, sd >= 3.0 and pico <= 24.0 and ac >= 0.4,
+          "desviacion %.2f (>= 3)  pico %.1f (<= 24)  forma %.2f (>= 0.4)" % (sd, pico, ac))
 
 tabla = parse()
 for i, nombre in enumerate (SKINS):
@@ -84,8 +103,9 @@ for i, nombre in enumerate (SKINS):
     if q is None:
         mide ("%s: el fondo se dibuja" % nombre, False, "la app no escribio el PNG")
         continue
+    m = media (q)
     yb = int (H * 0.05)
-    se_ve = dE (q[yb][int (W * 0.2)], q[yb][W - 1])
+    se_ve = dE (m[yb][int (W * 0.2)], m[yb][W - 1])
     mide ("%s: el brillo se ve" % nombre, se_ve >= 1.0, "dE %.2f (liston 1.0)" % se_ve)
 
     salto = lambda a, b: max (abs (((a >> s) & 255) - ((b >> s) & 255)) for s in (16, 8, 0))
@@ -93,9 +113,9 @@ for i, nombre in enumerate (SKINS):
     for y in range (0, H - 1, 3):
         for x in range (0, W - 1, 3):
             vecino = max (vecino, salto (q[y][x], q[y][x + 1]), salto (q[y][x], q[y + 1][x]))
-    fila = max (dE (min (r), max (r)) for r in (q[y] for y in range (0, H, 40)))
-    mide ("%s: el brillo no ensucia" % nombre, vecino <= 3 and fila <= 6.0,
-          "vecino %d niveles (<= 3)  fila %.2f dE (<= 6)" % (vecino, fila))
+    fila = max (dE (min (r), max (r)) for r in (m[y] for y in range (0, H, 40)))
+    mide ("%s: el brillo no ensucia" % nombre, vecino <= 8 and fila <= 12.0,
+          "vecino %d niveles (<= 8)  fila %.2f dE (<= 12)" % (vecino, fila))
 
     textura (nombre, q)
 

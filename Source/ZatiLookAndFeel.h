@@ -331,15 +331,22 @@ namespace ZatiColours
     //  acabado: brillo suave, sin ruido; cuanto, por carcasa (esmalte, goma, acero, aluminio).
     inline float brilloDelChasis (int skin) noexcept
     {
-        static const float alfa[4] = { 0.35f, 0.035f, 0.35f, 0.07f };
+        static const float alfa[4] = { 0.35f, 0.035f, 0.35f, 0.03f };
         return alfa[((skin % 4) + 4) % 4];
     }
 
     //  textura: cuanto relieve lleva cada carcasa, en alfa por desviacion tipica.
     inline float relieveDelChasis (int skin) noexcept
     {
-        static const float alfa[4] = { 0.011f, 0.010f, 0.014f, 0.036f };
+        static const float alfa[4] = { 0.044f, 0.040f, 0.056f, 0.420f };
         return alfa[((skin % 4) + 4) % 4];
+    }
+
+    //  textura: cuanto pesa la luz frente a la sombra; LACA lleva tinta clara y la luz se la come.
+    inline float luzDelRelieve (int skin) noexcept
+    {
+        static const float luz[4] = { 1.0f, 1.0f, 1.0f, 0.27f };
+        return luz[((skin % 4) + 4) % 4];
     }
 
     //  acabado: el fondo horneado, degradado mas un brillo radial desde arriba a la izquierda.
@@ -359,7 +366,7 @@ namespace ZatiColours
         g.fillRect (full);
 
         //  textura: la baldosa de PixelLab a x4 con remuestreo suave, luz y sombra sobre el color.
-        const float amp = relieveDelChasis (currentSkin);
+        const float amp = relieveDelChasis (currentSkin), luz = luzDelRelieve (currentSkin);
         //  x4 bilineal hecho aqui, que el relleno en mosaico de JUCE escala a escalones.
         constexpr int n = Texturas::kLado, k = 4, lado = n * k;
         const auto* rel = Texturas::kRelieve[currentSkin];
@@ -375,7 +382,7 @@ namespace ZatiColours
                               + (en (x0, y0 + 1) * (1 - ax) + en (x0 + 1, y0 + 1) * ax) * ay;
                 const float d = v / 40.0f;
                 const auto c = d >= 0.0f ? juce::Colours::white : juce::Colours::black;
-                t.setPixelAt (x, y, c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp)));
+                t.setPixelAt (x, y, c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp * (d >= 0.0f ? luz : 1.0f))));
             }
         g.setTiledImageFill (t, 0, 0, 1.0f);
         g.fillRect (full);
