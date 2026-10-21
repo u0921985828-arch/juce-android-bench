@@ -3672,9 +3672,14 @@ void MainComponent::maquetaSet (juce::Rectangle<int> full)
             inner.reduce (Metrics::panelSangria, 0);
             const int gAcciones = inner.getBottom();
             {
+                //  android#2: ZIP e IMPORTAR en su fila; cuatro en una cortaban a 280.
+                auto copia = inner.removeFromBottom (Metrics::btn);
+                juce::TextButton* pc[2] = { &projZipButton, &projImportButton };
+                layoutModuleBar (copia, pc, 0, 2);
+                inner.removeFromBottom (Metrics::xs);
                 auto fila = inner.removeFromBottom (Metrics::btn);
-                juce::TextButton* pe[4] = { &projExportButton, &projKitButton, &projZipButton, &projImportButton };   // android#2
-                layoutModuleBar (fila, pe, 0, 4);
+                juce::TextButton* pe[2] = { &projExportButton, &projKitButton };
+                layoutModuleBar (fila, pe, 0, 2);
             }
             inner.removeFromBottom (Metrics::xs);
 
