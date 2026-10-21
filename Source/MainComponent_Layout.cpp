@@ -5774,6 +5774,7 @@ void MainComponent::maquetaMix()
             {
                 const int base = (mixPage == mixPageCanales ? canBank : mixBank) * kPadsPerBank + desde;
                 mixMitadBtn.setButtonText (juce::String (base + 1) + "-" + juce::String (base + cuantas));
+                mixMitadBtn.setTitle (T (mixPage == mixPageCanales ? "CANAL" : "PAD") + " " + mixMitadBtn.getButtonText());   // accesibilidad#23
                 pb[n++] = &mixMitadBtn;
             }
             else
