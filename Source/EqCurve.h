@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "Accesible.h"
 #include "Eq5.h"
 #include "Analizador.h"
 #include "Zati.h"
@@ -56,6 +57,26 @@
 class EqCurve : public juce::Component
 {
 public:
+    //  accesibilidad#0: cinco bandas por veinticinco ganancias, de -12 a +12 dB.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        acc.cuantas = [] { return Eq5::kBands * 25; };
+        acc.dice = [this] (int i)
+        {
+            const int b = i / 25;
+            const float hz = fuente != nullptr ? fuente->freqDe (b) : Eq5::kFreqDef[b];
+            return T ("Banda %1, %2 Hz: %3 dB", juce::String (b + 1), juce::String (juce::roundToInt (hz)))
+                       .replace ("%3", juce::String (i % 25 - 12));
+        };
+        acc.pulsa = [this] (int i)
+        {
+            const int b = i / 25;
+            const float hz = fuente != nullptr ? fuente->freqDe (b) : Eq5::kFreqDef[b];
+            if (onBanda) onBanda (b, hz, (float) (i % 25 - 12));
+        };
+        return Accesible::crea (*this, acc);
+    }
+
     static juce::Colour tintaRotulo() { return ZatiColours::lcdFg.withAlpha (0.70f); }   // accesibilidad#12
     static constexpr float cuerpoRotulo = Metrics::fTiny;
     static juce::Colour tintaCurva() { return ZatiColours::lcdFg; }   // el acento casi negro no se ve en el cristal (accesibilidad#9)
@@ -219,6 +240,7 @@ public:
     }
 
 private:
+    Accesible::Cursor acc;   // accesibilidad#0
     //  EL SUELO DEL ANALIZADOR. -78 dB deja ver el ruido de fondo de una
     //  grabacion de movil sin que el dibujo se pegue al borde de abajo, y por
     //  encima de -90, donde ya solo hay ruido de cuantizacion.

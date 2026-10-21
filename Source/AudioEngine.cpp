@@ -491,7 +491,8 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     if (midiOutOn.load (std::memory_order_relaxed))
         midiOut.push ({ (std::uint8_t) slot,
                         (std::uint8_t) juce::jlimit (1, 127, (int) std::lround (vel * 127.0f)),
-                        true, (std::int8_t) juce::jlimit (-48, 48, extraSemis) });   // secuenciador#11
+                        true, (std::int8_t) juce::jlimit (-48, 48, extraSemis),
+                        (std::uint16_t) (gate > 0 ? juce::jlimit (1, 60000, (int) std::lround (gate * 1000.0 / systemSampleRate)) : 0) });   // secuenciador#11
 
     // Choke group: fade out any other pad's voices sharing this pad's group.
     const int group = padChoke[(size_t) slot].load (std::memory_order_relaxed);
@@ -1044,6 +1045,9 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     // 2. Clear output.
     out.clear (startSample, numSamples);
 
+    Mezcla mz;   // codigo#22: lo que las fases comparten, en la pila como antes
+    mz.out = &out; mz.startSample = startSample; mz.numSamples = numSamples;
+
     // 2b. Work out, once per block, where each pad's signal is going: how
     //     much of it into each effect bus, and how much is left for the dry
     //     path. The tone effects take a pad off dry by the same amount they
@@ -1052,30 +1056,23 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //
     //     Sends are smoothed per block for the same reason every other knob
     //     here is: a raw jump in a gain that is being summed is a click.
-    const int  busChans = juce::jmin (2, out.getNumChannels());
-    const float kSend   = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
-    float sendGain[kNumPads][kNumFx];
-    float dryGain[kNumPads];
+    mz.busChans = juce::jmin (2, out.getNumChannels());
+    mz.kSend = 1.0f - std::exp ((float) -numSamples / (0.020f * (float) systemSampleRate));
     //  Lo que el CANAL escala, aparte del seco: el medidor mide lo que pasa por
     //  el canal y no lo que le queda al pad despues de que los insertos se
     //  lleven su parte -con `dryGain` un inserto al 100% dejaria el medidor a
     //  cero justo cuando el canal mas trabaja-.
-    float canGain[kNumPads];
     //  El pan y el ancho QUE EL CANAL APORTA, resueltos por pad y por bloque
     //  igual que su ganancia: multiplicar o sumar algo que ya se calculaba no
     //  es una etapa nueva.
-    float canPan[kNumPads], canAnc[kNumPads];
     //  ALIMENTADOS POR BUS Y NO POR TIPO, que es el cambio entero de esta
     //  tanda visto desde aqui: un inserto tiene un bus por canal. Ver `busDe`.
-    bool  busFed[kNumBuses] = {};
     //  Y EL CANAL DEL PAD SE RECUERDA. El bucle que acumula en los buses corre
     //  por SEGMENTO -el transporte parte el bloque en los bordes de paso- asi
     //  que volver a leer el atomico alli seria leerlo varias veces por bloque
     //  y, peor, poder leer dos valores distintos dentro del mismo bloque si la
     //  cara mueve el pad de canal entre dos segmentos: la mitad del pad se iria
     //  a un bus y la otra mitad a otro.
-    int   canalDePad[kNumPads] = {};
-    bool  padSplit[kNumPads];
 
     //  Quien decide si un pad se salta el bucle largo es la MASCARA: si el pad
     //  no manda a nadie, `setPadSend` garantiza que sus envios valen cero y el
@@ -1083,20 +1080,72 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //  vivia ademas un `anyFxOpen` que sumaba las siete mezclas, y salio de la
     //  condicion hace tandas por lo que dice el parrafo de abajo: se quedo
     //  calculado y sin leer, o sea una cuenta por bloque que no decide nada.
-    const std::uint64_t sendMask = padSendMask.load (std::memory_order_relaxed);
+    mz.sendMask = padSendMask.load (std::memory_order_relaxed);
     //  Y la de los filtros, que decide lo mismo: un pad filtrado tiene que
     //  renderizarse APARTE aunque no mande a ningun efecto, porque no se puede
     //  filtrar una senal que ya se sumo con otras quince.
-    const std::uint64_t filtMask = padFiltMask.load (std::memory_order_relaxed);
+    mz.filtMask = padFiltMask.load (std::memory_order_relaxed);
     //  UNA vez por bloque, no una por pad: es un atomico que la cara mueve con
     //  el dedo y el bucle lo consulta sesenta y cuatro veces.
-    const int miraCan = canalMirado.load (std::memory_order_relaxed);
-    float picoCan = 0.0f;
+    mz.miraCan = canalMirado.load (std::memory_order_relaxed);
     //  Y si la MESA esta a la vista, los sesenta y cuatro: ver `miraMesa`.
-    const bool miraMesa = mesaMirada.load (std::memory_order_relaxed);
-    float picoPad[kNumPads];
-    for (auto& x : picoPad) x = 0.0f;
+    mz.miraMesa = mesaMirada.load (std::memory_order_relaxed);
+    for (auto& x : mz.picoPad) x = 0.0f;
 
+    //  codigo#22: cada fase se cronometra solo si el banco lo pide (midePorFases)
+    auto t = porFases ? juce::Time::getHighResolutionTicks() : 0;
+    int fase = 0;
+    const auto marca = [this, &t, &fase] () noexcept
+    {
+        if (porFases)
+        {
+            const auto a = juce::Time::getHighResolutionTicks();
+            tFase[fase] += a - t; ++nFase[fase]; t = a;
+        }
+        ++fase;
+    };
+
+    faseGanancias (mz); marca();
+    faseEventos(); marca();
+    faseSecuenciador (mz); marca();
+    faseBuses (mz); marca();
+    faseMonitor (mz); marca();
+    faseLimitador (mz); marca();
+    faseBombeoYVivo (mz); marca();
+    faseToma (mz); marca();
+    faseNivelMaster (mz); marca();
+    faseSonda (mz); marca();
+    faseOsciloscopio (mz); marca();
+    faseTono (mz); marca();
+    faseCabezales(); marca();
+    faseVu (mz); marca();
+}
+
+const char* AudioEngine::nombreFase (int f) noexcept
+{
+    static const char* const n[kFases] = { "ganancias", "eventos", "secuenciador", "buses", "monitor",
+                                           "limitador", "bombeo y vivo", "toma", "nivel master", "sonda",
+                                           "osciloscopio", "tono", "cabezales", "vu" };
+    return juce::isPositiveAndBelow (f, kFases) ? n[f] : "";
+}
+
+void AudioEngine::faseGanancias (Mezcla& mz) noexcept
+{
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
+    const float kSend = mz.kSend;
+    const std::uint64_t sendMask = mz.sendMask;
+    const std::uint64_t filtMask = mz.filtMask;
+    const int miraCan = mz.miraCan;
+    const bool miraMesa = mz.miraMesa;
+    auto& sendGain = mz.sendGain;
+    auto& dryGain = mz.dryGain;
+    auto& canGain = mz.canGain;
+    auto& canPan = mz.canPan;
+    auto& canAnc = mz.canAnc;
+    auto& busFed = mz.busFed;
+    auto& canalDePad = mz.canalDePad;
+    auto& padSplit = mz.padSplit;
     for (int p = 0; p < kNumPads; ++p)
     {
         const bool filtered = (filtMask >> (unsigned) p) & 1ull;
@@ -1243,157 +1292,174 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     for (int b = 0; b < kNumBuses; ++b)
         if (busFed[b] || busRinging[(size_t) b])
             fxBus[(size_t) b].clear (startSample, numSamples);
+}
 
-    auto renderVoices = [&] (int s, int nn) noexcept
+void AudioEngine::renderVoices (Mezcla& mz, int s, int nn) noexcept
+{
+    auto& out = *mz.out;
+    const int busChans = mz.busChans;
+    const std::uint64_t filtMask = mz.filtMask;
+    const int miraCan = mz.miraCan;
+    const bool miraMesa = mz.miraMesa;
+    auto& sendGain = mz.sendGain;
+    auto& dryGain = mz.dryGain;
+    auto& canGain = mz.canGain;
+    auto& canPan = mz.canPan;
+    auto& canAnc = mz.canAnc;
+    auto& canalDePad = mz.canalDePad;
+    auto& padSplit = mz.padSplit;
+    auto& picoCan = mz.picoCan;
+    auto& picoPad = mz.picoPad;
+    //  One pass over the pool: bucket the live voices by pad, and read
+    //  each pad's gain and pan ONCE instead of once per voice that
+    //  happens to be on it.
+    padFirstVoice.fill (-1);
+
+    float padGainNow[kNumPads], padPanNow[kNumPads], padAnchoNow[kNumPads];
+    bool  padTouched[kNumPads] = {};
+
+    //  Hasta el final de la cola de robo y no solo del pool: las voces de
+    //  detras de voiceLimit son las robadas con el pool lleno, que se
+    //  estan apagando y tienen que sonar sus 72 muestras.
+    for (int v = voiceLimit + kColaRobo - 1; v >= 0; --v)
     {
-        //  One pass over the pool: bucket the live voices by pad, and read
-        //  each pad's gain and pan ONCE instead of once per voice that
-        //  happens to be on it.
-        padFirstVoice.fill (-1);
+        auto& vc = voices[(size_t) v];
+        if (! vc.active || vc.slot < 0 || vc.slot >= kNumPads) continue;
 
-        float padGainNow[kNumPads], padPanNow[kNumPads], padAnchoNow[kNumPads];
-        bool  padTouched[kNumPads] = {};
-
-        //  Hasta el final de la cola de robo y no solo del pool: las voces de
-        //  detras de voiceLimit son las robadas con el pool lleno, que se
-        //  estan apagando y tienen que sonar sus 72 muestras.
-        for (int v = voiceLimit + kColaRobo - 1; v >= 0; --v)
+        if (! padTouched[vc.slot])
         {
-            auto& vc = voices[(size_t) v];
-            if (! vc.active || vc.slot < 0 || vc.slot >= kNumPads) continue;
-
-            if (! padTouched[vc.slot])
-            {
-                padTouched[vc.slot] = true;
-                padGainNow[vc.slot] = effectiveGain (vc.slot);
-                //  EL DEL PAD MAS EL DEL CANAL. El pad dice donde esta dentro
-                //  del grupo y el canal mueve el grupo entero; acotado porque
-                //  dos mandos al maximo no pueden sacar la señal del estereo.
-                padPanNow [vc.slot] = juce::jlimit (-1.0f, 1.0f,
-                                        padPan[(size_t) vc.slot].load (std::memory_order_relaxed)
-                                          + canPan[vc.slot]);
-                padAnchoNow[vc.slot] = juce::jlimit (0.0f, 2.0f,
-                                        padAncho[(size_t) vc.slot].load (std::memory_order_relaxed)
-                                          * canAnc[vc.slot]);
-            }
-
-            // Control-rate retarget: a looping or long voice keeps following
-            // its pad's VOLUME and PAN instead of freezing start()'s values.
-            vc.retarget (padGainNow[vc.slot], padPanNow[vc.slot], padAnchoNow[vc.slot]);
-
-            voiceNextInPad[(size_t) v] = padFirstVoice[(size_t) vc.slot];
-            padFirstVoice[(size_t) vc.slot] = v;
+            padTouched[vc.slot] = true;
+            padGainNow[vc.slot] = effectiveGain (vc.slot);
+            //  EL DEL PAD MAS EL DEL CANAL. El pad dice donde esta dentro
+            //  del grupo y el canal mueve el grupo entero; acotado porque
+            //  dos mandos al maximo no pueden sacar la señal del estereo.
+            padPanNow [vc.slot] = juce::jlimit (-1.0f, 1.0f,
+                                    padPan[(size_t) vc.slot].load (std::memory_order_relaxed)
+                                      + canPan[vc.slot]);
+            padAnchoNow[vc.slot] = juce::jlimit (0.0f, 2.0f,
+                                    padAncho[(size_t) vc.slot].load (std::memory_order_relaxed)
+                                      * canAnc[vc.slot]);
         }
 
-        //  A pad that sends nowhere goes straight to the master, exactly as
-        //  before. One that does is rendered on its own first, because you
-        //  cannot take a share of a signal that has already been summed with
-        //  fifteen others.
-        for (int p = 0; p < kNumPads; ++p)
+        // Control-rate retarget: a looping or long voice keeps following
+        // its pad's VOLUME and PAN instead of freezing start()'s values.
+        vc.retarget (padGainNow[vc.slot], padPanNow[vc.slot], padAnchoNow[vc.slot]);
+
+        voiceNextInPad[(size_t) v] = padFirstVoice[(size_t) vc.slot];
+        padFirstVoice[(size_t) vc.slot] = v;
+    }
+
+    //  A pad that sends nowhere goes straight to the master, exactly as
+    //  before. One that does is rendered on its own first, because you
+    //  cannot take a share of a signal that has already been summed with
+    //  fifteen others.
+    for (int p = 0; p < kNumPads; ++p)
+    {
+        if (padFirstVoice[(size_t) p] < 0)      // nothing of this pad is sounding
+            continue;
+
+        if (! padSplit[p])
         {
-            if (padFirstVoice[(size_t) p] < 0)      // nothing of this pad is sounding
-                continue;
-
-            if (! padSplit[p])
-            {
-                for (int v = padFirstVoice[(size_t) p]; v >= 0; v = voiceNextInPad[(size_t) v])
-                    voices[(size_t) v].render (out, s, nn, padSample[(size_t) p]);
-                continue;
-            }
-
-            for (int ch = 0; ch < 2; ++ch)
-                padScratch.clear (ch, s, nn);
-
             for (int v = padFirstVoice[(size_t) p]; v >= 0; v = voiceNextInPad[(size_t) v])
-                voices[(size_t) v].render (padScratch, s, nn, padSample[(size_t) p]);
-
-            //  EL FILTRO DEL PAD, sobre lo que el pad acaba de sonar y antes
-            //  de repartirlo: el seco y los seis envios salen todos del mismo
-            //  sitio, asi que filtrar aqui filtra las siete rutas de una vez.
-            //  Filtrar despues habria querido decir siete filtros por pad.
-            if ((filtMask >> (unsigned) p) & 1ull)
-            {
-                //  Coeficientes UNA VEZ POR BLOQUE, no por muestra: la tangente
-                //  cuesta lo que cuesta y el corte lo mueve un dedo, no el
-                //  audio. Y en float por muestra, en double por bloque.
-                const float hz = juce::jlimit (20.0f, (float) (0.45 * systemSampleRate),
-                                               corteVivo (p));
-                const float rs = padReso[(size_t) p].load (std::memory_order_relaxed);
-                //  Q de 0.707 (Butterworth, sin pico) a 8. Mas arriba el filtro
-                //  se pone a oscilar solo, que es un sintetizador y no un
-                //  sampler: 8 son unos 18 dB de realce, suficiente para que un
-                //  barrido cante y poco para que se desmande.
-                const float q = 0.707f + rs * (8.0f - 0.707f);
-                const float g = (float) std::tan (juce::MathConstants<double>::pi * (double) hz / systemSampleRate);
-                const float k = 1.0f / q;
-                const float a1 = 1.0f / (1.0f + g * (g + k));
-                const float a2 = g * a1;
-                const float a3 = g * a2;
-
-                for (int ch = 0; ch < busChans; ++ch)
-                {
-                    auto& st = padFiltState[(size_t) p][(size_t) juce::jmin (ch, 1)];
-                    float ic1 = st.ic1, ic2 = st.ic2;
-                    float* d = padScratch.getWritePointer (ch, s);
-
-                    for (int i = 0; i < nn; ++i)
-                    {
-                        const float x  = d[i];
-                        const float v3 = x - ic2;
-                        const float v1 = a1 * ic1 + a2 * v3;
-                        const float v2 = ic2 + a2 * ic1 + a3 * v3;
-                        ic1 = 2.0f * v1 - ic1;
-                        ic2 = 2.0f * v2 - ic2;
-                        d[i] = v2;                    // paso bajo
-                    }
-
-                    //  Los integradores, no las muestras: si uno se va a NaN
-                    //  -una muestra envenenada entrando con Q alta- se queda
-                    //  ahi para siempre y el pad enmudece hasta reiniciar,
-                    //  porque el estado se realimenta. La barrera del master
-                    //  limpia la SALIDA y no puede limpiar esto.
-                    if (! std::isfinite (ic1) || ! std::isfinite (ic2)) ic1 = ic2 = 0.0f;
-                    st.ic1 = ic1; st.ic2 = ic2;
-                }
-            }
-
-            //  EL PICO DEL CANAL MIRADO, aqui y no en el master: aqui el pad
-            //  suena SOLO -para eso existe padScratch- y por el fader del canal
-            //  ya ha pasado. Un barrido por pad medido y por bloque, y solo de
-            //  los pads de UN canal. Ver `miraCanal`.
-            //  Y EL DE CADA PAD si la mesa mira, con el mismo barrido: se
-            //  hace UNA vez y sirve a los dos. Ver `miraMesa`.
-            const bool delCanal = miraCan >= 0
-                               && (int) padCanal[(size_t) p].load (std::memory_order_relaxed) == miraCan;
-            if (delCanal || miraMesa)
-            {
-                float mn = 0.0f, mx = 0.0f;
-                for (int ch = 0; ch < busChans; ++ch)
-                {
-                    const auto r = juce::FloatVectorOperations::findMinAndMax (
-                                       padScratch.getReadPointer (ch, s), nn);
-                    mn = juce::jmin (mn, r.getStart());
-                    mx = juce::jmax (mx, r.getEnd());
-                }
-                const float pico = juce::jmax (std::abs (mn), std::abs (mx)) * canGain[p];
-                if (delCanal) picoCan = juce::jmax (picoCan, pico);
-                if (miraMesa) picoPad[p] = juce::jmax (picoPad[p], pico);
-            }
-
-            if (dryGain[p] > 0.0005f)
-                for (int ch = 0; ch < busChans; ++ch)
-                    out.addFrom (ch, s, padScratch, ch, s, nn, dryGain[p]);
-
-            for (int f = 0; f < kNumFx; ++f)
-                if (sendGain[p][f] > 0.0f)
-                {
-                    auto& bus = fxBus[(size_t) busDe (canalDePad[p], f)];
-                    for (int ch = 0; ch < busChans; ++ch)
-                        bus.addFrom (ch, s, padScratch, ch, s, nn, sendGain[p][f]);
-                }
+                voices[(size_t) v].render (out, s, nn, padSample[(size_t) p]);
+            continue;
         }
-    };
 
+        for (int ch = 0; ch < 2; ++ch)
+            padScratch.clear (ch, s, nn);
+
+        for (int v = padFirstVoice[(size_t) p]; v >= 0; v = voiceNextInPad[(size_t) v])
+            voices[(size_t) v].render (padScratch, s, nn, padSample[(size_t) p]);
+
+        //  EL FILTRO DEL PAD, sobre lo que el pad acaba de sonar y antes
+        //  de repartirlo: el seco y los seis envios salen todos del mismo
+        //  sitio, asi que filtrar aqui filtra las siete rutas de una vez.
+        //  Filtrar despues habria querido decir siete filtros por pad.
+        if ((filtMask >> (unsigned) p) & 1ull)
+        {
+            //  Coeficientes UNA VEZ POR BLOQUE, no por muestra: la tangente
+            //  cuesta lo que cuesta y el corte lo mueve un dedo, no el
+            //  audio. Y en float por muestra, en double por bloque.
+            const float hz = juce::jlimit (20.0f, (float) (0.45 * systemSampleRate),
+                                           corteVivo (p));
+            const float rs = padReso[(size_t) p].load (std::memory_order_relaxed);
+            //  Q de 0.707 (Butterworth, sin pico) a 8. Mas arriba el filtro
+            //  se pone a oscilar solo, que es un sintetizador y no un
+            //  sampler: 8 son unos 18 dB de realce, suficiente para que un
+            //  barrido cante y poco para que se desmande.
+            const float q = 0.707f + rs * (8.0f - 0.707f);
+            const float g = (float) std::tan (juce::MathConstants<double>::pi * (double) hz / systemSampleRate);
+            const float k = 1.0f / q;
+            const float a1 = 1.0f / (1.0f + g * (g + k));
+            const float a2 = g * a1;
+            const float a3 = g * a2;
+
+            for (int ch = 0; ch < busChans; ++ch)
+            {
+                auto& st = padFiltState[(size_t) p][(size_t) juce::jmin (ch, 1)];
+                float ic1 = st.ic1, ic2 = st.ic2;
+                float* d = padScratch.getWritePointer (ch, s);
+
+                for (int i = 0; i < nn; ++i)
+                {
+                    const float x  = d[i];
+                    const float v3 = x - ic2;
+                    const float v1 = a1 * ic1 + a2 * v3;
+                    const float v2 = ic2 + a2 * ic1 + a3 * v3;
+                    ic1 = 2.0f * v1 - ic1;
+                    ic2 = 2.0f * v2 - ic2;
+                    d[i] = v2;                    // paso bajo
+                }
+
+                //  Los integradores, no las muestras: si uno se va a NaN
+                //  -una muestra envenenada entrando con Q alta- se queda
+                //  ahi para siempre y el pad enmudece hasta reiniciar,
+                //  porque el estado se realimenta. La barrera del master
+                //  limpia la SALIDA y no puede limpiar esto.
+                if (! std::isfinite (ic1) || ! std::isfinite (ic2)) ic1 = ic2 = 0.0f;
+                st.ic1 = ic1; st.ic2 = ic2;
+            }
+        }
+
+        //  EL PICO DEL CANAL MIRADO, aqui y no en el master: aqui el pad
+        //  suena SOLO -para eso existe padScratch- y por el fader del canal
+        //  ya ha pasado. Un barrido por pad medido y por bloque, y solo de
+        //  los pads de UN canal. Ver `miraCanal`.
+        //  Y EL DE CADA PAD si la mesa mira, con el mismo barrido: se
+        //  hace UNA vez y sirve a los dos. Ver `miraMesa`.
+        const bool delCanal = miraCan >= 0
+                           && (int) padCanal[(size_t) p].load (std::memory_order_relaxed) == miraCan;
+        if (delCanal || miraMesa)
+        {
+            float mn = 0.0f, mx = 0.0f;
+            for (int ch = 0; ch < busChans; ++ch)
+            {
+                const auto r = juce::FloatVectorOperations::findMinAndMax (
+                                   padScratch.getReadPointer (ch, s), nn);
+                mn = juce::jmin (mn, r.getStart());
+                mx = juce::jmax (mx, r.getEnd());
+            }
+            const float pico = juce::jmax (std::abs (mn), std::abs (mx)) * canGain[p];
+            if (delCanal) picoCan = juce::jmax (picoCan, pico);
+            if (miraMesa) picoPad[p] = juce::jmax (picoPad[p], pico);
+        }
+
+        if (dryGain[p] > 0.0005f)
+            for (int ch = 0; ch < busChans; ++ch)
+                out.addFrom (ch, s, padScratch, ch, s, nn, dryGain[p]);
+
+        for (int f = 0; f < kNumFx; ++f)
+            if (sendGain[p][f] > 0.0f)
+            {
+                auto& bus = fxBus[(size_t) busDe (canalDePad[p], f)];
+                for (int ch = 0; ch < busChans; ++ch)
+                    bus.addFrom (ch, s, padScratch, ch, s, nn, sendGain[p][f]);
+            }
+    }
+}
+
+void AudioEngine::faseEventos() noexcept
+{
     // 3. Drain UI trigger commands (taps fire at block start — human jitter
     //    dwarfs one block; the sequencer below is the sample-accurate path).
     //  Y CADA COLA CON SU PRESUPUESTO.
@@ -1487,7 +1553,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         for (int p = 0; p < kNumPads; ++p)
             if ((mask & ((std::uint64_t) 1u << p)) != 0)
                 triggerPad (p);
+}
 
+void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 4+5. Sequencer transport + voice rendering, sample-accurate: the block
     //      is split at step boundaries, each step fires exactly on its frame
     //      (the old version quantised every step to frame 0 of the block —
@@ -1509,9 +1581,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         clicPaso = 0;
         //  Y si hay cuenta atras armada, la cancion espera al borde de compas.
         arranqueEnBorde = cuentaPasos.load (std::memory_order_relaxed) > 0;
+        relojMidi = 0.0;   // secuenciador#11
+        if (midiOutOn.load (std::memory_order_relaxed))
+            midiOut.push ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Arranca });
     }
     else if (! isPlaying && wasPlaying)
     {
+        if (midiOutOn.load (std::memory_order_relaxed))   // secuenciador#11
+            midiOut.push ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Para });
         playStep.store (-1, std::memory_order_relaxed);
         //  Parar cancela la cuenta atras: si no, volver a dar a PLAY se comeria
         //  los pasos que quedaran de la anterior sin que nadie los hubiera
@@ -1530,9 +1607,20 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     }
     wasPlaying = isPlaying;
 
+    //  secuenciador#11: 24 relojes por negra mientras suena.
+    if (isPlaying)
+    {
+        const double porReloj = juce::jmax (1.0, 60.0 / juce::jmax (20.0, (double) bpm.load (std::memory_order_relaxed))
+                                                     / 24.0 * systemSampleRate);
+        const bool manda = midiOutOn.load (std::memory_order_relaxed);
+        for (; relojMidi < (double) numSamples; relojMidi += porReloj)
+            if (manda) midiOut.push ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Reloj });
+        relojMidi -= (double) numSamples;
+    }
+
     if (! isPlaying)
     {
-        renderVoices (startSample, numSamples);
+        renderVoices (mz, startSample, numSamples);
     }
     else
     {
@@ -1924,7 +2012,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             int seg = juce::jlimit (1, remaining, (int) std::ceil (toBoundary));
             seg = juce::jlimit (1, seg, nextHitIn());
 
-            renderVoices (offset, seg);
+            renderVoices (mz, offset, seg);
 
             //  Y LOS CLIPS DE LA LINEA DE TIEMPO, en el MISMO segmento.
             //
@@ -1964,7 +2052,15 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
         stepPhase.store ((float) (stepAccum / samplesPerStep), std::memory_order_relaxed);
     }
+}
 
+void AudioEngine::faseBuses (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
+    const int busChans = mz.busChans;
+    auto& busFed = mz.busFed;
     // 5b. The six effect buses: FLT, HPF, DRV, DLY, BIT, REV - the order of
     //     the fxDefs table, which is the one the face shows.
     //     Each one runs on its own input, made upstream out of the pads that
@@ -4078,7 +4174,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
                           std::memory_order_relaxed);
         }
     }
+}
 
+void AudioEngine::faseMonitor (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
+    const float kSend = mz.kSend;
     //  5d-mon. EL MONITOR, justo encima de la barrera y del limitador.
     //
     //  Ver `setMonitor`: aqui es donde se decide que un NaN que entre por el
@@ -4109,7 +4212,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             }
         }
     }
+}
 
+void AudioEngine::faseLimitador (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 5d. Master safety. Sixteen pads at full level plus a delay with
     //     feedback and a reverb tail will pass 0 dBFS, and what comes out of
     //     an integer DAC then is hard clipping: the ugliest sound a sampler
@@ -4175,7 +4284,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
         notaRecorte (recorte);
     }
+}
 
+void AudioEngine::faseBombeoYVivo (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 5c-bombeo. El sidechain del pad elegido, antes del ducking del sistema
     //  y antes de las tomas: el bombeo es musica y se imprime (audio-dsp#12).
     //
@@ -4244,7 +4359,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         if (n1 + n2 < numSamples)
             vivoPerdidas.fetch_add (numSamples - n1 - n2, std::memory_order_relaxed);
     }
+}
 
+void AudioEngine::faseToma (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 5e. RESAMPLE. The master, after everything, which is the whole point:
     //     what lands on the pad is what you just heard - the effects and the
     //     master saturation, printed. Written before the probe click so a
@@ -4292,7 +4413,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             recording.store (false, std::memory_order_release);
     }
     escribiendoToma.store (false, std::memory_order_release);
+}
 
+void AudioEngine::faseNivelMaster (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 5c-duck. The master level, ramped.
     //
     //  DESPUES del saturador Y del remuestreo, no antes.
@@ -4367,7 +4494,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             notaRecorte (recorte);
         }
     }
+}
 
+void AudioEngine::faseSonda (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 5b-probe. The click, written AFTER the effects so nothing colours or
     //     delays it. A single sample would never leave a phone speaker, so it
     //     is a short decaying 3 kHz burst: a hard onset the microphone can
@@ -4396,7 +4529,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             probing.store (false, std::memory_order_release);
         }
     }
+}
 
+void AudioEngine::faseOsciloscopio (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 5c. Feed the scope ring (post-FX mono sum) for the LCD.
     //
     //     Two rings, because the screen wants two different things. The plain
@@ -4443,7 +4582,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         scopeWrite.store (wi, std::memory_order_release);
         scopeColWrite.store (ci, std::memory_order_release);
     }
+}
 
+void AudioEngine::faseTono (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
     // 6. Diagnostic test tone.
     int tt = testToneRemaining.load (std::memory_order_relaxed);
     if (tt > 0)
@@ -4470,7 +4615,10 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         }
         testToneRemaining.store (tt, std::memory_order_relaxed);
     }
+}
 
+void AudioEngine::faseCabezales() noexcept
+{
     //  Where each pad's read head is, as a fraction of its whole source. The
     //  UI draws it over the waveform, so what you hear and what you see are
     //  the same thing moving. Sixteen relaxed stores a block; nothing reads
@@ -4495,7 +4643,16 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         for (int i = 0; i < kNumPads; ++i)
             padPos[(size_t) i].store (p[(size_t) i], std::memory_order_relaxed);
     }
+}
 
+void AudioEngine::faseVu (Mezcla& mz) noexcept
+{
+    auto& out = *mz.out;
+    const int startSample = mz.startSample;
+    const int numSamples = mz.numSamples;
+    const bool miraMesa = mz.miraMesa;
+    auto& picoCan = mz.picoCan;
+    auto& picoPad = mz.picoPad;
     // 7. Output peaks for the VU (max-hold until the UI reads) — last stage,
     //    after every contributor including the test tone.
     {

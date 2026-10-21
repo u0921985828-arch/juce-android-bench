@@ -60,13 +60,17 @@ public:
         if (dir == juce::File()) return false;
         if (! dir.createDirectory()) return false;
 
-        auto probe = dir.getChildFile (".zati-write-test");
-        probe.deleteFile();
-        if (! probe.replaceWithText ("z")) return false;
-
-        const bool ok = probe.existsAsFile() && probe.loadFileAsString() == "z";
-        probe.deleteFile();
-        return ok;
+        //  android#2: con las extensiones que la biblioteca escribe; Musica/ rechaza lo que no es audio.
+        for (const char* ext : { ".wav", ".xml" })
+        {
+            auto probe = dir.getChildFile (juce::String (".zati-write-test") + ext);
+            probe.deleteFile();
+            if (! probe.replaceWithText ("z")) return false;
+            const bool ok = probe.existsAsFile() && probe.loadFileAsString() == "z";
+            probe.deleteFile();
+            if (! ok) return false;
+        }
+        return true;
     }
 
     //  WHERE THE LIBRARY LIVES - and it must not move.
@@ -125,6 +129,15 @@ public:
 
             const auto chosen = [] () -> juce::File
             {
+               #if JUCE_ANDROID
+                //  android#2: Documentos/ acepta cualquier tipo y sobrevive a desinstalar.
+                if (auto docs = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory); docs != juce::File())
+                {
+                    auto candidate = docs.getChildFile ("ZATI");
+                    if (canReallyWriteInto (candidate))
+                        return candidate;
+                }
+               #endif
                 auto music = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
                 if (music != juce::File())
                 {
@@ -160,6 +173,32 @@ public:
             return chosen;
         }();
         return cached;
+    }
+
+    //  android#2: la biblioteca vive donde desinstalar la borra.
+    static bool seBorraAlDesinstalar()
+    {
+        const auto h = home();
+        const auto ext = AppStorage::externalFilesDir();
+        return h.isAChildOf (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory))
+            || (ext != juce::File() && (h == ext || h.isAChildOf (ext)));
+    }
+
+    //  android#2: la biblioteca entera en un zip, sesion incluida; devuelve cuantos ficheros.
+    static int zipBiblioteca (juce::OutputStream& out)
+    {
+        const auto raiz = home();
+        juce::ZipFile::Builder zip;
+        int n = 0;
+        for (const auto& e : juce::RangedDirectoryIterator (raiz, true, "*", juce::File::findFiles))
+        {
+            const auto f = e.getFile();
+            if (f.getFileName().startsWith (".zati-write-test")) continue;
+            const bool audio = f.hasFileExtension ("wav;ogg;flac;mp3;aif;aiff");
+            zip.addFile (f, audio ? 0 : 6, f.getRelativePathFrom (raiz).replaceCharacter ('\\', '/'));
+            ++n;
+        }
+        return zip.writeToStream (out, nullptr) ? n : -1;
     }
 
     //  DE DONDE SE CARGA UN SONIDO Y DONDE CAE UNO GRABADO, y se puede elegir.

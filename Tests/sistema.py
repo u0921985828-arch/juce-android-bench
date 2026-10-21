@@ -13,6 +13,8 @@ existen: ZATI_SISTEMA los convierte en ENTRADA, como ZATI_INSETS los margenes.
   4. Con gestos de 30 a cada lado y la curva del EQ en la cara, se pide excluir los
      filos sobre lo que se arrastra en horizontal: dentro de la franja, y no
      mas de 200 de alto por lado (lo que Android concede). Sin gestos, nada.
+  5. Con la letra del sistema en 1.3 la letra crece 1.3; en 2 se para en 1.3
+     (las franjas no crecen); sin decir nada, la de siempre (accesibilidad #26).
 """
 import glob, json, os, re, shutil, subprocess, sys, tempfile
 
@@ -81,6 +83,15 @@ def main():
     for lado, a in alto.items():
         if a > 200: malas.append ("%d de alto excluidos a la %s (Android concede 200)" % (a, lado))
     if sin.get ("excluye"): malas.append ("sin gestos se excluye %s" % sin.get ("excluye"))
+
+    grande, enorme = corre ("texto=1.3"), corre ("texto=2")
+    base = sin.get ("letra")
+    print ("letra: sin %s, 1.3 -> %s, 2 -> %s" % (base, grande and grande.get ("letra"), enorme and enorme.get ("letra")))
+    if not base: malas.append ("la app no dice el alto de la letra")
+    else:
+        for nombre, r, f in (("1.3", grande, 1.3), ("2", enorme, 1.3)):
+            v = (r or {}).get ("letra") or 0
+            if abs (v - base * f) > 0.05: malas.append ("con la letra en %s el alto es %s (se espera %.1f)" % (nombre, v, base * f))
 
     if malas:
         for m in malas: print ("FALLA  " + m)

@@ -423,7 +423,7 @@ namespace Kits
             //  Membranas por skin y parches con bordon por wire: ni una sola
             //  forma compartida con el banco B, que es de donde venia que los
             //  dos bancos midieran lo mismo.
-            { "KICK",   skin,      55.0f, 0.05715f, 0.32f, 0.55f, 0, 0.0f },
+            { "KICK",   skin,      55.0f, 0.05715f, 0.32f, 0.55f, 1, 0.0f },   // juego 1: producto#2
             { "SNARE",  wire,     195.0f, 0.06836f, 0.30f, 1750.0f, 0, 0.0f },
             { "HAT",    hat,     9500.0f, 0.01946f, 1.6f, 0.0f,  1, 0.0f },
             { "OPEN",   hat,     8600.0f, 0.132f, 1.4f, 0.0f,   1, 0.0f },
@@ -698,6 +698,8 @@ namespace Kits
     //
     //  `fs` entra por argumento y no por constante, que es lo mismo que ya hace
     //  `Sintes::rindeCrudo` y por la misma razon.
+    static constexpr float kKickClic = 3.5f, kKickH2 = 0.5f, kKickH3 = 0.3f;   // producto#2
+
     inline void renderCrudo (float* d, int len, const Recipe& r, int index,
                              double fs, int canal)
     {
@@ -989,7 +991,16 @@ namespace Kits
                     //  y mas corto, que es el cuerpo de la caja. Sin el, un tom
                     //  suena a timbal de juguete.
                     const float caja = body2.next (r.hz * 0.67 * caida, t, r.decay * 0.55f) * 0.30f;
-                    v = soft (1.05f * (parche + caja + palo));
+                    float extra = 0.0f;
+                    if (r.juego == 1)   // producto#2: clic de 1-4 kHz y armonicos 2 y 3 para altavoces pequenos
+                    {
+                        f2.set (2600.0, 1.2f);
+                        const float clic = f2.bpf (rnd()) * env (t, 0.004f) * kKickClic;
+                        ph2 += 2.0 * juce::MathConstants<double>::pi * r.hz * caida * 2.0 / fs;
+                        ph3 += 2.0 * juce::MathConstants<double>::pi * r.hz * caida * 3.0 / fs;
+                        extra = clic + ((float) std::sin (ph2) * kKickH2 + (float) std::sin (ph3) * kKickH3) * env (t, r.decay * 0.6f);
+                    }
+                    v = soft (1.05f * (parche + caja + palo + extra));
                     break;
                 }
 

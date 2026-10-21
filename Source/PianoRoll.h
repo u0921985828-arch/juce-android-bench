@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "Lang.h"
+#include "Accesible.h"
 #include "Zati.h"
 #include <array>
 #include <cstring>
@@ -38,6 +40,28 @@
 class PianoRoll : public juce::Component, public Rejilla
 {
 public:
+    //  accesibilidad#0: un cursor por paso y por fila.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        acc.cuantas = [this] { return nPasos * filas; };
+        acc.dice = [this] (int i)
+        {
+            const int paso = i / juce::jmax (1, filas), semi = semiBase + (filas - 1 - i % juce::jmax (1, filas));
+            bool puesta = false;
+            if (datos != nullptr && paso < nPasos)
+                for (int k = 0; k < kMaxNotas; ++k)
+                    if (datos[paso * kMaxNotas + k] != -128 && (int) datos[paso * kMaxNotas + k] == semi) puesta = true;
+            return T (puesta ? "Paso %1, nota %2: puesta" : "Paso %1, nota %2: libre",
+                      juce::String (primerPaso + paso + 1), (semi > 0 ? "+" : "") + juce::String (semi));
+        };
+        acc.pulsa = [this] (int i)
+        {
+            const int paso = i / juce::jmax (1, filas), semi = semiBase + (filas - 1 - i % juce::jmax (1, filas));
+            if (onCelda) onCelda (paso, semi, false);
+        };
+        return Accesible::crea (*this, acc);
+    }
+
     static juce::Colour fondoRegla() { return ZatiColours::chassisTop.overlaidWith (ZatiColours::groove (0.40f)); }
     static juce::Colour tintaRegla (juce::Colour fondo, bool compas)   // accesibilidad#11
     {
@@ -921,6 +945,7 @@ public:
     }
 
 private:
+    Accesible::Cursor acc;   // accesibilidad#0
     //  El arrastre de la seleccion: donde empezo y cuanto lleva movido.
     int  semiIni = 0;
     bool moviendo = false;

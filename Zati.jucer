@@ -34,6 +34,7 @@
       <FILE id="srcSIh"  name="SystemInsets.h"    compile="0" resource="0" file="Source/SystemInsets.h"/>
       <FILE id="srcSisc" name="Sistema.cpp"       compile="1" resource="0" file="Source/Sistema.cpp"/>
       <FILE id="srcSish" name="Sistema.h"         compile="0" resource="0" file="Source/Sistema.h"/>
+      <FILE id="srcAcch" name="Accesible.h"       compile="0" resource="0" file="Source/Accesible.h"/>
       <FILE id="srcDTc"  name="DeviceTier.cpp"    compile="1" resource="0" file="Source/DeviceTier.cpp"/>
       <FILE id="srcDTh"  name="DeviceTier.h"      compile="0" resource="0" file="Source/DeviceTier.h"/>
       <FILE id="srcFh"   name="AudioFocus.h"      compile="0" resource="0" file="Source/AudioFocus.h"/>

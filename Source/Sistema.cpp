@@ -57,6 +57,11 @@ namespace juce
     #undef JNI_CLASS_MEMBERS
 
     #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
+        FIELD (fontScale, "fontScale", "F")
+    DECLARE_JNI_CLASS (ZatiSisConfiguration, "android/content/res/Configuration")
+    #undef JNI_CLASS_MEMBERS
+
+    #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
         METHOD (constructor, "<init>", "(IIII)V")
     DECLARE_JNI_CLASS (ZatiSisRect, "android/graphics/Rect")
     #undef JNI_CLASS_MEMBERS
@@ -114,6 +119,20 @@ float Sistema::escalaAnimaciones()
                                                 resolver.get(), juce::javaString ("animator_duration_scale").get(), 1.0f);
     if (fallo (env)) return 1.0f;
     return juce::jmax (0.0f, v);
+}
+
+float Sistema::escalaTexto()
+{
+    auto* env = juce::getEnv();
+    juce::LocalRef<jobject> activity (juce::getMainActivity());
+    if (activity == nullptr) return 1.0f;
+    juce::LocalRef<jobject> res (env->CallObjectMethod (activity, juce::AndroidContext.getResources));
+    if (fallo (env) || res == nullptr) return 1.0f;
+    juce::LocalRef<jobject> conf (env->CallObjectMethod (res, juce::AndroidResources.getConfiguration));
+    if (fallo (env) || conf == nullptr) return 1.0f;
+    const float f = env->GetFloatField (conf, juce::ZatiSisConfiguration.fontScale);
+    if (fallo (env) || ! (f > 0.0f)) return 1.0f;
+    return f;
 }
 
 juce::BorderSize<int> Sistema::gestos()
@@ -189,6 +208,12 @@ float Sistema::escalaAnimaciones()
 {
     const auto b = banco ("animacion");
     return b.isNotEmpty() ? juce::jmax (0.0f, b.getFloatValue()) : 1.0f;
+}
+
+float Sistema::escalaTexto()
+{
+    const auto b = banco ("texto");
+    return b.isNotEmpty() && b.getFloatValue() > 0.0f ? b.getFloatValue() : 1.0f;
 }
 
 juce::BorderSize<int> Sistema::gestos()

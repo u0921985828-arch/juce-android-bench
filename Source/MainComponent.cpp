@@ -265,6 +265,384 @@ MainComponent::MainComponent()
     stepGrid.onBanda = [this] (int pad0, int paso0, int pad1, int paso1)
     { seqBanda (pad0, paso0, pad1, paso1); };
     stepGrid.onVaciaSel = [this] { seqVaciaSel(); };
+    cableaSecuencia();
+
+    cableaPestanas();
+
+    cableaPadPick();
+
+    cableaCanal();
+
+    cableaRanura();
+
+    cableaPreset();
+
+    cableaCanNom();
+
+    cableaEqBanda();
+
+    cableaAjustes();
+
+    cableaVst();
+
+    cableaExport();
+
+    cableaBrowse();
+    cableaBotonera();
+    cableaDeslizadores();
+    cableaMandos();
+
+    cableaPads();
+    cableaMezcla();
+
+    cableaCancion();
+
+    cableaPiano();
+    cableaXy();
+    padSheet.donde().addAndMakeVisible (waveform);
+
+    //  There is no skin picker. ZATI has one look; a strip of alternative
+    //  accents sitting on top of the project menu was a preference masquerading
+    //  as a feature, and it stole the first line of a sheet that exists to
+    //  manage work. Projects saved with another skin still load — the stored
+    //  value is applied, it just cannot be changed from here.
+
+    // Controls live inside their sheets, not on the machine face.
+    for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &fineSlider,
+                                (juce::Component*) &volSlider, (juce::Component*) &panSlider,
+                                (juce::Component*) &anchoSlider,
+                                (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider, (juce::Component*) &chokeSlider,
+                                (juce::Component*) &startSlider, (juce::Component*) &endSlider,
+                                (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
+                                (juce::Component*) &autocutButton })
+        padSheet.donde().addAndMakeVisible (c);
+    padSheet.donde().addAndMakeVisible (chopButton);
+
+    //  Play what is on screen. It sits on the sheet's own title row rather
+    //  than in a row of its own, because the one thing this sheet is short of
+    //  is height, and a transport button is not worth a fader's worth of it.
+    styleButton (previewButton, kKey);
+    previewButton.onClick = [this]
+    {
+        if (selectedPad < 0) return;
+
+        //  Sounding: stop it. A loop with no way back off is the reason this
+        //  is a toggle rather than a re-trigger.
+        if (engine.getPadPosition01 (selectedPad) >= 0.0f)
+            engine.postNoteOff (selectedPad);
+        else
+            engine.postNoteOn (selectedPad);
+    };
+    padSheet.donde().addAndMakeVisible (previewButton);
+
+    //  NORMALIZAR ocupa la tercera celda de la fila de CHOKE y MODO, que
+    //  estaba vacia: una fila de tres con dos controles dentro.
+    styleButton (normButton, kKey);
+    normButton.onClick = [this] { normalisePad(); };
+    padSheet.donde().addAndMakeVisible (normButton);
+
+    //  QUITAR RUIDO va con REV y LOOP, en la fila que hay justo encima de la
+    //  onda: las tres son cosas de la MUESTRA que se esta mirando.
+    styleButton (denoiseButton, kKey);
+    denoiseButton.onClick = [this] { denoisePad(); };
+    padSheet.donde().addAndMakeVisible (denoiseButton);
+
+    //  RECORTAR va en esa misma fila: las cuatro son cosas de la MUESTRA que
+    //  se esta mirando, y esta ademas actua sobre lo que las asas de justo
+    //  debajo estan marcando.
+    styleButton (recorteButton, kKey);
+    recorteButton.onClick = [this] { recortaPad(); };
+    padSheet.donde().addAndMakeVisible (recorteButton);
+
+    //  El zoom. Tres tapas sobre la esquina de la pantalla: menos, cuanto, mas.
+    //  La del medio dice a que aumento se esta y vuelve al fichero entero.
+    {
+        juce::TextButton* zb[3] = { &zoomOutButton, &zoomFitButton, &zoomInButton };
+        for (auto* b : zb) { styleButton (*b, kKey); padSheet.donde().addAndMakeVisible (b); }
+        //  SE AMPLIA SOBRE EL RECORTE, no sobre lo que se este mirando.
+        //
+        //  Ampliar alrededor del centro de la vista es lo que hace un visor de
+        //  fotos, y aqui no se esta mirando una foto: se esta buscando DONDE
+        //  CORTAR. Con veinte segundos de muestra y el trozo bueno en el
+        //  segundo trece, cada toque de + dejaba el trozo un poco mas fuera de
+        //  pantalla y habia que volver a arrastrar - el zoom daba mas detalle
+        //  de justo lo que no importaba.
+        //
+        //  El ancla es el punto medio entre las dos asas, que es la definicion
+        //  de "la parte que estoy recortando". El pellizco conserva la suya -
+        //  el punto entre los dos dedos -, porque ahi el dedo SI dice donde.
+        auto trimCentre = [this]
+        {
+            if (selectedPad < 0) return 0.5f;
+            return (padStart01[(size_t) selectedPad] + padEnd01[(size_t) selectedPad]) * 0.5f;
+        };
+        zoomOutButton.onClick = [this, trimCentre] { waveform.setZoom (waveform.getZoom() * 0.5f, trimCentre()); };
+        zoomInButton .onClick = [this, trimCentre] { waveform.setZoom (waveform.getZoom() * 2.0f, trimCentre()); };
+        //  Vuelve al fichero entero, y si ya esta entero salta al recorte: es
+        //  el boton que se pulsa cuando te has perdido, y "perdido" tiene esas
+        //  dos formas.
+        zoomFitButton.onClick = [this]
+        {
+            if (waveform.getZoom() > 1.005f) { waveform.setZoom (1.0f, 0.5f); return; }
+            if (selectedPad < 0) return;
+            const float a = padStart01[(size_t) selectedPad], b = padEnd01[(size_t) selectedPad];
+            const float span = juce::jmax (1.0f / WaveformDisplay::kMaxZoom, b - a);
+            waveform.setZoom (juce::jlimit (1.0f, WaveformDisplay::kMaxZoom, 1.0f / span), (a + b) * 0.5f);
+        };
+        waveform.onZoomChanged = [this] (float z)
+        {
+            zoomFitButton.setButtonText (Lang::ltr ("x" + juce::String ((int) std::round (z))));
+        };
+    }
+
+    //  Las dos pestanas de la ficha del pad, con el mismo mueble que las del
+    //  secuenciador y las de AJUSTES: la ficha se queda quieta y cambia lo de
+    //  dentro. Debajo del titulo en las dos paginas, para que la pestana que
+    //  vas a pulsar no se mueva cuando pulsas la otra.
+    {
+        juce::TextButton* pb[3] = { &padSoundBtn, &padTrimBtn, &padRigBtn };
+        for (int i = 0; i < 3; ++i)
+        {
+            styleButton (*pb[i], kKey);
+            pb[i]->setClickingTogglesState (true);
+            filaDeRadio (*pb[i], "pagina pad", 8804);
+            litAccent (*pb[i]);
+            pb[i]->onClick = [this, i] { showPadPage (i); };
+            padSheet.donde().addAndMakeVisible (pb[i]);
+        }
+        padSoundBtn.setToggleState (true, juce::dontSendNotification);
+    }
+
+    //  LA PUERTA DEL RACK, donde estaban los seis envios duplicados. Ver la
+    //  maqueta de la pagina RIG: los mismos seis valores se movian desde dos
+    //  fichas distintas, y de las dos el RACK es la que dice mas.
+    //  16 NIVELES. Ver nivel16: se captura el pad al encender.
+    styleButton (nivelesButton, kKey);
+    litAccent (nivelesButton);
+    nivelesButton.setClickingTogglesState (true);
+    nivelesButton.onClick = [this]
+    {
+        nivel16 = nivelesButton.getToggleState();
+        nivelPad = juce::jlimit (0, kNumPads - 1, selectedPad);
+        refreshModoNota();
+        status.setText (nivel16 ? T ("16 NIVELES: PAD %1", juce::String (nivelPad + 1))
+                                : T ("16 NIVELES OFF"), juce::dontSendNotification);
+        //  Cada pad se repinta solo si cambia de modo. Ver PadButton::setModoNota.
+    };
+    padSheet.donde().addAndMakeVisible (nivelesButton);
+
+    styleButton (padRackBtn, kKey);
+    litAccent (padRackBtn);
+    padRackBtn.onClick = [this] { abreRackDelPad(); };
+    padSheet.donde().addAndMakeVisible (padRackBtn);
+
+    styleButton (undoButton, ZatiColours::red);
+    undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    undoButton.onClick = [this] { performUndo(); };
+    //  addChildComponent, not addAndMakeVisible: the latter turns the child
+    //  visible, which is how DESHACER came to sit on the face from launch
+    //  offering to undo something that had not happened yet.
+    addChildComponent (undoButton);
+
+    styleButton (redoButton, ZatiColours::key);
+    redoButton.onClick = [this] { performRedo(); };
+    addChildComponent (redoButton);
+
+    status.setJustificationType (juce::Justification::centred);
+    status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
+    status.setText (T ("Toca un pad para sonar"), juce::dontSendNotification);
+    addAndMakeVisible (status);
+
+    //  CADA PARAMETRO LLEGA AL MOTOR UNA VEZ, para que el DSP y los mandos
+    //  esten de acuerdo antes de tocar nada — Y EN LOS DIECISEIS CANALES.
+    //
+    //  Esa promesa la cumplia MEDIA regla: `pushFxParam` escribe en
+    //  `canalActual`, que aqui vale cero, asi que los quince de detras se
+    //  quedaban con `kFxDef` y el cero con lo que el MANDO acaba resolviendo.
+    //  Y no son el mismo numero: un `Slider` con paso 0.01 redondea el 0.707
+    //  de la resonancia a 0.71, o sea que abrir el canal cuatro enseñaba 0.71
+    //  con el motor en 0.707 hasta que alguien moviera el mando. Lo canto
+    //  `Tests/ranuras.py` con su cifra — `30 de 336`, que son quince canales
+    //  por las dos resonancias, FLT y HPF.
+    //
+    //  Los treinta tipos y los treinta y dos canales, sin excepcion: desde la
+    //  Tanda 30 DLY, REV, AMB y PNG tambien son de su canal -ver
+    //  `AudioEngine::fxPorCanal`- y cada fila arranca con su mando.
+    for (int f = 0; f < kNumFx; ++f)
+        for (int pi = 0; pi < 3; ++pi)
+        {
+            const float v = (float) fxParam (f, pi).getValue();
+            for (int c = 0; c < kNumCanales; ++c) engine.setFxParam (c, f, pi, v);
+        }
+
+    //  Accessible names.
+    //
+    //  A TextButton already announces its own caption, so the buttons were
+    //  fine. Sliders are not: JUCE has no text to fall back on and every knob
+    //  in the app came out as an anonymous "Slider", which makes the whole
+    //  thing unusable with TalkBack on. The pads are named in refreshPadArt,
+    //  where the sample name is known; these are the rest.
+    refreshAccessibleNames();
+
+    //  Captions last: every button above was built with whatever text its
+    //  declaration carried, and this is what makes them say it in the user's
+    //  language. Lang itself was loaded before the window existed (Main.cpp).
+    retranslateUi();
+
+    //  Before the first layout: on Android 15 the window is the whole screen
+    //  and the bars are drawn over it.
+    systemInsets = SystemInsets::get();
+
+    //  What this particular phone can carry. Everything that costs CPU or
+    //  memory is read from here rather than from a constant written on the
+    //  machine the app was developed on: the size of the voice pool, how often
+    //  the interface redraws, how much of the master goes into the scope, how
+    //  long a mic take may be, and whether pad tiles draw their waveform.
+    {
+        const auto& dev = DeviceTier::profile();
+        engine.setPolyphony  (dev.voices, dev.voicesPerPad);
+        engine.setRecordLimit (dev.recordSeconds, dev.recordStereo);
+        for (auto* p : pads) if (p != nullptr) p->setArtEnabled (dev.padWaveformArt);
+
+        //  EL RELOJ, que es el de MANTENIMIENTO y ya no el del dibujo. La
+        //  cadencia es la misma de siempre porque para un vigilante sobra: lo
+        //  que cambia es que ya no decide cuantas veces por segundo se ve
+        //  moverse la aguja de un medidor.
+        startTimer (dev.relojMs);
+    }
+
+    //  Ver `OidoDeToques`: cada dedo que se levanta deja el estado encargado.
+    oidoDeToques.alSoltar = [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; };
+    juce::Desktop::getInstance().addGlobalMouseListener (&oidoDeToques);
+    addChildComponent (anilloFoco);
+    juce::Desktop::getInstance().addFocusChangeListener (&anilloFoco);
+
+    //  Ver textoInvalidoConserva: todos los mandos de la cara y de las fichas.
+    textoInvalidoConserva (*this);
+    //  Y lo tecleado encarga el estado igual que un toque. Ver tecladoEncarga.
+    tecladoEncarga (*this, [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; });
+
+    //  Y EL DIBUJO, AL RITMO DE LA PANTALLA. Se engancha DESPUES de que la
+    //  cara exista y no en la lista de inicializacion: `VBlankAttachment`
+    //  necesita un componente vivo y busca el peer del display en el que
+    //  esta, asi que atarlo a medio construir es atarlo a nada.
+    //
+    //  Con ZATI_VBLANK=hz manda el banco y no el panel: X11 entrega vblanks a
+    //  la frecuencia que declare el display -100 Hz en Xvfb, que no declara
+    //  ninguna- asi que sin esta puerta no hay forma de preguntar «¿se ve
+    //  igual a 60 que a 120?». Y son excluyentes a proposito: con las dos
+    //  puestas el cuadro se pintaria dos veces por vuelta y el `dt` mediria la
+    //  mitad de lo que dura.
+    {
+        lastreMs   = UiAudit::env ("ZATI_LASTRE").getDoubleValue();
+        xrunGuion  = UiAudit::env ("ZATI_XRUN");
+        xrunEscala = juce::jmax (1.0, UiAudit::env ("ZATI_XRUN_ESCALA").getDoubleValue());
+        const int hz = UiAudit::env ("ZATI_VBLANK").getIntValue();
+        if (hz > 0)
+        {
+            //  Y LA MARCA DE TIEMPO ES LA DEL PANEL, no la de cuando llega el
+            //  temporizador. En el telefono el aviso trae la hora del vsync,
+            //  que cae en multiplos exactos del periodo aunque el hilo de
+            //  mensajes lo coja tarde; la del temporizador temblaba con la
+            //  carga, un panel de 120 salia de 9.3 a 10.6 ms segun la corrida
+            //  -justo por donde 50 cuadros por segundo decide si se salta uno
+            //  de cada dos- y la cadencia cambiaba sin que nada cambiara: hasta
+            //  seis cambios en diez segundos, y `Tests/fluidez.py` en rojo una
+            //  corrida de cada ocho con cualquier binario. Asi que se redondea
+            //  al vsync de un panel de verdad, y dos avisos en el mismo vsync
+            //  son uno.
+            //
+            //  Y EL TEMPORIZADOR MIRA DOS VECES POR PERIODO: a un periodo justo
+            //  llegaba tarde con la carga y se comia vsyncs que un panel de
+            //  verdad si entrega -575 cuadros en diez segundos a 60 Hz con la
+            //  cara quieta, en vez de 600-, y lo que se perdia era el banco.
+            const double periodoMs = 1000.0 / (double) juce::jlimit (1, 240, hz);
+            relojDibujo.fn = [this, periodoMs, ultimo = -1.0] () mutable
+            {
+                const double vsync = std::floor (juce::Time::getMillisecondCounterHiRes() / periodoMs);
+                if (vsync <= ultimo) return;
+                ultimo = vsync;
+                enVBlank (vsync * periodoMs / 1000.0);
+            };
+            relojDibujo.startTimer (juce::jmax (1, (int) (periodoMs / 2.0)));
+        }
+        else
+        {
+            vblank = juce::VBlankAttachment (this, [this] (double t) { enVBlank (t); });
+        }
+    }
+    //  Y AL FINAL, no donde el master. aplicaFilasPiano llama a resized(), y
+    //  resized() desde la mitad del constructor es exactamente como se cerro
+    //  esta app antes de ensenar la ventana: la lista de tapas que pide todavia
+    //  esta vacia. Aqui ya esta todo construido.
+    loadPianoPref();
+    loadPistasPref();
+    //  Y EL ROTULO DEL ZOOM DE ANCHO SE ESCRIBE UNA VEZ AL ARRANCAR, por lo
+    //  mismo que sus dos hermanos: `aplicaZoomPasos` es quien lo pone y sin
+    //  esta linea la tapa salia con el texto del constructor -o sea vacia en
+    //  el volcado- y ademas sin pasar por `Lang::ltr`, que es lo que decide
+    //  como se lee "2:1" en arabe. No es una preferencia que se guarde: la
+    //  celda arranca CUADRADA por decision, asi que lo unico que hace falta es
+    //  que la tapa diga en que paso esta.
+    aplicaZoomPasos (seqZoomW);
+    loadCuentaPref();
+    loadTomasPref();
+    loadMovPref();
+    Metrics::holdMsVivo = Sistema::pulsacionLargaMs (Metrics::holdMs);   // accesibilidad#31
+    ZatiColours::ponEscalaTexto (Sistema::escalaTexto());   // accesibilidad#26
+    //  Y el monitor. `aplicaMonitor` sin avisar: en el constructor no hay
+    //  nadie a quien decirselo, y la linea de estado la escribe lo que la
+    //  persona toque despues.
+    loadMonitorPref();
+    aplicaMonitor (false);
+
+    setSize (500, 1080);
+    focusFx (0);
+    //  Establish which half of the sequencer card is showing BEFORE the first
+    //  layout: every control of it was addAndMakeVisible'd at construction, so
+    //  without this the two pages are both "visible" until something happens
+    //  to call showSeqPage - and the very first resized() would lay the step
+    //  controls out on top of the grid.
+    //  LOS MANDOS DE LA FICHA SON HIJOS DE LA FICHA, no de la cara.
+    //
+    //  initKnob e initSlider los cuelgan de MainComponent, que es donde viven
+    //  los dieciseis pads, asi que un mando de la ficha PADS y un pad son
+    //  HERMANOS - y dos hermanos que se pisan son un solapamiento, tanto para
+    //  el banco como para el dedo que apunta. Mientras la ficha fue baja no se
+    //  noto; en cuanto la pagina SONIDO crecio una fila de mandos, la tarjeta
+    //  -que se centra, no se apoya abajo- bajo su borde inferior sobre la
+    //  rejilla y salieron 3300 solapes en las 476 corridas, ochenta por
+    //  pantalla. Colgarlos de la ficha no mueve un pixel: Sheet ocupa la
+    //  ventana entera, asi que las coordenadas son las mismas, y ademas los
+    //  pinta DESPUES de la tarjeta y de los rotulos.
+    for (juce::Component* c : { (juce::Component*) &pitchSlider,  (juce::Component*) &fineSlider,
+                                (juce::Component*) &volSlider,    (juce::Component*) &panSlider,
+                                (juce::Component*) &anchoSlider,
+                                (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider,
+                                (juce::Component*) &cutSlider,    (juce::Component*) &resoSlider,
+                                (juce::Component*) &chokeSlider,  (juce::Component*) &startSlider,
+                                (juce::Component*) &endSlider,
+                                (juce::Component*) &fadeInSlider, (juce::Component*) &fadeOutSlider })
+        padSheet.donde().addAndMakeVisible (c);
+
+    showSeqPage (seqPageGrid);
+    showPadPage (padPageSound);
+    showMixBank (0);
+    ponIconos();
+    //  Y la herramienta de arranque: el LAPIZ, o sea la rejilla comportandose
+    //  exactamente como siempre. Sin esta linea las cuatro tapas nacerian
+    //  apagadas y la rejilla armada con la que fuera - un modo que nadie ha
+    //  pedido es peor que ninguno.
+    ponHerramienta (Playlist::hLapiz);
+    //  DESPUES de ponIconos, que reparte los dibujos de toda la app por su
+    //  sitio: la fila de la cara los suyos los toma de `slotFx` y no del
+    //  orden, asi que tiene que ser la ultima palabra sobre esas seis tapas.
+    refrescaRanuras();
+    applySkin();
+}
+
+void MainComponent::cableaSecuencia()
+{
     seqSheet.addAndMakeVisible (stepGrid);
 
     //  LA BARRA, QUE SUSTITUYE A LA FILA DE COMPASES.
@@ -321,7 +699,10 @@ MainComponent::MainComponent()
         seqBankButtons.add (t);
     }
     seqBankButtons[0]->setToggleState (true, juce::dontSendNotification);
+}
 
+void MainComponent::cableaPestanas()
+{
     // Module bar. FX is NOT a module any more: the six effects live in their
     // own row on the machine face, where you can reach them mid-take without
     // covering the pads. A sheet for them would only be a second way to switch
@@ -424,7 +805,10 @@ MainComponent::MainComponent()
         //  no se pueden distinguir.
         midiSheet  .nombre = "midf";
     }
+}
 
+void MainComponent::cableaPadPick()
+{
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver padPickSheet en la cabecera.
     {
         addAndMakeVisible (padPickSheet);
@@ -472,7 +856,10 @@ MainComponent::MainComponent()
         padSheet.donde().addAndMakeVisible (padPadPickBtn);
         chopSheet.donde().addAndMakeVisible (chopPadPickBtn);
     }
+}
 
+void MainComponent::cableaCanal()
+{
     //  LA REJILLA DE DIECISEIS PARA ELEGIR CANAL. Ver canalSheet en la cabecera.
     {
         addAndMakeVisible (canalSheet);
@@ -553,7 +940,10 @@ MainComponent::MainComponent()
         padCanalBtn.onClick = [this] { abreCanalPicker (! canalPickAbierto); };
         padSheet.donde().addAndMakeVisible (padCanalBtn);
     }
+}
 
+void MainComponent::cableaRanura()
+{
     //  EL MENU DE UNA RANURA. Ver ranuraSheet en la cabecera.
     {
         addAndMakeVisible (ranuraSheet);
@@ -603,7 +993,10 @@ MainComponent::MainComponent()
         };
         ranuraSheet.addAndMakeVisible (ranuraVaciarBtn);
     }
+}
 
+void MainComponent::cableaPreset()
+{
     //  LA FICHA DE PRESETS DE UN EFECTO. Ver presetSheet en la cabecera.
     {
         //  La puerta: en el renglon del titulo del menu de ranura, al lado de
@@ -689,7 +1082,10 @@ MainComponent::MainComponent()
         };
         presetSheet.addAndMakeVisible (presetGuardarBtn);
     }
+}
 
+void MainComponent::cableaCanNom()
+{
     //  LA FICHA DEL CANAL: nombre, icono o dibujo. Ver canNomSheet en la
     //  cabecera.
     {
@@ -789,7 +1185,10 @@ MainComponent::MainComponent()
         };
         canNomSheet.addChildComponent (canUsarBtn);
     }
+}
 
+void MainComponent::cableaEqBanda()
+{
     //  LA FICHA DE UNA BANDA DEL EQ. Ver eqBandaSheet en la cabecera.
     {
         addAndMakeVisible (eqBandaSheet);
@@ -839,7 +1238,10 @@ MainComponent::MainComponent()
         };
         eqBandaSheet.addAndMakeVisible (eqQKnob);
     }
+}
 
+void MainComponent::cableaAjustes()
+{
     // Projects sheet — reached from the header chip, not the module bar (the
     // bar stays a rule of three: PADS / SEC / FX).
     {
@@ -1191,6 +1593,10 @@ MainComponent::MainComponent()
         };
         setSheet.cuerpo.addAndMakeVisible (projKitButton);
 
+        styleButton (projZipButton, kKey);
+        projZipButton.onClick = [this] { copiaZip(); };
+        setSheet.cuerpo.addAndMakeVisible (projZipButton);
+
         // --- RACK: los envios de UN CANAL, abierto desde la mesa. ---------
         //
         //  Era «los envios de un pad» y son mil trescientos cuarenta y cuatro
@@ -1434,7 +1840,10 @@ MainComponent::MainComponent()
         instSheet.onDismiss = [this] { closeAllSheets(); };
         instSheet.paintContent = [this] (juce::Graphics& g) { paintInstSheetContent (g); };
     }
+}
 
+void MainComponent::cableaVst()
+{
     // ------------------------------------------------------------------
     //  LA FICHA DEL INSTRUMENTO. Ver MainComponent.h.
     // ------------------------------------------------------------------
@@ -1903,6 +2312,23 @@ MainComponent::MainComponent()
         }
         if (auto* b = midiModoButtons[0]) b->setToggleState (true, juce::dontSendNotification);
 
+        //  secuenciador#11: el canal, guardado donde el movimiento.
+        for (int c = 1; c <= 16; ++c) midiCanalBox.addItem (T ("CANAL %1", juce::String (c)), c);
+        {
+            const auto f = midiCanalFile();
+            const int c = f.existsAsFile() ? juce::jlimit (1, 16, f.loadFileAsString().trim().getIntValue()) : 10;
+            midi.setChannel (c);
+            midiCanalBox.setSelectedId (c, juce::dontSendNotification);
+        }
+        midiCanalBox.onChange = [this]
+        {
+            const int c = juce::jlimit (1, 16, midiCanalBox.getSelectedId());
+            midi.setChannel (c);
+            ProjectStore::escribeTexto (midiCanalFile(), juce::String (c));
+            setSheet.repintaTarjeta();
+        };
+        setSheet.cuerpo.addAndMakeVisible (midiCanalBox);
+
         midiOutBtn.onClick = [this] { applyMidiChoice(); };
         midiInBtn.onClick  = [this] { applyMidiChoice(); };
         midiOutBox.onChange = [this] { applyMidiChoice(); };
@@ -1929,7 +2355,10 @@ MainComponent::MainComponent()
         midi.onPedal = [this] (bool abajo) { engine.postPedalFromMidi (abajo); };
         midi.setSource (engine.midiOutQueue());
     }
+}
 
+void MainComponent::cableaExport()
+{
     // EXPORT sheet — the only door out of the app. Two products: the master,
     // or the master plus one file per loaded pad.
     {
@@ -2048,7 +2477,10 @@ MainComponent::MainComponent()
         exportSheet.cuerpo.addAndMakeVisible (exportCancelButton);
         exportCancelButton.setVisible (false);
     }
+}
 
+void MainComponent::cableaBrowse()
+{
     // Sample browser sheet — no module button of its own: it is opened by the
     // LOAD flow (arm LOAD, tap a pad) and targets that pad.
     {
@@ -2250,6 +2682,10 @@ MainComponent::MainComponent()
         engine.postTestTone();
         status.setText (T ("Tono de prueba"), juce::dontSendNotification);
     };
+}
+
+void MainComponent::cableaBotonera()
+{
     setSheet.cuerpo.addAndMakeVisible (testButton);
 
     styleButton (recButton, kKey);
@@ -2317,6 +2753,10 @@ MainComponent::MainComponent()
 
     styleButton (tapButton, kKey);
     tapButton.onClick = [this] { tapTempo(); };
+}
+
+void MainComponent::cableaDeslizadores()
+{
     seqSheet.addAndMakeVisible (tapButton);
 
     styleButton (copyPatBtn, kKey);
@@ -3333,6 +3773,10 @@ MainComponent::MainComponent()
 
     //  EL PLATO ELEGIBLE Y SU FICHA (tanda 32). Ver `Destino` en la cabecera.
     platoDeFabrica();
+}
+
+void MainComponent::cableaMandos()
+{
     {
         //  MANTENER un mando del plato abre la ficha con ESE mando preparado
         //  para recibir. Por un `MouseListener` encima del deslizador: el
@@ -3514,7 +3958,10 @@ MainComponent::MainComponent()
         //  escribe la sentinela a mano.
         for (auto& fila : slotFx) fila.fill (kSlotVacia);
     }
+}
 
+void MainComponent::cableaPads()
+{
     //  Dragging the hero's handles is the same edit as the START/END faders in
     //  the PADS sheet — one model, two ways in.
     waveform.onTrimDragged = [this] (float s, float e)
@@ -3801,6 +4248,10 @@ MainComponent::MainComponent()
     {
         showMixPage (mixPage == mixPageCanales ? mixPagePads : mixPageCanales);
     };
+}
+
+void MainComponent::cableaMezcla()
+{
     mixSheet.addAndMakeVisible (mixVistaBtn);
 
     //  The strips live in a scrolled panel and paint their own chips and
@@ -4087,7 +4538,10 @@ MainComponent::MainComponent()
         refreshMixStrip();
     };
     addAndMakeVisible (mixButton);
+}
 
+void MainComponent::cableaCancion()
+{
     //  SONG: the arrangement. Pick a block from the palette, tap a bar to
     //  place it, tap it again to clear.
     for (int i = 0; i < kNumPatterns; ++i)
@@ -4549,7 +5003,10 @@ MainComponent::MainComponent()
     songSheet.setVisible (false);
     songSheet.onDismiss = [this] { closeAllSheets(); };
     songSheet.paintContent = [this] (juce::Graphics& g) { paintSongSheetContent (g); };
+}
 
+void MainComponent::cableaPiano()
+{
     // --- PIANO ROLL: las notas del pad, en tono contra tiempo ---------------
     {
         //  LA COLUMNA NO ES EL PASO, y este era el unico de los cuatro gestos
@@ -4819,6 +5276,10 @@ MainComponent::MainComponent()
 
     styleButton (songButton, kKey);
     litAccent (songButton);
+}
+
+void MainComponent::cableaXy()
+{
     songButton.onClick = [this]
     {
         if (songSheet.isVisible()) { closeAllSheets(); return; }
@@ -4921,345 +5382,6 @@ MainComponent::MainComponent()
     };
 
     addAndMakeVisible (cristal);
-    padSheet.donde().addAndMakeVisible (waveform);
-
-    //  There is no skin picker. ZATI has one look; a strip of alternative
-    //  accents sitting on top of the project menu was a preference masquerading
-    //  as a feature, and it stole the first line of a sheet that exists to
-    //  manage work. Projects saved with another skin still load — the stored
-    //  value is applied, it just cannot be changed from here.
-
-    // Controls live inside their sheets, not on the machine face.
-    for (juce::Component* c : { (juce::Component*) &pitchSlider, (juce::Component*) &fineSlider,
-                                (juce::Component*) &volSlider, (juce::Component*) &panSlider,
-                                (juce::Component*) &anchoSlider,
-                                (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider, (juce::Component*) &chokeSlider,
-                                (juce::Component*) &startSlider, (juce::Component*) &endSlider,
-                                (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
-                                (juce::Component*) &autocutButton })
-        padSheet.donde().addAndMakeVisible (c);
-    padSheet.donde().addAndMakeVisible (chopButton);
-
-    //  Play what is on screen. It sits on the sheet's own title row rather
-    //  than in a row of its own, because the one thing this sheet is short of
-    //  is height, and a transport button is not worth a fader's worth of it.
-    styleButton (previewButton, kKey);
-    previewButton.onClick = [this]
-    {
-        if (selectedPad < 0) return;
-
-        //  Sounding: stop it. A loop with no way back off is the reason this
-        //  is a toggle rather than a re-trigger.
-        if (engine.getPadPosition01 (selectedPad) >= 0.0f)
-            engine.postNoteOff (selectedPad);
-        else
-            engine.postNoteOn (selectedPad);
-    };
-    padSheet.donde().addAndMakeVisible (previewButton);
-
-    //  NORMALIZAR ocupa la tercera celda de la fila de CHOKE y MODO, que
-    //  estaba vacia: una fila de tres con dos controles dentro.
-    styleButton (normButton, kKey);
-    normButton.onClick = [this] { normalisePad(); };
-    padSheet.donde().addAndMakeVisible (normButton);
-
-    //  QUITAR RUIDO va con REV y LOOP, en la fila que hay justo encima de la
-    //  onda: las tres son cosas de la MUESTRA que se esta mirando.
-    styleButton (denoiseButton, kKey);
-    denoiseButton.onClick = [this] { denoisePad(); };
-    padSheet.donde().addAndMakeVisible (denoiseButton);
-
-    //  RECORTAR va en esa misma fila: las cuatro son cosas de la MUESTRA que
-    //  se esta mirando, y esta ademas actua sobre lo que las asas de justo
-    //  debajo estan marcando.
-    styleButton (recorteButton, kKey);
-    recorteButton.onClick = [this] { recortaPad(); };
-    padSheet.donde().addAndMakeVisible (recorteButton);
-
-    //  El zoom. Tres tapas sobre la esquina de la pantalla: menos, cuanto, mas.
-    //  La del medio dice a que aumento se esta y vuelve al fichero entero.
-    {
-        juce::TextButton* zb[3] = { &zoomOutButton, &zoomFitButton, &zoomInButton };
-        for (auto* b : zb) { styleButton (*b, kKey); padSheet.donde().addAndMakeVisible (b); }
-        //  SE AMPLIA SOBRE EL RECORTE, no sobre lo que se este mirando.
-        //
-        //  Ampliar alrededor del centro de la vista es lo que hace un visor de
-        //  fotos, y aqui no se esta mirando una foto: se esta buscando DONDE
-        //  CORTAR. Con veinte segundos de muestra y el trozo bueno en el
-        //  segundo trece, cada toque de + dejaba el trozo un poco mas fuera de
-        //  pantalla y habia que volver a arrastrar - el zoom daba mas detalle
-        //  de justo lo que no importaba.
-        //
-        //  El ancla es el punto medio entre las dos asas, que es la definicion
-        //  de "la parte que estoy recortando". El pellizco conserva la suya -
-        //  el punto entre los dos dedos -, porque ahi el dedo SI dice donde.
-        auto trimCentre = [this]
-        {
-            if (selectedPad < 0) return 0.5f;
-            return (padStart01[(size_t) selectedPad] + padEnd01[(size_t) selectedPad]) * 0.5f;
-        };
-        zoomOutButton.onClick = [this, trimCentre] { waveform.setZoom (waveform.getZoom() * 0.5f, trimCentre()); };
-        zoomInButton .onClick = [this, trimCentre] { waveform.setZoom (waveform.getZoom() * 2.0f, trimCentre()); };
-        //  Vuelve al fichero entero, y si ya esta entero salta al recorte: es
-        //  el boton que se pulsa cuando te has perdido, y "perdido" tiene esas
-        //  dos formas.
-        zoomFitButton.onClick = [this]
-        {
-            if (waveform.getZoom() > 1.005f) { waveform.setZoom (1.0f, 0.5f); return; }
-            if (selectedPad < 0) return;
-            const float a = padStart01[(size_t) selectedPad], b = padEnd01[(size_t) selectedPad];
-            const float span = juce::jmax (1.0f / WaveformDisplay::kMaxZoom, b - a);
-            waveform.setZoom (juce::jlimit (1.0f, WaveformDisplay::kMaxZoom, 1.0f / span), (a + b) * 0.5f);
-        };
-        waveform.onZoomChanged = [this] (float z)
-        {
-            zoomFitButton.setButtonText (Lang::ltr ("x" + juce::String ((int) std::round (z))));
-        };
-    }
-
-    //  Las dos pestanas de la ficha del pad, con el mismo mueble que las del
-    //  secuenciador y las de AJUSTES: la ficha se queda quieta y cambia lo de
-    //  dentro. Debajo del titulo en las dos paginas, para que la pestana que
-    //  vas a pulsar no se mueva cuando pulsas la otra.
-    {
-        juce::TextButton* pb[3] = { &padSoundBtn, &padTrimBtn, &padRigBtn };
-        for (int i = 0; i < 3; ++i)
-        {
-            styleButton (*pb[i], kKey);
-            pb[i]->setClickingTogglesState (true);
-            filaDeRadio (*pb[i], "pagina pad", 8804);
-            litAccent (*pb[i]);
-            pb[i]->onClick = [this, i] { showPadPage (i); };
-            padSheet.donde().addAndMakeVisible (pb[i]);
-        }
-        padSoundBtn.setToggleState (true, juce::dontSendNotification);
-    }
-
-    //  LA PUERTA DEL RACK, donde estaban los seis envios duplicados. Ver la
-    //  maqueta de la pagina RIG: los mismos seis valores se movian desde dos
-    //  fichas distintas, y de las dos el RACK es la que dice mas.
-    //  16 NIVELES. Ver nivel16: se captura el pad al encender.
-    styleButton (nivelesButton, kKey);
-    litAccent (nivelesButton);
-    nivelesButton.setClickingTogglesState (true);
-    nivelesButton.onClick = [this]
-    {
-        nivel16 = nivelesButton.getToggleState();
-        nivelPad = juce::jlimit (0, kNumPads - 1, selectedPad);
-        refreshModoNota();
-        status.setText (nivel16 ? T ("16 NIVELES: PAD %1", juce::String (nivelPad + 1))
-                                : T ("16 NIVELES OFF"), juce::dontSendNotification);
-        //  Cada pad se repinta solo si cambia de modo. Ver PadButton::setModoNota.
-    };
-    padSheet.donde().addAndMakeVisible (nivelesButton);
-
-    styleButton (padRackBtn, kKey);
-    litAccent (padRackBtn);
-    padRackBtn.onClick = [this] { abreRackDelPad(); };
-    padSheet.donde().addAndMakeVisible (padRackBtn);
-
-    styleButton (undoButton, ZatiColours::red);
-    undoButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    undoButton.onClick = [this] { performUndo(); };
-    //  addChildComponent, not addAndMakeVisible: the latter turns the child
-    //  visible, which is how DESHACER came to sit on the face from launch
-    //  offering to undo something that had not happened yet.
-    addChildComponent (undoButton);
-
-    styleButton (redoButton, ZatiColours::key);
-    redoButton.onClick = [this] { performRedo(); };
-    addChildComponent (redoButton);
-
-    status.setJustificationType (juce::Justification::centred);
-    status.setColour (juce::Label::textColourId, ZatiColours::inkDim);
-    status.setText (T ("Toca un pad para sonar"), juce::dontSendNotification);
-    addAndMakeVisible (status);
-
-    //  CADA PARAMETRO LLEGA AL MOTOR UNA VEZ, para que el DSP y los mandos
-    //  esten de acuerdo antes de tocar nada — Y EN LOS DIECISEIS CANALES.
-    //
-    //  Esa promesa la cumplia MEDIA regla: `pushFxParam` escribe en
-    //  `canalActual`, que aqui vale cero, asi que los quince de detras se
-    //  quedaban con `kFxDef` y el cero con lo que el MANDO acaba resolviendo.
-    //  Y no son el mismo numero: un `Slider` con paso 0.01 redondea el 0.707
-    //  de la resonancia a 0.71, o sea que abrir el canal cuatro enseñaba 0.71
-    //  con el motor en 0.707 hasta que alguien moviera el mando. Lo canto
-    //  `Tests/ranuras.py` con su cifra — `30 de 336`, que son quince canales
-    //  por las dos resonancias, FLT y HPF.
-    //
-    //  Los treinta tipos y los treinta y dos canales, sin excepcion: desde la
-    //  Tanda 30 DLY, REV, AMB y PNG tambien son de su canal -ver
-    //  `AudioEngine::fxPorCanal`- y cada fila arranca con su mando.
-    for (int f = 0; f < kNumFx; ++f)
-        for (int pi = 0; pi < 3; ++pi)
-        {
-            const float v = (float) fxParam (f, pi).getValue();
-            for (int c = 0; c < kNumCanales; ++c) engine.setFxParam (c, f, pi, v);
-        }
-
-    //  Accessible names.
-    //
-    //  A TextButton already announces its own caption, so the buttons were
-    //  fine. Sliders are not: JUCE has no text to fall back on and every knob
-    //  in the app came out as an anonymous "Slider", which makes the whole
-    //  thing unusable with TalkBack on. The pads are named in refreshPadArt,
-    //  where the sample name is known; these are the rest.
-    refreshAccessibleNames();
-
-    //  Captions last: every button above was built with whatever text its
-    //  declaration carried, and this is what makes them say it in the user's
-    //  language. Lang itself was loaded before the window existed (Main.cpp).
-    retranslateUi();
-
-    //  Before the first layout: on Android 15 the window is the whole screen
-    //  and the bars are drawn over it.
-    systemInsets = SystemInsets::get();
-
-    //  What this particular phone can carry. Everything that costs CPU or
-    //  memory is read from here rather than from a constant written on the
-    //  machine the app was developed on: the size of the voice pool, how often
-    //  the interface redraws, how much of the master goes into the scope, how
-    //  long a mic take may be, and whether pad tiles draw their waveform.
-    {
-        const auto& dev = DeviceTier::profile();
-        engine.setPolyphony  (dev.voices, dev.voicesPerPad);
-        engine.setRecordLimit (dev.recordSeconds, dev.recordStereo);
-        for (auto* p : pads) if (p != nullptr) p->setArtEnabled (dev.padWaveformArt);
-
-        //  EL RELOJ, que es el de MANTENIMIENTO y ya no el del dibujo. La
-        //  cadencia es la misma de siempre porque para un vigilante sobra: lo
-        //  que cambia es que ya no decide cuantas veces por segundo se ve
-        //  moverse la aguja de un medidor.
-        startTimer (dev.relojMs);
-    }
-
-    //  Ver `OidoDeToques`: cada dedo que se levanta deja el estado encargado.
-    oidoDeToques.alSoltar = [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; };
-    juce::Desktop::getInstance().addGlobalMouseListener (&oidoDeToques);
-    addChildComponent (anilloFoco);
-    juce::Desktop::getInstance().addFocusChangeListener (&anilloFoco);
-
-    //  Ver textoInvalidoConserva: todos los mandos de la cara y de las fichas.
-    textoInvalidoConserva (*this);
-    //  Y lo tecleado encarga el estado igual que un toque. Ver tecladoEncarga.
-    tecladoEncarga (*this, [this] { estadoTrasToqueMs = kEstadoTrasToqueMs; });
-
-    //  Y EL DIBUJO, AL RITMO DE LA PANTALLA. Se engancha DESPUES de que la
-    //  cara exista y no en la lista de inicializacion: `VBlankAttachment`
-    //  necesita un componente vivo y busca el peer del display en el que
-    //  esta, asi que atarlo a medio construir es atarlo a nada.
-    //
-    //  Con ZATI_VBLANK=hz manda el banco y no el panel: X11 entrega vblanks a
-    //  la frecuencia que declare el display -100 Hz en Xvfb, que no declara
-    //  ninguna- asi que sin esta puerta no hay forma de preguntar «¿se ve
-    //  igual a 60 que a 120?». Y son excluyentes a proposito: con las dos
-    //  puestas el cuadro se pintaria dos veces por vuelta y el `dt` mediria la
-    //  mitad de lo que dura.
-    {
-        lastreMs   = UiAudit::env ("ZATI_LASTRE").getDoubleValue();
-        xrunGuion  = UiAudit::env ("ZATI_XRUN");
-        xrunEscala = juce::jmax (1.0, UiAudit::env ("ZATI_XRUN_ESCALA").getDoubleValue());
-        const int hz = UiAudit::env ("ZATI_VBLANK").getIntValue();
-        if (hz > 0)
-        {
-            //  Y LA MARCA DE TIEMPO ES LA DEL PANEL, no la de cuando llega el
-            //  temporizador. En el telefono el aviso trae la hora del vsync,
-            //  que cae en multiplos exactos del periodo aunque el hilo de
-            //  mensajes lo coja tarde; la del temporizador temblaba con la
-            //  carga, un panel de 120 salia de 9.3 a 10.6 ms segun la corrida
-            //  -justo por donde 50 cuadros por segundo decide si se salta uno
-            //  de cada dos- y la cadencia cambiaba sin que nada cambiara: hasta
-            //  seis cambios en diez segundos, y `Tests/fluidez.py` en rojo una
-            //  corrida de cada ocho con cualquier binario. Asi que se redondea
-            //  al vsync de un panel de verdad, y dos avisos en el mismo vsync
-            //  son uno.
-            //
-            //  Y EL TEMPORIZADOR MIRA DOS VECES POR PERIODO: a un periodo justo
-            //  llegaba tarde con la carga y se comia vsyncs que un panel de
-            //  verdad si entrega -575 cuadros en diez segundos a 60 Hz con la
-            //  cara quieta, en vez de 600-, y lo que se perdia era el banco.
-            const double periodoMs = 1000.0 / (double) juce::jlimit (1, 240, hz);
-            relojDibujo.fn = [this, periodoMs, ultimo = -1.0] () mutable
-            {
-                const double vsync = std::floor (juce::Time::getMillisecondCounterHiRes() / periodoMs);
-                if (vsync <= ultimo) return;
-                ultimo = vsync;
-                enVBlank (vsync * periodoMs / 1000.0);
-            };
-            relojDibujo.startTimer (juce::jmax (1, (int) (periodoMs / 2.0)));
-        }
-        else
-        {
-            vblank = juce::VBlankAttachment (this, [this] (double t) { enVBlank (t); });
-        }
-    }
-    //  Y AL FINAL, no donde el master. aplicaFilasPiano llama a resized(), y
-    //  resized() desde la mitad del constructor es exactamente como se cerro
-    //  esta app antes de ensenar la ventana: la lista de tapas que pide todavia
-    //  esta vacia. Aqui ya esta todo construido.
-    loadPianoPref();
-    loadPistasPref();
-    //  Y EL ROTULO DEL ZOOM DE ANCHO SE ESCRIBE UNA VEZ AL ARRANCAR, por lo
-    //  mismo que sus dos hermanos: `aplicaZoomPasos` es quien lo pone y sin
-    //  esta linea la tapa salia con el texto del constructor -o sea vacia en
-    //  el volcado- y ademas sin pasar por `Lang::ltr`, que es lo que decide
-    //  como se lee "2:1" en arabe. No es una preferencia que se guarde: la
-    //  celda arranca CUADRADA por decision, asi que lo unico que hace falta es
-    //  que la tapa diga en que paso esta.
-    aplicaZoomPasos (seqZoomW);
-    loadCuentaPref();
-    loadTomasPref();
-    loadMovPref();
-    Metrics::holdMsVivo = Sistema::pulsacionLargaMs (Metrics::holdMs);   // accesibilidad#31
-    //  Y el monitor. `aplicaMonitor` sin avisar: en el constructor no hay
-    //  nadie a quien decirselo, y la linea de estado la escribe lo que la
-    //  persona toque despues.
-    loadMonitorPref();
-    aplicaMonitor (false);
-
-    setSize (500, 1080);
-    focusFx (0);
-    //  Establish which half of the sequencer card is showing BEFORE the first
-    //  layout: every control of it was addAndMakeVisible'd at construction, so
-    //  without this the two pages are both "visible" until something happens
-    //  to call showSeqPage - and the very first resized() would lay the step
-    //  controls out on top of the grid.
-    //  LOS MANDOS DE LA FICHA SON HIJOS DE LA FICHA, no de la cara.
-    //
-    //  initKnob e initSlider los cuelgan de MainComponent, que es donde viven
-    //  los dieciseis pads, asi que un mando de la ficha PADS y un pad son
-    //  HERMANOS - y dos hermanos que se pisan son un solapamiento, tanto para
-    //  el banco como para el dedo que apunta. Mientras la ficha fue baja no se
-    //  noto; en cuanto la pagina SONIDO crecio una fila de mandos, la tarjeta
-    //  -que se centra, no se apoya abajo- bajo su borde inferior sobre la
-    //  rejilla y salieron 3300 solapes en las 476 corridas, ochenta por
-    //  pantalla. Colgarlos de la ficha no mueve un pixel: Sheet ocupa la
-    //  ventana entera, asi que las coordenadas son las mismas, y ademas los
-    //  pinta DESPUES de la tarjeta y de los rotulos.
-    for (juce::Component* c : { (juce::Component*) &pitchSlider,  (juce::Component*) &fineSlider,
-                                (juce::Component*) &volSlider,    (juce::Component*) &panSlider,
-                                (juce::Component*) &anchoSlider,
-                                (juce::Component*) &attackSlider, (juce::Component*) &releaseSlider,
-                                (juce::Component*) &cutSlider,    (juce::Component*) &resoSlider,
-                                (juce::Component*) &chokeSlider,  (juce::Component*) &startSlider,
-                                (juce::Component*) &endSlider,
-                                (juce::Component*) &fadeInSlider, (juce::Component*) &fadeOutSlider })
-        padSheet.donde().addAndMakeVisible (c);
-
-    showSeqPage (seqPageGrid);
-    showPadPage (padPageSound);
-    showMixBank (0);
-    ponIconos();
-    //  Y la herramienta de arranque: el LAPIZ, o sea la rejilla comportandose
-    //  exactamente como siempre. Sin esta linea las cuatro tapas nacerian
-    //  apagadas y la rejilla armada con la que fuera - un modo que nadie ha
-    //  pedido es peor que ninguno.
-    ponHerramienta (Playlist::hLapiz);
-    //  DESPUES de ponIconos, que reparte los dibujos de toda la app por su
-    //  sitio: la fila de la cara los suyos los toma de `slotFx` y no del
-    //  orden, asi que tiene que ser la ultima palabra sobre esas seis tapas.
-    refrescaRanuras();
-    applySkin();
 }
 
 // ============================================================================
@@ -5394,6 +5516,7 @@ void MainComponent::ponIconos()
         { &projSaveButton, Iconos::Id::guardar }, { &projLoadButton, Iconos::Id::abrir },
         { &projNewButton, Iconos::Id::nuevo },    { &projDeleteButton, Iconos::Id::borrar },
         { &projExportButton, Iconos::Id::exportar }, { &projKitButton, Iconos::Id::guardar },
+        { &projZipButton, Iconos::Id::exportar },
         { &exportMasterButton, Iconos::Id::exportar },
         { &exportStemsButton, Iconos::Id::exportar },
         { &exportDirBtn, Iconos::Id::carpeta },
@@ -8225,6 +8348,8 @@ void MainComponent::showSetPage (int page)
     pageAspBtn  .setToggleState (onAsp,   juce::dontSendNotification);
     pageProjBtn .setToggleState (onProj,  juce::dontSendNotification);
     pageGestBtn .setToggleState (setPage == pageGestures, juce::dontSendNotification);
+    if (onProj && ProjectStore::seBorraAlDesinstalar())   // android#2
+        status.setText (T ("Esta carpeta se borra al desinstalar: guarda una copia con ZIP"), juce::dontSendNotification);
 
     //  APAGAR Y VACIAR, LAS DOS COSAS.
     //
@@ -8244,6 +8369,7 @@ void MainComponent::showSetPage (int page)
     muestra (midiOutBtn, onMidi);
     muestra (midiInBtn,  onMidi);
     muestra (midiOutBox, onMidi);
+    muestra (midiCanalBox, onMidi);
     muestra (midiInBox,  onMidi);
     //  Y los dos chips de como se lee lo que entra, con el que toca encendido
     //  y con las dos mitades de la regla: apagar Y vaciar los limites fuera de
@@ -8299,6 +8425,7 @@ void MainComponent::showSetPage (int page)
     muestra (projNameBox,      onProj);
     muestra (projSaveButton,   onProj);
     muestra (projKitButton,    onProj);
+    muestra (projZipButton,    onProj);
     muestra (projLoadButton,   onProj);
     muestra (projNewButton,    onProj);
     muestra (projDeleteButton, onProj);
@@ -9259,6 +9386,8 @@ juce::Rectangle<int> MainComponent::pintaTitulo (juce::Graphics& g, juce::Rectan
     //  control. "AJUSTES - AUDIO" pasaba por debajo de la tapa de CUADRAR y por
     //  debajo de la x, y ninguna de las reglas del banco podia verlo porque un
     //  rotulo pintado no es un componente y la banda solapaba de todas formas.
+    g.setFont (ZatiLookAndFeel::cabeEn (g.getCurrentFont(), texto,   // accesibilidad#26
+                                        (int) ((float) caja.getWidth() / (apretar > 0.0f ? apretar : 1.0f))));
     const auto real = apunta (g, caja, texto, tipo,
                               elipsis ? 0.0f : (apretar > 0.0f ? apretar : 1.0f));
 
@@ -11558,6 +11687,16 @@ void MainComponent::refreshAccessibleNames()
     //  accesibilidad#22, #23: cajas sin nombre y la cruz que se leia «×».
     midiInBox.setTitle (T ("Entrada MIDI"));
     midiOutBox.setTitle (T ("Salida MIDI"));
+    midiCanalBox.setTitle (T ("Canal MIDI"));   // secuenciador#11
+    //  accesibilidad#0: los seis lienzos, con nombre y con lo que se hace en ellos.
+    stepGrid.setTitle (T ("Rejilla de pasos"));
+    pianoGrid.setTitle (T ("Piano roll"));
+    songGrid.setTitle (T ("Cancion por pistas"));
+    xyPad.setTitle (T ("Pad XY"));
+    eqCurva.setTitle (T ("Curva del EQ"));
+    vstTeclado.setTitle (T ("Teclado"));
+    for (auto* c : std::initializer_list<juce::Component*> { &stepGrid, &pianoGrid, &songGrid, &xyPad, &eqCurva, &vstTeclado })
+        c->setDescription (T ("Desliza arriba o abajo para moverte; toque doble para tocar"));
     projNameBox.setTitle (T ("Nombre del proyecto"));
     presetNombreBox.setTitle (T ("Nombre del preset"));
     canNomBox.setTitle (T ("Nombre del canal"));
@@ -11819,6 +11958,7 @@ void MainComponent::retranslateUi()
 
     projSaveButton  .setButtonText (T ("GUARDAR"));
     projKitButton   .setButtonText (T ("GUARDAR KIT"));
+    projZipButton   .setButtonText (T ("ZIP"));
     projLoadButton  .setButtonText (T ("ABRIR"));
     projNewButton   .setButtonText (T ("NUEVO"));
     projDeleteButton.setButtonText (T ("BORRAR"));
@@ -15127,6 +15267,29 @@ void MainComponent::deleteProject (juce::String name)
 //  Y ocupa los compases que el patron mide, con las mismas dos lineas que usa
 //  el pincel: un bloque de un compas escrito a mano donde el patron mide dos se
 //  lee como un bloque y suena como medio.
+//  producto#1: un compas de KICK, SNARE, HAT y el BASS del banco D.
+void MainComponent::patronDemo()
+{
+    struct Golpe { int pad, paso, semis, vel, cuartos; };
+    static constexpr Golpe golpes[] = {
+        { 0, 0, 0, 0, 0 }, { 0, 4, 0, 0, 0 }, { 0, 8, 0, 0, 0 }, { 0, 12, 0, 0, 0 },
+        { 1, 4, 0, 0, 0 }, { 1, 12, 0, 0, 0 },
+        { 2, 0, 0, 64, 0 }, { 2, 2, 0, 100, 0 }, { 2, 4, 0, 64, 0 }, { 2, 6, 0, 100, 0 },
+        { 2, 8, 0, 64, 0 }, { 2, 10, 0, 100, 0 }, { 2, 12, 0, 64, 0 }, { 2, 14, 0, 100, 0 },
+        { 48, 0, 0, 0, 6 }, { 48, 3, 0, 0, 6 }, { 48, 6, 3, 0, 6 },
+        { 48, 8, 0, 0, 6 }, { 48, 11, 7, 0, 6 }, { 48, 14, 5, 0, 6 },
+    };
+    for (const auto& g : golpes)
+    {
+        pattern[0][(size_t) g.paso][(size_t) g.pad] = true;
+        engine.setStep (0, g.paso, g.pad, true);
+        if (g.semis != 0)   engine.setStepNote (0, g.paso, g.pad, g.semis);
+        if (g.vel > 0)      engine.setStepVel  (0, g.paso, g.pad, g.vel);
+        if (g.cuartos > 0)  engine.setStepLen  (0, g.paso, g.pad, g.cuartos);
+    }
+    refreshStepGrid();
+}
+
 void MainComponent::songPorDefecto()
 {
     vaciaCancion();
@@ -17985,6 +18148,12 @@ juce::File MainComponent::movPrefFile()
                .getChildFile ("zati-movimiento.txt");
 }
 
+juce::File MainComponent::midiCanalFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("zati-midi-canal.txt");
+}
+
 void MainComponent::saveMovPref() const
 {
     //  Por `escribeTexto` y no con un `replaceWithText` a pelo: es la puerta
@@ -18506,9 +18675,10 @@ void MainComponent::tourPrepara (int paso)
 }
 
 //  Ver MainComponent::tourBodyFont.
-juce::Font MainComponent::tourBodyFont()
+juce::Font MainComponent::tourBodyFont() const
 {
-    return ZatiColours::monoFont (Metrics::fBody, false).withExtraKerningFactor (0.02f);
+    const float h = tourLetraBase ? Metrics::fBody / ZatiColours::escalaTexto.load() : Metrics::fBody;   // accesibilidad#26
+    return ZatiColours::monoFont (h, false).withExtraKerningFactor (0.02f);
 }
 
 int MainComponent::tourBodyHeight (int ancho) const
@@ -18518,8 +18688,9 @@ int MainComponent::tourBodyHeight (int ancho) const
     const int lineaH = (int) std::ceil (f.getHeight() * 1.15f);
     static_assert (kTourPasos == std::tuple_size<decltype (tourAnchoCuerpo)>::value,
                    "un ancho guardado por paso");
-    if (tourAnchoIdioma != (int) Lang::current())
+    if (tourAnchoIdioma != (int) Lang::current() || ! juce::approximatelyEqual (tourAnchoAlto, f.getHeight()))
     {
+        tourAnchoAlto = f.getHeight();
         for (int i = 0; i < kTourPasos; ++i)
             tourAnchoCuerpo[(size_t) i] = juce::GlyphArrangement::getStringWidth (f, guiaTexto (ZatiTour::cuerpos[i]));
         tourAnchoIdioma = (int) Lang::current();
@@ -19873,6 +20044,39 @@ void MainComponent::importIntoLibrary (const juce::URL& url)
     //  An empty file is worse than no file: it shows up in the browser and
     //  fails when you tap it.
     if (dest.getSize() <= 0) dest.deleteFile();
+}
+
+//  android#2: la biblioteca a un zip donde la persona elija, fuera de lo que borra desinstalar.
+void MainComponent::copiaZip()
+{
+    chooser = std::make_unique<juce::FileChooser> (T ("Copia de la biblioteca"),
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("ZATI-biblioteca.zip"),
+        "*.zip");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                        | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto url = fc.getURLResult();
+            if (url.isEmpty()) return;
+            beginBusy (T ("ZIP"));
+            juce::Thread::launch ([yo = juce::Component::SafePointer<MainComponent> (this), url]
+            {
+                int n = -1;
+                if (auto out = url.isLocalFile() ? std::unique_ptr<juce::OutputStream> (url.getLocalFile().createOutputStream())
+                                                 : url.createOutputStream())
+                {
+                    if (auto* fo = dynamic_cast<juce::FileOutputStream*> (out.get())) { fo->setPosition (0); fo->truncate(); }
+                    n = ProjectStore::zipBiblioteca (*out);
+                }
+                juce::MessageManager::callAsync ([yo, n]
+                {
+                    if (yo == nullptr) return;
+                    yo->endBusy();
+                    yo->status.setText (n >= 0 ? T ("Biblioteca copiada: %1 ficheros", juce::String (n))
+                                               : T ("No se pudo escribir la copia"), juce::dontSendNotification);
+                });
+            });
+        });
 }
 
 void MainComponent::launchSystemPicker()
@@ -21770,6 +21974,7 @@ void MainComponent::restoreSession()
         //  cuando NO hay sesion -, porque el dia que la persona ya tiene su
         //  trabajo dentro, meterle la fabrica encima seria borrarselo.
         loadFactoryKits();
+        patronDemo();   // producto#1
         //  Y la cancion con el patron 1 puesto, por lo mismo: una maquina que
         //  abre por primera vez tiene que traer algo que tocar en todas sus
         //  paginas, no solo en la rejilla de pads.
@@ -22731,6 +22936,11 @@ void MainComponent::timerCallback()
         session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
         refreshSystemInsets();
         Metrics::holdMsVivo = Sistema::pulsacionLargaMs (Metrics::holdMs);   // accesibilidad#31: cambia en Ajustes sin reiniciar
+        {
+            const float antes = ZatiColours::escalaTexto.load();   // accesibilidad#26
+            ZatiColours::ponEscalaTexto (Sistema::escalaTexto());
+            if (! juce::approximatelyEqual (antes, ZatiColours::escalaTexto.load())) { resized(); repaint(); }
+        }
         excluyeGestosDeAtras();
 
         //  ...and the state itself every twenty seconds or so. onPause writes

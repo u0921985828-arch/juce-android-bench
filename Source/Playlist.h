@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "Lang.h"
+#include "Accesible.h"
 #include "Zati.h"
 #include "AudioEngine.h"
 #include "StepGrid.h"
@@ -31,6 +33,26 @@
 class Playlist : public juce::Component, public Rejilla
 {
 public:
+    //  accesibilidad#0: un cursor por pista y compas.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        acc.cuantas = [this] { return kLanes * juce::jmax (1, totalBars); };
+        acc.dice = [this] (int i)
+        {
+            const int lane = i % kLanes, compas = i / kLanes, paso = compas * juce::jmax (1, pasosCompas);
+            bool hay = false;
+            for (int b = 0; b < numBloques && bloques != nullptr; ++b)
+                if (bloques[b].lane == lane && bloques[b].desdePaso <= paso && paso < bloques[b].hastaPaso) hay = true;
+            return T (hay ? "Pista %1, compas %2: bloque" : "Pista %1, compas %2: vacio",
+                      juce::String (lane + 1), juce::String (compas + 1));
+        };
+        acc.pulsa = [this] (int i)
+        {
+            if (onCell) onCell (i % kLanes, (i / kLanes) * juce::jmax (1, pasosCompas));
+        };
+        return Accesible::crea (*this, acc);
+    }
+
     //  Las tres cifras del banco. Los compases que se ven los mueve el zoom
     //  -cuatro, ocho o dieciseis- y los carriles son cuatro por contrato.
     int celdasAncho() const override { return getCompasesVista(); }
@@ -1317,6 +1339,7 @@ public:
     bool pincelClip = false;
 
 private:
+    Accesible::Cursor acc;   // accesibilidad#0
     //  La ultima celda escrita por el arrastre en curso: sin esto, pasar el
     //  dedo por la misma casilla la enciende y la apaga a la velocidad de los
     //  eventos del raton.

@@ -6,7 +6,7 @@
 //  (accesibilidad #28, #29 y #31): cuanto dura una pulsacion larga, si quiere
 //  animaciones y donde vive el gesto de atras. Fuera de Android contesta lo de
 //  siempre, y `ZATI_SISTEMA` lo convierte en ENTRADA para el banco, como
-//  `ZATI_INSETS` con los margenes: «pulsacion=900;animacion=0;gestos=0,30,0,30».
+//  `ZATI_INSETS` con los margenes: «pulsacion=900;animacion=0;gestos=0,30,0,30;texto=1.3».
 namespace Sistema
 {
     //  ViewConfiguration.getLongPressTimeout(), acotado a 200..1500 ms.
@@ -14,6 +14,9 @@ namespace Sistema
 
     //  Settings.Global ANIMATOR_DURATION_SCALE: 0 es «quitar animaciones».
     float escalaAnimaciones();
+
+    //  Configuration.fontScale, el «tamano de fuente» del sistema (accesibilidad#26).
+    float escalaTexto();
 
     //  WindowInsets.Type.systemGestures(), en unidades logicas (arriba, izquierda, abajo, derecha).
     juce::BorderSize<int> gestos();

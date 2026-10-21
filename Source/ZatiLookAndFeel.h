@@ -402,14 +402,19 @@ namespace ZatiColours
     inline juce::Typeface::Ptr monoBold ()     { static auto t = face (BinaryData::JetBrainsMonoBold_ttf,    BinaryData::JetBrainsMonoBold_ttfSize);    return t; }
 
     // Condensed display face (Oswald) — big pad numerals / wordmark.
+    //  accesibilidad#26: el tamano de letra del sistema, con tope; lo pone el arranque.
+    inline constexpr float kTextoTope = 1.3f;
+    inline std::atomic<float> escalaTexto { 1.0f };
+    inline void ponEscalaTexto (float f) noexcept { escalaTexto = juce::jlimit (1.0f, kTextoTope, f); }
+
     inline juce::Font displayFont (float h, bool bold = true)
     {
-        return juce::Font (juce::FontOptions (bold ? oswaldBold() : oswaldMedium()).withHeight (h));   // estabilidad#17
+        return juce::Font (juce::FontOptions (bold ? oswaldBold() : oswaldMedium()).withHeight (h * escalaTexto.load()));   // estabilidad#17
     }
     // Monospaced UI/LCD face (JetBrains Mono).
     inline juce::Font monoFont (float h, bool bold = false)
     {
-        return juce::Font (juce::FontOptions (bold ? monoBold() : monoRegular()).withHeight (h));   // estabilidad#17
+        return juce::Font (juce::FontOptions (bold ? monoBold() : monoRegular()).withHeight (h * escalaTexto.load()));   // estabilidad#17
     }
 
     //  The NAME of a thing, as opposed to its value.
@@ -470,6 +475,7 @@ namespace Metrics
     //  phone; this is a phone. Where sixteen of something have to fit at
     //  once the card grows instead of the rows shrinking.
     static constexpr int hit = 40;
+    static constexpr int dedoPrincipal = 44;   // visual#5: pestanas, transporte y switches de la mesa donde caben
 
     // ------------------------------------------------------------------
     //  LOS GESTOS. Todo numero de maquetado vive aqui y estos no vivian:
@@ -2161,6 +2167,16 @@ public:
         juce::Font fuente { juce::FontOptions {} };
     };
 
+    //  accesibilidad#26: la letra grande del sistema crece hasta la caja, nunca por debajo de la normal.
+    static juce::Font cabeEn (juce::Font f, const juce::String& t, int ancho)
+    {
+        const float e = ZatiColours::escalaTexto.load();
+        if (e <= 1.0f || t.isEmpty() || ancho <= 0) return f;
+        const float w = juce::GlyphArrangement::getStringWidth (f, t);
+        if (w <= (float) ancho) return f;
+        return f.withHeight (juce::jmax (f.getHeight() / e, f.getHeight() * (float) ancho / w));
+    }
+
     static Reparto reparteTapa (const juce::TextButton& b)
     {
         Reparto r;
@@ -2174,6 +2190,7 @@ public:
         {
             r.fuente = letraDeTapa ((float) kCapMinH);
             r.texto  = paletaDeSwitch (b.getLocalBounds(), b.getToggleState()).reduced (Metrics::aireTapaDensa, 0);
+            r.fuente = cabeEn (r.fuente, texto, r.texto.getWidth());
             return r;
         }
 
@@ -2188,6 +2205,7 @@ public:
         //  se pide despues y sobre `r.texto`— se cae solo donde ya no cabe.
         if (const int cola = (int) b.getProperties().getWithDefault ("cola", 0); cola > 0)
             r.cola = r.texto.removeFromBottom (juce::jmin (cola, r.texto.getHeight()));
+        r.fuente = cabeEn (r.fuente, texto, r.texto.getWidth());
 
         const auto id = (Iconos::Id) (int) b.getProperties().getWithDefault ("icono", 0);
         if (id == Iconos::Id::ninguno || id == Iconos::Id::kNum) return r;
@@ -2610,10 +2628,11 @@ public:
             g.drawFittedText (t, area, just, 2, 0.9f);
     }
 
-    juce::Font getLabelFont (juce::Label&) override
+    juce::Font getLabelFont (juce::Label& l) override
     {
         //  `fLectura` y no `fValue`: ver el comentario del token. Las cajas de
         //  texto de los sliders llevan su ancho escrito en pixeles.
-        return ZatiColours::monoFont (Metrics::fLectura, true);
+        return cabeEn (ZatiColours::monoFont (Metrics::fLectura, true), l.getText(),   // accesibilidad#26
+                       getLabelBorderSize (l).subtractedFrom (l.getLocalBounds()).getWidth());
     }
 };

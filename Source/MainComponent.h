@@ -1323,6 +1323,53 @@ private:
     static bool tarjetaAncha (juce::Rectangle<int> zona) noexcept
     { return anchoTarjeta (zona.getWidth()) > altoTarjeta (zona); }
 
+    //  codigo#20: resized() reparte y cada ficha se maqueta en su funcion
+    juce::Rectangle<int> sheetFromBottom (Sheet& s, int desiredH);
+    static void placeKnobRow (juce::Rectangle<int> row, juce::Slider** ks, int n = 3);
+    void maquetaPadPick();
+    void maquetaCanalPick();
+    void maquetaMidi();
+    void maquetaRanura();
+    void maquetaPreset();
+    void maquetaCanal();
+    void maquetaEqBanda();
+    void maquetaMandos();
+    void maquetaPad (juce::Rectangle<int> full);
+    void maquetaManual();
+    void maquetaBrowse (juce::Rectangle<int> full);
+    void maquetaSet (juce::Rectangle<int> full);
+    void maquetaExport();
+    void maquetaRack();
+    void maquetaInst();
+    void maquetaVst (juce::Rectangle<int> full);
+    void maquetaChop();
+    void maquetaSong (juce::Rectangle<int> full);
+    void maquetaMix();
+    void maquetaXy();
+    void maquetaSeq (juce::Rectangle<int> full);
+    void maquetaTour();
+    //  codigo#21: el constructor arranca y cada ficha se cablea en su funcion, en el mismo orden
+    void cableaSecuencia();
+    void cableaPestanas();
+    void cableaPadPick();
+    void cableaCanal();
+    void cableaRanura();
+    void cableaPreset();
+    void cableaCanNom();
+    void cableaEqBanda();
+    void cableaAjustes();
+    void cableaVst();
+    void cableaExport();
+    void cableaBrowse();
+    void cableaBotonera();
+    void cableaDeslizadores();
+    void cableaMandos();
+    void cableaPads();
+    void cableaMezcla();
+    void cableaCancion();
+    void cableaPiano();
+    void cableaXy();
+
     //  Lo que mide el recuadro de AUDIO, que es texto pintado y por tanto no
     //  lo dice ningun componente. Ver estAltoAudio: estaba escrito a mano en
     //  cuatro sitios.
@@ -1344,6 +1391,7 @@ private:
     void padPorDefecto (int i);
     void newProject();
     //  LA CANCION DE UN PROYECTO RECIEN NACIDO. Ver la definicion.
+    void patronDemo();   // producto#1
     void songPorDefecto();
     void refreshProjectList();
 
@@ -1373,6 +1421,8 @@ private:
     //  biblioteca con la forma de un banco descargado, para que vuelva a entrar
     //  por CARGAR KIT igual que cualquier pack de internet.
     Boton projKitButton  { "GUARDAR KIT" };
+    Boton projZipButton  { "ZIP" };   // android#2: copia de la biblioteca entera
+    void copiaZip();
     //  LA VENTANA DE PISTAS de la rejilla de pasos. Su rotulo es el RANGO y no
     //  una palabra -"1-16", "1-8", "9-16"- por dos razones: dice el estado, que
     //  contando carriles no se deduce, y es el mismo en los cuatro idiomas, o
@@ -1799,6 +1849,7 @@ private:
     static juce::File movPrefFile();
     void saveMovPref() const;
     void loadMovPref();
+    static juce::File midiCanalFile();   // secuenciador#11
     void ponMovimiento (bool on);
     juce::Rectangle<int> skinRowArea;
     juce::Rectangle<int> bufRowArea, rateRowArea;
@@ -2257,6 +2308,7 @@ private:
     MidiIo::Bridge midi;
     Boton midiOutBtn { "MIDI OUT" }, midiInBtn { "MIDI IN" };
     juce::ComboBox   midiOutBox, midiInBox;
+    juce::ComboBox   midiCanalBox;   // secuenciador#11: el canal por el que sale
     void refreshMidiDevices();
     void applyMidiChoice();
 
@@ -3995,6 +4047,8 @@ private:
     //  1117 ms contra el de 1000. El texto solo cambia con el idioma.
     mutable std::array<double, 24> tourAnchoCuerpo {};
     mutable int tourAnchoIdioma = -1;
+    mutable float tourAnchoAlto = 0.0f;
+    bool tourLetraBase = false;   // accesibilidad#26: la letra grande no cabe en el muelle
     //  LA LETRA DEL PARRAFO DEL TOUR, en un solo sitio. La escribian dos -quien
     //  mide el alto del muelle y quien lo pinta- y tienen que decir lo MISMO o
     //  el muelle se queda corto y la ultima linea cae fuera de la tarjeta.
@@ -4003,7 +4057,7 @@ private:
     //  palabras que se leen de un vistazo- y esto es un parrafo que alguien lee
     //  entero, en un telefono, la primera vez que abre la app. Es el unico
     //  texto largo de la interfaz y estaba con la letra del mas corto.
-    static juce::Font tourBodyFont();
+    juce::Font tourBodyFont() const;
     void paintTourSheetContent (juce::Graphics& g);
     static juce::File tourFile();
     void paintManualSheetContent (juce::Graphics& g);

@@ -448,6 +448,8 @@ jobs:
           KS_PASS:  ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          #  android#2: a 1, firma v3 con linaje depuracion -> subida (se instala encima sin desinstalar).
+          ZATI_LINAJE: ${{ vars.ZATI_LINAJE }}
         run: |
           if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASS" ]; then
             echo "No upload keystore configured - the release APK keeps the debug signature."
@@ -481,6 +483,22 @@ jobs:
           #  comentario incluido. `CLAUDE.md` siguio contandolo como hecho.
           #  Por eso ahora lo mide `Tests/firma.py`: un arreglo que nada
           #  comprueba es un arreglo que vuelve.
+          if [ "${ZATI_LINAJE:-}" = "1" ]; then
+            #  android#2: la clave vieja firma v1/v2 y cede a la nueva en v3; sin rollback.
+            "$APKSIGNER" rotate --out linaje.bin \
+              --old-signer --ks ci/zati-debug.keystore --ks-pass pass:android \
+                --ks-key-alias androiddebugkey --key-pass pass:android --set-rollback false \
+              --new-signer --ks upload.jks --ks-pass env:KS_PASS \
+                --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS
+            "$APKSIGNER" sign \
+              --ks ci/zati-debug.keystore --ks-pass pass:android \
+                --ks-key-alias androiddebugkey --key-pass pass:android \
+              --next-signer --ks upload.jks --ks-pass env:KS_PASS \
+                --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS \
+              --lineage linaje.bin \
+              --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+              Zati-release.apk
+          else
           "$APKSIGNER" sign \
             --ks upload.jks \
             --ks-pass env:KS_PASS \
@@ -488,6 +506,7 @@ jobs:
             --key-pass env:KEY_PASS \
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             Zati-release.apk
+          fi
           "$APKSIGNER" verify --print-certs Zati-release.apk
 
           #  Y SE COMPRUEBA QUE LA DE DEPURACION NO SE QUEDO PUESTA.
@@ -518,7 +537,15 @@ jobs:
           test -n "$REPO_FP" -a -n "$APK_FP" || { echo "No se pudo leer una de las dos huellas"; exit 1; }
           echo "huella repositorio $REPO_FP"
           echo "huella APK         $APK_FP"
-          if [ "$REPO_FP" = "$APK_FP" ]; then
+          if [ "${ZATI_LINAJE:-}" = "1" ]; then
+            #  android#2: con linaje la vieja es la de depuracion a proposito; lo que se exige es que la nueva este.
+            UP_FP="$(keytool -list -v -keystore upload.jks -storepass:env KS_PASS -alias "$KEY_ALIAS" \
+                     | grep -i 'SHA256:' | head -1 | tr -d ' ' | cut -d: -f2- | tr -d ':' | tr 'A-Z' 'a-z')"
+            test -n "$UP_FP" || { echo "No se pudo leer la huella de la clave de subida"; exit 1; }
+            "$APKSIGNER" verify -v --print-certs Zati-release.apk | tr -d ':' | tr 'A-Z' 'a-z' | grep -q "$UP_FP" \
+              || { echo "La clave de subida no esta en el linaje del APK"; exit 1; }
+            echo "Linaje v3: depuracion -> subida ($UP_FP)"
+          elif [ "$REPO_FP" = "$APK_FP" ]; then
             echo "La release quedo firmada con la clave de depuracion del repositorio."
             exit 1
           fi

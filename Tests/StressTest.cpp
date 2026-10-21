@@ -504,6 +504,47 @@ int main()
                      (countOk && mapOk && velOk && fromSeq > 0 && notaSeq == 43 && whenOff == 0) ? "OK" : zatiFalla());
     }
 
+    //  secuenciador#11: la puerta es el largo de la nota, y el reloj sale.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e; e.prepareToPlay (48000.0, 512); e.setPolyphony (16, 4);
+        enCanalCero (e);
+        e.setMidiOutEnabled (true);
+        e.setPadGain (0, 1.0f); e.publishSample (0, makeSample (48000.0, 0.1, 200.0f));
+        juce::AudioBuffer<float> b (2, 512);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.midiOutQueue().drain ([] (const MidiIo::NoteEvent&) {});
+        e.setBpm (120.0);
+        e.setStep (0, 0, 0, true);
+        e.setStepLen (0, 0, 0, 4);                         // un paso entero: 125 ms a 120
+        e.setPlaying (true);
+        int relojes = 0, arranques = 0, paradas = 0, gateMs = -1, relojAntes = 0;
+        auto cuenta = [&] (const MidiIo::NoteEvent& ev)
+        {
+            if (ev.tipo == MidiIo::NoteEvent::Tipo::Reloj) ++relojes;
+            else if (ev.tipo == MidiIo::NoteEvent::Tipo::Arranca) { ++arranques; relojAntes = relojes; }
+            else if (ev.tipo == MidiIo::NoteEvent::Tipo::Para) ++paradas;
+            else if (ev.on && gateMs < 0) gateMs = ev.gateMs;
+        };
+        for (int blk = 0; blk < 375; ++blk)                // 4 s justos
+        {
+            b.clear(); e.renderNextBlock (b, 0, 512);
+            e.midiOutQueue().drain (cuenta);
+        }
+        const int relojesSonando = relojes;
+        e.setPlaying (false);
+        b.clear(); e.renderNextBlock (b, 0, 512);
+        e.midiOutQueue().drain (cuenta);
+        const bool msgsOk = MidiIo::mensajeDe ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Reloj }).isMidiClock()
+                         && MidiIo::mensajeDe ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Arranca }).isMidiStart()
+                         && MidiIo::mensajeDe ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Para }).isMidiStop();
+        const bool ok = gateMs == 125 && std::abs (relojesSonando - 192) <= 1 && arranques == 1
+                     && relojAntes == 0 && paradas == 1 && relojes == relojesSonando && msgsOk;
+        std::printf ("%-34s puerta %d ms  reloj %d en 4 s  start %d  stop %d  mensajes %s  %s\n",
+                     "midi: puerta y reloj", gateMs, relojesSonando, arranques, paradas,
+                     msgsOk ? "ok" : "MAL", ok ? "OK" : zatiFalla());
+    }
+
     //  EL DELAY, Y EL BRILLO QUE LE QUEDA A LA OCTAVA REPETICION.
     //
     //  La linea interpolaba lineal, y una interpolacion lineal de un retardo
@@ -10200,6 +10241,44 @@ int main()
         fin.store (true); audio.join();
         std::printf ("%-34s %d de %d tomas siguieron escribiendose tras pararlas   %s\n", "parar la toma",
                      cruzadas, tomas, (tomas > 1000 && cruzadas == 0) ? "OK" : zatiFalla());
+    }
+
+    //  codigo#22: CADA FASE DEL BLOQUE, JUZGADA POR SEPARADO: corre todas, cubren el bloque y caben.
+    {
+        constexpr int nb = 400;
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (srBase, bs);
+        e.setPolyphony (32, 4);
+        enCanalCero (e);
+        juce::AudioBuffer<float> buf (2, bs);
+        for (int p = 0; p < 16; ++p)
+        {
+            e.setPadGain (p, 0.85f);
+            e.publishSample (p, makeSample (44100.0, 1.2, 110.0f * (float) (p + 1)));
+        }
+        runBlocks (e, buf, bs, 8);
+        e.midePorFases (true);
+        const auto s = runBlocks (e, buf, bs, nb, [&e] (int b)
+        {
+            if (b % 50 == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 1.0f);
+        });
+        e.midePorFases (false);
+        double suma = 0.0, peor = 0.0;
+        int corridas = 0;
+        for (int f = 0; f < AudioEngine::kFases; ++f)
+        {
+            const double ms = e.msDeFase (f);
+            suma += ms; peor = juce::jmax (peor, ms / nb);
+            if (e.vecesDeFase (f) == nb) ++corridas;
+        }
+        for (int f = 0; f < AudioEngine::kFases; ++f)
+            std::printf ("%-34s %-14s %8.2f us/bloque  %5.1f%%  %d veces\n", f == 0 ? "fases del bloque" : "",
+                         AudioEngine::nombreFase (f), 1000.0 * e.msDeFase (f) / nb,
+                         100.0 * e.msDeFase (f) / juce::jmax (1.0e-9, suma), e.vecesDeFase (f));
+        const double cubre = suma / juce::jmax (1.0e-9, s.totalMs);
+        std::printf ("%-34s %d de %d fases en cada bloque, cubren %.0f%% del bloque, la peor %.3f ms de %.2f   %s\n",
+                     "fases del bloque", corridas, AudioEngine::kFases, 100.0 * cubre, peor, budgetMs,
+                     (corridas == AudioEngine::kFases && cubre >= 0.8 && peor < budgetMs) ? "OK" : zatiFalla());
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

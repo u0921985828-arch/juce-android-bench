@@ -4033,11 +4033,98 @@ void MainComponent::auditOpen (const juce::String& pedido)
         const float quieto = pads[0] != nullptr ? pads[0]->getFlash() : -1.0f;
         movimiento = mov; padFlash[0] = 0.0f; refreshPad (0);
         std::cout << "{\"sistema\":1,\"pulsacion\":" << Metrics::pulsacion() << ",\"movimiento\":" << (mov ? 1 : 0)
-                  << ",\"destello_quieto\":" << quieto << ",\"excluye\":[";
+                  << ",\"destello_quieto\":" << quieto
+                  << ",\"letra\":" << ZatiColours::monoFont (10.0f).getHeight() << ",\"excluye\":[";   // accesibilidad#26
         const auto z = Sistema::ultimaExclusion();
         for (int i = 0; i < z.size(); ++i)
             std::cout << (i ? "," : "") << "[" << z[i].getX() << "," << z[i].getY() << "," << z[i].getWidth() << "," << z[i].getHeight() << "]";
         std::cout << "]}" << std::endl;
+    }
+    else if (which == "accesible")   // accesibilidad#0
+    {
+        closeAllSheets();
+        int llamadas = 0;
+        auto mide = [&] (const char* nombre, juce::Component& c)
+        {
+            auto* h = c.getAccessibilityHandler();
+            auto* v = h != nullptr ? h->getValueInterface() : nullptr;
+            juce::String primero, ultimo;
+            int n = 0;
+            llamadas = 0;
+            if (v != nullptr)
+            {
+                const auto r = v->getRange();
+                n = juce::roundToInt (r.getMaximumValue()) + 1;
+                v->setValue (r.getMaximumValue()); ultimo = v->getCurrentValueAsString();
+                v->setValue (0.0);                 primero = v->getCurrentValueAsString();
+                if (h->getActions().contains (juce::AccessibilityActionType::press))
+                    h->getActions().invoke (juce::AccessibilityActionType::press);
+            }
+            auto json = [] (const juce::String& t) { return juce::JSON::toString (t, true).toStdString(); };
+            std::cout << "{\"accesible\":" << json (nombre) << ",\"rol\":" << (h != nullptr ? (int) h->getRole() : -1)
+                      << ",\"titulo\":" << json (c.getTitle()) << ",\"posiciones\":" << n
+                      << ",\"primero\":" << json (primero) << ",\"ultimo\":" << json (ultimo)
+                      << ",\"llamadas\":" << llamadas << "}" << std::endl;
+        };
+        {
+            auto viejo = stepGrid.onCell;   stepGrid.onCell = [&] (int, int, bool) { ++llamadas; };
+            mide ("pasos", stepGrid);       stepGrid.onCell = viejo;
+        }
+        {
+            auto viejo = pianoGrid.onCelda; pianoGrid.onCelda = [&] (int, int, bool) { ++llamadas; };
+            mide ("piano", pianoGrid);      pianoGrid.onCelda = viejo;
+        }
+        {
+            auto viejo = songGrid.onCell;   songGrid.onCell = [&] (int, int) { ++llamadas; };
+            mide ("cancion", songGrid);     songGrid.onCell = viejo;
+        }
+        {
+            auto viejo = xyPad.onMove;      xyPad.onMove = [&] (float, float) { ++llamadas; };
+            mide ("xy", xyPad);             xyPad.onMove = viejo;
+        }
+        {
+            auto viejo = eqCurva.onBanda;   eqCurva.onBanda = [&] (int, float, float) { ++llamadas; };
+            mide ("eq", eqCurva);           eqCurva.onBanda = viejo;
+        }
+        {
+            auto viejo = vstTeclado.onNota; vstTeclado.onNota = [&] (int) { ++llamadas; };
+            auto suelta = vstTeclado.onSuelta; vstTeclado.onSuelta = [] {};
+            mide ("teclado", vstTeclado);   vstTeclado.onNota = viejo; vstTeclado.onSuelta = suelta;
+        }
+    }
+    else if (which == "demo")   // producto#1
+    {
+        closeAllSheets();
+        std::cout << "{\"demo\":1,\"largo\":" << engine.getPatternLength (0) << ",\"golpes\":[";
+        bool primero = true;
+        for (int st = 0; st < engine.getPatternLength (0); ++st)
+            for (int p = 0; p < kNumPads; ++p)
+                if (pattern[0][(size_t) st][(size_t) p])
+                {
+                    std::cout << (primero ? "" : ",") << "[" << p << "," << st << "," << engine.getStepNote (0, st, p)
+                              << ",\"" << padName[(size_t) p].toStdString() << "\"]";
+                    primero = false;
+                }
+        std::cout << "]}" << std::endl;
+    }
+    else if (which == "zip")   // android#2
+    {
+        closeAllSheets();
+        autosave();
+        session.flush (2000);
+        const auto destino = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("copia.zip");
+        int n = -1;
+        if (auto out = destino.createOutputStream()) n = ProjectStore::zipBiblioteca (*out);
+        juce::ZipFile zip (destino);
+        bool sesion = false;
+        for (int i = 0; i < zip.getNumEntries(); ++i)
+            if (zip.getEntry (i)->filename.startsWith (".sesion/")) sesion = true;
+        openSheet (setSheet, setButton);
+        showSetPage (pageProjects);
+        std::cout << "{\"zip\":1,\"ficheros\":" << n << ",\"entradas\":" << zip.getNumEntries()
+                  << ",\"sesion\":" << (sesion ? 1 : 0) << ",\"seborra\":" << (ProjectStore::seBorraAlDesinstalar() ? 1 : 0)
+                  << ",\"aviso\":\"" << status.getText().toStdString() << "\""
+                  << ",\"boton\":" << (projZipButton.isVisible() && ! projZipButton.getBounds().isEmpty() ? 1 : 0) << "}" << std::endl;
     }
     else if (which == "salvo")
     {

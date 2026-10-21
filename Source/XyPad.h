@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "Accesible.h"
 #include "Lang.h"
 
 //  UN PANEL XY, QUE ES LO QUE UN EFECTO NECESITA EN DIRECTO.
@@ -24,6 +25,22 @@
 class XyPad : public juce::Component
 {
 public:
+    //  accesibilidad#0: una rejilla de 11 x 11 puntos; el toque doble lleva alli el punto.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        acc.cuantas = [] { return 121; };
+        acc.dice = [this] (int i)
+        {
+            return xName + " " + juce::String ((i % 11) * 10) + " %, " + yName + " " + juce::String ((i / 11) * 10) + " %";
+        };
+        acc.pulsa = [this] (int i)
+        {
+            setPosition ((float) (i % 11) / 10.0f, (float) (i / 11) / 10.0f);
+            if (onMove) onMove (px, py);
+        };
+        return Accesible::crea (*this, acc);
+    }
+
     static juce::Colour tintaCursor() { return ZatiColours::lcdFg; }   // (accesibilidad#9)
 
 public:
@@ -118,6 +135,7 @@ public:
     void mouseUp   (const juce::MouseEvent&)   override { touching = false; repaint(); if (onTouch) onTouch (false); }
 
 private:
+    Accesible::Cursor acc;   // accesibilidad#0
     //  Los dos rotulos viven DENTRO del panel y hay que reservarles el alto, o
     //  la reticula se les mete debajo y el numero se lee sobre una linea.
     static constexpr float kInset = 16.0f;

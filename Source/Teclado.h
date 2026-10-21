@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "Lang.h"
+#include "Accesible.h"
 
 // ============================================================================
 //  Teclado — una octava que se toca, para la ficha del instrumento.
@@ -27,6 +29,24 @@
 class Teclado : public juce::Component
 {
 public:
+    //  accesibilidad#0: un cursor por tecla; el toque doble la toca medio segundo.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        acc.cuantas = [] { return kTeclas; };
+        acc.dice = [this] (int i)
+        {
+            static const char* nombres[12] = { "DO", "DO#", "RE", "RE#", "MI", "FA", "FA#", "SOL", "SOL#", "LA", "LA#", "SI" };
+            return T ("Tecla %1", juce::String (nombres[i % 12]) + juce::String (i == 12 ? " +1" : ""));
+        };
+        acc.pulsa = [this] (int i)
+        {
+            if (onNota) onNota (base + i);
+            juce::Component::SafePointer<Teclado> yo (this);
+            juce::Timer::callAfterDelay (500, [yo] { if (yo != nullptr && yo->onSuelta) yo->onSuelta(); });
+        };
+        return Accesible::crea (*this, acc);
+    }
+
     //  Trece y no doce: una octava y su raiz de arriba. Es la misma cuenta que
     //  hizo que el piano roll pasara de veinticinco filas a trece.
     static constexpr int kTeclas = 13;
@@ -124,6 +144,7 @@ public:
     int notaPara (float x, float y) const noexcept { return notaEn (x, y); }   // auditoria (accesibilidad#18)
 
 private:
+    Accesible::Cursor acc;   // accesibilidad#0
     int base = 0;
     int viva = -100;
 

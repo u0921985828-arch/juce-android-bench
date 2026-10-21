@@ -240,6 +240,38 @@ def distancia (a, b):
     return math.sqrt (sum ((p - q) ** 2 for p, q in zip (a, b)) / len (a))
 
 
+KICK_CLIC_DB   = -28.0   # producto#2
+KICK_CUERPO_DB = -14.0   # producto#2
+
+
+def _biquad (x, b0, b1, b2, a1, a2):
+    y, x1, x2, y1, y2 = [], 0.0, 0.0, 0.0, 0.0
+    for v in x:
+        o = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+        x2, x1, y2, y1 = x1, v, y1, o
+        y.append (o)
+    return y
+
+
+def _rbj (x, f, alto):
+    w = 2.0 * math.pi * f / 48000.0
+    al = math.sin (w) / (2.0 * 0.7071)
+    c = math.cos (w)
+    a0 = 1.0 + al
+    if alto: b = ((1 + c) / 2, -(1 + c), (1 + c) / 2)
+    else:    b = ((1 - c) / 2, 1 - c, (1 - c) / 2)
+    return _biquad (x, b[0] / a0, b[1] / a0, b[2] / a0, -2 * c / a0, (1 - al) / a0)
+
+
+def banda_db (x, lo, hi):
+    """producto#2: energia entre lo y hi contra la total, en dB (dos polos por lado, dos veces)."""
+    y = x
+    for _ in range (2): y = _rbj (y, lo, True)
+    for _ in range (2): y = _rbj (y, hi, False)
+    tot = sum (v * v for v in x) or 1e-20
+    return 10.0 * math.log10 (max (1e-20, sum (v * v for v in y) / tot))
+
+
 def load (path):
     w = wave.open (path, "rb")
     n, sw, ch = w.getnframes(), w.getsampwidth(), w.getnchannels()
@@ -293,6 +325,14 @@ def main():
         if abs (x[-1]) > MAX_EDGE:  bad.append ("%s acaba en %.3f: CLICK" % (name, abs (x[-1])))
         if abs (x[0])  > MAX_START: bad.append ("%s empieza en %.3f: CLICK" % (name, abs (x[0])))
 
+    #  producto#2: el KICK se tiene que oir en un altavoz de telefono, que no
+    #  baja de 150 Hz. El clic de 1 a 4 kHz y los armonicos de 150 a 600 Hz
+    #  son lo unico suyo que llega.
+    kick = load (os.path.join (os.path.dirname (files[0]), "pad01.wav"))
+    clic, cuerpo = banda_db (kick, 1000.0, 4000.0), banda_db (kick, 150.0, 600.0)
+    if clic < KICK_CLIC_DB:     bad.append ("KICK sin clic: %.1f dB entre 1 y 4 kHz (minimo %.0f)" % (clic, KICK_CLIC_DB))
+    if cuerpo < KICK_CUERPO_DB: bad.append ("KICK sin armonicos: %.1f dB entre 150 y 600 Hz (minimo %.0f)" % (cuerpo, KICK_CUERPO_DB))
+
     peaks   = [r[1] for r in rows]
     louds   = [r[2] for r in rows if r[2] > 1e-9]
     brights = [r[3] for r in rows]
@@ -321,6 +361,7 @@ def main():
     print ("%-22s %.3f a %.3f" % ("pico", min (peaks), max (peaks)))
     print ("%-22s %.0f Hz a %.0f Hz" % ("brillo", min (brights), max (brights)))
     print ("%-22s %.3f s a %.2f s" % ("duracion", min (durs), max (durs)))
+    print ("%-22s clic %.1f dB (1-4 kHz), armonicos %.1f dB (150-600 Hz)" % ("KICK", clic, cuerpo))
     for label, lo, hi in (("graves", 0, 700), ("medios", 700, 3000), ("agudos", 3000, 1e9)):
         print ("%-22s %d" % ("  " + label, sum (1 for b in brights if lo <= b < hi)))
     if pares:

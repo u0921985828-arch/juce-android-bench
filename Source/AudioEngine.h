@@ -613,6 +613,12 @@ public:
     void prepareToPlay (double sampleRate, int maxBlockSize, int inputChannels = 0) noexcept;
     void releaseResources() noexcept;
     void renderNextBlock (juce::AudioBuffer<float>& out, int startSample, int numSamples) noexcept;
+    //  codigo#22: el bloque por fases, cronometradas solo para el banco (StressTest)
+    static constexpr int kFases = 14;
+    static const char* nombreFase (int f) noexcept;
+    void midePorFases (bool si) noexcept { if (si && ! porFases) for (int f = 0; f < kFases; ++f) { tFase[f] = 0; nFase[f] = 0; } porFases = si; }
+    double msDeFase (int f) const noexcept { return juce::Time::highResolutionTicksToSeconds (tFase[f]) * 1000.0; }
+    int vecesDeFase (int f) const noexcept { return nFase[f]; }
 
     // --- Triggers (message thread) ---
     void postNoteOn  (int slot, float vel = 1.0f) noexcept;   // uses the pad's stored params
@@ -2608,6 +2614,7 @@ private:
     //  apagada, triggerPad no escribe ni un byte.
     std::atomic<bool>  midiOutOn { false };
     MidiIo::NoteFifo   midiOut;
+    double             relojMidi = 0.0;   // secuenciador#11: muestras hasta el proximo reloj
 
     //  THE LIFEBOAT. See postNoteOn / renderNextBlock.
     //
@@ -3629,6 +3636,45 @@ private:
     //  decide si hay un bus por canal es «¿de quien es este aparato?» y no
     //  «¿resta seco?». Los tres de modulacion suman y tienen el suyo.
     static constexpr int kNumBuses = kNumFx + kNumPorCanal * kNumCanales;
+
+    //  codigo#22: renderNextBlock por fases; esto es lo que se pasan, en la pila del bloque
+    bool porFases = false;
+    juce::int64 tFase[kFases] = {};
+    int nFase[kFases] = {};
+
+    struct Mezcla
+    {
+        juce::AudioBuffer<float>* out = nullptr;
+        int startSample = 0, numSamples = 0, busChans = 0;
+        float kSend = 0.0f;
+        float sendGain[kNumPads][kNumFx];
+        float dryGain[kNumPads];
+        float canGain[kNumPads];
+        float canPan[kNumPads], canAnc[kNumPads];
+        bool  busFed[kNumBuses] = {};
+        int   canalDePad[kNumPads] = {};
+        bool  padSplit[kNumPads];
+        std::uint64_t sendMask = 0, filtMask = 0;
+        int   miraCan = -1;
+        float picoCan = 0.0f;
+        bool  miraMesa = false;
+        float picoPad[kNumPads];
+    };
+    void faseGanancias (Mezcla& mz) noexcept;
+    void renderVoices (Mezcla& mz, int s, int nn) noexcept;
+    void faseEventos() noexcept;
+    void faseSecuenciador (Mezcla& mz) noexcept;
+    void faseBuses (Mezcla& mz) noexcept;
+    void faseMonitor (Mezcla& mz) noexcept;
+    void faseLimitador (Mezcla& mz) noexcept;
+    void faseBombeoYVivo (Mezcla& mz) noexcept;
+    void faseToma (Mezcla& mz) noexcept;
+    void faseNivelMaster (Mezcla& mz) noexcept;
+    void faseSonda (Mezcla& mz) noexcept;
+    void faseOsciloscopio (Mezcla& mz) noexcept;
+    void faseTono (Mezcla& mz) noexcept;
+    void faseCabezales() noexcept;
+    void faseVu (Mezcla& mz) noexcept;
 
     //  ============================================================
     //  LA CADENA DE UN CANAL: QUIEN VA DESPUES DE QUIEN

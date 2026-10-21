@@ -165,7 +165,23 @@ namespace MidiIo
         std::uint8_t vel = 100;
         bool         on  = true;
         std::int8_t  semis = 0;   // secuenciador#11: la tecla del piano roll
+        std::uint16_t gateMs = 0; // secuenciador#11: el largo; cero es la puerta de siempre
+        enum class Tipo : std::uint8_t { Nota, Reloj, Arranca, Para };
+        Tipo         tipo = Tipo::Nota;   // secuenciador#11: reloj 24 ppq, Start y Stop
     };
+
+    //  secuenciador#11: lo que no es nota sale tal cual.
+    inline juce::MidiMessage mensajeDe (const NoteEvent& e) noexcept
+    {
+        switch (e.tipo)
+        {
+            case NoteEvent::Tipo::Reloj:   return juce::MidiMessage::midiClock();
+            case NoteEvent::Tipo::Arranca: return juce::MidiMessage::midiStart();
+            case NoteEvent::Tipo::Para:    return juce::MidiMessage::midiStop();
+            case NoteEvent::Tipo::Nota:
+            default:                       return {};
+        }
+    }
 
     inline int notaDe (const NoteEvent& e) noexcept { return juce::jlimit (0, 127, noteForPad (e.pad) + e.semis); }
 
@@ -355,10 +371,18 @@ namespace MidiIo
             while (! threadShouldExit())
             {
                 bool didSomething = false;
+                const double ahora = juce::Time::getMillisecondCounterHiRes();
 
-                if (src != nullptr) src->drain ([this, &didSomething] (const NoteEvent& e) noexcept
+                if (src != nullptr) src->drain ([this, &didSomething, ahora] (const NoteEvent& e) noexcept
                 {
                     if (out == nullptr) return;
+                    didSomething = true;
+                    if (e.tipo != NoteEvent::Tipo::Nota)   // secuenciador#11
+                    {
+                        if (e.tipo != NoteEvent::Tipo::Reloj) corriendo = (e.tipo == NoteEvent::Tipo::Arranca);
+                        out->sendMessageNow (mensajeDe (e));
+                        return;
+                    }
                     const int ch   = channel.load (std::memory_order_relaxed);
                     const int note = e.on ? notaDe (e) : enviada[e.pad];
 
@@ -368,36 +392,38 @@ namespace MidiIo
                         //  puerta: se apaga primero. Sin esto, el segundo
                         //  encendido no se oye en un aparato que ya tiene esa
                         //  nota pisada, y el primer apagado mata a los dos.
-                        if (gate[e.pad] > 0)
-                            out->sendMessageNow (juce::MidiMessage::noteOff (ch, enviada[e.pad]));
+                        if (gate[e.pad] > 0.0)
+                            out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[e.pad], enviada[e.pad]));
 
                         out->sendMessageNow (juce::MidiMessage::noteOn (ch, note, (juce::uint8) e.vel));
-                        gate[e.pad] = kGateMs;
+                        gate[e.pad] = ahora + (e.gateMs > 0 ? (double) e.gateMs : (double) kGateMs);   // secuenciador#11
                         enviada[e.pad] = note;
+                        canalDe[e.pad] = ch;
                     }
-                    else if (gate[e.pad] > 0)
+                    else if (gate[e.pad] > 0.0)
                     {
-                        out->sendMessageNow (juce::MidiMessage::noteOff (ch, note));
-                        gate[e.pad] = 0;
+                        out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[e.pad], note));
+                        gate[e.pad] = 0.0;
                     }
-                    didSomething = true;
                 });
 
-                //  Las puertas que vencen. Un milisegundo de paso: el hilo
-                //  duerme cuando no hay nada, asi que esto no cuesta nada en
-                //  reposo y da un cierre con un error de un milisegundo, que
-                //  para una puerta de sesenta es exacto de sobra.
+                //  Las puertas que vencen, por reloj y no por vueltas: una
+                //  vuelta de un milisegundo dura mas de uno, y en una nota de
+                //  dos segundos eso se nota (secuenciador#11).
                 bool anyOpen = false;
+                const double luego = juce::Time::getMillisecondCounterHiRes();
                 for (int p = 0; p < kMaxPads; ++p)
                 {
-                    if (gate[p] <= 0) continue;
-                    if (--gate[p] == 0 && out != nullptr)
-                        out->sendMessageNow (juce::MidiMessage::noteOff (channel.load (std::memory_order_relaxed),
-                                                                        enviada[p]));
+                    if (gate[p] <= 0.0) continue;
+                    if (gate[p] <= luego && out != nullptr)
+                    {
+                        out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[p], enviada[p]));
+                        gate[p] = 0.0;
+                    }
                     else anyOpen = true;
                 }
 
-                if (anyOpen || didSomething || (src != nullptr && src->numReady() > 0))
+                if (anyOpen || didSomething || corriendo || (src != nullptr && src->numReady() > 0))
                     juce::Thread::sleep (1);
                 else
                     wait (50);      // nada abierto y nada que mandar: a dormir
@@ -412,7 +438,8 @@ namespace MidiIo
             if (out == nullptr) return;
             const int ch = channel.load (std::memory_order_relaxed);
             for (int p = 0; p < kMaxPads; ++p)
-                if (gate[p] > 0) { out->sendMessageNow (juce::MidiMessage::noteOff (ch, noteForPad (p))); gate[p] = 0; }
+                if (gate[p] > 0.0) { out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[p], enviada[p])); gate[p] = 0.0; }
+            if (corriendo) { out->sendMessageNow (juce::MidiMessage::midiStop()); corriendo = false; }   // secuenciador#11
             out->sendMessageNow (juce::MidiMessage::allNotesOff (ch));
         }
 
@@ -452,7 +479,9 @@ namespace MidiIo
         std::atomic<int>  channel { 10 };      // percusion, por convenio
         std::atomic<int>  modo { (int) Modo::Pads };   // lo de siempre por defecto
         std::atomic<int>  padTeclado { 0 };
-        int               gate[kMaxPads] {};   // ms que le quedan a cada nota
+        double            gate[kMaxPads] {};   // cuando se apaga cada nota, en ms del reloj de JUCE
         int               enviada[kMaxPads] {}; // la nota que se mando, para apagarla
+        int               canalDe[kMaxPads] {}; // y por que canal: cambiar de canal no deja notas pisadas
+        bool              corriendo = false;    // secuenciador#11: entre Start y Stop el hilo no duerme
     };
 }

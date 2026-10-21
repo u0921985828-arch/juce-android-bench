@@ -431,6 +431,7 @@ void MainComponent::resized()
     //  PADS y la tira del paso: sube a cuarenta donde el cristal puede pagarlo
     //  sin bajar de SU suelo, y se queda en veintiseis donde no.
     int moduleH = ZatiLookAndFeel::kModule;
+    int transportH = ZatiLookAndFeel::kTransport;   // visual#5: sube a 44 de pie donde el cristal lo paga
     statusH = ZatiLookAndFeel::kStatus;
     //  Y SI APAISADO LAS DOS BANDAS CABEN EN UN RENGLON, que hasta ahora se
     //  daba por hecho.
@@ -484,9 +485,9 @@ void MainComponent::resized()
         //  que se VE es el reservado MAS los cinco de la tapa. Se descuentan,
         //  que es lo que iguala el ritmo: quince, diez y quince pasan a diez,
         //  diez y diez.
-        auto belowScreenCon = [this, caraUnaFila] (int mh)
+        auto belowScreenCon = [this, caraUnaFila] (int mh, int th = ZatiLookAndFeel::kTransport)
         {
-            const int tapa = ZatiLookAndFeel::aireTapaVertical (ZatiLookAndFeel::kTransport);
+            const int tapa = ZatiLookAndFeel::aireTapaVertical (th);
             //  Y LA BANDA DE MODULOS CUESTA ALTO TAMBIEN APAISADO cuando no
             //  cabe en el renglon del transporte. El `wideFace` pelado daba
             //  por hecho que girado son SIEMPRE una sola banda, y en 640x360
@@ -496,8 +497,7 @@ void MainComponent::resized()
             const bool unaBanda = wideFace && caraUnaFila;
             const int arriba = unaBanda ? tapa : ZatiLookAndFeel::aireTapaVertical (mh);
             return juce::jmax (0, ZatiLookAndFeel::kAir - arriba)
-                 + (unaBanda ? ZatiLookAndFeel::kTransport
-                             : mh + ZatiLookAndFeel::kTransport)
+                 + (unaBanda ? th : mh + th)
                  + juce::jmax (0, ZatiLookAndFeel::kAir - tapa);
         };
         int belowScreen = belowScreenCon (moduleH);
@@ -638,6 +638,15 @@ void MainComponent::resized()
             belowScreen = belowScreenCon (moduleH);
         }
 
+        //  visual#5: pestanas y transporte a 44 de pie, solo si el cristal sigue en su suelo.
+        if (! wideFace && moduleH == Metrics::hit
+            && area.getHeight() - aboveScreen - belowScreenCon (Metrics::dedoPrincipal, Metrics::dedoPrincipal)
+                 - bottomStrip - bodyNeed >= kMinScreen)
+        {
+            moduleH = transportH = Metrics::dedoPrincipal;
+            belowScreen = belowScreenCon (moduleH, transportH);
+        }
+
         //  Y LA LINEA DE ESTADO AL DEDO, con la misma pregunta. DESHACER y
         //  REHACER viven en ella y median 96x16: en la feria (J3) eran los
         //  toques mas pequeños de la cara y los que se fallaban -de seis
@@ -748,7 +757,7 @@ void MainComponent::resized()
     //  las pestanas al transporte diez. Ver ZatiLookAndFeel::aireTapaVertical.
     area.removeFromTop (juce::jmax (0, ZatiLookAndFeel::kAir
                                          - ZatiLookAndFeel::aireTapaVertical (
-                                               wideFace ? ZatiLookAndFeel::kTransport : moduleH))
+                                               wideFace ? transportH : moduleH))
                         + layoutAir);
 
     //  Six modules and three transport keys will not fit across a phone in one
@@ -850,7 +859,7 @@ void MainComponent::resized()
     //  Ver ZatiLookAndFeel::capaDe.
 
     {
-        auto row = area.removeFromTop (ZatiLookAndFeel::kTransport);
+        auto row = area.removeFromTop (transportH);
         //  PLAY se lleva dos cuartos y el modo se queda con uno de ellos: es
         //  literalmente la mitad de PLAY, que era el ancho que sobraba en esta
         //  fila. Las cuatro tapas quedan iguales, y donde no quepan se cae el
@@ -906,9 +915,9 @@ void MainComponent::resized()
     //  vista contra los diez de arriba. engraveIn centra la palabra en la
     //  costura, o sea que ese desajuste se llevaba tambien la mitad del aire
     //  que queda sobre los mandos.
-    ctrlSeamTop = area.getY() - ZatiLookAndFeel::aireTapaVertical (ZatiLookAndFeel::kTransport);
+    ctrlSeamTop = area.getY() - ZatiLookAndFeel::aireTapaVertical (transportH);
     area.removeFromTop (juce::jmax (0, ZatiLookAndFeel::kAir
-                                         - ZatiLookAndFeel::aireTapaVertical (ZatiLookAndFeel::kTransport))
+                                         - ZatiLookAndFeel::aireTapaVertical (transportH))
                         + layoutAir + kSeamLabelH);   // CONTROL rides here
 
     // Status pinned to the bottom; DESHACER sits on its right when armed, so
@@ -1294,104 +1303,178 @@ void MainComponent::resized()
 
     // --- Floating sheets (each sized by its own content, capped at 86%) ---
     const auto full = safeArea();
-    //  Centred, not risen from the bottom. A bottom sheet at 86% buried the pad
-    //  grid exactly while you were editing a pad — you lost sight of the thing
-    //  you were adjusting. Centred at 78% x 92% the instrument stays visible
-    //  behind the scrim and the window reads as temporary.
-    //  The sheet covers the WHOLE window, not just the safe area.
+    maquetaPadPick();
+
+    maquetaCanalPick();
+
+    maquetaMidi();
+
+    maquetaRanura();
+
+    maquetaPreset();
+
+    maquetaCanal();
+
+    maquetaEqBanda();
+
+
+    maquetaMandos();
+
+    maquetaPad (full);
+
+    maquetaManual();
+
+    maquetaBrowse (full);
+
+    maquetaSet (full);
+
+    maquetaExport();
+
+    maquetaRack();
+
+    maquetaInst();
+
+    maquetaVst (full);
+
+    maquetaChop();
+
+    maquetaSong (full);
+
+    maquetaMix();
+
+    maquetaXy();
+
+    maquetaSeq (full);
+    maquetaTour();
+
+    anilloFoco.vuelveASituar();   // accesibilidad#7
+    excluyeGestosDeAtras();       // accesibilidad#29
+}
+
+//  Centred, not risen from the bottom. A bottom sheet at 86% buried the pad
+//  grid exactly while you were editing a pad — you lost sight of the thing
+//  you were adjusting. Centred at 78% x 92% the instrument stays visible
+//  behind the scrim and the window reads as temporary.
+//  The sheet covers the WHOLE window, not just the safe area.
+//
+//  Every rectangle below - the card and each control in it - is worked out
+//  in MainComponent coordinates from `full`, and then handed to children
+//  of the sheet. That only lines up if the sheet's own origin is (0,0):
+//  setBounds(full) put it at the system inset instead, so on Android 15
+//  the whole card and its contents were displaced downward by the height
+//  of the status bar, and sideways by the left inset in landscape. On a
+//  desktop, where the insets are zero, it was invisible.
+//
+//  Covering everything is also the better scrim: a dimmed sheet that stops
+//  short of the status bar reads as a panel with a gap behind it.
+juce::Rectangle<int> MainComponent::sheetFromBottom (Sheet& s, int desiredH)
+{
+    const auto full = safeArea();
+    //  visual#6: el aire de abajo de la ultima caja; se pide solo si cabe, se deja siempre
+    const int aire = Metrics::panelAireY;
+    if (s.desplazable || desiredH + aire <= altoTarjeta (full)) desiredH += aire;
+    s.setBounds (getLocalBounds());
+    //  APAISADO, LA TARJETA PUEDE SER MAS ALTA.
     //
-    //  Every rectangle below - the card and each control in it - is worked out
-    //  in MainComponent coordinates from `full`, and then handed to children
-    //  of the sheet. That only lines up if the sheet's own origin is (0,0):
-    //  setBounds(full) put it at the system inset instead, so on Android 15
-    //  the whole card and its contents were displaced downward by the height
-    //  of the status bar, and sideways by the left inset in landscape. On a
-    //  desktop, where the insets are zero, it was invisible.
+    //  El 78% viene de que la ficha no tape el instrumento que estas
+    //  ajustando: en vertical, por debajo de la tarjeta se siguen viendo
+    //  los pads, y eso es lo que hace que la ficha se lea como temporal.
+    //  Girado no queda nada que proteger - la cara ya esta en dos columnas
+    //  y la tarjeta cubre el ancho entero - y en cambio 412 px de alto por
+    //  0.78 son 321, que es de donde salian los controles de altura CERO.
     //
-    //  Covering everything is also the better scrim: a dimmed sheet that stops
-    //  short of the status bar reads as a panel with a gap behind it.
-    auto sheetFromBottom = [&full, this] (Sheet& s, int desiredH)
+    //  Medido en 915x412: con 0.78, la ficha de PASO dejaba un mando de
+    //  393x0 - la REJILLA, la ultima de su columna - y con 0.90 cabe.
+    const int h = juce::jmin (desiredH, altoTarjeta (full));
+    //  LO QUE PIDE Y LO QUE HAY, apuntado. Este `jmin` recorta EN SILENCIO
+    //  y lo que falta se lo come lo ultimo que se maqueta: es la causa de
+    //  la fila de CADENA, de la REJILLA a 217x0, de las cuatro tapas de
+    //  CARCASA a 4 px y de la celda de la linea de tiempo cayendo a 9. Las
+    //  nueve reglas ven el sintoma y solo cuando lo que se cae es medible.
+    //  Ver UiAudit::tarjeta.
+    const int w = anchoTarjeta (full.getWidth());
+    //  CON EL BORDE DE ARRIBA QUIETO. Centrada, una pagina mas alta subia
+    //  la tarjeta entera y las pestanas con ella: en la feria (J1-J4) la
+    //  rejilla de SEC subia unos 150 px tras el primer toque y los toques
+    //  siguientes caian en otra pista, y las pestanas de AJUSTES cambiaban
+    //  de altura. El techo es el de la tarjeta mas alta posible; lo que
+    //  crece o mengua es solo el borde de abajo.
+    auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre())
+                     .withY (full.getCentreY() - altoTarjeta (full) / 2);
+    //  Y LO QUE QUEDA VER DEBAJO, apuntado con el rectangulo YA colocado y
+    //  no con la formula: el tope de pie se deriva de que asome un pad
+    //  entero -y desde `onFuera` esos pads se tocan- asi que quien lo
+    //  comprueba tiene que mirar donde acabo la tarjeta, no repetir la
+    //  cuenta que la puso. La tarjeta se CENTRA, asi que el hueco de abajo
+    //  no es «ventana menos alto».
+    if (s.isVisible())
+        UiAudit::tarjeta (desiredH, altoTarjeta (full),
+                          s.desplazable || s.listaPropia,
+                          full.getBottom() - sheet.getBottom(),
+                          full.getWidth() > full.getHeight()
+                              ? 0 : ZatiLookAndFeel::kStatus + Metrics::hit,
+                          sheet, Metrics::margenFichaX, Metrics::margenFichaY,
+                          (int) s.getProperties()["capa"]);
+    s.sheetBounds = sheet;
+    //  Y SI LA TARJETA CAMBIA DE TAMANO, ella y lo que deja al descubierto:
+    //  la ficha ocupa la ventana entera y su `setBounds` no se mueve, asi
+    //  que nadie mas lo avisa. Lo hacia de rebote el `repaint` de la ficha
+    //  entera en cada toque. Medido: 1 OCTAVA en el piano, 14 415 px viejos.
+    if (s.isVisible() && ! s.tarjetaPintada.isEmpty() && s.tarjetaPintada != sheet)
+        s.repintaTarjeta();
+    auto dentro = sheet.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+
+    //  LA QUE NO SE DESPLAZA, EXACTAMENTE COMO ESTABA. Ver Sheet::hazDesplazable.
+    if (! s.desplazable)
+        return dentro.withTrimmedBottom (aire);
+
+    //  Y LA QUE SI: la tarjeta sigue midiendo lo que el tope permite -no
+    //  tapa la maquina entera- pero el CONTENIDO mide lo que pidio, y lo
+    //  que no se ve se alcanza arrastrando. Cuando lo pedido cabe, esto
+    //  devuelve el mismo rectangulo de siempre y no cambia nada: el
+    //  desplazamiento solo existe en las pantallas donde antes se caian
+    //  filas enteras.
+    const int pedido = desiredH - 2 * Metrics::margenFichaY;
+    const bool sobra = pedido > dentro.getHeight();
+    //  La barra solo se lleva su ancho cuando la hay, o cada fila sale
+    //  ocho pixeles corta en las pantallas que no la necesitaban. Y es
+    //  la de la casa, AL LADO de la vista y no dentro como la de JUCE: el
+    //  cuerpo mide lo mismo que medía -la tarjeta menos la barra-.
+    //  Ver Sheet::barra.
+    auto zonaVista = dentro;
+    s.barra.setVisible (sobra);
+    if (sobra) s.barra.setBounds (zonaVista.removeFromRight (Sheet::kBarra));
+    s.vista.setBounds (zonaVista);
+    s.cuerpo.setSize (juce::jmax (40, zonaVista.getWidth()),
+                      juce::jmax (zonaVista.getHeight(), pedido));
+    s.sincronizaBarra();
+    return s.cuerpo.getLocalBounds().withTrimmedBottom (aire);
+}
+
+void MainComponent::placeKnobRow (juce::Rectangle<int> row, juce::Slider** ks, int n)
+{
+    const int w = row.getWidth() / juce::jmax (1, n);
+    for (int i = 0; i < n; ++i)
     {
-        //  visual#6: el aire de abajo de la ultima caja; se pide solo si cabe, se deja siempre
-        const int aire = Metrics::panelAireY;
-        if (s.desplazable || desiredH + aire <= altoTarjeta (full)) desiredH += aire;
-        s.setBounds (getLocalBounds());
-        //  APAISADO, LA TARJETA PUEDE SER MAS ALTA.
-        //
-        //  El 78% viene de que la ficha no tape el instrumento que estas
-        //  ajustando: en vertical, por debajo de la tarjeta se siguen viendo
-        //  los pads, y eso es lo que hace que la ficha se lea como temporal.
-        //  Girado no queda nada que proteger - la cara ya esta en dos columnas
-        //  y la tarjeta cubre el ancho entero - y en cambio 412 px de alto por
-        //  0.78 son 321, que es de donde salian los controles de altura CERO.
-        //
-        //  Medido en 915x412: con 0.78, la ficha de PASO dejaba un mando de
-        //  393x0 - la REJILLA, la ultima de su columna - y con 0.90 cabe.
-        const int h = juce::jmin (desiredH, altoTarjeta (full));
-        //  LO QUE PIDE Y LO QUE HAY, apuntado. Este `jmin` recorta EN SILENCIO
-        //  y lo que falta se lo come lo ultimo que se maqueta: es la causa de
-        //  la fila de CADENA, de la REJILLA a 217x0, de las cuatro tapas de
-        //  CARCASA a 4 px y de la celda de la linea de tiempo cayendo a 9. Las
-        //  nueve reglas ven el sintoma y solo cuando lo que se cae es medible.
-        //  Ver UiAudit::tarjeta.
-        const int w = anchoTarjeta (full.getWidth());
-        //  CON EL BORDE DE ARRIBA QUIETO. Centrada, una pagina mas alta subia
-        //  la tarjeta entera y las pestanas con ella: en la feria (J1-J4) la
-        //  rejilla de SEC subia unos 150 px tras el primer toque y los toques
-        //  siguientes caian en otra pista, y las pestanas de AJUSTES cambiaban
-        //  de altura. El techo es el de la tarjeta mas alta posible; lo que
-        //  crece o mengua es solo el borde de abajo.
-        auto sheet = juce::Rectangle<int> (0, 0, w, h).withCentre (full.getCentre())
-                         .withY (full.getCentreY() - altoTarjeta (full) / 2);
-        //  Y LO QUE QUEDA VER DEBAJO, apuntado con el rectangulo YA colocado y
-        //  no con la formula: el tope de pie se deriva de que asome un pad
-        //  entero -y desde `onFuera` esos pads se tocan- asi que quien lo
-        //  comprueba tiene que mirar donde acabo la tarjeta, no repetir la
-        //  cuenta que la puso. La tarjeta se CENTRA, asi que el hueco de abajo
-        //  no es «ventana menos alto».
-        if (s.isVisible())
-            UiAudit::tarjeta (desiredH, altoTarjeta (full),
-                              s.desplazable || s.listaPropia,
-                              full.getBottom() - sheet.getBottom(),
-                              full.getWidth() > full.getHeight()
-                                  ? 0 : ZatiLookAndFeel::kStatus + Metrics::hit,
-                              sheet, Metrics::margenFichaX, Metrics::margenFichaY,
-                              (int) s.getProperties()["capa"]);
-        s.sheetBounds = sheet;
-        //  Y SI LA TARJETA CAMBIA DE TAMANO, ella y lo que deja al descubierto:
-        //  la ficha ocupa la ventana entera y su `setBounds` no se mueve, asi
-        //  que nadie mas lo avisa. Lo hacia de rebote el `repaint` de la ficha
-        //  entera en cada toque. Medido: 1 OCTAVA en el piano, 14 415 px viejos.
-        if (s.isVisible() && ! s.tarjetaPintada.isEmpty() && s.tarjetaPintada != sheet)
-            s.repintaTarjeta();
-        auto dentro = sheet.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+        auto cell = (i < n - 1 ? row.removeFromLeft (w) : row);
+        //  Y EL RENGLON QUE SE APARTA ES EL ROTULO **MAS SU HUECO**. Se
+        //  quitaban 16 -el rotulo pelado- y `bandAbove` dibuja la palabra
+        //  a `kKnobNameGap` POR ENCIMA del mando, o sea cuatro px mas
+        //  arriba de donde la celda se los reservo: la banda se metia en
+        //  el aire de la fila anterior y el hueco que se veia entre una
+        //  chapa y el rotulo de debajo era 8 - 4 = 4, no los 8 que pedia
+        //  el reparto. Reservando los dos, la banda cae EXACTAMENTE en lo
+        //  apartado y el aire entre filas es el que se escribio.
+        cell.removeFromTop (ZatiLookAndFeel::kKnobName
+                            + ZatiLookAndFeel::kKnobNameGap);
+        if (i > 0)     cell.removeFromLeft  (Metrics::halfGap);
+        if (i < n - 1) cell.removeFromRight (Metrics::halfGap);
+        ks[i]->setBounds (cell);
+    }
+}
 
-        //  LA QUE NO SE DESPLAZA, EXACTAMENTE COMO ESTABA. Ver Sheet::hazDesplazable.
-        if (! s.desplazable)
-            return dentro.withTrimmedBottom (aire);
-
-        //  Y LA QUE SI: la tarjeta sigue midiendo lo que el tope permite -no
-        //  tapa la maquina entera- pero el CONTENIDO mide lo que pidio, y lo
-        //  que no se ve se alcanza arrastrando. Cuando lo pedido cabe, esto
-        //  devuelve el mismo rectangulo de siempre y no cambia nada: el
-        //  desplazamiento solo existe en las pantallas donde antes se caian
-        //  filas enteras.
-        const int pedido = desiredH - 2 * Metrics::margenFichaY;
-        const bool sobra = pedido > dentro.getHeight();
-        //  La barra solo se lleva su ancho cuando la hay, o cada fila sale
-        //  ocho pixeles corta en las pantallas que no la necesitaban. Y es
-        //  la de la casa, AL LADO de la vista y no dentro como la de JUCE: el
-        //  cuerpo mide lo mismo que medía -la tarjeta menos la barra-.
-        //  Ver Sheet::barra.
-        auto zonaVista = dentro;
-        s.barra.setVisible (sobra);
-        if (sobra) s.barra.setBounds (zonaVista.removeFromRight (Sheet::kBarra));
-        s.vista.setBounds (zonaVista);
-        s.cuerpo.setSize (juce::jmax (40, zonaVista.getWidth()),
-                          juce::jmax (zonaVista.getHeight(), pedido));
-        s.sincronizaBarra();
-        return s.cuerpo.getLocalBounds().withTrimmedBottom (aire);
-    };
+void MainComponent::maquetaPadPick()
+{
     //  LA REJILLA DE DIECISEIS PARA ELEGIR PAD. Ver abrePadPicker.
     //
     //  Se maqueta la PRIMERA de las fichas a proposito: es la unica que se
@@ -1445,7 +1528,10 @@ void MainComponent::resized()
                                                  .reduced (Metrics::aireTapaDensa, 0));
         }
     }
+}
 
+void MainComponent::maquetaCanalPick()
+{
     //  LA REJILLA DE CANALES. Ver canalSheet en la cabecera.
     //
     //  La MISMA cuenta que la de pads, fila de bancos incluida: desde que hay
@@ -1512,7 +1598,10 @@ void MainComponent::resized()
                                                .reduced (Metrics::aireTapaDensa, 0));
         }
     }
+}
 
+void MainComponent::maquetaMidi()
+{
     // ------------------------------------------------------------------
     //  LA FICHA MIDI: dos verbos y un renglon que dice lo que paso.
     //
@@ -1561,7 +1650,10 @@ void MainComponent::resized()
         midiImportBtn.setBounds ({});
         midiTitleArea = midiAyudaArea = midiParteArea = midiPanel = {};
     }
+}
 
+void MainComponent::maquetaRanura()
+{
     //  EL MENU DE UNA RANURA. Ver abreMenuRanura.
     //
     //  Tambien de las que se dibujan ENCIMA, asi que va aqui arriba con la
@@ -1706,7 +1798,10 @@ void MainComponent::resized()
             inner.removeFromTop (Metrics::xs);
         }
     }
+}
 
+void MainComponent::maquetaPreset()
+{
     //  LA FICHA DE PRESETS DE UN EFECTO. Ver abreMenuPresets.
     //
     //  Misma maquinaria que el menu de ranura y no una nueva: `sheetFromBottom`
@@ -1806,7 +1901,10 @@ void MainComponent::resized()
             innerP.removeFromTop (Metrics::xs);
         }
     }
+}
 
+void MainComponent::maquetaCanal()
+{
     //  LA FICHA DEL NOMBRE DE UNA TIRA. Ver abreCanalNombre.
     //
     //  Cabecera, la fila del nombre con GUARDAR, la rejilla de iconos (o el
@@ -1892,7 +1990,10 @@ void MainComponent::resized()
             }
         }
     }
+}
 
+void MainComponent::maquetaEqBanda()
+{
     //  LA FICHA DE UNA BANDA DEL EQ. Pide: dos margenes, la cabecera, el aire,
     //  las filas de chips de TIPO y el mando Q con su lectura.
     if (eqBandaSheet.isVisible())
@@ -1942,43 +2043,10 @@ void MainComponent::resized()
     {
         eqBandaSheet.sheetBounds = {};
     }
+}
 
-    //  EL AIRE DE VECINO SE DA DONDE HAY VECINO.
-    //
-    //  Esto era `cell.reduced (halfGap, 0)` para las tres celdas por igual, y
-    //  «las celdas vecinas toman halfGap cada una» es la regla de la casa - pero
-    //  la primera celda no tiene vecina por la izquierda ni la ultima por la
-    //  derecha, y ahi los cuatro pixeles no separan de nada: metian la columna
-    //  de mandos cuatro px dentro de la columna de contenido. Medido en
-    //  412x915, ficha del pad: las tapas, el titulo y las pestanas van de 33 a
-    //  380 y los mandos de 37 a 376, o sea la unica fila de la ficha que no
-    //  empezaba donde las demas.
-    //
-    //  Salio buscando otra cosa -donde tenia que caer el filo del panel de
-    //  grupo, «que llegue igual que los mandos»- y resulto que lo torcido eran
-    //  los mandos. Entre celdas siguen quedando los mismos ocho pixeles.
-    auto placeKnobRow = [] (juce::Rectangle<int> row, juce::Slider** ks, int n = 3)
-    {
-        const int w = row.getWidth() / juce::jmax (1, n);
-        for (int i = 0; i < n; ++i)
-        {
-            auto cell = (i < n - 1 ? row.removeFromLeft (w) : row);
-            //  Y EL RENGLON QUE SE APARTA ES EL ROTULO **MAS SU HUECO**. Se
-            //  quitaban 16 -el rotulo pelado- y `bandAbove` dibuja la palabra
-            //  a `kKnobNameGap` POR ENCIMA del mando, o sea cuatro px mas
-            //  arriba de donde la celda se los reservo: la banda se metia en
-            //  el aire de la fila anterior y el hueco que se veia entre una
-            //  chapa y el rotulo de debajo era 8 - 4 = 4, no los 8 que pedia
-            //  el reparto. Reservando los dos, la banda cae EXACTAMENTE en lo
-            //  apartado y el aire entre filas es el que se escribio.
-            cell.removeFromTop (ZatiLookAndFeel::kKnobName
-                                + ZatiLookAndFeel::kKnobNameGap);
-            if (i > 0)     cell.removeFromLeft  (Metrics::halfGap);
-            if (i < n - 1) cell.removeFromRight (Metrics::halfGap);
-            ks[i]->setBounds (cell);
-        }
-    };
-
+void MainComponent::maquetaMandos()
+{
     //  LA FICHA DE MANDOS (tanda 32). Pide: la cabecera, la fila MANDO 1-3,
     //  su renglon de ayuda, hasta tres filas de cuatro mandos, y -si el tipo
     //  engancha- la fila de divisiones y la tapa de PRESETS.
@@ -2060,7 +2128,10 @@ void MainComponent::resized()
     {
         mandosSheet.sheetBounds = {};
     }
+}
 
+void MainComponent::maquetaPad (juce::Rectangle<int> full)
+{
     // PADS sheet, dos paginas. Ver PadPage en la cabecera: SONIDO es lo que
     // suena el pad y EL PAD es lo que el pad es. Cada pagina pide la altura que
     // va a usar, asi que la ficha encoge cuando lo de dentro ocupa menos - la
@@ -2791,7 +2862,10 @@ void MainComponent::resized()
         }
         }
     }
+}
 
+void MainComponent::maquetaManual()
+{
     // La ficha del MANUAL: titulo, subtitulo y todo lo demas es la lista, que
     // se desplaza. Pide de alto lo que le den - hasta el tope del 78% - porque
     // aqui cuanta mas se lea de una vez, mejor.
@@ -2851,7 +2925,10 @@ void MainComponent::resized()
             ++c;
         }
     }
+}
 
+void MainComponent::maquetaBrowse (juce::Rectangle<int> full)
+{
     // BROWSE sheet: the tallest of them all — the file list wants the room.
     {
         auto inner = sheetFromBottom (browseSheet, full.getHeight());   // clamps to the 86% cap
@@ -2936,7 +3013,10 @@ void MainComponent::resized()
         //  en ella: es lo que sustituye a la lista, no una nota al pie.
         browseVacio.setBounds (inner);
     }
+}
 
+void MainComponent::maquetaSet (juce::Rectangle<int> full)
+{
     // PROJECT sheet: list of saved projects + the four actions.
     {
         //  Height follows the list, instead of claiming 70% of the screen and
@@ -3208,7 +3288,7 @@ void MainComponent::resized()
 
         if (onMidi)
         {
-            auto block = [this, &inner] (juce::TextButton& btn, juce::ComboBox& box)
+            auto block = [this, &inner] (juce::TextButton& btn, juce::ComboBox& box, juce::ComboBox* canal)
             {
                 //  El rotulo, el interruptor y la lista de puertos son UN
                 //  grupo: SALIDA y ENTRADA son dos cosas y aqui se leian como
@@ -3221,14 +3301,17 @@ void MainComponent::resized()
                 auto row = inner.removeFromTop (Metrics::hit);
                 btn.setBounds (Lang::takeStart (row, juce::jmax (96, row.getWidth() / 3))
                                    .reduced (Metrics::aireTapa, 0));
+                if (canal != nullptr)   // secuenciador#11: el canal, al lado de MANDAR
+                    canal->setBounds (Lang::takeStart (row, juce::jmin (row.getWidth(), juce::jmax (120, row.getWidth() / 2)))
+                                          .reduced (Metrics::aireTapa, 0));
                 inner.removeFromTop (Metrics::xs);
                 box.setBounds (inner.removeFromTop (Metrics::hit).reduced (Metrics::aireTapa, 0));
                 setGrupos.add ({ inner.getX(), g0, inner.getWidth(), inner.getY() - g0 });
                 inner.expand (Metrics::panelSangria, 0);
                 inner.removeFromTop (Metrics::sm);
             };
-            block (midiOutBtn, midiOutBox);
-            block (midiInBtn,  midiInBox);
+            block (midiOutBtn, midiOutBox, &midiCanalBox);
+            block (midiInBtn,  midiInBox, nullptr);
             //  Y COMO SE LEE LO QUE ENTRA, la tercera pregunta de esta pagina:
             //  que mando, que recibo, y como lo leo. Con la misma sangria y el
             //  mismo panel que los dos de arriba, porque es la misma clase de
@@ -3566,8 +3649,8 @@ void MainComponent::resized()
             const int gAcciones = inner.getBottom();
             {
                 auto fila = inner.removeFromBottom (Metrics::btn);
-                juce::TextButton* pe[2] = { &projExportButton, &projKitButton };
-                layoutModuleBar (fila, pe, 0, 2);
+                juce::TextButton* pe[3] = { &projExportButton, &projKitButton, &projZipButton };   // android#2
+                layoutModuleBar (fila, pe, 0, 3);
             }
             inner.removeFromBottom (Metrics::xs);
 
@@ -3599,7 +3682,10 @@ void MainComponent::resized()
             projList.setBounds ({});
         }
     }
+}
 
+void MainComponent::maquetaExport()
+{
     // EXPORT sheet: what will be rendered, then the two products.
     {
         //  Con la fila de CAMBIAR contada: pedir sin ella y colocarla igual es
@@ -3746,7 +3832,10 @@ void MainComponent::resized()
         }
         inner.expand (Metrics::panelSangria, 0);
     }
+}
 
+void MainComponent::maquetaRack()
+{
     // RACK sheet: which pad, and how much of it reaches each effect.
     {
         const int chipRowH = Metrics::hit;
@@ -3969,7 +4058,10 @@ void MainComponent::resized()
             }
         }
     }
+}
 
+void MainComponent::maquetaInst()
+{
     //  INSTRUMENTOS: el pack, la rejilla de dieciseis y una linea que dice
     //  donde va a caer lo que se toque.
     {
@@ -4197,7 +4289,10 @@ void MainComponent::resized()
         inner.removeFromTop (Metrics::sm);
         instPieArea = inner.removeFromTop (Ficha::pie (2) - Metrics::sm);
     }
+}
 
+void MainComponent::maquetaVst (juce::Rectangle<int> full)
+{
     // ------------------------------------------------------------------
     //  LA FICHA DEL INSTRUMENTO. Cabecera con el dibujo de la familia, un
     //  teclado que se toca y la lista de los dieciseis presets.
@@ -4605,7 +4700,10 @@ void MainComponent::resized()
         //  quien coloca.
         vstPieArea = inner.removeFromTop (Ficha::pie (3) - Metrics::sm);
     }
+}
 
+void MainComponent::maquetaChop()
+{
     // AUTO CHOP sheet: how many pieces, where they land, and one red verb.
     {
         chopGrupos.clear();
@@ -4742,7 +4840,10 @@ void MainComponent::resized()
         chopPlanBanda = inner.removeFromTop (juce::jmin (plannedH, inner.getHeight()));
         chopGoButton.setBounds (verbo.reduced (Metrics::aireTapa, 0));
     }
+}
 
+void MainComponent::maquetaSong (juce::Rectangle<int> full)
+{
     // SONG sheet: palette, timeline, page row.
     {
         //  EL CARRIL DEJA DE ESTAR CLAVADO EN CUARENTA.
@@ -5505,7 +5606,10 @@ void MainComponent::resized()
 
         songGrid.setBounds (inner);
     }
+}
 
+void MainComponent::maquetaMix()
+{
     // MIX sheet: the sixteen channel strips of one bank, in a panel that scrolls.
     {
         //  The rows no longer negotiate with the card for their height: they
@@ -5878,6 +5982,9 @@ void MainComponent::resized()
             };
             bool conST = true, conPan = true;
             int  sw = anchoSw (3, true);
+            //  visual#5: los tres a 44 de ancho donde el fader sigue en su suelo.
+            if (sw == Metrics::hit && faderCon (3, Metrics::dedoPrincipal, true) >= kFaderSuelo)
+                sw = Metrics::dedoPrincipal;
             if (sw < 0) { conST  = false; sw = anchoSw (2, true); }
             if (sw < 0) { conPan = false; sw = anchoSw (2, false); }
             if (sw < 0) sw = kSwMin;
@@ -5927,7 +6034,10 @@ void MainComponent::resized()
             mixFaders[i]->setBounds (row.withTrimmedLeft (Metrics::aireTapa).reduced (0, Metrics::aireTapaDensa));
         }
     }
+}
 
+void MainComponent::maquetaXy()
+{
     // El panel XY, si esta abierto: la mitad de arriba de la cara, y ni un
     // pixel dentro de la costura de PADS. Ver XyPanel en la cabecera.
     if (xyPanel.isVisible() && ! faceTopArea.isEmpty())
@@ -5996,7 +6106,10 @@ void MainComponent::resized()
         const int sq = juce::jmax (60, juce::jmin (inner.getWidth(), inner.getHeight()));
         xyPad.setBounds (inner.withSizeKeepingCentre (sq, sq));
     }
+}
 
+void MainComponent::maquetaSeq (juce::Rectangle<int> full)
+{
     // SEC sheet, two pages: PASOS is the grid and what plays it; PASO is the
     // step you tapped, plus the chain and the swing. See SeqPage in the header
     // for why it stopped being one card.
@@ -8137,6 +8250,10 @@ void MainComponent::resized()
             }
         }
     }
+}
+
+void MainComponent::maquetaTour()
+{
     //  EL MUELLE DEL TOUR, y va AL FINAL de resized() a proposito: su sitio
     //  depende de donde haya quedado el control que el paso senala, y eso solo
     //  se sabe cuando el resto ya se ha maquetado. Colocarlo antes seria
@@ -8180,8 +8297,9 @@ void MainComponent::resized()
         const int anchoDock = getWidth();
         //  La tarjeta de texto sola: el titulo, los puntos y el parrafo mas
         //  largo. La botonera ya no se suma aqui porque no va siempre dentro.
-        const int altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
-                              + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX);
+        tourLetraBase = false;
+        int altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
+                        + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX);
 
         //  EN LA MITAD CONTRARIA A LA DEL OBJETIVO. Es lo unico que garantiza
         //  que el texto no tape lo que se esta senalando sin tener que negociar
@@ -8211,6 +8329,13 @@ void MainComponent::resized()
         //  el mismo sitio, y abajo es donde llega el pulgar.
         tourBotonera = ventana.removeFromBottom (Metrics::hit + 2 * Metrics::margenFichaY);
         const bool objetivoArriba = tourFoco.isEmpty() || tourFoco.getCentreY() < centro;
+        //  accesibilidad#26: si la letra grande no cabe en el muelle, el parrafo vuelve a la normal.
+        if (altoTarjeta > tope - (objetivoArriba ? tourBotonera.getHeight() : 0) && ZatiColours::escalaTexto.load() > 1.0f)
+        {
+            tourLetraBase = true;
+            altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
+                        + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX);
+        }
         if (objetivoArriba)
             //  Tarjeta y botonera pegadas: un solo panel, el de siempre.
             tourDock = ventana.removeFromBottom (juce::jmin (altoTarjeta, tope - tourBotonera.getHeight()))
@@ -8249,7 +8374,4 @@ void MainComponent::resized()
         UiAudit::tourPuesto    = tourSheet.isVisible() ? 1 : 0;
         UiAudit::tourSigCierra = tourSigCierra() ? 1 : 0;
     }
-
-    anilloFoco.vuelveASituar();   // accesibilidad#7
-    excluyeGestosDeAtras();       // accesibilidad#29
 }

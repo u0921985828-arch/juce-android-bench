@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 #include "ZatiLookAndFeel.h"
+#include "Lang.h"
+#include "Accesible.h"
 #include "Zati.h"
 #include <array>
 #include <cstring>
@@ -26,6 +28,25 @@
 class StepGrid : public juce::Component, public Rejilla
 {
 public:
+    //  accesibilidad#0: un cursor por las celdas que se ven.
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        acc.cuantas = [this] { return carriles * juce::jmax (1, patLen); };
+        acc.dice = [this] (int i)
+        {
+            const int n = juce::jmax (1, patLen), lane = medio + i / n, paso = i % n;
+            const bool on = data != nullptr && data[paso * kLanes + lane];
+            return T (on ? "Paso %1, pad %2: encendido" : "Paso %1, pad %2: apagado",
+                      juce::String (paso + 1), juce::String (laneBase + lane + 1));
+        };
+        acc.pulsa = [this] (int i)
+        {
+            const int n = juce::jmax (1, patLen);
+            if (onCell) onCell (medio + i / n, i % n, false);
+        };
+        return Accesible::crea (*this, acc);
+    }
+
     //  LO QUE EL BANCO NECESITA SABER de una rejilla que se pinta entera.
     //  Las tres cifras salen de aqui y no de un numero escrito en Python: las
     //  columnas dependen del zoom y del ancho, y los carriles de si la ventana
@@ -561,6 +582,7 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override { hit (e, true); }
 
 private:
+    Accesible::Cursor acc;   // accesibilidad#0
     void hit (const juce::MouseEvent& e, bool dragging = false)
     {
         if (data == nullptr) return;
