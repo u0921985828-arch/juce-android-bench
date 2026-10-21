@@ -1325,6 +1325,17 @@ private:
 
     //  codigo#20: resized() reparte y cada ficha se maqueta en su funcion
     juce::Rectangle<int> sheetFromBottom (Sheet& s, int desiredH);
+    struct Cara   // codigo#20: lo que la cara pasa de presupuesto a cromo y maquina
+    {
+        juce::Rectangle<int> area, padCol;
+        int screenH = 0, padSeamExtra = 0, padBottomGive = 0, padsNeed = 0;
+        int moduleH = 0, transportH = 0, faceTop = 0;
+        bool cristalApretado = false, caraUnaFila = true;
+    };
+    static constexpr int kSeamLabelH = 12;   // alto de la costura que lleva nombre
+    void maquetaPresupuesto (Cara& c);
+    void maquetaCromo (Cara& c);
+    void maquetaMaquina (Cara& c);
     static void placeKnobRow (juce::Rectangle<int> row, juce::Slider** ks, int n = 3);
     void maquetaPadPick();
     void maquetaCanalPick();
@@ -1392,6 +1403,8 @@ private:
     void newProject();
     //  LA CANCION DE UN PROYECTO RECIEN NACIDO. Ver la definicion.
     void patronDemo();   // producto#1
+    static constexpr const char* kProyectoDemo = "DEMO";   // producto#1: de solo lectura
+    static bool esDemo (const juce::String& name);
     void songPorDefecto();
     void refreshProjectList();
 
@@ -1422,7 +1435,9 @@ private:
     //  por CARGAR KIT igual que cualquier pack de internet.
     Boton projKitButton  { "GUARDAR KIT" };
     Boton projZipButton  { "ZIP" };   // android#2: copia de la biblioteca entera
+    Boton projImportButton { "IMPORTAR" };   // android#2: la vuelta del ZIP
     void copiaZip();
+    void importaZip();   // android#2
     //  LA VENTANA DE PISTAS de la rejilla de pasos. Su rotulo es el RANGO y no
     //  una palabra -"1-16", "1-8", "9-16"- por dos razones: dice el estado, que
     //  contando carriles no se deduce, y es el mismo en los cuatro idiomas, o
@@ -5143,6 +5158,11 @@ private:
     struct { int primero = 0; int compases = Playlist::kBarsViewDef; } songVistaAntes;
 
     std::array<float, kNumPads> padFlash {};   // 1.0 on trigger, decays -> lit feedback
+    std::uint64_t trigInyectado = 0;   // accesibilidad#28: golpes que mete la auditoria
+    static constexpr double kDestelloMinMs = 1000.0 / 3.0;   // accesibilidad#28: tres destellos por segundo
+    double relojDestello = 0.0;
+    std::array<double, kNumPads> destelloUltimo {};
+    std::array<bool, kNumPads> destelloRapido {};
     // Chassis layout regions (set in resized(), drawn in paint()).
     juce::Rectangle<int> headerArea, screenBezel, tabBarArea,
                          editInfoArea, audioInfoArea,

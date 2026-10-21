@@ -4107,9 +4107,69 @@ void MainComponent::auditOpen (const juce::String& pedido)
                 }
         std::cout << "]}" << std::endl;
     }
+    else if (which == "demosolo")   // producto#1: DEMO en PROYECTOS, de solo lectura
+    {
+        auto acaba = [this]
+        {
+            const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+            while ((padSaveJob != nullptr || padJob != nullptr || fabricaJob != nullptr) && juce::Time::getMillisecondCounter() < tope)
+            {
+                if (padSaveJob != nullptr) stepPadSaveJob();
+                if (padJob != nullptr)     stepPadJob();
+                if (fabricaJob != nullptr) stepFabricaJob();
+                juce::Thread::sleep (1);
+            }
+        };
+        auto golpes = [this]
+        {
+            int n = 0;
+            for (int st = 0; st < engine.getPatternLength (0); ++st)
+                for (int p = 0; p < kNumPads; ++p) n += pattern[0][(size_t) st][(size_t) p] ? 1 : 0;
+            return n;
+        };
+        auto conMuestra = [this] { int n = 0; for (int i = 0; i < kNumPads; ++i) n += padHasSample[(size_t) i] ? 1 : 0; return n; };
+        acaba();
+        closeAllSheets();
+        openSheet (setSheet, setButton);
+        showSetPage (pageProjects);
+        refreshProjectList();
+        const bool enLista = projModel.names.contains ("DEMO");
+        newProject();
+        const int vacio = golpes();
+        if (enLista) projList.selectRow (projModel.names.indexOf ("DEMO"));
+        int antesDeAcabar = -1;
+        if (enLista) { loadProject ("DEMO"); antesDeAcabar = golpes(); acaba(); }
+        const int abiertos = golpes(), sonidos = conMuestra();
+        const juce::String abierto = currentProject;
+        projNameBox.setText ("DEMO", juce::dontSendNotification);
+        if (projSaveButton.onClick) projSaveButton.onClick();
+        acaba();
+        const juce::String guardadoComo = currentProject;
+        const bool carpetaDemo = ProjectStore::folderFor ("DEMO").getChildFile ("project.xml").existsAsFile();
+        refreshProjectList();
+        projList.selectRow (projModel.names.indexOf ("DEMO"));
+        for (int k = 0; k < 2 && projDeleteButton.onClick; ++k) projDeleteButton.onClick();
+        refreshProjectList();
+        const bool sigue = projModel.names.contains ("DEMO");
+        std::cout << "{\"demosolo\":1,\"enlista\":" << (enLista ? 1 : 0) << ",\"vacio\":" << vacio
+                  << ",\"golpes\":" << abiertos << ",\"crudo\":" << antesDeAcabar << ",\"sonidos\":" << sonidos
+                  << ",\"abierto\":\"" << abierto.toStdString() << "\",\"guardado\":\"" << guardadoComo.toStdString()
+                  << "\",\"carpeta\":" << (carpetaDemo ? 1 : 0) << ",\"sigue\":" << (sigue ? 1 : 0)
+                  << ",\"aviso\":\"" << status.getText().replace ("\"", "'").toStdString() << "\"}" << std::endl;
+    }
     else if (which == "zip")   // android#2
     {
         closeAllSheets();
+        {
+            const auto tope = juce::Time::getMillisecondCounter() + 60000u;
+            saveProject ("RESTAURA");
+            while ((padSaveJob != nullptr || padJob != nullptr) && juce::Time::getMillisecondCounter() < tope)
+            {
+                if (padSaveJob != nullptr) stepPadSaveJob();
+                if (padJob != nullptr)     stepPadJob();
+                juce::Thread::sleep (1);
+            }
+        }
         autosave();
         session.flush (2000);
         const auto destino = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("copia.zip");
@@ -4119,11 +4179,20 @@ void MainComponent::auditOpen (const juce::String& pedido)
         bool sesion = false;
         for (int i = 0; i < zip.getNumEntries(); ++i)
             if (zip.getEntry (i)->filename.startsWith (".sesion/")) sesion = true;
+        //  Y LA VUELTA: se pierde el proyecto y el zip lo devuelve sin pisar lo que hay.
+        const auto carpeta = ProjectStore::folderFor ("RESTAURA");
+        const bool estaba = carpeta.getChildFile ("project.xml").existsAsFile();
+        carpeta.deleteRecursively();
+        const auto vuelta = ProjectStore::restauraZip (destino);
+        const bool vuelve = ProjectStore::list().contains ("RESTAURA");
         openSheet (setSheet, setButton);
         showSetPage (pageProjects);
-        std::cout << "{\"zip\":1,\"ficheros\":" << n << ",\"entradas\":" << zip.getNumEntries()
+        std::cout << "{\"zip\":1,\"estaba\":" << (estaba ? 1 : 0) << ",\"puestos\":" << vuelta.first
+                  << ",\"saltados\":" << vuelta.second << ",\"vuelve\":" << (vuelve ? 1 : 0)
+                  << ",\"importar\":" << (projImportButton.isVisible() && ! projImportButton.getBounds().isEmpty() ? 1 : 0)
+                  << ",\"ficheros\":" << n << ",\"entradas\":" << zip.getNumEntries()
                   << ",\"sesion\":" << (sesion ? 1 : 0) << ",\"seborra\":" << (ProjectStore::seBorraAlDesinstalar() ? 1 : 0)
-                  << ",\"aviso\":\"" << status.getText().toStdString() << "\""
+                  << ",\"aviso\":\"" << status.getText().replace ("\"", "'").toStdString() << "\""
                   << ",\"boton\":" << (projZipButton.isVisible() && ! projZipButton.getBounds().isEmpty() ? 1 : 0) << "}" << std::endl;
     }
     else if (which == "salvo")
@@ -9123,6 +9192,30 @@ void MainComponent::auditBalistica()
         return std::array<double, 3> { aguja, clip, destello };
     };
 
+    //  accesibilidad#28: una rafaga de golpes no puede destellar mas de tres veces por segundo
+    auto rafaga = [this] (double dtMs, double cadaMs)
+    {
+        const bool mov = movimiento;
+        movimiento = true;
+        padFlash[0] = 0.0f;
+        pintaCuadro (dtMs);
+        int destellos = 0;
+        float antes = padFlash[0];
+        double t = 0.0, proximo = 0.0;
+        for (; t < 4000.0; t += dtMs)
+        {
+            if (t >= proximo) { trigInyectado |= 1u; proximo += cadaMs; }
+            pintaCuadro (dtMs);
+            if (padFlash[0] - antes >= 0.25f) ++destellos;
+            antes = padFlash[0];
+        }
+        for (int i = 0; i < 2000 && padFlash[0] > 0.0f; ++i) pintaCuadro (dtMs);
+        movimiento = mov;
+        return destellos;
+    };
+    const int r60 = rafaga (1000.0 / 60.0, 125.0), r120 = rafaga (1000.0 / 120.0, 125.0);
+    const int l60 = rafaga (1000.0 / 60.0, 500.0);
+
     //  Las dos cadencias que separan un panel de 60 de uno de 120, con el
     //  MISMO binario y el mismo estado: lo unico que cambia es el `dt`.
     const auto a60  = una (1000.0 / 60.0);
@@ -9132,6 +9225,7 @@ void MainComponent::auditBalistica()
               << ",\"aguja60\":"    << a60[0]  << ",\"aguja120\":"    << a120[0]
               << ",\"clip60\":"     << a60[1]  << ",\"clip120\":"     << a120[1]
               << ",\"destello60\":" << a60[2]  << ",\"destello120\":" << a120[2]
+              << ",\"rafaga60\":" << r60 << ",\"rafaga120\":" << r120 << ",\"lento60\":" << l60
               << "}" << std::endl;
 
     juce::JUCEApplication::getInstance()->systemRequestedQuit();
@@ -13053,7 +13147,7 @@ void MainComponent::auditFeria()
 
     //  ab8. El foco de teclado se ve (accesibilidad#7): pixeles que cambian
     //  al darle el foco a un boton y a un mando de la cara, y con el dedo abajo.
-    int focoBoton = -1, focoMando = -1, focoDedo = -1;
+    int focoBoton = -1, focoMando = -1, focoDedo = -1, focoToque = -1, focoTecla = -1;
     {
         juce::Button* bt = nullptr; juce::Slider* sl = nullptr;
         std::function<void (juce::Component&)> busca = [&] (juce::Component& c)
@@ -13083,6 +13177,25 @@ void MainComponent::auditFeria()
             return n;
         };
         focoBoton = cambian (bt, false); focoMando = cambian (sl, false); focoDedo = cambian (bt, true);
+        //  accesibilidad#29: por el camino real; el foco que llega tras un toque, sin tecla, no pinta.
+        auto real = [this, &cambian] (juce::Component* c, bool tecla)
+        {
+            if (c == nullptr) return -1;
+            juce::Component::unfocusAllComponents(); sigueFoco (nullptr, false);
+            const auto zona = getLocalArea (c, c->getLocalBounds()).expanded (Metrics::xs).getIntersection (getLocalBounds());
+            const auto antes = createComponentSnapshot (zona, true, 1.0f);
+            if (tecla) anilloFoco.marcaTecla(); else anilloFoco.marcaToque();
+            anilloFoco.globalFocusChanged (c);
+            const auto luego = createComponentSnapshot (zona, true, 1.0f);
+            int n = 0;
+            for (int y = 0; y < antes.getHeight(); ++y)
+                for (int x = 0; x < antes.getWidth(); ++x)
+                    if (antes.getPixelAt (x, y) != luego.getPixelAt (x, y)) ++n;
+            sigueFoco (nullptr, false);
+            juce::ignoreUnused (cambian);
+            return n;
+        };
+        focoToque = real (bt, false); focoTecla = real (bt, true);
     }
 
     //  ab9. La negra mas estrecha del teclado, por donde se toca (accesibilidad#18).
@@ -13169,7 +13282,7 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
-              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"x_tapada\":" << xTapada << ",\"deslizadores\":" << deslizadores << ",\"pasos_finos\":" << pasosFinos << ",\"cifra_cruda\":" << cifraCruda << ",\"foco_boton\":" << focoBoton << ",\"foco_mando\":" << focoMando << ",\"foco_dedo\":" << focoDedo << ",\"negra_min\":" << negraMin << ",\"bitacora_abre\":\"" << bitacoraAbre << "\"" << ",\"toque_sube\":" << toqueSube << ",\"toque_baja\":" << toqueBaja << ",\"crudos\":\"" << crudos.trim() << "\"" << ",\"piel_cajas\":\"" << pielCajas << "\",\"nombre_fuente\":" << nombreFuente << ",\"parte_en\":\"" << parteEn.replace ("\"", "'").replace ("\u2066", "").replace ("\u2069", "") << "\"" << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"sin_letra\":" << sinLetra << ",\"en_ingles\":" << enIngles << ",\"cruces\":" << cruces
+              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"x_tapada\":" << xTapada << ",\"deslizadores\":" << deslizadores << ",\"pasos_finos\":" << pasosFinos << ",\"cifra_cruda\":" << cifraCruda << ",\"foco_boton\":" << focoBoton << ",\"foco_mando\":" << focoMando << ",\"foco_dedo\":" << focoDedo << ",\"foco_toque\":" << focoToque << ",\"foco_tecla\":" << focoTecla << ",\"negra_min\":" << negraMin << ",\"bitacora_abre\":\"" << bitacoraAbre << "\"" << ",\"toque_sube\":" << toqueSube << ",\"toque_baja\":" << toqueBaja << ",\"crudos\":\"" << crudos.trim() << "\"" << ",\"piel_cajas\":\"" << pielCajas << "\",\"nombre_fuente\":" << nombreFuente << ",\"parte_en\":\"" << parteEn.replace ("\"", "'").replace ("\u2066", "").replace ("\u2069", "") << "\"" << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"sin_letra\":" << sinLetra << ",\"en_ingles\":" << enIngles << ",\"cruces\":" << cruces
               << ",\"pads_marcables\":" << padsMarcables << ",\"pad_elegido\":" << padElegido
               << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
               << ",\"estado_anuncia\":" << estadoAnuncia

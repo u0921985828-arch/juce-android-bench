@@ -10,6 +10,7 @@
 #include "SampleBuffer.h"
 #include "CommandFifo.h"
 #include "Fdn.h"
+#include "Anillo.h"
 #include "Eq5.h"
 #include "Dinamica.h"
 #include "Lfo.h"
@@ -3613,12 +3614,18 @@ private:
         return n;
     }
 
+    //  rendimiento#1: tabla en vez de contar en cada llamada del render.
+    static constexpr std::array<int, kNumFx> kCanalIdx = []
+    {
+        std::array<int, kNumFx> t {};
+        int n = 0;
+        for (int f = 0; f < kNumFx; ++f) t[(size_t) f] = fxPorCanal[f] ? n++ : -1;
+        return t;
+    }();
+
     static constexpr int canalIdx (int f) noexcept
     {
-        if (f < 0 || f >= kNumFx || ! fxPorCanal[f]) return -1;
-        int n = 0;
-        for (int i = 0; i < f; ++i) if (fxPorCanal[i]) ++n;
-        return n;
+        return (f < 0 || f >= kNumFx) ? -1 : kCanalIdx[(size_t) f];
     }
 
     //  EL ORDEN DE LAS ETAPAS SE QUEDA INTACTO, y ese es el argumento fuerte y
@@ -3824,8 +3831,8 @@ private:
         //  30 ms de coro y 10 de flanger son los recorridos del sector, y
         //  reservar un segundo como DLY seria pagar 96000 muestras por canal
         //  para usar mil.
-        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> choLine { 4096 };
-        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> flaLine { 2048 };
+        LineaLagrange choLine { 4096 };   // rendimiento#1
+        LineaLagrange flaLine { 2048 };   // rendimiento#1
         float smChoProf = 0.0f, smFlaFb = 0.0f, smPhaProf = 0.0f;
         std::array<bool, 3> modWasActive {};
         float phaZ[2][kPhaEtapas] {};
@@ -3836,7 +3843,7 @@ private:
         float rngFase = 0.0f, smRngAnillo = 0.0f;
 
         //  PIT: la linea que se lee a otra velocidad, con sus dos cabezas.
-        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pitLine { 16384 };
+        LineaLagrange pitLine { 16384 };   // rendimiento#1
         float pitFase = 0.0f, smPitSemis = 0.0f;
 
         //  WID y EXC: el MISMO cruce Linkwitz-Riley, uno para dejar los graves
@@ -3969,7 +3976,7 @@ private:
         //  Medido en el banco -8 kHz, 1600.5 muestras de retardo y 0.9 de
         //  realimentacion-: la octava repeticion salia 5.9 dB por debajo de lo
         //  que la realimentacion sola predice. Con Lagrange, 0.7 dB.
-        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> dlyLine { 0 };
+        LineaLagrange dlyLine { 0 };   // rendimiento#1
         //  Los suavizados del delay, de ~20 ms: un salto por bloque a traves de
         //  una linea interpolada es un chasquido en cada movimiento de TIME.
         float smDlyFb   = 0.35f;
@@ -3978,12 +3985,12 @@ private:
         //  EL AMBIENTE: una linea y ocho tomas, sin realimentacion. SIN
         //  INTERPOLAR, porque las tomas son fijas: un Lagrange por toma serian
         //  ocho filtros por muestra para leer la misma muestra entera.
-        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None> ambLine { 0 };
+        Anillo ambLine;   // rendimiento#1
 
         //  EL PING-PONG: una linea de dos canales con la realimentacion
         //  CRUZADA -lo que sale por la izquierda vuelve por la derecha-, y
         //  Lagrange por lo mismo que el delay.
-        juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> pngLine { 0 };
+        LineaLagrange pngLine { 0 };   // rendimiento#1
         float smPngSamp = 0.0f, smPngFb = 0.0f;
 
         //  LA SALA. Ver Fdn.h: cuatro lineas primas entre si y dos difusores.

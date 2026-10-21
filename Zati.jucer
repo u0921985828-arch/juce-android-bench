@@ -86,7 +86,7 @@
                    extraLinkerFlags="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384">
       <CONFIGURATIONS>
         <CONFIGURATION name="Debug"   isDebug="1" targetName="Zati" androidArchitectures="arm64-v8a"/>
-        <CONFIGURATION name="Release" isDebug="0" targetName="Zati" optimisation="3" androidArchitectures="arm64-v8a"/>
+        <CONFIGURATION name="Release" isDebug="0" targetName="Zati" optimisation="3" linkTimeOptimisation="1" androidArchitectures="arm64-v8a"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_core"              path="JUCE/modules"/>

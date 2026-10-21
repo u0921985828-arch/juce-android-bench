@@ -116,11 +116,20 @@ def main():
                   ("   <-- no es lo que dura" if fuera else "")))
         if mal: malas.append (quien)
 
+    #  accesibilidad#28: ocho golpes por segundo no son ocho destellos; dos si son dos.
+    r60, r120, l60 = d.get ("rafaga60", -1), d.get ("rafaga120", -1), d.get ("lento60", -1)
+    print ("\nrafaga de 8/s en 4 s: %d destellos a 60 Hz, %d a 120 (tope 12); 2/s: %d (esperado 8)"
+           % (r60, r120, l60))
+    if not (0 <= r60 <= 12 and 0 <= r120 <= 12):
+        malas.append ("rafaga por encima de tres destellos por segundo")
+    if not (7 <= l60 <= 9):
+        malas.append ("un golpe cada medio segundo ya no destella")
+
     print()
     if malas:
-        print ("FALLA: se ve distinto a 60 que a 120 —", ", ".join (malas))
+        print ("FALLA:", ", ".join (malas))
         return 1
-    print ("las tres duran lo mismo a las dos cadencias")
+    print ("las tres duran lo mismo a las dos cadencias, y una rafaga no pasa de tres destellos por segundo")
     return 0
 
 

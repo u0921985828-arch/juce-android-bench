@@ -4,7 +4,8 @@
 
 //  Anillo del foco de teclado (accesibilidad#7, WCAG 2.4.7): solo cuando el
 //  foco llega sin dedo, como :focus-visible; un toque no lo enciende.
-class AnilloFoco : public juce::Component, public juce::FocusChangeListener
+class AnilloFoco : public juce::Component, public juce::FocusChangeListener,
+                   public juce::KeyListener   // accesibilidad#29: solo pinta si la ultima entrada fue una tecla
 {
 public:
     AnilloFoco() { setInterceptsMouseClicks (false, false); setAccessible (false); setWantsKeyboardFocus (false); }
@@ -28,8 +29,15 @@ public:
         g.setColour (ZatiColours::ink);      g.drawRoundedRectangle (r, esquina, (float) grosor);
     }
 
+    void marcaToque() noexcept { porTecla = false; }   // accesibilidad#29
+    void marcaTecla() noexcept { porTecla = true; }
+
     void globalFocusChanged (juce::Component* c) override
-    { sigue (c, juce::Desktop::getInstance().getNumDraggingMouseSources() > 0); }
+    { sigue (c, ! porTecla || juce::Desktop::getInstance().getNumDraggingMouseSources() > 0); }
+
+    using juce::Component::keyPressed;
+    bool keyPressed (const juce::KeyPress&, juce::Component*) override { marcaTecla(); return false; }
+    void mouseDown (const juce::MouseEvent&) override { marcaToque(); setVisible (false); }
 
     void vuelveASituar() { if (isVisible()) sigue (objetivo.getComponent(), false); }
 
@@ -38,4 +46,5 @@ public:
 private:
     static constexpr int grosor = 2;
     juce::Component::SafePointer<juce::Component> objetivo;
+    bool porTecla = false;
 };

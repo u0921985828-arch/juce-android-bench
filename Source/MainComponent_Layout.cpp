@@ -308,6 +308,63 @@ void MainComponent::layoutPadGrid (juce::Rectangle<int> area, int cols, int rows
 
 void MainComponent::resized()
 {
+    Cara c;   // codigo#20
+    maquetaPresupuesto (c);
+    maquetaCromo (c);
+    maquetaMaquina (c);
+
+    // --- Floating sheets (each sized by its own content, capped at 86%) ---
+    const auto full = safeArea();
+    maquetaPadPick();
+
+    maquetaCanalPick();
+
+    maquetaMidi();
+
+    maquetaRanura();
+
+    maquetaPreset();
+
+    maquetaCanal();
+
+    maquetaEqBanda();
+
+
+    maquetaMandos();
+
+    maquetaPad (full);
+
+    maquetaManual();
+
+    maquetaBrowse (full);
+
+    maquetaSet (full);
+
+    maquetaExport();
+
+    maquetaRack();
+
+    maquetaInst();
+
+    maquetaVst (full);
+
+    maquetaChop();
+
+    maquetaSong (full);
+
+    maquetaMix();
+
+    maquetaXy();
+
+    maquetaSeq (full);
+    maquetaTour();
+
+    anilloFoco.vuelveASituar();   // accesibilidad#7
+    excluyeGestosDeAtras();       // accesibilidad#29
+}
+
+void MainComponent::maquetaPresupuesto (Cara& c)
+{
     //  Lo que cada tarjeta pide se apunta en esta pasada y no en la anterior:
     //  sin vaciarla, un maquetado deja el suyo encima del de antes y el banco
     //  juzgaria una ficha que ya no esta abierta.
@@ -319,9 +376,6 @@ void MainComponent::resized()
     //  sin una sola fila. Una medida que no llega al volcado es una regla que
     //  no falla nunca. `vuRotulos` si se vacia alli porque alli se escribe.
     UiAudit::celdas.clear();
-
-    //  Height reserved on a seam that carries an engraved name.
-    constexpr int kSeamLabelH = 12;
 
     editInfoArea = {};
     //  Both plates are only laid out on the main face; clearing them here
@@ -342,7 +396,8 @@ void MainComponent::resized()
     //  top and bottom - and then ten more on each - was margin stacked behind
     //  margin, and the instrument ended up floating in the middle of its own
     //  screen with dead paper above and below it.
-    auto area = safeArea().reduced (ZatiLookAndFeel::kFaceMargin,
+    auto& area = c.area;
+    area = safeArea().reduced (ZatiLookAndFeel::kFaceMargin,
                                     ZatiLookAndFeel::kEdgeV);
 
     //  TWO COLUMNS WHEN THE SCREEN IS WIDER THAN IT IS TALL.
@@ -364,7 +419,7 @@ void MainComponent::resized()
     //  it is square; the left column keeps a floor so the screen and the knobs
     //  never get squeezed into a strip.
     faceColumn = {};
-    juce::Rectangle<int> padCol;
+    auto& padCol = c.padCol;
 
     //  EL UMBRAL SALE DE LO QUE LA CARA APAISADA COLOCA, y no de un 560.
     //
@@ -399,13 +454,14 @@ void MainComponent::resized()
 
     // The LCD grows to absorb whatever the face doesn't need (the pads are
     // width-bound squares) — the screen is the protagonist.
-    int screenH;
+    auto& screenH = c.screenH;
     //  ...except for the one seam that carries controls. See the block after
     //  the budget: `padSeamExtra` is what the PADS seam borrows so the four
     //  bank chips are a finger tall with air over and under, and
     //  `padBottomGive` is the part of it that comes out of the band under the
     //  grid rather than out of the screen.
-    int padSeamExtra = 0, padBottomGive = 0;
+    auto& padSeamExtra = c.padSeamExtra;
+    auto& padBottomGive = c.padBottomGive;
     //  Y LO QUE EL PRESUPUESTO LE RESERVA A LA REJILLA, que es el TESTIGO de
     //  que la cuenta entera cuadra.
     //
@@ -413,11 +469,11 @@ void MainComponent::resized()
     //  fijo y ellos se llevan lo que quede, asi que un termino de mas o de
     //  menos en CUALQUIER banda del presupuesto aterriza aqui y en ningun otro
     //  sitio. Una cifra en vez de catorce, y exacta.
-    int padsNeed = 0;
+    auto& padsNeed = c.padsNeed;
     //  Y si el cristal se quedo clavado en su suelo — o sea si la cara va
     //  sobre-suscrita. Ahi los pads absorben el deficit A PROPOSITO y la
     //  diferencia es la escalera y no un fallo.
-    bool cristalApretado = false;
+    auto& cristalApretado = c.cristalApretado;
     //  Y CUANTO MIDE LA FILA DE MODULOS, que hasta ahora era una constante de
     //  26 px. Son las seis tapas que abren las fichas -PADS SEC CANCION MEZCLA
     //  XY AJUSTES-, o sea lo que mas se toca de la cara despues de los pads, y
@@ -430,8 +486,10 @@ void MainComponent::resized()
     //  su suelo. Se pide lo que hay - la misma pregunta que ya deciden BANCO,
     //  PADS y la tira del paso: sube a cuarenta donde el cristal puede pagarlo
     //  sin bajar de SU suelo, y se queda en veintiseis donde no.
-    int moduleH = ZatiLookAndFeel::kModule;
-    int transportH = ZatiLookAndFeel::kTransport;   // visual#5: sube a 44 de pie donde el cristal lo paga
+    auto& moduleH = c.moduleH;
+    moduleH = ZatiLookAndFeel::kModule;
+    auto& transportH = c.transportH;
+    transportH = ZatiLookAndFeel::kTransport;   // visual#5: sube a 44 de pie donde el cristal lo paga
     statusH = ZatiLookAndFeel::kStatus;
     //  Y SI APAISADO LAS DOS BANDAS CABEN EN UN RENGLON, que hasta ahora se
     //  daba por hecho.
@@ -449,7 +507,7 @@ void MainComponent::resized()
     //  que sabe si tiene una segunda fila que ofrecer». Aqui la hay - medido,
     //  en 640x360 la cara termina con 70 px libres y una banda de modulos vale
     //  26 - asi que se ofrece.
-    bool caraUnaFila = true;
+    auto& caraUnaFila = c.caraUnaFila;
     if (wideFace)
     {
         juce::TextButton* mbCabe[6] = { &padsButton, &secButton, &songButton,
@@ -734,8 +792,16 @@ void MainComponent::resized()
         }
     }
 
+}
+
+void MainComponent::maquetaCromo (Cara& c)
+{
+    auto& area = c.area;
+    const int screenH = c.screenH, padBottomGive = c.padBottomGive;
+    const int moduleH = c.moduleH, transportH = c.transportH;
+    const bool caraUnaFila = c.caraUnaFila;
     // --- Top chrome ---
-    const int faceTop = area.getY();          // donde empieza la cara, para el panel XY
+    c.faceTop = area.getY();          // donde empieza la cara, para el panel XY
     headerArea = area.removeFromTop (ZatiLookAndFeel::kHeader);
     area.removeFromTop (ZatiLookAndFeel::kAir + layoutAir);
 
@@ -952,6 +1018,14 @@ void MainComponent::resized()
     }
     area.removeFromBottom (Metrics::sm);
 
+}
+
+void MainComponent::maquetaMaquina (Cara& c)
+{
+    auto& area = c.area;
+    auto& padCol = c.padCol;
+    const int padSeamExtra = c.padSeamExtra, padsNeed = c.padsNeed, faceTop = c.faceTop;
+    const bool cristalApretado = c.cristalApretado;
     // --- Machine face: CTRL 1-3 and their readout, the six FX, pads ---
     {
         auto mrow = area.removeFromTop (ZatiLookAndFeel::kCtrlPlate);
@@ -1300,55 +1374,6 @@ void MainComponent::resized()
             layoutPadGrid (area, 4, 4, ZatiLookAndFeel::kPadGap);
         }
     }
-
-    // --- Floating sheets (each sized by its own content, capped at 86%) ---
-    const auto full = safeArea();
-    maquetaPadPick();
-
-    maquetaCanalPick();
-
-    maquetaMidi();
-
-    maquetaRanura();
-
-    maquetaPreset();
-
-    maquetaCanal();
-
-    maquetaEqBanda();
-
-
-    maquetaMandos();
-
-    maquetaPad (full);
-
-    maquetaManual();
-
-    maquetaBrowse (full);
-
-    maquetaSet (full);
-
-    maquetaExport();
-
-    maquetaRack();
-
-    maquetaInst();
-
-    maquetaVst (full);
-
-    maquetaChop();
-
-    maquetaSong (full);
-
-    maquetaMix();
-
-    maquetaXy();
-
-    maquetaSeq (full);
-    maquetaTour();
-
-    anilloFoco.vuelveASituar();   // accesibilidad#7
-    excluyeGestosDeAtras();       // accesibilidad#29
 }
 
 //  Centred, not risen from the bottom. A bottom sheet at 86% buried the pad
@@ -3649,8 +3674,8 @@ void MainComponent::maquetaSet (juce::Rectangle<int> full)
             const int gAcciones = inner.getBottom();
             {
                 auto fila = inner.removeFromBottom (Metrics::btn);
-                juce::TextButton* pe[3] = { &projExportButton, &projKitButton, &projZipButton };   // android#2
-                layoutModuleBar (fila, pe, 0, 3);
+                juce::TextButton* pe[4] = { &projExportButton, &projKitButton, &projZipButton, &projImportButton };   // android#2
+                layoutModuleBar (fila, pe, 0, 4);
             }
             inner.removeFromBottom (Metrics::xs);
 

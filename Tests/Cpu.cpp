@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 using Clock = std::chrono::steady_clock;
@@ -69,7 +70,8 @@ static constexpr double kBudget = 1000.0 * (double) kBs / kSr;   // 2.67 ms
 //  mediana no se entera de esos, y es la que hace comparables dos filas de
 //  esta tabla. El peor bloque se imprime aparte porque es otra pregunta
 //  -si algo se atasca- y no se responde con el mismo numero.
-struct Medida { double medianaMs = 0, p95Ms = 0, peorMs = 0; double pico = 0; };
+struct Medida { double medianaMs = 0, p95Ms = 0, peorMs = 0; double pico = 0;
+                std::uint32_t huella = 2166136261u; };   // rendimiento: FNV de los bits que salen, para optimizar sin cambiar el sonido
 
 static Medida corre (AudioEngine& e, juce::AudioBuffer<float>& buf, int nBlocks,
                      const std::function<void (int)>& antes = {})
@@ -87,7 +89,12 @@ static Medida corre (AudioEngine& e, juce::AudioBuffer<float>& buf, int nBlocks,
 
         for (int c = 0; c < buf.getNumChannels(); ++c)
             for (int i = 0; i < kBs; ++i)
-                m.pico = juce::jmax (m.pico, (double) std::abs (buf.getSample (c, i)));
+            {
+                const float v = buf.getSample (c, i);
+                m.pico = juce::jmax (m.pico, (double) std::abs (v));
+                std::uint32_t u; std::memcpy (&u, &v, sizeof u);
+                m.huella = (m.huella ^ u) * 16777619u;
+            }
     }
 
     std::sort (t.begin(), t.end());
@@ -102,9 +109,9 @@ static double base = 0.0;   // el silencio, para restarlo
 static void fila (const char* nombre, const Medida& m, bool restaBase = true)
 {
     const double neto = restaBase ? juce::jmax (0.0, m.medianaMs - base) : m.medianaMs;
-    std::printf ("%-32s %7.3f ms  neto %7.3f  p95 %7.3f  peor %7.3f  carga %5.1f%%  pico %.3f\n",
+    std::printf ("%-32s %7.3f ms  neto %7.3f  p95 %7.3f  peor %7.3f  carga %5.1f%%  pico %.3f  huella %08x\n",
                  nombre, m.medianaMs, neto, m.p95Ms, m.peorMs,
-                 100.0 * m.medianaMs / kBudget, m.pico);
+                 100.0 * m.medianaMs / kBudget, m.pico, (unsigned) m.huella);
 }
 
 //  Un motor recien montado con dieciseis pads cargados y nada mas puesto.
@@ -280,16 +287,16 @@ int main()
     {
         const auto monton_e = std::make_unique<AudioEngine>();
         AudioEngine& e = *monton_e; prepara (e);
-        e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
-        e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
-        e.setFxParam (0, f, 2, 1.0f);
+        //  rendimiento#1: en el canal 1; el 0 no lleva insertos y la fila medía el efecto apagado.
+        e.setFxParam (1, f, 0, AudioEngine::kFxDef[f][0]);
+        e.setFxParam (1, f, 1, AudioEngine::kFxDef[f][1]);
+        e.setFxParam (1, f, 2, 1.0f);
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
+            e.setPadCanal (p, 1);
         }
-        //  Los dieciseis pads nacen en el canal 0, asi que UNA llamada abre el
-        //  envio de los dieciseis: eso es lo que la mesa hace por el reparto.
-        e.setCanalSend (0, f, 1.0f);
+        e.setCanalSend (1, f, 1.0f);
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         char nombre[64];
         std::snprintf (nombre, sizeof (nombre), "16 pads -> %s", nombreDeFx (f));
@@ -302,17 +309,18 @@ int main()
     {
         const auto monton_e = std::make_unique<AudioEngine>();
         AudioEngine& e = *monton_e; prepara (e);
-        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)   // rendimiento#1: canal 1, como arriba
         {
-            e.setFxParam (0, f, 0, AudioEngine::kFxDef[f][0]);
-            e.setFxParam (0, f, 1, AudioEngine::kFxDef[f][1]);
-            e.setFxParam (0, f, 2, 1.0f);
+            e.setFxParam (1, f, 0, AudioEngine::kFxDef[f][0]);
+            e.setFxParam (1, f, 1, AudioEngine::kFxDef[f][1]);
+            e.setFxParam (1, f, 2, 1.0f);
         }
         for (int p = 0; p < 16; ++p)
         {
             e.setPadPitch (p, 0.0f); e.setPadLoop (p, true);
+            e.setPadCanal (p, 1);
         }
-        for (int f = 0; f < AudioEngine::kNumFx; ++f) e.setCanalSend (0, f, 0.5f);
+        for (int f = 0; f < AudioEngine::kNumFx; ++f) e.setCanalSend (1, f, 0.5f);
         corre (e, buf, 64, [&e] (int b) { if (b == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f); });
         fila ("16 pads -> TODOS", corre (e, buf, 2000));
     }

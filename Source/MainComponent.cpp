@@ -516,6 +516,8 @@ MainComponent::MainComponent()
     juce::Desktop::getInstance().addGlobalMouseListener (&oidoDeToques);
     addChildComponent (anilloFoco);
     juce::Desktop::getInstance().addFocusChangeListener (&anilloFoco);
+    juce::Desktop::getInstance().addGlobalMouseListener (&anilloFoco);   // accesibilidad#29
+    addKeyListener (&anilloFoco);
 
     //  Ver textoInvalidoConserva: todos los mandos de la cara y de las fichas.
     textoInvalidoConserva (*this);
@@ -1484,8 +1486,12 @@ void MainComponent::cableaAjustes()
                 name = juce::isPositiveAndBelow (sel, projModel.names.size())
                          ? projModel.names[sel] : currentProject;
             }
-            if (name.isEmpty())
-                name = "PROYECTO " + juce::String (ProjectStore::list().size() + 1);
+            if (name.isEmpty() || esDemo (name))   // producto#1: DEMO no se pisa
+            {
+                int n = ProjectStore::list().size() + 1;
+                while (ProjectStore::list().contains ("PROYECTO " + juce::String (n))) ++n;
+                name = "PROYECTO " + juce::String (n);
+            }
 
             projNameBox.setText (name, juce::dontSendNotification);
 
@@ -1596,6 +1602,9 @@ void MainComponent::cableaAjustes()
         styleButton (projZipButton, kKey);
         projZipButton.onClick = [this] { copiaZip(); };
         setSheet.cuerpo.addAndMakeVisible (projZipButton);
+        styleButton (projImportButton, kKey);
+        projImportButton.onClick = [this] { importaZip(); };
+        setSheet.cuerpo.addAndMakeVisible (projImportButton);
 
         // --- RACK: los envios de UN CANAL, abierto desde la mesa. ---------
         //
@@ -5516,7 +5525,7 @@ void MainComponent::ponIconos()
         { &projSaveButton, Iconos::Id::guardar }, { &projLoadButton, Iconos::Id::abrir },
         { &projNewButton, Iconos::Id::nuevo },    { &projDeleteButton, Iconos::Id::borrar },
         { &projExportButton, Iconos::Id::exportar }, { &projKitButton, Iconos::Id::guardar },
-        { &projZipButton, Iconos::Id::exportar },
+        { &projZipButton, Iconos::Id::exportar }, { &projImportButton, Iconos::Id::abrir },
         { &exportMasterButton, Iconos::Id::exportar },
         { &exportStemsButton, Iconos::Id::exportar },
         { &exportDirBtn, Iconos::Id::carpeta },
@@ -8426,6 +8435,7 @@ void MainComponent::showSetPage (int page)
     muestra (projSaveButton,   onProj);
     muestra (projKitButton,    onProj);
     muestra (projZipButton,    onProj);
+    muestra (projImportButton, onProj);
     muestra (projLoadButton,   onProj);
     muestra (projNewButton,    onProj);
     muestra (projDeleteButton, onProj);
@@ -9080,6 +9090,8 @@ MainComponent::~MainComponent()
 {
     juce::Desktop::getInstance().removeGlobalMouseListener (&oidoDeToques);
     juce::Desktop::getInstance().removeFocusChangeListener (&anilloFoco);
+    juce::Desktop::getInstance().removeGlobalMouseListener (&anilloFoco);
+    removeKeyListener (&anilloFoco);
 
     //  EL PUENTE MIDI SE CIERRA ANTES QUE NADA, y no es una precaucion: es un
     //  uso despues de liberar, todas las veces, con la salida encendida.
@@ -11959,6 +11971,7 @@ void MainComponent::retranslateUi()
     projSaveButton  .setButtonText (T ("GUARDAR"));
     projKitButton   .setButtonText (T ("GUARDAR KIT"));
     projZipButton   .setButtonText (T ("ZIP"));
+    projImportButton.setButtonText (T ("IMPORTAR"));
     projLoadButton  .setButtonText (T ("ABRIR"));
     projNewButton   .setButtonText (T ("NUEVO"));
     projDeleteButton.setButtonText (T ("BORRAR"));
@@ -14935,6 +14948,18 @@ void MainComponent::loadProject (const juce::String& name)
     Bitacora::paso ("proyecto/abre");   // estabilidad#27
 
     if (padsBusy()) return;
+    if (esDemo (name))   // producto#1: DEMO entra por el mismo embudo
+    {
+        newProject();
+        loadFactoryKits();
+        patronDemo();
+        songPorDefecto();
+        apuntaProyecto (kProyectoDemo);
+        refreshProjectList();
+        status.setText (T ("Abierto DEMO: es de solo lectura, GUARDAR lo copia con otro nombre"),
+                        juce::dontSendNotification);
+        return;
+    }
 
     const auto folder = ProjectStore::folderFor (name);
     const auto xmlFile = folder.getChildFile ("project.xml");
@@ -15246,6 +15271,11 @@ juce::Font MainComponent::fuenteContinuidad()
 
 void MainComponent::deleteProject (juce::String name)
 {
+    if (esDemo (name))   // producto#1
+    {
+        status.setText (T ("DEMO es de solo lectura"), juce::dontSendNotification);
+        return;
+    }
     ProjectStore::folderFor (name).deleteRecursively();
     if (currentProject == name)
     {
@@ -15254,6 +15284,12 @@ void MainComponent::deleteProject (juce::String name)
     refreshProjectList();
     status.setText (T ("Borrado \"%1\"", name), juce::dontSendNotification);
     setSheet.repintaTarjeta();
+}
+
+//  producto#1: DEMO no esta en disco; se rehace de fabrica cada vez que se abre.
+bool MainComponent::esDemo (const juce::String& name)
+{
+    return name.trim().equalsIgnoreCase (kProyectoDemo);
 }
 
 //  LA CANCION DE UN PROYECTO RECIEN NACIDO: el patron 1 en el primer hueco.
@@ -15279,6 +15315,11 @@ void MainComponent::patronDemo()
         { 48, 0, 0, 0, 6 }, { 48, 3, 0, 0, 6 }, { 48, 6, 3, 0, 6 },
         { 48, 8, 0, 0, 6 }, { 48, 11, 7, 0, 6 }, { 48, 14, 5, 0, 6 },
     };
+    if (engine.getPatternLength (0) < 16)   // producto#1: tras NUEVO el patron mide uno
+    {
+        engine.setPatternLength (0, 16);
+        if (selectedPattern == 0) lengthSlider.setValue (16, juce::dontSendNotification);
+    }
     for (const auto& g : golpes)
     {
         pattern[0][(size_t) g.paso][(size_t) g.pad] = true;
@@ -15492,6 +15533,8 @@ void MainComponent::newProject()
 void MainComponent::refreshProjectList()
 {
     projModel.names = ProjectStore::list();
+    projModel.names.removeString (kProyectoDemo, true);
+    projModel.names.insert (0, kProyectoDemo);   // producto#1: el DEMO siempre esta, primero
     projList.updateContent();
 
     const int sel = projModel.names.indexOf (currentProject);
@@ -20079,6 +20122,41 @@ void MainComponent::copiaZip()
         });
 }
 
+//  android#2: la vuelta del ZIP; lo que ya hay no se pisa.
+void MainComponent::importaZip()
+{
+    chooser = std::make_unique<juce::FileChooser> (T ("Restaurar la biblioteca"),
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.zip");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto url = fc.getURLResult();
+            if (url.isEmpty()) return;
+            beginBusy (T ("IMPORTAR"));
+            juce::Thread::launch ([yo = juce::Component::SafePointer<MainComponent> (this), url]
+            {
+                std::pair<int, int> r { -1, 0 };
+                auto tmp = juce::File::createTempFile (".zip");
+                if (auto in = url.isLocalFile() ? std::unique_ptr<juce::InputStream> (url.getLocalFile().createInputStream())
+                                                : url.createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)))
+                    if (auto out = tmp.createOutputStream(); out != nullptr && out->writeFromInputStream (*in, -1) >= 0)
+                    {
+                        out.reset();
+                        r = ProjectStore::restauraZip (tmp);
+                    }
+                tmp.deleteFile();
+                juce::MessageManager::callAsync ([yo, r]
+                {
+                    if (yo == nullptr) return;
+                    yo->endBusy();
+                    yo->refreshProjectList();
+                    yo->status.setText (r.first >= 0 ? T ("Biblioteca restaurada: %1 ficheros (%2 ya estaban)", juce::String (r.first), juce::String (r.second))
+                                                     : T ("No se pudo leer la copia"), juce::dontSendNotification);
+                });
+            });
+        });
+}
+
 void MainComponent::launchSystemPicker()
 {
     if (browseTargetPad < 0) return;
@@ -23468,11 +23546,21 @@ void MainComponent::pintaCuadro (double dtMs)
     const int ps = engine.getPlayStep();
 
     // Pad trigger feedback (taps + sequencer): flash then decay.
-    const std::uint64_t trig = engine.fetchTriggered();
+    const std::uint64_t trig = engine.fetchTriggered() | std::exchange (trigInyectado, std::uint64_t {});
     const float caida = (float) std::exp (-dtMs / kTauDestelloMs);
+    relojDestello += dtMs;
     for (int i = 0; i < kNumPads; ++i)
     {
-        if ((trig & ((std::uint64_t) 1u << i)) != 0) padFlash[(size_t) i] = 1.0f;
+        const auto k = (size_t) i;
+        if ((trig & ((std::uint64_t) 1u << i)) != 0)
+        {
+            //  accesibilidad#28: golpes a mas de 3/s sostienen el destello en vez de repetirlo
+            destelloRapido[k] = relojDestello - destelloUltimo[k] < kDestelloMinMs;
+            destelloUltimo[k] = relojDestello;
+            padFlash[k] = 1.0f;
+        }
+        else if (destelloRapido[k] && relojDestello - destelloUltimo[k] < kDestelloMinMs)
+            continue;
         if (padFlash[(size_t) i] > 0.0f)
         {
             //  EN MILISEGUNDOS. Estaba en `*= 0.8f` POR TICK, que a los 33 ms

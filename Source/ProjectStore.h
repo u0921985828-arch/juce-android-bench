@@ -201,6 +201,24 @@ public:
         return zip.writeToStream (out, nullptr) ? n : -1;
     }
 
+    //  android#2: la vuelta del ZIP; sin pisar nada y sin la sesion; {puestos, saltados}.
+    static std::pair<int, int> restauraZip (const juce::File& fichero)
+    {
+        const auto raiz = home();
+        juce::ZipFile zip (fichero);
+        int puestos = 0, saltados = 0;
+        for (int i = 0; i < zip.getNumEntries(); ++i)
+        {
+            const auto nombre = zip.getEntry (i)->filename;
+            if (nombre.endsWithChar ('/')) continue;
+            const auto destino = raiz.getChildFile (nombre);
+            if (nombre.startsWith (".sesion/") || nombre.contains (".zati-write-test")
+                || ! destino.isAChildOf (raiz) || destino.exists()) { ++saltados; continue; }
+            if (zip.uncompressEntry (i, raiz, false).wasOk()) ++puestos;
+        }
+        return { puestos, saltados };
+    }
+
     //  DE DONDE SE CARGA UN SONIDO Y DONDE CAE UNO GRABADO, y se puede elegir.
     //
     //  Del telefono, en la misma frase que la de proyectos. Es la carpeta del

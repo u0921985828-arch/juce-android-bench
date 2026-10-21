@@ -10,6 +10,8 @@ minimo que la auditoria pide, y que se puede medir aqui:
      pagina de PROYECTOS lo avisa; en Musica/ZATI no.
   3. La sonda de escritura prueba con las extensiones que la biblioteca
      escribe (.wav y .xml): Musica/ rechaza lo que no es audio.
+  4. Y el zip VUELVE: IMPORTAR esta en PROYECTOS, un proyecto perdido sale
+     del zip, y lo que ya hay (la sesion viva incluida) no se pisa.
 """
 import json, os, shutil, subprocess, sys, tempfile
 
@@ -58,6 +60,10 @@ def main():
         if not musica.get ("sesion"): malas.append ("el zip no lleva la sesion (.sesion/)")
         if not musica.get ("boton"):  malas.append ("ZIP no esta en la pagina de PROYECTOS")
         if musica.get ("seborra"):    malas.append ("Musica/ZATI se da por borrable")
+        if not musica.get ("estaba"): malas.append ("4. el proyecto de prueba no llego a guardarse")
+        if not musica.get ("vuelve"): malas.append ("4. el proyecto perdido no vuelve del zip (%s puestos)" % musica.get ("puestos"))
+        if musica.get ("saltados", 0) <= 0: malas.append ("4. restaurar no se salto nada: piso la sesion viva")
+        if not musica.get ("importar"): malas.append ("4. IMPORTAR no esta en la pagina de PROYECTOS")
         if not volatil.get ("seborra"): malas.append ("la carpeta de la app no se da por borrable")
         if "desinstalar" not in volatil.get ("aviso", ""):
             malas.append ("con la biblioteca en la app no se avisa (dice «%s»)" % volatil.get ("aviso"))

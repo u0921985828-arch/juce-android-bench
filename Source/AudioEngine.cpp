@@ -414,9 +414,7 @@ bool AudioEngine::preparaMesa (int canal) noexcept
         //  ms de previo mas los 98.7 de la ultima toma. Se pide medio segundo
         //  y se limita a lo que la linea tiene: a 96 kHz medio segundo son
         //  48000 muestras y la linea son 32768.
-        I.ambLine.prepare (spec);
-        I.ambLine.setMaximumDelayInSamples (juce::jmin (32767, juce::jmax (1, (int) (fs * 0.5))));
-        I.ambLine.reset();
+        I.ambLine.prepara ((int) spec.numChannels, juce::jmin (32767, juce::jmax (1, (int) (fs * 0.5))));
 
         //  La FDN reserva sus cuatro lineas y sus dos difusores aqui: en el
         //  render no se toca memoria.
@@ -4053,31 +4051,34 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     const float escala = ambEscala (tam);
                     const float porMs  = (float) systemSampleRate / 1000.0f;
                     const float preMu  = preMs * porMs;
-                    const float tope   = (float) (I.ambLine.getMaximumDelayInSamples() - 1);
+                    const float tope   = (float) (I.ambLine.maximoRetardo() - 1);
 
                     float* w0 = fxBus[busIdx (kFxAmb)].getWritePointer (0, startSample);
                     float* w1 = (chans > 1) ? fxBus[busIdx (kFxAmb)].getWritePointer (1, startSample) : w0;
 
+                    //  rendimiento#1: las tomas no cambian dentro del bloque; se cuentan una vez.
+                    int toma[2][kTomas];
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int t = 0; t < kTomas; ++t)
+                            toma[ch][t] = (int) std::floor (juce::jlimit (1.0f, tope,
+                                              preMu + (ch == 0 ? kAmbMsL : kAmbMsR)[t] * escala * porMs));
+                    const int mask = I.ambLine.mascara();
+
                     for (int i = 0; i < numSamples; ++i)
                     {
+                        const int pos = I.ambLine.posicion();
                         for (int ch = 0; ch < chans; ++ch)
                         {
                             float* w = (ch == 0) ? w0 : w1;
-                            const float in = std::isfinite (w[i]) ? w[i] : 0.0f;
-                            I.ambLine.pushSample (ch, in);
+                            float* linea = I.ambLine.canal (ch);
+                            linea[pos] = std::isfinite (w[i]) ? w[i] : 0.0f;
 
-                            const float* ms = (ch == 0) ? kAmbMsL : kAmbMsR;
                             float suma = 0.0f;
                             for (int t = 0; t < kTomas; ++t)
-                            {
-                                const float d = juce::jlimit (1.0f, tope, preMu + ms[t] * escala * porMs);
-                                suma += kAmbGan[t] * I.ambLine.popSample (ch, d, false);
-                            }
+                                suma += kAmbGan[t] * linea[(pos + toma[ch][t]) & mask];
                             w[i] = suma;
                         }
-                        //  El puntero de lectura avanza UNA vez por muestra y no
-                        //  una por toma: `popSample` con `false` lee sin moverlo.
-                        for (int ch = 0; ch < chans; ++ch) I.ambLine.popSample (ch, 1.0f, true);
+                        I.ambLine.avanza();
                     }
                     returnBus (kFxAmb);
                 }

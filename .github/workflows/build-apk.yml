@@ -198,6 +198,13 @@ jobs:
       - name: La ruta de compilacion no viaja dentro de la .so
         run: python3 ci/patch_ruta_build.py
 
+      #  rendimiento: la release se enlaza con LTO (linkTimeOptimisation del .jucer);
+      #  se comprueba en lo que Projucer escribe, no se supone.
+      - name: La release se enlaza con LTO
+        run: |
+          grep -n -- '-flto' Builds/Android/app/CMakeLists.txt \
+            || { echo "Projucer no escribio -flto en la release"; exit 1; }
+
       #  The launch window. Until JUCE puts up its first frame the window is
       #  whatever the theme's windowBackground says, and Theme.Material.Light
       #  says WHITE - so the app opened onto a second and a half of blank white
