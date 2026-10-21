@@ -155,7 +155,7 @@ namespace ZatiColours
             //  PAPEL — the original. Kraft and bone: the substrate this studio
             //  prints on, warm enough that nothing in the room is that colour
             //  by accident, with near-black ink on it.
-            { 0xfff4efe3, 0xffece6d8, 0xffe0d9c8,
+            { 0xfff5eedc, 0xffede5d0, 0xffe2d8c0,
               0xffeee9dc, 0xfffffdf7, 0xffc7bfac,
               0xffded7c6, 0xffcfc7b4, 0xffb3ab98,
               0xffb3aa93, 0xff8f8774,
@@ -171,7 +171,7 @@ namespace ZatiColours
             //  light where a recess in a pale one loses it. An active cap can
             //  no longer be near-black here, so the accent is the bone tone -
             //  the tone rule survives, it just points the other way.
-            { 0xff23211e, 0xff1b1a17, 0xff141311,
+            { 0xff222120, 0xff1a1a19, 0xff131313,
               0xff262421, 0xff35322d, 0xff0f0e0d,
               0xff302d29, 0xff3d3934, 0xff4a4640,
               0xff383430, 0xff4d4842,
@@ -207,7 +207,7 @@ namespace ZatiColours
             //  one pairing that makes a lit key unmistakable here: on the
             //  other three a pressed cap is a step of TONE, and on a coloured
             //  body tone alone is not enough to carry it.
-            { 0xff1b4a4f, 0xff14393d, 0xff0e2c30,
+            { 0xff1a4b52, 0xff133a40, 0xff0d2d33,
               0xff1a4247, 0xff2a5b61, 0xff081f22,
               //  La tapa, un paso mas clara que el cuerpo. A 0xff235055 el
               //  contraste contra la tarjeta era 1.10 a 1 - por debajo de lo
@@ -221,7 +221,7 @@ namespace ZatiColours
               //  no la mide un ratio de luminancia.
               0xff33666f, 0xff3d7580, 0xff4d8a95,
               0xff11201f, 0xff2a4a48,
-              0xfff2e8d5, 0xff9ab5b3, 0xff0e2c30, 0xfffffdf7,
+              0xfff2e8d5, 0xffa0bbb9, 0xff0d2d33, 0xfffffdf7,
               0xff1c2b2b, 0xff172525, 0xff35514f,
               0xff08191c, 0xffe9f2ee, 0xff7fa39f,
               //  EL AMBAR, CON EL CROMA MEDIDO CONTRA LOS ZATIS.
@@ -325,6 +325,30 @@ namespace ZatiColours
         //  ink outline around a white marker is invisible twice over.
         playhead     = juce::Colour (k.white);
         playheadEdge = juce::Colour (k.ink).withAlpha (0.40f);
+    }
+
+    //  acabado: brillo suave, sin ruido; cuanto, por carcasa (esmalte, goma, acero, aluminio).
+    inline float brilloDelChasis (int skin) noexcept
+    {
+        static const float alfa[4] = { 0.35f, 0.035f, 0.35f, 0.07f };
+        return alfa[((skin % 4) + 4) % 4];
+    }
+
+    //  acabado: el fondo horneado, degradado mas un brillo radial desde arriba a la izquierda.
+    inline void pintaFondo (juce::Graphics& g, float w, float h)
+    {
+        const auto full = juce::Rectangle<float> (0.0f, 0.0f, w, h);
+        g.setGradientFill (juce::ColourGradient (chassisTop, full.getCentreX(), 0.0f,
+                                                 chassisBot, full.getCentreX(), h, false));
+        g.fillRect (full);
+
+        const float r = juce::jmax (w, h) * 0.9f;
+        juce::ColourGradient brillo (juce::Colours::white.withAlpha (brilloDelChasis (currentSkin)),
+                                     w * 0.2f, h * 0.05f,
+                                     juce::Colours::white.withAlpha (0.0f),
+                                     w * 0.2f + r, h * 0.05f, true);
+        g.setGradientFill (brillo);
+        g.fillRect (full);
     }
 
     //  EL GRANO DEL CHASIS SE PROBO Y SE QUITO.

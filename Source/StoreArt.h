@@ -258,6 +258,24 @@ namespace StoreArt
     //  viejo y mediria el rectangulo equivocado.
     inline juce::Colour tintaDeLaMarca() noexcept { return juce::Colours::white; }
 
+    //  ico4: marco interior en relieve y perfil oscuro de la Z; lo comparten icono y splash.
+    inline void relieveDeLaMarca (juce::Graphics& g, juce::Rectangle<float> recuadro, float escala,
+                                  juce::Colour frag, juce::Colour cuerpo, const juce::Path& z)
+    {
+        const auto marco = recuadro.reduced (1.5f * escala);
+        const float rm = 2.5f * escala, gm = 1.25f * escala;
+        g.setColour (frag.darker (0.55f));
+        g.fillRoundedRectangle (marco, rm);
+        const auto cara = marco.reduced (gm).withTrimmedBottom (gm * 0.5f);
+        g.setColour (cuerpo.brighter (0.10f));
+        g.fillRoundedRectangle (cara, rm * 0.8f);
+        g.setColour (frag.brighter (0.30f).withAlpha (0.85f));
+        g.fillRect (cara.reduced (rm, 0.0f).withHeight (gm * 0.8f));
+
+        g.setColour (frag.darker (0.75f));
+        g.strokePath (z, juce::PathStrokeType (1.6f * escala, juce::PathStrokeType::mitered));
+    }
+
     //  Las dos cajas de la ultima marca dibujada, para el banco.
     //
     //  Sin esto el banco tiene que ADIVINAR donde acaba la tapa mirando
@@ -751,6 +769,8 @@ namespace StoreArt
                                   .translated (recuadro.getCentreX() - lim.getCentreX() * k,
                                                recuadro.getCentreY() - lim.getCentreY() * k));
 
+            relieveDeLaMarca (g, recuadro, escala, frag, cuerpo, t);
+
             //  Blanca. Ver `tintaDeLaMarca`.
             g.setColour (tintaDeLaMarca());
             g.fillPath (t);
@@ -1067,6 +1087,7 @@ namespace StoreArt
         t.applyTransform (juce::AffineTransform::scale (k)
                               .translated (recuadro.getCentreX() - lim.getCentreX() * k,
                                            recuadro.getCentreY() - lim.getCentreY() * k));
+        relieveDeLaMarca (g, recuadro, escala, frag, cuerpo, t);
         g.setColour (tintaDeLaMarca());
         g.fillPath (t);
 

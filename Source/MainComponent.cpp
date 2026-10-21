@@ -5462,10 +5462,7 @@ void MainComponent::reconstruyeFondo()
     fondoCache = juce::Image (juce::Image::RGB, w, h, false);
     juce::Graphics g (fondoCache);
 
-    const auto full = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h);
-    g.setGradientFill (juce::ColourGradient (ZatiColours::chassisTop, full.getCentreX(), 0.0f,
-                                             ZatiColours::chassisBot, full.getCentreX(), (float) h, false));
-    g.fillRect (full);
+    ZatiColours::pintaFondo (g, (float) w, (float) h);
 
     fondoSkin = ZatiColours::currentSkin;
 }

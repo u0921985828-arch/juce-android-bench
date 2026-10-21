@@ -246,6 +246,24 @@ public:
             return;
         }
 
+        //  acabado: el fondo horneado de una carcasa, para Tests/acabado.py.
+        if (const auto fondo = UiAudit::env ("ZATI_FONDO"); fondo.isNotEmpty())
+        {
+            ZatiColours::setSkin (juce::jlimit (0, 3, UiAudit::env ("ZATI_SKIN").getIntValue()));
+            juce::Image img (juce::Image::RGB, 400, 800, false);
+            {
+                juce::Graphics g (img);
+                ZatiColours::pintaFondo (g, 400.0f, 800.0f);
+            }
+            juce::File f (fondo);
+            f.deleteFile();
+            juce::FileOutputStream out (f);
+            juce::PNGImageFormat().writeImageToStream (img, out);
+            out.flush();
+            quit();
+            return;
+        }
+
         //  Y EL ICONO DEL LANZADOR, por la misma puerta y por la misma razon.
         //
         //  Projucer lo necesita como fichero en tiempo de compilacion, asi que
