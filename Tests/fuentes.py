@@ -86,6 +86,18 @@ def de_cmake():
     return set (re.findall (r"(Source/[\w./]+\.cpp)", m.group (1)))
 
 
+def recursos():
+    """fuentes: lo que incrusta juce_add_binary_data contra resource=1 del .jucer, que es el BinaryData de Android."""
+    t = open (os.path.join (ROOT, "CMakeLists.txt")).read()
+    m = re.search (r"juce_add_binary_data\(ZatiData SOURCES(.*?)\)", t, re.S)
+    cm = set (re.findall (r"(Source/[\w./]+)", m.group (1))) if m else set()
+    ju = set (re.findall (r'<FILE[^>]*resource="1"[^>]*file="(Source/[^"]+)"', open (os.path.join (ROOT, "Zati.jucer")).read()))
+    f = ["%s va en el BinaryData del escritorio y NO en el de Android: falta en Zati.jucer" % x for x in sorted (cm - ju)]
+    f += ["%s va en el BinaryData de Android y NO en el del escritorio: falta en CMakeLists.txt" % x for x in sorted (ju - cm)]
+    print ("recursos    %2d en CMakeLists, %2d en Zati.jucer" % (len (cm), len (ju)))
+    return f
+
+
 def de_jucer():
     """Lo que Zati.jucer marca con compile=1. Los .h y los recursos no cuentan:
     un header no se compila y un FLAC es un recurso incrustado."""
@@ -251,6 +263,7 @@ def main():
     fallos += modulos()
     fallos += atributos()
     fallos += minsdk()
+    fallos += recursos()
 
     print ("CMakeLists  %2d fuentes" % len (cm))
     print ("Zati.jucer  %2d fuentes" % len (ju))
@@ -260,7 +273,7 @@ def main():
     if fallos:
         for f in fallos: print ("FALLA  " + f)
         return 1
-    print ("las fuentes, los modulos, los atributos y el minSdk dicen lo mismo")
+    print ("las fuentes, los recursos, los modulos, los atributos y el minSdk dicen lo mismo")
     return 0
 
 

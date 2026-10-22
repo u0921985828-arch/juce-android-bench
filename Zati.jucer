@@ -66,6 +66,10 @@
       <FILE id="fntOsM" name="OswaldMedium.ttf"        compile="0" resource="1" file="Source/fonts/OswaldMedium.ttf"/>
       <FILE id="fntJbR" name="JetBrainsMonoRegular.ttf" compile="0" resource="1" file="Source/fonts/JetBrainsMonoRegular.ttf"/>
       <FILE id="fntJbB" name="JetBrainsMonoBold.ttf"    compile="0" resource="1" file="Source/fonts/JetBrainsMonoBold.ttf"/>
+      <FILE id="texPap" name="papel.png"               compile="0" resource="1" file="Source/texturas/papel.png"/>
+      <FILE id="texGra" name="grafito.png"             compile="0" resource="1" file="Source/texturas/grafito.png"/>
+      <FILE id="texAce" name="acero.png"               compile="0" resource="1" file="Source/texturas/acero.png"/>
+      <FILE id="texLac" name="laca.png"                compile="0" resource="1" file="Source/texturas/laca.png"/>
     </GROUP>
     <GROUP id="ZatiIcons" name="icons">
       <FILE id="icoApp" name="icon.png" compile="0" resource="0" file="ci/icon.png"/>
