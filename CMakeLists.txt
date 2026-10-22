@@ -214,4 +214,17 @@ if(ZATI_BENCH)
         juce::juce_dsp
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
+
+    #  Y el de COMO SUENA CADA EFECTO, las mismas cinco preguntas para los treinta. Ver Tests/Efectos.cpp.
+    juce_add_console_app(Efectos PRODUCT_NAME "Efectos")
+    juce_generate_juce_header(Efectos)
+    target_sources(Efectos PRIVATE Tests/Efectos.cpp Source/AudioEngine.cpp Source/Sintes.cpp)
+    target_compile_definitions(Efectos PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
+    target_link_libraries(Efectos PRIVATE
+        ZatiData
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
 endif()

@@ -90,6 +90,14 @@ public:
         return v1 * c1 + frac * (v2 * c2 + v3 * c3 + v4 * c4);
     }
 
+    //  efectos#pit: la muestra entrada hace `d` pasos (0 = la ultima), sin mover nada.
+    float atras (int ch, int d) const noexcept
+    {
+        int i = escritura[(size_t) ch] + 1 + d;
+        while (i >= total) i -= total;
+        return buf.getReadPointer (ch)[i];
+    }
+
 private:
     static constexpr int kMaxCanales = 2;
     juce::AudioBuffer<float> buf;

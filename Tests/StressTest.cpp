@@ -7678,10 +7678,15 @@ int main()
             //  el segundo 0.9 tiene que ser lo mismo que en el 0.72.
             const size_t vent = (size_t) (kFs * 0.180);
             const size_t p0 = (size_t) (kFs * 0.72);
-            double peor = 0.0;
-            for (size_t i = 0; i < vent && p0 + vent + i < con.size(); ++i)
-                peor = juce::jmax (peor, (double) std::abs (con[p0 + i] - con[p0 + vent + i]));
-
+            //  efectos#frz: la costura recorta la vuelta hasta 12 ms para casar fases; se busca esa vuelta.
+            double peor = 1.0e9;
+            for (size_t l = vent - (size_t) (kFs * 0.012); l <= vent; ++l)
+            {
+                double pl = 0.0;
+                for (size_t i = 0; i < vent && p0 + l + i < con.size(); ++i)
+                    pl = juce::jmax (pl, (double) std::abs (con[p0 + i] - con[p0 + l + i]));
+                peor = juce::jmin (peor, pl);
+            }
             const bool ok = (vivo > 0.05) && (mudo < 1.0e-4) && (peor < 1.0e-3);
             std::printf ("%-34s al segundo %.5f (sin FRZ %.5f)   dos vueltas difieren %.6f   %s\n",
                          "FRZ", vivo, mudo, peor, ok ? "OK" : zatiFalla());
@@ -8531,7 +8536,7 @@ int main()
             }
         };
 
-        auto corre = [&estereo, &ajusta] (int fx, int canal, std::vector<float>& out)
+        auto corre = [&estereo, &ajusta] (int fx, int canal, std::vector<float>& out, int bloques = 28)
         {
             const auto monton_e = std::make_unique<AudioEngine>();
             AudioEngine& e = *monton_e; e.prepareToPlay (kFs, kBs); e.setPolyphony (8, 2);
@@ -8551,7 +8556,7 @@ int main()
             e.postNoteOn (0, 1.0f);
 
             out.clear();
-            for (int blk = 0; blk < 28; ++blk)
+            for (int blk = 0; blk < bloques; ++blk)
             {
                 b.clear(); e.renderNextBlock (b, 0, kBs);
                 //  Los ocho primeros fuera: el envio sube con 20 ms de
@@ -8572,16 +8577,18 @@ int main()
         };
 
         std::vector<float> seco0, seco4, con0, con4;
-        corre (-1, 0, seco0);
-        corre (-1, 4, seco4);
+        corre (-1, 0, seco0, 100);
+        corre (-1, 4, seco4, 100);
 
         int suena0 = 0, suena4 = 0, iguales = 0, insertos = 0;
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
         {
             if (! AudioEngine::sustituye (f)) continue;   // los cinco que suman son de toda la mesa
             ++insertos;
-            corre (f, 0, con0);
-            corre (f, 4, con4);
+            //  efectos#frz: congelar un tono fijo con la costura en su sitio da el mismo tono; se oye cuando la fuente calla (0.8 s).
+            const int bl = (f == AudioEngine::kFxFrz) ? 100 : 28;
+            corre (f, 0, con0, bl);
+            corre (f, 4, con4, bl);
             const double d0 = dif (con0, seco0);
             const double d4 = dif (con4, seco4);
             const double ig = dif (con4, con0);

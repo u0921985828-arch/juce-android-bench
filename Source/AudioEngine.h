@@ -473,7 +473,7 @@ public:
     {
         return par < 3 ? true
              : par == 3 ? (f == kFxCho || f == kFxFla || f == kFxPha || f == kFxTrm
-                         || f == kFxRot || f == kFxDuc || f == kFxRep)
+                         || f == kFxRot || f == kFxDuc || f == kFxRep || f == kFxDly || f == kFxPng)
              : par < 6  ? ! juce::exactlyEqual (kFxDefExtra[f][par - 4], kSinMando)
              : f != kFxEq;
     }
@@ -1766,10 +1766,13 @@ public:
     //  cualquier k util, asi que aquel «makeup» no hacia nada y DRIVE al 70 %
     //  salia tres veces mas alto que el seco.
     struct Drive { float k, mk; };
+    static constexpr float kDrvRef = 0.1f;
     static Drive driveDe (float drive) noexcept
     {
         const float d = juce::jlimit (0.0f, 1.0f, drive);
-        return { 1.0f + d * 24.0f, 1.0f / (1.0f + d * 2.5f) };
+        //  efectos#nivel: `mk` deja a nivel una señal de -20 dBFS RMS (kDrvRef); compensando solo la entrada salia +13 dB.
+        const float k = 1.0f + d * 24.0f;
+        return { k, std::sqrt (1.0f + k * k * kDrvRef * kDrvRef) / k };
     }
     static float saturaDe (float x, Drive dr) noexcept { return fastTanh (dr.k * x) * dr.mk; }
 
@@ -1870,6 +1873,12 @@ public:
         return juce::Decibels::gainToDecibels (juce::jmax (1.0e-5f, bp));
     }
 
+    //  efectos#nivel: una banda de pico uno deja pasar ~(pi/2)/(Q ln 1000) de un rosa; se devuelve, fija por Q, y el visor la dibuja.
+    static constexpr float kRosaBanda = 4.4f;
+    static float bandaCompensa (float q, float suma2 = 1.0f) noexcept
+    { return juce::jlimit (1.0f, 4.0f, std::sqrt (juce::jmax (0.1f, q) * kRosaBanda / suma2)); }
+    static constexpr float kFrmSuma2 = 1.0f + 0.62f * 0.62f;
+
     //  ==================================================================
     //  EL WAH Y EL OCTAVADOR, escritos UNA vez: los corre el hilo de audio y
     //  los dibuja el visor.
@@ -1905,13 +1914,17 @@ public:
         float lp   = 0.0f;      // el paso bajo del detector
         float env  = 0.0f;      // el seguidor que le da dinamica al cuadrado
         float dc   = 0.0f;      // el bloqueo de continua del rectificador
+        //  efectos#oct: potencia lenta que normaliza el cuadrado, y la fase de la octava baja.
+        float ms = 0.0f, cMs = -1.0f, msFs = 0.0f;
+        double n = 0.0, ultimo = -1.0;
+        float periodo = 0.0f, fase = 0.0f, meta = 0.0f, paso = 0.0f;
     };
 
     //  UNA MUESTRA. `x` es la entrada MONO -ver la etapa: un octavador necesita
     //  UNA fundamental que seguir, y dos divisores con cruces por cero
     //  distintos dan una imagen que baila-.
     static float octava (float x, OctEstado& st, float arriba, float abajo,
-                         float cLp, float aEnv, float rEnv) noexcept
+                         float cLp, float aEnv, float rEnv, float fs = 48000.0f) noexcept
     {
         //  EL DETECTOR VA FILTRADO. Sin paso bajo, cualquier armonico cruza el
         //  cero y el biestable conmuta a la frecuencia del ruido en vez de a la
@@ -1920,20 +1933,45 @@ public:
         //  puerta de nivel ademas de flujo.
         st.lp += cLp * (x - st.lp);
 
-        //  ARRIBA: rectificacion de onda COMPLETA. El valor absoluto de un seno
-        //  tiene el doble de frecuencia -y se lleva la fundamental por delante,
-        //  que es lo que hace que un octavador de pedal suene a octavador y no
-        //  a un afinador-. Lo que sobra es la continua, y eso lo quita el
-        //  bloqueo de abajo.
-        const float rect = std::abs (x);
-        st.dc += 0.0008f * (rect - st.dc);
-        const float up = (rect - st.dc) * 2.2f;
+        //  ARRIBA: la octava de encima sale de x*x, que de un seno da el doble
+        //  de frecuencia y nada mas.
+        //  efectos#oct: x*x sobre la potencia lenta y no |x|; la esquina del valor absoluto plegaba hasta 19.8 kHz.
+        if (! juce::exactlyEqual (st.msFs, fs)) { st.msFs = fs; st.cMs = 1.0f - std::exp (-1.0f / (0.020f * fs)); }
+        st.ms += st.cMs * (x * x - st.ms);
+        const float cuad = x * x / juce::jmax (1.0e-4f, std::sqrt (st.ms));
+        st.dc += 0.0008f * (cuad - st.dc);
+        const float up = (cuad - st.dc) * 1.41421356f;
 
-        //  ABAJO: un biestable que conmuta en cada flanco de SUBIDA. Dos
-        //  flancos por ciclo de entrada son un ciclo de salida, o sea la mitad
-        //  de la frecuencia por construccion y no por una cuenta.
-        if (st.prev <= 0.0f && st.lp > 0.0f) st.flip = -st.flip;
+        //  ABAJO: medio ciclo de salida por cada ciclo de entrada, o sea la
+        //  mitad de la frecuencia por construccion y no por una cuenta.
+        //  efectos#oct: una fase que sigue los cruces y no un cuadrado; el salto del cuadrado plegaba a -21 dB.
+        if (st.prev <= 0.0f && st.lp > 0.0f)
+        {
+            st.flip = -st.flip;
+            const double t  = juce::jlimit (0.0, 1.0, (double) -st.prev / juce::jmax (1.0e-12, (double) (st.lp - st.prev)));
+            const double tc = st.n - 1.0 + t;
+            const float  P  = (float) (tc - st.ultimo);
+            st.ultimo = tc;
+            if (P > 2.0f && P < fs / 20.0f)
+            {
+                const float kp = 1.0f - std::exp (-P / (0.020f * fs));
+                const float ke = 1.0f - std::exp (-P / (0.040f * fs));
+                st.periodo = st.periodo <= 0.0f ? P : st.periodo + kp * (P - st.periodo);
+                st.meta += juce::MathConstants<float>::pi;
+                float e = st.meta - st.fase;
+                e -= juce::MathConstants<float>::twoPi * std::floor ((e + juce::MathConstants<float>::pi) / juce::MathConstants<float>::twoPi);
+                st.paso = juce::jlimit (0.0f, juce::MathConstants<float>::pi * 0.25f,
+                                        (juce::MathConstants<float>::pi + ke * e) / st.periodo);
+            }
+        }
         st.prev = st.lp;
+        st.n += 1.0;
+        st.fase += st.paso;
+        if (st.fase > juce::MathConstants<float>::twoPi)
+        {
+            st.fase -= juce::MathConstants<float>::twoPi;
+            st.meta -= juce::MathConstants<float>::twoPi;
+        }
 
         //  Y EL CUADRADO LLEVA LA DINAMICA DE LO QUE ENTRA. Sin el seguidor, un
         //  divisor suena igual de fuerte con un golpe que con la cola, o sea
@@ -1942,7 +1980,8 @@ public:
         const float pico = std::abs (x);
         st.env = (pico > st.env) ? aEnv * st.env + (1.0f - aEnv) * pico
                                  : rEnv * st.env + (1.0f - rEnv) * pico;
-        const float down = st.flip * st.env;
+        constexpr float kRedondo = 1.5f;
+        const float down = st.env * std::tanh (kRedondo * std::sin (st.fase)) / std::tanh (kRedondo);
 
         return juce::jlimit (0.0f, 1.0f, arriba) * up
              + juce::jlimit (0.0f, 1.0f, abajo)  * down;
@@ -2838,6 +2877,52 @@ private:
     //  reinterpreta la historia. Barrer un corte con una biquad DF-I es el
     //  chirrido clasico.
     struct PadSvf { float ic1 = 0.0f, ic2 = 0.0f; };
+
+    //  efectos#flt: SVF TPT de dos canales con g y k que se deslizan muestra a muestra; nunca se reinicia.
+    struct SvfSuave
+    {
+        float ic1[2] {}, ic2[2] {};
+        float g = -1.0f, k = 1.41421356f;
+        void reset() noexcept { ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0f; g = -1.0f; }
+        //  0 paso bajo, 1 paso alto.
+        float tick (int ch, float x, float gs, float ks, int modo) noexcept
+        {
+            const float a1 = 1.0f / (1.0f + gs * (gs + ks));
+            const float a2 = gs * a1, a3 = gs * a2;
+            const float v3 = x - ic2[ch];
+            const float v1 = a1 * ic1[ch] + a2 * v3;
+            const float v2 = ic2[ch] + a2 * ic1[ch] + a3 * v3;
+            ic1[ch] = 2.0f * v1 - ic1[ch];
+            ic2[ch] = 2.0f * v2 - ic2[ch];
+            return modo == 0 ? v2 : x - ks * v1 - v2;
+        }
+    };
+    //  efectos#frz: fundido en coseno; el lineal deja una esquina en cada punta.
+    static float cosenoDe (float t) noexcept
+    { return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * juce::jlimit (0.0f, 1.0f, t)); }
+    //  efectos#frz: acorta el bucle hasta donde su final se parece mas a su principio; asi la costura no tiene bache.
+    static int frzCostura (const std::array<std::vector<float>, 2>& v, int largo, int cruce, int chans, float fs) noexcept
+    {
+        const int rango = juce::jmin (largo / 4, (int) (0.012f * fs));
+        const int n = juce::jmin (cruce, 256);
+        int mejor = largo;
+        double pico = -2.0;
+        for (int L = largo; L >= largo - rango && L - cruce > n; --L)
+        {
+            double xy = 0.0, xx = 1.0e-12, yy = 1.0e-12;
+            for (int ch = 0; ch < chans; ++ch)
+            {
+                const float* a = v[(size_t) ch].data();
+                const float* b = a + (L - cruce);
+                for (int j = 0; j < n; ++j) { xy += (double) a[j] * b[j]; xx += (double) a[j] * a[j]; yy += (double) b[j] * b[j]; }
+            }
+            const double r = xy / std::sqrt (xx * yy);
+            if (r > pico + 1.0e-6) { pico = r; mejor = L; }
+        }
+        return mejor;
+    }
+    static float gDe (float hz, double fs) noexcept
+    { return std::tan (juce::MathConstants<float>::pi * juce::jlimit (10.0f, 0.45f * (float) fs, hz) / (float) fs); }
     std::array<std::array<PadSvf, 2>, kNumPads> padFiltState {};
     std::array<std::atomic<bool>,  kNumPads> padMute {};
     std::array<std::atomic<bool>,  kNumPads> padSolo {};
@@ -3242,10 +3327,15 @@ private:
     //  de la posicion musical, asi que 1/4 y 1/16 caen juntos en cada negra.
     struct FaseMod { float fase; float paso; };
 
+    //  efectos#fase: cuanto se corre la fase libre para que cambiar la velocidad no la haga saltar.
+    struct Deriva { double hz = -1.0, corrida = 0.0; float div = -1.0f; double salto = 0.0, desde = 0.0, ultima = 0.0, tUlt = 0.0, pmUlt = 0.0; };
+    mutable std::array<std::array<Deriva, kNumFx>, kNumCanales> derivaMod {};
+
     FaseMod pasoMod (int canal, int fx) const noexcept
     {
         const float div = fxParamDe (canal, fx, 3).load (std::memory_order_relaxed);
         double ciclos = 0.0, porMuestra = 0.0;
+        auto& dv = derivaMod[(size_t) juce::jlimit (0, kNumCanales - 1, canal)][(size_t) juce::jlimit (0, kNumFx - 1, fx)];
 
         if (div > 0.5f)
         {
@@ -3259,10 +3349,42 @@ private:
         {
             const double hz = (double) juce::jlimit (0.0f, 40.0f,
                                  fxParamDe (canal, fx, 0).load (std::memory_order_relaxed));
-            ciclos     = relojSeg * hz;
+            //  efectos#fase: `reloj x hz` salta de fase en cuanto cambia hz; se corre lo justo para seguir donde iba.
+            if (dv.hz >= 0.0 && ! juce::exactlyEqual (dv.hz, hz))
+                dv.corrida += relojSeg * (dv.hz - hz);
+            dv.hz      = hz;
+            ciclos     = relojSeg * hz + dv.corrida;
             porMuestra = hz / juce::jmax (8000.0, systemSampleRate);
         }
-        return { (float) (ciclos - std::floor (ciclos)), (float) porMuestra };
+        //  efectos#fase: al cambiar de figura o de libre a tempo la fase salta; se arranca donde iba y se llega a la rejilla en ~0.3 s.
+        if (dv.div >= 0.0f && ! juce::exactlyEqual (dv.div, div))
+        {
+            double d = dv.ultima + (relojSeg - dv.tUlt) * juce::jmax (8000.0, systemSampleRate) * dv.pmUlt
+                         - (ciclos - std::floor (ciclos));
+            d -= std::round (d);
+            dv.salto = d; dv.desde = relojSeg;
+        }
+        dv.div = div;
+        if (! juce::exactlyEqual (dv.salto, 0.0))
+        {
+            const double k = std::exp (-(relojSeg - dv.desde) / 0.3);
+            if (k < 1.0e-4) dv.salto = 0.0;
+            else { ciclos += dv.salto * k; porMuestra -= dv.salto * k / (0.3 * juce::jmax (8000.0, systemSampleRate)); }
+        }
+        const double fase = ciclos - std::floor (ciclos);
+        dv.ultima = fase; dv.tUlt = relojSeg; dv.pmUlt = porMuestra;
+        return { (float) fase, (float) porMuestra };
+    }
+
+    //  efectos#tempo: con enganche, el eco cae en la figura; si no cabe en la linea, en la mitad, que sigue en la rejilla.
+    float retardoDe (int canal, int fx, double maxMuestras) const noexcept
+    {
+        const float div = fxParamDe (canal, fx, 3).load (std::memory_order_relaxed);
+        if (div <= 0.5f)
+            return (float) (fxParamDe (canal, fx, 0).load (std::memory_order_relaxed) * systemSampleRate / 1000.0);
+        double s = (double) div * 0.25 * negrasPorMuestraInv();
+        while (s > maxMuestras && s > 2.0) s *= 0.5;
+        return (float) s;
     }
 
     //  Muestras por negra, que es lo que convierte el paso musical en paso por
@@ -3762,25 +3884,24 @@ private:
     //  siguiente.
     struct Inserto
     {
-        //  FLT: el filtro del barrido bidireccional. Se sigue llamando
-        //  `masterFilter` de cuando el FLT era el unico y era del master.
-        juce::dsp::StateVariableTPTFilter<float> masterFilter;
+        //  FLT: el filtro del barrido bidireccional, paso bajo y paso alto en serie.
+        SvfSuave fltLp, fltHp;
         float smSweep = 0.0f;        // el barrido, suavizado como el resto
         float smReso  = 0.707f;
-        bool  filterWasActive = false;
-        bool  fltWasHigh      = false;   // de que lado del centro venia FLT
+        float fltA    = 0.0f;        // efectos#flt: cuanto filtro y cuanto seco
+        float fltWl   = -1.0f;       // efectos#flt: cuanto pesa el paso bajo frente al alto
 
         //  HPF: su PROPIO filtro y no el de FLT conmutado, que es lo que hace
         //  que se pueda barrer una banda desde los dos extremos.
-        juce::dsp::StateVariableTPTFilter<float> hpFilter;
+        SvfSuave hpFilter;
         float smHpFreq = 200.0f, smHpReso = 0.707f, smHpMix = 0.0f;
-        bool  hpWasActive = false;
 
         //  DRV: la saturacion y el paso bajo que va detras, porque saturar sin
         //  sitio donde poner los armonicos es solo aspereza.
         float smDrive   = 0.0f;
         float smDrvTone = 20000.0f, smDrvMix = 0.0f;
         float drvLp[2] { 0.0f, 0.0f };
+        float wahG = -1.0f, frmG = -1.0f;   // efectos#nivel
         bool  drvWasActive = false;   // flanco de reactivacion: ver seccion 5b/3
 
         //  Y EL SOBREMUESTREO DE LA SATURACION, uno por canal. Ver `Sobre2x.h`:
@@ -3834,6 +3955,7 @@ private:
         LineaLagrange choLine { 4096 };   // rendimiento#1
         LineaLagrange flaLine { 2048 };   // rendimiento#1
         float smChoProf = 0.0f, smFlaFb = 0.0f, smPhaProf = 0.0f;
+        float smChoCen = -1.0f, smChoRec = 0.0f, smFlaCen = -1.0f, smFlaRec = 0.0f;
         std::array<bool, 3> modWasActive {};
         float phaZ[2][kPhaEtapas] {};
         float flaFbZ[2] {};
@@ -3844,7 +3966,7 @@ private:
 
         //  PIT: la linea que se lee a otra velocidad, con sus dos cabezas.
         LineaLagrange pitLine { 16384 };   // rendimiento#1
-        float pitFase = 0.0f, smPitSemis = 0.0f;
+        float pitFase = 0.0f, smPitSemis = 0.0f, smPitGran = -1.0f, pitOff[2] {};
 
         //  WID y EXC: el MISMO cruce Linkwitz-Riley, uno para dejar los graves
         //  en mono y otro para saturar solo la banda alta.
@@ -3861,7 +3983,8 @@ private:
         std::array<std::vector<float>, 2> frzVent;
         int   frzEscritas = 0, frzLargo = 0;
         float frzLee = 0.0f;
-        bool  frzLlena = false, frzOyo = false;
+        bool  frzLlena = false, frzOyo = false, frzPrimera = true;
+        int   frzEspera = 0, frzCruce = 0, frzVuelta = 0;
         float smFrzSuave = 0.0f;
 
         //  EL FLANCO de los seis de caracter, para limpiar su estado al volver
@@ -3895,6 +4018,7 @@ private:
         //  formante, con el mismo `Dinamica::Svf` que usan WAH y el cruce de
         //  WID: una banda mas es un filtro mas, no una pieza nueva.
         Dinamica::Svf frmUno[2], frmDos[2];
+        Dinamica::Cruce frmUlt[2] {};   bool frmC0 = false;   // efectos#frm
         float smFrmVocal = 0.0f, smFrmReso = 1.20f;
         bool  frmWasActive = false;
 
@@ -3946,6 +4070,7 @@ private:
         std::array<std::array<float, kRepCola>, 2> repCola {};
         int   repColaN = 0, repColaI = 0;
         bool  repRepite = false;
+        bool  repTrunca = false;   // efectos#rep: la vuelta no cupo y el trozo es su principio
 
         //  ============================================================
         //  Y LA MESA DE LA TIRA: DLY, REV, AMB y PNG
@@ -3981,20 +4106,34 @@ private:
         //  una linea interpolada es un chasquido en cada movimiento de TIME.
         float smDlyFb   = 0.35f;
         float smDlySamp = 0.0f;      // el retardo en muestras, suavizado por muestra
+        float dlyObj = -1.0f, dlyViejo = 0.0f, dlyXf = 0.0f; bool dlyPend = false;
 
         //  EL AMBIENTE: una linea y ocho tomas, sin realimentacion. SIN
         //  INTERPOLAR, porque las tomas son fijas: un Lagrange por toma serian
         //  ocho filtros por muestra para leer la misma muestra entera.
         Anillo ambLine;   // rendimiento#1
+        float ambToma[2][kAmbTomas] {};   // efectos#amb: donde leyo cada toma el bloque anterior
+        float smAmbTam = -1.0f, smAmbPre = 0.0f;
 
         //  EL PING-PONG: una linea de dos canales con la realimentacion
         //  CRUZADA -lo que sale por la izquierda vuelve por la derecha-, y
         //  Lagrange por lo mismo que el delay.
         LineaLagrange pngLine { 0 };   // rendimiento#1
         float smPngSamp = 0.0f, smPngFb = 0.0f;
+        float pngObj = -1.0f, pngViejo = 0.0f, pngXf = 0.0f; bool pngPend = false;
 
         //  LA SALA. Ver Fdn.h: cuatro lineas primas entre si y dos difusores.
         Fdn reverb;
+
+        //  efectos#mezcla: la mezcla de cada ranura, suavizada; -1 es «sin pasado» y salta al destino.
+        float mixSm[kNumFx];
+        //  efectos#mezcla: la puerta de entrada de los cuatro envios, que tambien se abre en rampa.
+        float entSm[kNumFx];
+        Inserto() noexcept
+        {
+            std::fill (std::begin (mixSm), std::end (mixSm), -1.0f);
+            std::fill (std::begin (entSm), std::end (entSm), -1.0f);
+        }
 
         //  QUE LA MESA DE ESTA TIRA ESTA RESERVADA, publicado con `release`
         //  por quien la reserva y leido con `acquire` por el hilo de audio: es
@@ -4030,6 +4169,8 @@ private:
             const auto v = [&fila] (int f, int par) noexcept
             { return fila[(size_t) f][(size_t) par].load (std::memory_order_relaxed); };
 
+            std::fill (std::begin (mixSm), std::end (mixSm), -1.0f);
+            std::fill (std::begin (entSm), std::end (entSm), -1.0f);
             smSweep   = v (kFxFlt, 0);
             smReso    = v (kFxFlt, 1);
             smHpFreq  = v (kFxHpf, 0);

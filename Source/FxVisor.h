@@ -614,7 +614,7 @@ namespace FxVisor
                                       AudioEngine::wahCentro (p1, p0, 0.0f), AudioEngine::kWahQ);
                     const float b = AudioEngine::svfBandaDb (hz,
                                       AudioEngine::wahCentro (p1, p0, 1.0f), AudioEngine::kWahQ);
-                    pon (i, dbAAlto (juce::jmax (a, b)));
+                    pon (i, dbAAlto (juce::jmax (a, b) + juce::Decibels::gainToDecibels (AudioEngine::bandaCompensa (AudioEngine::kWahQ))));
                     break;
                 }
 
@@ -629,7 +629,7 @@ namespace FxVisor
                     const float hz = hzDe (t);
                     const float a = AudioEngine::svfBandaDb (hz, f1, p1);
                     const float b = AudioEngine::svfBandaDb (hz, f2, p1) - 4.2f;
-                    pon (i, dbAAlto (juce::jmax (a, b)));
+                    pon (i, dbAAlto (juce::jmax (a, b) + juce::Decibels::gainToDecibels (AudioEngine::bandaCompensa (p1, AudioEngine::kFrmSuma2))));
                     break;
                 }
 
