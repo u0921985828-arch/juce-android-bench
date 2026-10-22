@@ -337,7 +337,7 @@ namespace ZatiColours
     //  textura: cuanto relieve lleva cada carcasa, en alfa por desviacion tipica.
     inline float relieveDelChasis (int skin) noexcept
     {
-        static const float alfa[4] = { 0.038f, 0.029f, 0.029f, 0.094f };
+        static const float alfa[4] = { 0.024f, 0.035f, 0.035f, 0.094f };
         return alfa[((skin % 4) + 4) % 4];
     }
 
@@ -375,24 +375,23 @@ namespace ZatiColours
         g.setGradientFill (brillo);
         g.fillRect (full);
 
-        //  textura: la imagen de PixelLab cubre el chasis entera, un pixel suyo por pixel, sin repetir ni suavizar.
+        //  textura: la baldosa de PixelLab en mosaico, un pixel suyo por pixel, juntas en espejo para que no se vea el corte.
         const auto rel = relieveDeLaCarcasa (currentSkin);
         if (! rel.isValid()) return;
         const float amp = relieveDelChasis (currentSkin), luz = luzDelRelieve (currentSkin);
         const int iw = juce::jmax (1, (int) std::ceil (w)), ih = juce::jmax (1, (int) std::ceil (h));
-        const float esc = juce::jmax ((float) iw / (float) rel.getWidth(), (float) ih / (float) rel.getHeight());
-        const float ox = ((float) rel.getWidth() - (float) iw / esc) * 0.5f, oy = ((float) rel.getHeight() - (float) ih / esc) * 0.5f;
+        const int bw = rel.getWidth(), bh = rel.getHeight();
+        const auto espejo = [] (int v, int n) { const int m = v % (2 * n); return m < n ? m : 2 * n - 1 - m; };
         juce::Image capa (juce::Image::ARGB, iw, ih, true);
         {
             const juce::Image::BitmapData src (rel, juce::Image::BitmapData::readOnly);
             juce::Image::BitmapData dst (capa, juce::Image::BitmapData::writeOnly);
             for (int y = 0; y < ih; ++y)
             {
-                const int sy = juce::jlimit (0, rel.getHeight() - 1, (int) (oy + ((float) y + 0.5f) / esc));
+                const int sy = espejo (y, bh);
                 for (int x = 0; x < iw; ++x)
                 {
-                    const int sx = juce::jlimit (0, rel.getWidth() - 1, (int) (ox + ((float) x + 0.5f) / esc));
-                    const float d = ((float) src.getPixelColour (sx, sy).getBrightness() * 255.0f - 128.0f) / 40.0f;
+                    const float d = ((float) src.getPixelColour (espejo (x, bw), sy).getBrightness() * 255.0f - 128.0f) / 40.0f;
                     const auto c = d >= 0.0f ? juce::Colours::white : juce::Colours::black;
                     dst.setPixelColour (x, y, c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp * (d >= 0.0f ? luz : 1.0f))));
                 }

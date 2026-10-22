@@ -14,10 +14,10 @@
 #  4. LA TEXTURA SE LEE COMO MATERIAL: quitado el degradado (media de 31 px), lo que
 #     queda tiene cuerpo a un palmo (desviacion >= 3 niveles) y ninguna mota pasa de un
 #     octavo de la escala (pico <= 32). Que sea material y no ruido lo dice la regla 5.
-#  5. ES LA IMAGEN DE PIXELLAB, PIXEL A PIXEL: la textura del fondo se compara con
-#     Source/texturas/<carcasa>.png puesta como la pone la app (cubre el chasis, un pixel
-#     suyo por pixel, centrada). Correlacion >= 0.9. Un mosaico, una baldosa repetida o
-#     un desenfoque no llegan.
+#  5. ES LA BALDOSA DE PIXELLAB EN MOSAICO: la textura del fondo se compara con
+#     Source/texturas/<carcasa>.png repetida como la repite la app (un pixel suyo por
+#     pixel, juntas en espejo). Correlacion >= 0.9. Estirada, a otra escala o desenfocada
+#     no llega.
 #
 #      ACABADO_BORROSO=1 python3 Tests/acabado.py   # desenfocada 3x3: tiene que fallar
 #
@@ -123,12 +123,11 @@ def textura (nombre, q):
     if fuente is None:
         mide ("%s: la textura es la de PixelLab" % nombre, False, "no esta Source/texturas/%s.png" % nombre.lower())
     else:
-        #  textura: la imagen puesta como la pone la app, cubriendo y centrada, pixel mas cercano
+        #  textura: la baldosa en mosaico, un pixel suyo por pixel, juntas en espejo
         sw, sh, src = fuente
-        esc = max (W / sw, H / sh)
-        ox, oy = (sw - W / esc) * 0.5, (sh - H / esc) * 0.5
-        cx = [min (sw - 1, max (0, int (ox + (x + 0.5) / esc))) for x in range (W)]
-        cy = [min (sh - 1, max (0, int (oy + (y + 0.5) / esc))) for y in range (H)]
+        espejo = lambda v, n: v % (2 * n) if v % (2 * n) < n else 2 * n - 1 - v % (2 * n)
+        cx = [espejo (x, sw) for x in range (W)]
+        cy = [espejo (y, sh) for y in range (H)]
         e = residuo ([[float (src[cy[y]][cx[x]]) for x in range (W)] for y in range (H)])
         b = [v for r in e for v in r]
         bm = sum (b) / len (b)
@@ -137,7 +136,7 @@ def textura (nombre, q):
         sa = math.sqrt (sum (v * v for v in a)); sb = math.sqrt (sum (v * v for v in b))
         corr = sum (p * q for p, q in zip (a, b)) / (sa * sb) if sa > 0 and sb > 0 else 0.0
         mide ("%s: la textura es la de PixelLab" % nombre, corr >= 0.9,
-              "correlacion %.2f con la imagen, pixel a pixel (>= 0.9)" % corr)
+              "correlacion %.2f con la baldosa en mosaico (>= 0.9)" % corr)
     mide ("%s: la textura se lee como material" % nombre, sd >= 3.0 and pico <= 32.0,
           "desviacion %.2f (>= 3)  pico %.1f (<= 32)" % (sd, pico))
 

@@ -1,35 +1,22 @@
 #!/usr/bin/env python3
-#  Las cuatro texturas del chasis, de las imagenes de PixelLab a Source/texturas/*.png.
+#  Las cuatro baldosas del chasis, de las de PixelLab a Source/texturas/*.png.
 #
 #      python3 -I ci/texturas.py papel.png grafito.png acero.png laca.png
 #
-#  Cada imagen viene ya del tamano del chasis. Se pasa a gris, se quita el borde liso
-#  que a veces deja PixelLab y la luz de gran escala (la pone la app), y se guarda
+#  Cada baldosa se pasa a gris, se le quita el marco (un octavo por lado) y se guarda
 #  como relieve: 128 es la media y 40 una desviacion tipica. Ni escalado ni desenfoque:
-#  cada pixel de PixelLab llega entero.
+#  la app la repite en mosaico, un pixel suyo por pixel, con las juntas en espejo.
 import sys, os
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 
 NOMBRES = ("papel", "grafito", "acero", "laca")
 
-def sin_borde (a):
-    #  filas y columnas lisas del borde, como la franja gris de los lados
-    plana = lambda v: v.std() < 3.0
-    t, b, l, r = 0, a.shape[0], 0, a.shape[1]
-    while t < b - 1 and plana (a[t, l:r]): t += 1
-    while b > t + 1 and plana (a[b - 1, l:r]): b -= 1
-    while l < r - 1 and plana (a[t:b, l]): l += 1
-    while r > l + 1 and plana (a[t:b, r - 1]): r -= 1
-    return a[t:b, l:r]
-
 def relieve (path):
-    im = Image.open (path).convert ("L")
-    a = sin_borde (np.asarray (im, dtype=np.float64))
-    #  la luz de gran escala fuera: solo se resta, el pixel no se toca
-    luz = np.asarray (Image.fromarray (a.astype (np.uint8)).filter (ImageFilter.GaussianBlur (12)), dtype=np.float64)
-    d = a - luz
-    d = (d - d.mean()) / (d.std() or 1.0) * 40.0
+    a = np.asarray (Image.open (path).convert ("L"), dtype=np.float64)
+    b = a.shape[0] // 8, a.shape[1] // 8
+    a = a[b[0]:a.shape[0] - b[0], b[1]:a.shape[1] - b[1]]
+    d = (a - a.mean()) / (a.std() or 1.0) * 40.0
     return Image.fromarray (np.clip (np.rint (d + 128.0), 0, 255).astype (np.uint8), "L")
 
 if len (sys.argv) != 5:
