@@ -76,7 +76,7 @@ N_LEE = None               # lo publica la app: Iconos::kLadoMin
 CABE_TOL   = 0.30          # px de la rejilla de 24
 TINTA_MIN  = 0.045
 TINTA_MAX  = 0.55
-LLENA_MIN  = 0.70          # el lado MENOR del dibujo, en fraccion de la caja
+LLENA_MIN  = 0.60          # el lado MENOR del dibujo; lo que ocupa lo manda CASCO, esto solo caza la banda
 DISTINTO   = 0.25
 #  Y EL VECINDARIO DE UNA LINEA, en pixeles de la rejilla de 24. `Iconos::kBanda`
 #  mide 1.73; una banda rellena por debajo de esto es una linea y tiene que salir
@@ -88,6 +88,14 @@ BANDA_MAX  = 2.5
 #  que es la cadena de control de esta regla: si sube de cero, la regla esta
 #  dejando pasar bandas. Ver la regla del grosor.
 BANDAS_ILEGIBLES = 0
+#  PESO, CASCO Y MANCHA se miden a 48, donde una linea de `kBanda` son tres pixeles y medio.
+#  PESO: la tinta, de 0.15 a 0.30, que ningun icono pese el doble que otro.
+#  CASCO: el casco convexo de lo pintado, de 0.45 a 0.62 de la caja, que todos ocupen lo mismo.
+#  MANCHA: la parte de la tinta que es relleno y no linea, hasta 0.30: el juego es de trazo y el relleno es un acento.
+N_PESO = 48
+PESO_MIN, PESO_MAX = 0.15, 0.30
+CASCO_MIN, CASCO_MAX = 0.45, 0.62
+MANCHA_MAX = 0.30
 
 
 def corre (lado = None):
@@ -206,6 +214,68 @@ def grosorBandas (m, n, umbral=0.15, tope=6.0):
         cuenta[k] = cuenta.get (k, 0) + 1
     modo = max (cuenta.items(), key=lambda kv: (kv[1], -kv[0]))[0]
     return modo, len (banda) / float (len (anchos))
+
+
+def casco (m, n, umbral=0.15):
+    """peso: area del casco convexo de los pixeles con tinta, en fraccion de la caja."""
+    pts = sorted (set (p for y in range (n) for x in range (n) if m[y*n+x] > umbral
+                       for p in ((x, y), (x+1, y), (x, y+1), (x+1, y+1))))
+    if len (pts) < 3: return 0.0
+    cr = lambda o, a, b: (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+    lo, hi = [], []
+    for p in pts:
+        while len (lo) >= 2 and cr (lo[-2], lo[-1], p) <= 0: lo.pop()
+        lo.append (p)
+    for p in reversed (pts):
+        while len (hi) >= 2 and cr (hi[-2], hi[-1], p) <= 0: hi.pop()
+        hi.append (p)
+    h = lo[:-1] + hi[:-1]
+    return abs (sum (h[i][0]*h[(i+1)%len(h)][1] - h[(i+1)%len(h)][0]*h[i][1]
+                     for i in range (len (h)))) / 2.0 / (n * n)
+
+
+def mancha (m, n):
+    """peso: parte de la tinta cuya banda mas corta pasa de 2.2 `kBanda`, o sea relleno y no linea."""
+    tope = 2.2 * 0.072 * n
+    dirs = [(1, 0, 1.0), (0, 1, 1.0), (1, 1, math.sqrt (2.0)), (1, -1, math.sqrt (2.0))]
+    tot = man = 0
+    for y in range (n):
+        for x in range (n):
+            if m[y*n+x] <= 0.5: continue
+            tot += 1
+            peor = 1e9
+            for dx, dy, ps in dirs:
+                c = 1; i, j = x+dx, y+dy
+                while 0 <= i < n and 0 <= j < n and m[j*n+i] > 0.5: c += 1; i += dx; j += dy
+                i, j = x-dx, y-dy
+                while 0 <= i < n and 0 <= j < n and m[j*n+i] > 0.5: c += 1; i -= dx; j -= dy
+                peor = min (peor, c * ps)
+            if peor > tope: man += 1
+    return man / float (max (1, tot))
+
+
+def juzgaPeso (fallos):
+    grandes, _ = corre (N_PESO)
+    filas = []
+    for d in grandes:
+        if d["icono"].startswith ("cifra"): continue
+        m, n = mapa (d)
+        filas.append ((sum (m) / len (m), casco (m, n), mancha (m, n), d["icono"]))
+    if not filas:
+        fallos.append ("la app no volco iconos a %d: el peso no se mide" % N_PESO); return
+    print ("\n== peso, casco y mancha de %d iconos, a %dx%d ==" % (len (filas), N_PESO, N_PESO))
+    for t, c, mm, nombre in sorted (filas):
+        marca = ""
+        if not PESO_MIN <= t <= PESO_MAX:
+            marca += " PESO"; fallos.append ("%s pesa %.3f (de %.2f a %.2f)" % (nombre, t, PESO_MIN, PESO_MAX))
+        if not CASCO_MIN <= c <= CASCO_MAX:
+            marca += " CASCO"; fallos.append ("%s ocupa %.3f de la caja (de %.2f a %.2f)" % (nombre, c, CASCO_MIN, CASCO_MAX))
+        if mm > MANCHA_MAX:
+            marca += " MANCHA"; fallos.append ("%s es %.0f%% relleno (tope %.0f%%)" % (nombre, mm * 100, MANCHA_MAX * 100))
+        print ("%-14s peso %.3f  casco %.3f  mancha %.2f%s" % (nombre, t, c, mm, marca))
+    ts = [f[0] for f in filas]; cs = [f[1] for f in filas]
+    print ("   peso %.3f a %.3f (x%.2f)   casco %.3f a %.3f (x%.2f)"
+           % (min (ts), max (ts), max (ts) / min (ts), min (cs), max (cs), max (cs) / min (cs)))
 
 
 def centroTinta (m, n, umbral=0.15):
@@ -627,6 +697,7 @@ def main():
             fallos.append ("%s y %s son el mismo dibujo (%.4f)" % (a, b, d))
 
     juzgaTapas (fallos)
+    juzgaPeso (fallos)
 
     print()
     if fallos:

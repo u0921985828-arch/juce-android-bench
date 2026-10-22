@@ -271,7 +271,7 @@ namespace Iconos
     //  negrita. Los pocos que son una mancha por definicion -el cuadrado de
     //  STOP, el circulo de REC- se dibujan mas pequenos para pesar igual. Es
     //  el mismo ajuste optico que hace una tipografia con el punto y la O.
-    struct Trazo { juce::Path linea, relleno; float lleno = 1.0f; };
+    struct Trazo { juce::Path linea, relleno; };
 
     //  EL GROSOR DE LINEA, UNO PARA TODOS.
     //
@@ -370,18 +370,17 @@ namespace Iconos
             //  distinguen por sus esquinas y nada mas. REC lleva ahora ANILLO,
             //  que ademas es como se dibuja en un aparato de verdad.
             case Id::play:
-                R.startNewSubPath (5.5f, 3.0f); R.lineTo (20.5f, 12.0f);
-                R.lineTo (5.5f, 21.0f); R.closeSubPath();
+                L.startNewSubPath (5.5f, 3.0f); L.lineTo (20.5f, 12.0f);
+                L.lineTo (5.5f, 21.0f); L.closeSubPath();
                 break;
 
             case Id::stop:
-                R.addRoundedRectangle (3.5f, 3.5f, 17.0f, 17.0f, 1.5f);
-                t.lleno = 0.72f;
+                L.addRoundedRectangle (3.5f, 3.5f, 17.0f, 17.0f, 1.5f);
                 break;
 
             case Id::rec:
                 L.addEllipse (3.0f, 3.0f, 18.0f, 18.0f);
-                R.addEllipse (7.4f, 7.4f, 9.2f, 9.2f);
+                R.addEllipse (8.4f, 8.4f, 7.2f, 7.2f);
                 break;
 
             //  TAP pone el tempo, asi que es un metronomo y no una mano: una
@@ -406,14 +405,14 @@ namespace Iconos
             case Id::deshacer:
                 L.addCentredArc (12.0f, 12.2f, 8.2f, 8.2f, 0.0f,
                                  0.0f, juce::MathConstants<float>::pi * 1.5f, true);
-                punta (R, 3.8f, 11.0f, 0.0f, -1.0f, 4.4f);
+                punta (R, 3.8f, 11.0f, 0.0f, -1.0f, 5.6f);
                 break;
 
             case Id::rehacer:
                 L.addCentredArc (12.0f, 12.2f, 8.2f, 8.2f, 0.0f,
                                  juce::MathConstants<float>::pi * 0.5f,
                                  juce::MathConstants<float>::pi * 2.0f, true);
-                punta (R, 20.2f, 11.0f, 0.0f, -1.0f, 4.4f);
+                punta (R, 20.2f, 11.0f, 0.0f, -1.0f, 5.6f);
                 break;
 
             //  CARGAR mete algo en la maquina: la flecha entra en la bandeja.
@@ -512,8 +511,9 @@ namespace Iconos
             //  recuadro se lee como «cerrar la ventana», que es justo lo que
             //  esta tapa NO hace. Sola y grande dice vaciar.
             case Id::vaciar:
-                linea (L, 4.5f, 4.5f, 19.5f, 19.5f);
-                linea (L, 19.5f, 4.5f, 4.5f, 19.5f);
+                L.addEllipse (2.5f, 2.5f, 19.0f, 19.0f);
+                linea (L, 8.0f, 8.0f, 16.0f, 16.0f);
+                linea (L, 16.0f, 8.0f, 8.0f, 16.0f);
                 break;
 
             //  INSERTAR y QUITAR se dibujan por lo que le pasa al COMPAS del
@@ -521,16 +521,15 @@ namespace Iconos
             //  trazo son el mismo icono. Aqui el de en medio ENTRA (esta abajo,
             //  hueco, con la flecha bajando) o SALE (arriba, fuera de la fila).
             case Id::insertar:
-                R.addRectangle (2.5f, 13.0f, 6.0f, 8.0f);
-                R.addRectangle (15.5f, 13.0f, 6.0f, 8.0f);
-                L.addRectangle (9.5f, 13.0f, 5.0f, 8.0f);
+                L.addRectangle (2.5f, 13.0f, 6.0f, 8.0f);
+                L.addRectangle (15.5f, 13.0f, 6.0f, 8.0f);
                 linea (L, 12.0f, 2.0f, 12.0f, 7.5f);
                 punta (R, 12.0f, 11.0f, 0.0f, 1.0f, 3.8f);
                 break;
 
             case Id::quitar:
-                R.addRectangle (2.5f, 13.0f, 6.0f, 8.0f);
-                R.addRectangle (15.5f, 13.0f, 6.0f, 8.0f);
+                L.addRectangle (2.5f, 13.0f, 6.0f, 8.0f);
+                L.addRectangle (15.5f, 13.0f, 6.0f, 8.0f);
                 L.addRectangle (9.5f, 2.5f, 5.0f, 7.0f);
                 linea (L, 9.5f, 17.0f, 14.5f, 17.0f);
                 break;
@@ -555,28 +554,28 @@ namespace Iconos
                 linea (L, 19.4f,  3.4f, 19.4f, 20.6f);
                 linea (L,  4.6f, 12.0f,  8.2f, 12.0f);
                 linea (L, 15.8f, 12.0f, 19.4f, 12.0f);
-                punta (R, 10.0f, 12.0f, 1.0f, 0.0f, 3.8f);
-                punta (R, 14.0f, 12.0f, -1.0f, 0.0f, 3.8f);
+                punta (R, 10.6f, 12.0f, 1.0f, 0.0f, 5.0f);
+                punta (R, 13.4f, 12.0f, -1.0f, 0.0f, 5.0f);
                 break;
 
             case Id::alargar:
                 linea (L,  5.6f,  3.4f,  5.6f, 20.6f);
                 linea (L, 18.4f,  3.4f, 18.4f, 20.6f);
                 linea (L,  8.0f, 12.0f, 16.0f, 12.0f);
-                punta (R,  2.0f, 12.0f, -1.0f, 0.0f, 4.4f);
-                punta (R, 22.0f, 12.0f, 1.0f, 0.0f, 4.4f);
+                punta (R,  2.0f, 12.0f, -1.0f, 0.0f, 5.6f);
+                punta (R, 22.0f, 12.0f, 1.0f, 0.0f, 5.6f);
                 break;
 
             case Id::atras:
                 linea (L, 3.5f, 4.0f, 3.5f, 20.0f);
                 linea (L, 21.0f, 12.0f, 10.0f, 12.0f);
-                punta (R, 6.5f, 12.0f, -1.0f, 0.0f, 4.6f);
+                punta (R, 6.5f, 12.0f, -1.0f, 0.0f, 6.4f);
                 break;
 
             case Id::adelante:
                 linea (L, 20.5f, 4.0f, 20.5f, 20.0f);
                 linea (L, 3.0f, 12.0f, 14.0f, 12.0f);
-                punta (R, 17.5f, 12.0f, 1.0f, 0.0f, 4.6f);
+                punta (R, 17.5f, 12.0f, 1.0f, 0.0f, 6.4f);
                 break;
 
             //  DOBLAR: el compas que hay y su copia, con la vuelta que los une.
@@ -587,7 +586,7 @@ namespace Iconos
             //  alternadas- y ademas 0.37 contra `chop`. Tres iconos de filas
             //  de barras en la misma app son un icono repetido tres veces.
             case Id::doblar:
-                R.addRectangle (2.0f, 10.0f, 8.0f, 10.5f);
+                L.addRectangle (2.0f, 10.0f, 8.0f, 10.5f);
                 L.addRectangle (14.0f, 10.0f, 8.0f, 10.5f);
                 L.addCentredArc (12.0f, 10.5f, 8.0f, 6.0f, 0.0f, -1.35f, 1.20f, true);
                 punta (R, 19.6f, 8.4f, 0.36f, 0.93f, 3.8f);
@@ -618,6 +617,7 @@ namespace Iconos
                 L.startNewSubPath (7.5f, 20.0f); L.lineTo (17.5f, 5.0f);
                 L.lineTo (20.6f, 7.1f); L.lineTo (10.6f, 22.1f); L.closeSubPath();
                 linea (L, 15.6f, 7.9f, 18.7f, 10.0f);             // la virola
+                linea (L, 13.5f, 22.1f, 21.5f, 22.1f);            // y la raya que escribe
                 break;
 
             case Id::goma:
@@ -634,19 +634,15 @@ namespace Iconos
                 linea (L, 5.0f, 3.0f, 16.5f, 16.5f);
                 break;
 
-            //  SELECCION: el marco de puntos de toda la vida. Se dibuja con
-            //  ocho trazos cortos y no con un trazo discontinuo porque el
-            //  camino de esta casa es un Path relleno a 24x24 y un patron de
-            //  guiones no sobrevive al escalado de la tapa.
+            //  SELECCION: el recuadro de trazos con el puntero que lo tira.
             case Id::seleccion:
-                linea (L, 3.5f,  3.5f,  8.0f,  3.5f);
-                linea (L, 12.0f, 3.5f, 16.5f,  3.5f);
-                linea (L, 20.5f, 3.5f, 20.5f,  8.0f);
-                linea (L, 20.5f, 12.0f, 20.5f, 16.5f);
-                linea (L, 20.5f, 20.5f, 16.0f, 20.5f);
-                linea (L, 12.0f, 20.5f, 7.5f,  20.5f);
-                linea (L, 3.5f,  20.5f, 3.5f,  16.0f);
-                linea (L, 3.5f,  12.0f, 3.5f,   7.5f);
+                //  ocupa: el recuadro a trazos con el puntero, que solo el recuadro era `stop` desenfocado.
+                linea (L, 2.5f, 6.5f, 2.5f, 2.5f);     linea (L, 2.5f, 2.5f, 6.5f, 2.5f);
+                linea (L, 9.0f, 2.5f, 12.0f, 2.5f);    linea (L, 14.5f, 2.5f, 17.5f, 2.5f);
+                linea (L, 17.5f, 2.5f, 17.5f, 9.0f);   linea (L, 2.5f, 9.0f, 2.5f, 12.0f);
+                linea (L, 2.5f, 14.5f, 2.5f, 17.5f);   linea (L, 2.5f, 17.5f, 9.0f, 17.5f);
+                punta (R, 12.0f, 12.0f, -0.7071f, -0.7071f, 6.4f);
+                linea (L, 13.0f, 13.0f, 21.5f, 21.5f);
                 break;
 
             //  LUPA: el circulo y el mango, mirando abajo a la derecha como
@@ -694,75 +690,50 @@ namespace Iconos
             //  LLENA de cuatro por cuatro.
             case Id::sec:
             {
-                const bool puesto[2][4] = { { true, false, true, false },
-                                            { false, true, false, true } };
+                //  peso: el paso puesto es una caja y el vacio una raya en el suelo, como en una caja de ritmos.
+                const bool puesto[2][4] = { { true, false, true, false }, { false, true, false, true } };
                 for (int y = 0; y < 2; ++y)
                     for (int x = 0; x < 4; ++x)
                     {
-                        //  LOS BLOQUES LLEGAN ARRIBA Y ABAJO: con filas de 5 px
-                        //  de alto la caja salia de 24 x 14, o sea 0.58 del
-                        //  marco por el lado corto.
-                        const float cx = 2.0f + (float) x * 5.1f, cy = 3.8f + (float) y * 9.2f;
-                        if (puesto[y][x]) R.addRoundedRectangle (cx, cy, 4.3f, 7.0f, 1.0f);
-                        else              L.addRoundedRectangle (cx, cy, 4.3f, 7.0f, 1.0f);
+                        const float cx = 2.0f + (float) x * 5.2f, cy = 3.8f + (float) y * 9.2f;
+                        if (puesto[y][x]) L.addRoundedRectangle (cx, cy, 4.4f, 7.2f, 1.0f);
+                        else              linea (L, cx + 0.6f, cy + 7.2f, cx + 3.8f, cy + 7.2f);
                     }
-                break;
             }
+                break;
 
-            //  Y EL TECLADO LLEGA ARRIBA Y ABAJO: 19 de ancho por 13 de alto
-            //  dejaban el marco a 0.67 por el lado corto.
-            //
-            //  Y CON CINCO BLANCAS Y TRES NEGRAS CON SU HUECO. Alto y con dos
-            //  rayas de arriba abajo era un recuadro con dos barras, o sea
-            //  `pads` desenfocado: medido, 0.3654 contra la rejilla de cuatro
-            //  por cuatro, el par mas cercano que no estaba antes. Lo que hace
-            //  que un teclado se LEA como un teclado no es el recuadro: es que
-            //  las negras van de dos en dos y de tres en tres —aqui dos, hueco,
-            //  una— y que las rayas de las blancas solo existen ABAJO, donde
-            //  las negras se acaban. Ninguna rejilla tiene eso.
+            //  PIANO: las negras macizas arriba y las rayas de las blancas solo abajo, que eso no lo tiene ninguna rejilla.
             case Id::piano:
+                //  peso: tres blancas y dos negras, que cinco y tres eran una rejilla.
                 L.addRectangle (2.6f, 3.2f, 18.8f, 17.6f);
-                for (int i = 1; i <= 4; ++i)
-                {
-                    const float x = 2.6f + (float) i * 3.76f;
-                    linea (L, x, 13.6f, x, 20.8f);
-                }
-                //  Y LAS NEGRAS SE QUEDAN EN 2.7, QUE NO SON LINEAS. Se
-                //  probaron a `kBanda` -1.73- con el argumento de que en un
-                //  teclado de verdad una negra mide poco mas de la mitad de una
-                //  blanca, y salio MEDIDO que no: la pareja `pads`/`piano` cayo
-                //  de 0.4028 a 0.3595 a los diecisiete pixeles a los que se
-                //  comparan, porque un marco con tabiques finos desenfocado es
-                //  la rejilla de `pads`. Una tecla negra es una TECLA, no una
-                //  linea, y por eso no sale de `kBanda`: lo que da peso a este
-                //  icono y lo separa de una rejilla es justamente que las
-                //  negras sean macizas. Es el mismo reparto que deja fuera el
-                //  cuadrado de `stop` o las cunas de `trm`.
-                R.addRectangle ( 5.01f, 3.2f, 2.7f, 10.4f);
-                R.addRectangle ( 8.77f, 3.2f, 2.7f, 10.4f);
-                R.addRectangle (16.29f, 3.2f, 2.7f, 10.4f);
+                linea (L, 8.87f, 13.6f, 8.87f, 20.8f);
+                linea (L, 15.13f, 13.6f, 15.13f, 20.8f);
+                R.addRectangle (7.37f, 3.2f, 3.0f, 10.4f);   // ocupa: una negra es una tecla, no una linea
+                R.addRectangle (13.63f, 3.2f, 3.0f, 10.4f);
                 break;
 
             //  MEZCLA con los tiradores REDONDOS. Con tres tacos rectangulares
             //  sobre tres lineas verticales era el mismo dibujo que `cuadrar`
             //  -0.36-, que tambien son lineas verticales con bloques encima.
             case Id::mezcla:
-                for (int i = 0; i < 3; ++i)
                 {
-                    const float x = 5.0f + (float) i * 7.0f;
-                    linea (L, x, 2.5f, x, 21.5f);
+                    const float yc[3] = { 14.5f, 8.0f, 12.0f };
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        const float x = 5.0f + (float) i * 7.0f;
+                        linea (L, x, 2.5f, x, yc[i] - 3.0f);
+                        linea (L, x, yc[i] + 3.0f, x, 21.5f);
+                        L.addEllipse (x - 3.0f, yc[i] - 3.0f, 6.0f, 6.0f);
+                    }
                 }
-                R.addEllipse (2.0f, 11.5f, 6.0f, 6.0f);
-                R.addEllipse (9.0f, 5.0f, 6.0f, 6.0f);
-                R.addEllipse (16.0f, 9.0f, 6.0f, 6.0f);
                 break;
 
             case Id::cancion:
                 linea (L, 2.0f, 21.0f, 22.0f, 21.0f);
-                R.addRectangle (2.5f, 3.5f, 8.0f, 4.5f);
-                R.addRectangle (12.0f, 3.5f, 4.0f, 4.5f);
-                R.addRectangle (2.5f, 11.0f, 4.0f, 4.5f);
-                R.addRectangle (8.0f, 11.0f, 12.0f, 4.5f);
+                L.addRectangle (2.5f, 3.5f, 8.0f, 4.5f);
+                L.addRectangle (12.0f, 3.5f, 4.0f, 4.5f);
+                L.addRectangle (2.5f, 11.0f, 4.0f, 4.5f);
+                L.addRectangle (8.0f, 11.0f, 12.0f, 4.5f);
                 break;
 
             case Id::xy:
@@ -847,7 +818,7 @@ namespace Iconos
             //  donde se corta.
             case Id::chop:
             {
-                R.addRectangle (2.0f, 10.5f, 20.0f, 8.0f);
+                L.addRectangle (2.0f, 10.5f, 20.0f, 8.0f);
                 const float x[3] = { 7.0f, 12.0f, 17.0f };
                 for (int i = 0; i < 3; ++i)
                 {
@@ -920,9 +891,9 @@ namespace Iconos
             //  Tampoco es `tijeras`, que CORTA por un punto y deja las dos
             //  mitades.
             case Id::recortar:
-                R.addRectangle ( 8.5f,  4.0f, 7.0f, 16.0f);   // lo que queda
-                R.addRectangle ( 2.0f, 15.5f, 4.0f,  5.0f);   // lo que cae, izquierda
-                R.addRectangle (18.0f, 15.5f, 4.0f,  5.0f);   // y derecha
+                L.addRectangle ( 8.5f,  4.0f, 7.0f, 16.0f);   // lo que queda
+                L.addRectangle ( 2.0f, 15.5f, 4.0f,  5.0f);   // lo que cae, izquierda
+                L.addRectangle (18.0f, 15.5f, 4.0f,  5.0f);   // y derecha
                 break;
 
             //  --- LOS SEIS EFECTOS -------------------------------------------
@@ -943,22 +914,18 @@ namespace Iconos
             //  en espejo.
             case Id::flt:
                 linea (L, 2.0f, 20.0f, 22.0f, 20.0f);
-                R.startNewSubPath (2.0f, 20.0f);
-                R.lineTo (2.0f, 8.0f);  R.lineTo (9.5f, 8.0f);
-                R.quadraticTo (11.5f, 8.0f, 12.5f, 4.5f);
-                R.quadraticTo (13.5f, 8.0f, 14.5f, 9.0f);
-                R.cubicTo (17.0f, 11.0f, 18.0f, 17.0f, 21.0f, 20.0f);
-                R.closeSubPath();
+                L.startNewSubPath (2.0f, 8.0f);  L.lineTo (9.5f, 8.0f);
+                L.quadraticTo (11.5f, 8.0f, 12.5f, 4.5f);
+                L.quadraticTo (13.5f, 8.0f, 14.5f, 9.0f);
+                L.cubicTo (17.0f, 11.0f, 18.0f, 17.0f, 21.0f, 20.0f);
                 break;
 
             case Id::hpf:
                 linea (L, 2.0f, 20.0f, 22.0f, 20.0f);
-                R.startNewSubPath (22.0f, 20.0f);
-                R.lineTo (22.0f, 8.0f); R.lineTo (14.5f, 8.0f);
-                R.quadraticTo (12.5f, 8.0f, 11.5f, 4.5f);
-                R.quadraticTo (10.5f, 8.0f, 9.5f, 9.0f);
-                R.cubicTo (7.0f, 11.0f, 6.0f, 17.0f, 3.0f, 20.0f);
-                R.closeSubPath();
+                L.startNewSubPath (22.0f, 8.0f); L.lineTo (14.5f, 8.0f);
+                L.quadraticTo (12.5f, 8.0f, 11.5f, 4.5f);
+                L.quadraticTo (10.5f, 8.0f, 9.5f, 9.0f);
+                L.cubicTo (7.0f, 11.0f, 6.0f, 17.0f, 3.0f, 20.0f);
                 break;
 
             //  DRV: la onda RECORTADA contra sus dos topes, que es literalmente
@@ -991,9 +958,9 @@ namespace Iconos
             case Id::dly:
                 linea (L, 1.5f, 21.0f, 22.5f, 21.0f);
                 bandaV (R,  4.0f,  4.0f, 17.0f);
-                bandaV (R,  9.5f,  8.5f, 12.5f);
-                bandaV (R, 14.5f, 12.5f,  8.5f);
-                bandaV (R, 20.0f, 16.0f,  5.0f);
+                bandaV (R,  9.5f,  7.0f, 14.0f);
+                bandaV (R, 14.5f, 10.0f, 11.0f);
+                bandaV (R, 20.0f, 13.0f,  8.0f);
                 break;
 
             //  BIT: la escalera. Un reductor de bits convierte una rampa en
@@ -1008,32 +975,17 @@ namespace Iconos
             //  corta las esquinas es lo que entro: los dos a la vez.
             case Id::bit:
             {
-                //  Y LOS CUATRO PELDANOS SE REPARTEN MAS ALTO. Iban de 20.0 a
-                //  6.5 -13.5 px de salto- y con la banda de 3.4 lo pintado
-                //  llegaba a 16.9 de alto, o sea el 0.70 justo del marco. Con
-                //  la banda a `kBanda` lo pintado baja a 15.2 y el marco se
-                //  queda en 0.67: no es que el dibujo este peor, es que el
-                //  grosor ya no le estaba haciendo de relleno. Los peldanos
-                //  pasan a 21.2 .. 4.7 -16.5 de salto- y el alto pintado sube a
-                //  18.2, que son 0.76 del marco. La diagonal los sigue, que es
-                //  la recta contra la que la escalera se lee.
-                juce::Path escalera;
-                escalera.startNewSubPath (2.0f, 21.2f);
-                escalera.lineTo (7.0f, 21.2f);  escalera.lineTo (7.0f, 15.7f);
-                escalera.lineTo (12.0f, 15.7f); escalera.lineTo (12.0f, 10.2f);
-                escalera.lineTo (17.0f, 10.2f); escalera.lineTo (17.0f, 4.7f);
-                escalera.lineTo (22.0f, 4.7f);
-                //  LA ESCALERA, CON EL PELO DE LA CASA. Llevaba 3.4 -el doble
-                //  de `kBanda`- y la recta de debajo va con el pelo normal: dos
-                //  grosores en el mismo icono, que es el caso que no admite
-                //  discusion. Las esquinas siguen en escuadra y las puntas a
-                //  ras, que eso es el remate de una escalera y no su grosor.
-                juce::PathStrokeType (kBanda, juce::PathStrokeType::mitered,
-                                              juce::PathStrokeType::butt)
-                    .createStrokedPath (R, escalera);
-                linea (L, 2.0f, 21.2f, 22.0f, 4.7f);
-                break;
+                //  ocupa: un seno en peldanos llena la caja; la escalera en diagonal ocupaba medio triangulo.
+                const auto nivel = [] (int i) { return 12.0f - 9.0f * std::sin ((float) (i * 2 + 1) * juce::MathConstants<float>::pi / 10.0f); };
+                L.startNewSubPath (2.0f, nivel (0));
+                for (int i = 0; i < 10; ++i)
+                {
+                    const float x = 2.0f + (float) (i + 1) * 2.0f;
+                    L.lineTo (x, nivel (i));
+                    if (i < 9) L.lineTo (x, nivel (i + 1));
+                }
             }
+                break;
 
             //  --- LOS CUATRO DE MODULACION -----------------------------
             //
@@ -1080,46 +1032,19 @@ namespace Iconos
                         .createStrokedPath (R, o);
                 }
                 onda (L, 1.0f, 18.2f);                       // y la copia, desfasada
+                onda (L, 0.5f, 11.9f);                       // y la de en medio
                 break;
             }
 
-            //  FLA: el peine. Muescas EQUIESPACIADAS sobre el renglon, que es
-            //  lo que hace un retardo corto sumado al seco — y lo que lo
-            //  separa de PHA, cuyas muescas ni son tantas ni estan repartidas.
-            //  Y LOS DIENTES BAJAN DESDE y=8, no desde y=6.
-            //
-            //  Los dos peines de esta familia -FLA y PHA- colgaban de una linea
-            //  alta y su tinta se quedaba en la mitad de arriba de la caja:
-            //  medido, el centro de lo que se PINTA caia a **4.0 px** del centro
-            //  de la rejilla, contra 0.0 en ochenta y nueve iconos y 0.5 en
-            //  veinte. `reparteTapa` centra la CAJA en la tapa, asi que en una
-            //  fila con sus vecinos los dos se leian subidos. Ver
-            //  Tests/iconos.py, regla del centro.
-            //
-            //  Y los dientes pasan a ser RECTOS y no curvas: el limite de una
-            //  curva lo marcan sus puntos de control -y=20 para una tinta que
-            //  llegaba a 13- asi que la caja que el volcado publica no era la
-            //  que se pinta, y la regla del centro habria medido una y la de
-            //  CABE la otra. Con lineas, lo declarado y lo dibujado son lo
-            //  mismo. Un peine de dientes rectos ademas es lo que un flanger
-            //  hace: ceros regulares, no ondas.
-            //
-            //  Y SE QUEDA COMO ESTA, medido: los dientes del 8 al 16 dan 0.335
-            //  contra `pit` -desenfocados, cinco dientes cortos sobre un
-            //  renglon son una onda apretada-, y se intento alejarlos dos veces.
-            //  Curvos del 6 al 20, la tinta cae a 4 px del centro de su caja
-            //  por lo de los puntos de control. Rectos del 6 al 19.5, la tinta
-            //  sube a 0.405 y el peine se va a 0.301 de `sec` y a 0.339 de
-            //  `sonido`: cinco puas gordas son una fila de bloques. Los dos
-            //  numeros son peores que el que habia, asi que el que habia.
+            //  FLA: el peine, con los dientes rectos colgando del renglon.
             case Id::fla:
                 linea (L, 2.0f, 3.6f, 22.0f, 3.6f);
-                for (int i = 0; i < 5; ++i)
+                for (int i = 0; i < 3; ++i)   // peso: tres dientes, que cuatro eran un peine
                 {
-                    const float x = 4.0f + (float) i * 4.2f;
-                    L.startNewSubPath (x - 1.3f, 3.6f);
-                    L.lineTo (x, 20.4f - (float) i * 2.4f);
-                    L.lineTo (x + 1.3f, 3.6f);
+                    const float x = 5.0f + (float) i * 7.0f;
+                    L.startNewSubPath (x - 2.0f, 3.6f);
+                    L.lineTo (x, 20.4f - (float) i * 3.0f);
+                    L.lineTo (x + 2.0f, 3.6f);
                 }
                 break;
 
@@ -1131,8 +1056,8 @@ namespace Iconos
             //  dos, anchas y separadas, que es lo que lo aparta de `fla`.
             case Id::pha:
                 bandaH (R, 2.0f, 6.6f, 20.0f);
-                R.startNewSubPath (4.0f, 8.0f);  R.lineTo (7.5f, 20.0f);  R.lineTo (11.0f, 8.0f);  R.closeSubPath();
-                R.startNewSubPath (13.0f, 8.0f); R.lineTo (16.5f, 20.0f); R.lineTo (20.0f, 8.0f); R.closeSubPath();
+                L.startNewSubPath (4.0f, 9.5f);  L.lineTo (7.5f, 20.0f);  L.lineTo (11.0f, 9.5f);  L.closeSubPath();
+                L.startNewSubPath (13.0f, 9.5f); L.lineTo (16.5f, 20.0f); L.lineTo (20.0f, 9.5f); L.closeSubPath();
                 break;
 
             //  TRM: la ENVOLVENTE que late. El relleno dice amplitud y no
@@ -1153,14 +1078,12 @@ namespace Iconos
             //  mancha cuadrada. Con el hueco, a 17 px son dos golpes y no uno.
             case Id::trm:
                 linea (L, 1.5f, 20.5f, 22.5f, 20.5f);
-                R.startNewSubPath (2.0f, 20.5f);
-                R.quadraticTo (3.5f, 3.5f, 6.0f, 3.5f);
-                R.quadraticTo (8.5f, 3.5f, 10.0f, 20.5f);
-                R.closeSubPath();
-                R.startNewSubPath (14.0f, 20.5f);
-                R.quadraticTo (15.5f, 3.5f, 18.0f, 3.5f);
-                R.quadraticTo (20.5f, 3.5f, 22.0f, 20.5f);
-                R.closeSubPath();
+                L.startNewSubPath (2.0f, 20.5f);
+                L.quadraticTo (3.5f, 3.5f, 6.0f, 3.5f);
+                L.quadraticTo (8.5f, 3.5f, 10.0f, 20.5f);
+                L.startNewSubPath (14.0f, 20.5f);
+                L.quadraticTo (15.5f, 3.5f, 18.0f, 3.5f);
+                L.quadraticTo (20.5f, 3.5f, 22.0f, 20.5f);
                 break;
 
             //  ==================================================================
@@ -1196,10 +1119,10 @@ namespace Iconos
                 //  declarar 11 y la caja que publica `limites` sigue dentro de
                 //  la rejilla. Con una cuadratica habria que declarar 16.6 y
                 //  CABE lo daria por fuera con el dibujo entero dentro.
-                const float pasos[] = { 6.0f, 5.0f, 4.0f, 3.2f, 2.6f };
+                const float pasos[] = { 8.5f, 6.5f, 5.0f, 0.0f };   // peso: tres ondas
                 float x = 2.0f;
                 L.startNewSubPath (x, 12.0f);
-                for (int i = 0; i < 5 && x < 22.0f; ++i)
+                for (int i = 0; i < 3 && x < 22.0f; ++i)
                 {
                     const float w = pasos[i];
                     L.cubicTo (x + w * 0.16f, 12.0f - 11.0f, x + w * 0.34f, 12.0f - 11.0f,
@@ -1351,33 +1274,11 @@ namespace Iconos
                 L.quadraticTo (16.0f, 16.0f, 22.0f, 5.0f);
                 break;
 
-            //  REP: EL TROZO QUE SE REPITE. Son BLOQUES y no picos, porque lo
-            //  que se repite es un trozo entero de audio y no un golpe, y eso
-            //  es lo que lo aparta de `dly`, que son cuatro lineas.
-            //
-            //  LAS TRES BARRAS, DE ARRIBA ABAJO Y EN BAJADA: con 10 px de alto
-            //  en 18 de ancho la caja se quedaba en 0.58 del marco por el lado
-            //  corto, y las tres iguales y altas se fueron a 0.3975 de `pads`
-            //  —tres barras parejas, desenfocadas, son una rejilla—. En bajada
-            //  dicen ademas lo que un repetidor hace: la primera es la que
-            //  entro y las otras dos son copias que se van.
-            //
-            //  Y LOS BLOQUES SON MAS ANCHOS PARA QUE EL HUECO EXISTA. El
-            //  primero relleno -lo que se grabo- y los dos de detras a trazo
-            //  -lo que se devuelve-, que es la misma regla que separa el golpe
-            //  de sus ecos en `dly`; lo que pasa es que no se pintaba. Con 4.3
-            //  px de ancho, un rectangulo TRAZADO tiene las dos paredes de
-            //  `kBanda` -1.73 cada una- y entre ellas queda una ranura de 0.84:
-            //  los dos de detras salian practicamente macizos con una raya, o
-            //  sea el mismo bloque que el primero. A 5.0 de ancho la ranura es
-            //  de 1.54 y el hueco se ve, que es lo que el dibujo llevaba doce
-            //  versiones prometiendo. Se probo tambien dejar los tres rellenos:
-            //  la tinta se iba a 0.4900 contra un tope de 0.55, o sea a un dedo
-            //  de ser una mancha, y se perdia la unica cosa que `rep` dice.
+            //  REP: el trozo que entra y sus copias, que se van haciendo pequenas.
             case Id::rep:
-                R.addRectangle ( 3.0f,  3.6f, 5.0f, 16.8f);
-                L.addRectangle ( 9.6f,  7.0f, 5.0f, 13.4f);
-                L.addRectangle (16.2f, 10.4f, 5.0f, 10.0f);
+                L.addRectangle ( 2.4f,  4.4f, 5.0f, 16.0f);
+                L.addRectangle ( 9.9f,  8.4f, 4.4f, 12.0f);
+                L.addRectangle (16.8f, 12.4f, 3.8f,  8.0f);   // peso: las copias se van haciendo pequenas
                 break;
 
             case Id::amb:
@@ -1409,11 +1310,9 @@ namespace Iconos
             //  encima de la caja de la caida, que es lo que un moldeador hace
             //  y lo que lo separa de `trm` -tres lentes iguales- y de `ruido`.
             case Id::trn:
-                R.startNewSubPath (4.0f, 21.0f);
-                R.lineTo (7.0f,  3.0f);
-                R.lineTo (10.0f, 21.0f);
-                R.closeSubPath();
-                t.lleno = 0.88f;
+                L.startNewSubPath (4.0f, 21.0f);
+                L.lineTo (7.0f,  3.0f);
+                L.lineTo (10.0f, 21.0f);
                 L.startNewSubPath (11.5f, 12.5f);
                 L.quadraticTo (16.0f, 13.5f, 22.0f, 20.5f);
                 linea (L, 11.5f, 20.5f, 22.0f, 20.5f);
@@ -1451,6 +1350,7 @@ namespace Iconos
                 for (int i = 0; i < 3; ++i)
                     L.addCentredArc (4.0f, 12.0f, 6.0f + (float) i * 3.6f, 6.0f + (float) i * 3.6f,
                                      0.0f, 0.62f, juce::MathConstants<float>::pi - 0.62f, true);
+                linea (L, 21.0f, 3.0f, 21.0f, 21.0f);   // ocupa: la pared donde rebota
                 break;
 
             //  EQ: la curva CON SUS NODOS, que es lo que lo separa de FLT y de
@@ -1550,12 +1450,14 @@ namespace Iconos
             //  BOMBEO: el nivel que se HUNDE cuando entra el bombo y vuelve.
             //  El triangulo de arriba es quien lo hunde.
             case Id::bombeo:
-                punta (R, 6.0f, 8.0f, 0.0f, 1.0f, 4.4f);
+                punta (R, 6.0f, 8.0f, 0.0f, 1.0f, 5.4f);
                 L.startNewSubPath (1.5f, 12.5f);
                 L.lineTo (5.0f, 12.5f);
                 L.lineTo (6.5f, 20.5f);
-                L.cubicTo (10.0f, 20.5f, 11.5f, 12.5f, 15.0f, 12.5f);
-                L.lineTo (22.5f, 12.5f);
+                L.cubicTo (9.0f, 20.5f, 10.0f, 12.5f, 12.5f, 12.5f);
+                L.lineTo (14.0f, 12.5f);
+                L.lineTo (15.5f, 20.5f);
+                L.cubicTo (18.0f, 20.5f, 19.0f, 12.5f, 22.5f, 12.5f);
                 break;
 
             //  AUTOCUT: el golpe nuevo se come al anterior. El de delante esta
@@ -1644,8 +1546,8 @@ namespace Iconos
             //  EL CUERPO MAS ANCHO Y EL ARCO MAS BAJO: 17 de ancho contra 21
             //  de alto dejaban el marco a 0.67 por el lado corto.
             case Id::fijo:
-                R.addRoundedRectangle (2.8f, 10.0f, 18.4f, 12.0f, 1.9f);
-                t.lleno = 0.88f;
+                L.addRoundedRectangle (2.8f, 10.0f, 18.4f, 12.0f, 1.9f);
+                R.addEllipse (10.4f, 14.4f, 3.2f, 3.2f);
                 L.startNewSubPath (7.6f, 10.0f);
                 L.lineTo (7.6f, 6.6f);
                 L.cubicTo (7.6f, 2.0f, 16.4f, 2.0f, 16.4f, 6.6f);
@@ -1710,9 +1612,9 @@ namespace Iconos
             //  un gancho y no un arco, que es lo unico que separa esta tapa de
             //  `fijo`, y el hueco pasa a ser de seis pixeles.
             case Id::momentaneo:
-                R.addRoundedRectangle (2.8f, 10.0f, 18.4f, 12.0f, 1.9f);
-                t.lleno = 0.88f;
-                L.startNewSubPath (16.4f, 11.4f);
+                L.addRoundedRectangle (2.8f, 10.0f, 18.4f, 12.0f, 1.9f);
+                R.addEllipse (10.4f, 14.4f, 3.2f, 3.2f);
+                L.startNewSubPath (16.4f, 10.0f);
                 L.lineTo (16.4f, 6.2f);
                 L.cubicTo (16.4f, 0.8f, 6.4f, 0.6f, 3.8f, 4.8f);
                 break;
@@ -1742,10 +1644,10 @@ namespace Iconos
                 break;
 
             case Id::altavoz:
-                R.startNewSubPath (2.0f, 9.0f);
-                R.lineTo (6.5f, 9.0f); R.lineTo (11.5f, 4.0f);
-                R.lineTo (11.5f, 20.0f); R.lineTo (6.5f, 15.0f);
-                R.lineTo (2.0f, 15.0f); R.closeSubPath();
+                L.startNewSubPath (2.0f, 9.0f);
+                L.lineTo (6.5f, 9.0f); L.lineTo (11.5f, 4.0f);
+                L.lineTo (11.5f, 20.0f); L.lineTo (6.5f, 15.0f);
+                L.lineTo (2.0f, 15.0f); L.closeSubPath();
                 L.addCentredArc (12.5f, 12.0f, 4.2f, 4.2f, 0.0f, 0.6f, 2.55f, true);
                 L.addCentredArc (12.5f, 12.0f, 8.2f, 8.2f, 0.0f, 0.6f, 2.55f, true);
                 break;
@@ -1755,21 +1657,16 @@ namespace Iconos
             //  una mancha negra en la fila de pestanas.
             case Id::mano:
                 L.addRoundedRectangle (5.5f, 11.0f, 13.0f, 10.5f, 3.0f);
-                L.addRoundedRectangle (6.8f, 6.0f, 2.6f, 7.0f, 1.3f);
-                L.addRoundedRectangle (10.4f, 3.5f, 2.6f, 9.5f, 1.3f);
-                L.addRoundedRectangle (14.0f, 4.5f, 2.6f, 8.5f, 1.3f);
-                L.addRoundedRectangle (2.4f, 12.5f, 3.6f, 6.5f, 1.8f);
+                linea (L,  8.1f, 6.8f,  8.1f, 11.0f);
+                linea (L, 11.7f, 4.3f, 11.7f, 11.0f);
+                linea (L, 15.3f, 5.3f, 15.3f, 11.0f);
+                linea (L,  3.2f, 13.5f, 5.5f, 17.5f);
                 break;
 
-            //  DIECISEIS NIVELES: la rampa. Cuatro escalones que suben de
-            //  izquierda a derecha, que es como los dieciseis pads reparten la
-            //  fuerza. No es `bit`, que baja y es una escalera de trazo, ni
-            //  `dly`, que baja y tiene el primero relleno.
+            //  DIECISEIS NIVELES: la rampa de rayas que sube, como los pads reparten la fuerza.
             case Id::niveles:
-                for (int i = 0; i < 4; ++i)
-                    R.addRoundedRectangle (2.0f + (float) i * 5.4f,
-                                           19.5f - (float) (i + 1) * 4.2f,
-                                           4.2f, (float) (i + 1) * 4.2f, 0.8f);
+                for (int i = 0; i < 6; ++i)   // peso: seis rayas en subida, que cuatro barras huecas eran ocho paredes
+                    linea (L, 2.5f + (float) i * 3.8f, 21.0f, 2.5f + (float) i * 3.8f, 17.5f - (float) i * 3.0f);
                 break;
 
             // --- LOS SEIS QUE TAPABAN UN HUECO EN SU FILA ----------------
@@ -1787,9 +1684,12 @@ namespace Iconos
             //  distinta- y no el contorno, que en los dos es el mismo circulo.
             case Id::aspecto:
                 L.addEllipse (2.5f, 2.5f, 19.0f, 19.0f);
-                R.addPieSegment (2.5f, 2.5f, 19.0f, 19.0f,
-                                 juce::MathConstants<float>::pi,
-                                 juce::MathConstants<float>::twoPi, 0.0f);
+                linea (L, 12.0f, 2.5f, 12.0f, 21.5f);
+                for (int i = 0; i < 3; ++i)
+                {
+                    const float yy = 7.5f + (float) i * 4.5f, dx = std::sqrt (90.25f - (yy - 12.0f) * (yy - 12.0f));
+                    linea (L, 12.0f - dx + 1.2f, yy, 12.0f, yy);
+                }
                 break;
 
             //  REV: la muestra al reves. Una cuna que CRECE hacia la derecha
@@ -1802,9 +1702,9 @@ namespace Iconos
             //  diferencian en el lado de la punta son el mismo dibujo. La cuna
             //  no se parece a nada de la fila porque no es una flecha.
             case Id::reves:
-                R.startNewSubPath (3.0f, 13.5f);
-                R.lineTo (20.0f, 2.5f); R.lineTo (20.0f, 13.5f);
-                R.closeSubPath();
+                L.startNewSubPath (3.0f, 13.5f);
+                L.lineTo (20.0f, 2.5f); L.lineTo (20.0f, 13.5f);
+                L.closeSubPath();
                 linea (L, 20.0f, 18.5f, 6.5f, 18.5f);
                 punta (R, 3.0f, 18.5f, -1.0f, 0.0f, 3.6f);
                 break;
@@ -1852,7 +1752,7 @@ namespace Iconos
             //  un inserto es, y ya no es un cuadrado.
             case Id::inserto:
                 linea (L, 1.5f, 12.0f, 7.5f, 12.0f);
-                R.addRectangle (7.5f, 3.0f, 9.0f, 18.0f);
+                L.addRectangle (7.5f, 3.0f, 9.0f, 18.0f);
                 linea (L, 16.5f, 12.0f, 22.5f, 12.0f);
                 break;
 
@@ -1864,7 +1764,7 @@ namespace Iconos
             case Id::envio:
                 linea (L, 1.5f, 3.4f, 22.5f, 3.4f);
                 linea (L, 8.0f, 3.4f, 8.0f, 13.6f);
-                R.addRectangle (3.6f, 13.6f, 8.8f, 8.0f);
+                L.addRectangle (3.6f, 13.6f, 8.8f, 8.0f);
                 break;
 
             //  APAGAR: el anillo partido y la barra. Ver la enum.
@@ -1921,9 +1821,9 @@ namespace Iconos
                 break;
 
             case Id::recibir:
-                R.startNewSubPath (3.0f, 13.0f);
-                R.lineTo (3.0f, 20.5f); R.lineTo (21.0f, 20.5f); R.lineTo (21.0f, 13.0f);
-                R.closeSubPath();
+                L.startNewSubPath (3.0f, 13.0f);
+                L.lineTo (3.0f, 20.5f); L.lineTo (21.0f, 20.5f); L.lineTo (21.0f, 13.0f);
+                L.closeSubPath();
                 linea (L, 12.0f, 2.5f, 12.0f, 8.5f);
                 punta (R, 12.0f, 12.5f, 0.0f, 1.0f, 4.2f);
                 break;
@@ -1936,7 +1836,7 @@ namespace Iconos
             //  que la hace inconfundible es el HUECO en mitad de cada lado.
             case Id::sel:
             {
-                const float x0 = 3.5f, x1 = 20.5f, y0 = 4.5f, y1 = 19.5f, c = 4.5f;
+                const float x0 = 3.5f, x1 = 20.5f, y0 = 4.5f, y1 = 19.5f, c = 6.0f;
                 linea (L, x0, y0, x0 + c, y0);   linea (L, x1 - c, y0, x1, y0);
                 linea (L, x0, y1, x0 + c, y1);   linea (L, x1 - c, y1, x1, y1);
                 linea (L, x0, y0, x0, y0 + c);   linea (L, x0, y1 - c, x0, y1);
@@ -1969,10 +1869,10 @@ namespace Iconos
             case Id::automacion:
             {
                 const float x[4] = { 3.0f, 9.0f, 15.0f, 21.0f };
-                const float y[4] = { 18.0f, 8.0f, 13.0f, 5.0f };
+                const float y[4] = { 20.0f, 7.5f, 15.0f, 4.0f };
                 L.startNewSubPath (x[0], y[0]);
                 for (int i = 1; i < 4; ++i) L.lineTo (x[i], y[i]);
-                for (int i = 0; i < 4; ++i) R.addRectangle (x[i] - 1.7f, y[i] - 1.7f, 3.4f, 3.4f);
+                for (int i = 0; i < 4; ++i) R.addRectangle (x[i] - 1.8f, y[i] - 1.8f, 3.6f, 3.6f);
                 break;
             }
 
@@ -1984,7 +1884,7 @@ namespace Iconos
             //  mastil. Cuatro y no seis es lo que lo hace un bajo y no una
             //  guitarra.
             case Id::insBajo:
-                R.addRoundedRectangle (7.6f, 1.4f, 8.8f, 9.8f, 2.2f);      // la pala
+                L.addRoundedRectangle (7.6f, 1.4f, 8.8f, 9.8f, 2.2f);      // la pala
                 //  Las cuatro clavijas con su boton, escalonadas.
                 linea (L,  7.6f,  4.0f,  4.6f,  4.0f);
                 R.addEllipse (2.0f, 2.6f, 2.8f, 2.8f);
@@ -1996,8 +1896,8 @@ namespace Iconos
                 R.addEllipse (19.2f, 8.8f, 2.8f, 2.8f);
                 bandaH (R, 7.2f, 12.3f, 9.6f);                             // la cejuela
                 for (int i = 0; i < 4; ++i)                                // y las cuatro cuerdas
-                    linea (L, 9.0f + (float) i * 2.0f, 13.0f,
-                              9.0f + (float) i * 2.0f, 22.0f);
+                    linea (L, 8.1f + (float) i * 2.6f, 13.0f,
+                              8.1f + (float) i * 2.6f, 22.0f);
                 break;
 
             //  SUBS: tres barras que crecen hacia abajo. No es una onda: es
@@ -2132,11 +2032,11 @@ namespace Iconos
             //  que crece, asi que se pinta; la boca va curva para que no sea
             //  el triangulo de `play` mirado del reves.
             case Id::insColchon:
-                R.startNewSubPath (2.0f, 12.0f);
-                R.cubicTo (9.0f, 11.6f, 13.0f, 3.5f, 22.0f, 3.0f);
-                R.quadraticTo (19.5f, 12.0f, 22.0f, 21.0f);
-                R.cubicTo (13.0f, 20.5f, 9.0f, 12.4f, 2.0f, 12.0f);
-                R.closeSubPath();
+                L.startNewSubPath (2.0f, 12.0f);
+                L.cubicTo (9.0f, 11.6f, 13.0f, 3.5f, 22.0f, 3.0f);
+                L.quadraticTo (19.5f, 12.0f, 22.0f, 21.0f);
+                L.cubicTo (13.0f, 20.5f, 9.0f, 12.4f, 2.0f, 12.0f);
+                L.closeSubPath();
                 break;
 
             //  PLUCKS: el golpe y su caida. Sube de golpe y se apaga, que es
@@ -2161,18 +2061,16 @@ namespace Iconos
             case Id::insCampana:
                 L.addEllipse (6.6f, 5.4f, 3.4f, 2.8f);                     // el ojo de la grande
                 bandaV (R, 8.8f, 7.8f, 1.4f);
-                R.startNewSubPath (3.0f, 18.0f);                           // y su cuerpo
-                R.cubicTo (3.3f, 12.2f, 5.6f, 9.2f, 8.8f, 9.2f);
-                R.cubicTo (12.0f, 9.2f, 14.3f, 12.2f, 14.6f, 18.0f);
-                R.closeSubPath();
+                L.startNewSubPath (3.0f, 18.0f);                           // y su cuerpo
+                L.cubicTo (3.3f, 12.2f, 5.6f, 9.2f, 8.8f, 9.2f);
+                L.cubicTo (12.0f, 9.2f, 14.3f, 12.2f, 14.6f, 18.0f);
                 bandaH (R, 1.8f, 19.55f, 14.0f);                           // el aro de la boca
                 R.addEllipse (7.4f, 21.0f, 2.4f, 2.4f);                    // y el badajo
                 L.addEllipse (16.4f, 1.4f, 2.8f, 2.4f);                    // la chica, detras
                 bandaV (R, 18.2f, 3.4f, 1.2f);
-                R.startNewSubPath (13.6f, 12.6f);
-                R.cubicTo (13.8f, 8.2f, 15.6f, 5.8f, 17.9f, 5.8f);
-                R.cubicTo (20.2f, 5.8f, 22.0f, 8.2f, 22.2f, 12.6f);
-                R.closeSubPath();
+                L.startNewSubPath (15.4f, 7.4f);
+                L.cubicTo (16.2f, 6.2f, 17.0f, 5.8f, 17.9f, 5.8f);
+                L.cubicTo (20.2f, 5.8f, 22.0f, 8.2f, 22.2f, 12.6f);
                 bandaH (R, 12.8f, 13.85f, 10.2f);
                 break;
 
@@ -2194,9 +2092,9 @@ namespace Iconos
                     bandaV (R, x + 0.9f, 9.4f, 6.6f);
                     linea (L, x + 0.9f, 9.4f, x + 0.9f, 7.2f);
                 }
-                R.startNewSubPath (12.6f, 10.2f);                          // la campana
-                R.lineTo (20.8f, 3.6f); R.lineTo (20.8f, 21.2f);
-                R.lineTo (12.6f, 14.6f); R.closeSubPath();
+                L.startNewSubPath (12.6f, 10.2f);                          // la campana
+                L.lineTo (20.8f, 3.6f); L.lineTo (20.8f, 21.2f);
+                L.lineTo (12.6f, 14.6f); L.closeSubPath();
                 bandaV (R, 21.6f, 3.6f, 17.6f);                            // y su aro
                 break;
 
@@ -2219,14 +2117,12 @@ namespace Iconos
             //  la cabeza de la de delante: dos arcos cruzados no son dos
             //  personas. Macizas y sin tocarse son dos siluetas.
             case Id::insCoro:
-                R.addEllipse (13.2f, 1.8f, 6.0f, 6.0f);                    // la de atras
-                R.startNewSubPath (11.2f, 14.0f);
-                R.cubicTo (11.5f, 8.8f, 20.9f, 8.8f, 21.2f, 14.0f);
-                R.closeSubPath();
-                R.addEllipse (3.6f, 8.6f, 7.2f, 7.2f);                     // y la de delante
-                R.startNewSubPath (1.2f, 22.2f);
-                R.cubicTo (1.6f, 15.2f, 13.0f, 15.2f, 13.4f, 22.2f);
-                R.closeSubPath();
+                L.addEllipse (13.2f, 1.8f, 6.0f, 6.0f);                    // la de atras
+                L.startNewSubPath (14.6f, 10.4f);
+                L.cubicTo (19.0f, 9.4f, 21.0f, 11.0f, 21.2f, 14.0f);
+                L.addEllipse (3.6f, 8.6f, 7.2f, 7.2f);                     // y la de delante
+                L.startNewSubPath (1.2f, 22.2f);
+                L.cubicTo (1.6f, 15.2f, 13.0f, 15.2f, 13.4f, 22.2f);
                 break;
 
             //  CUERDA PULSADA: la guitarra entera - la caja con su CINTURA, la
@@ -2289,46 +2185,21 @@ namespace Iconos
                 linea (L, 22.0f, 21.0f, 22.0f, 17.5f);
                 break;
 
-            //  VIENTOS: la travesera, con la embocadura ovalada en un extremo
-            //  -el agujero por el que se sopla, de TRAZO para que sea un
-            //  agujero y no un punto-, el bloque de llaves sobre el tubo y el
-            //  pie ensanchado en el otro. Eran un tubo de trazo con cuatro
-            //  puntos dentro, que a 17 px es una pastilla con unas motas.
-            //
-            //  Y VA INCLINADA, como se sostiene. No es un capricho: TUMBADA no
-            //  se la puede distinguir de `pit` ni de `fla`, que son las otras
-            //  dos cosas largas de la tabla que viven sobre el renglon del
-            //  medio. Medido, con el tubo horizontal: 0.330 de `pit` con las
-            //  llaves pegadas al tubo y 0.335 con las llaves colgando de una
-            //  varilla -desenfocadas, cuatro bolas sobre una linea son una
-            //  onda- y 0.334 de `fla`. Los dos peines y la onda apretada son
-            //  horizontales por definicion; una flauta no, asi que la que se
-            //  mueve es la flauta.
+            //  VIENTOS: la flauta de pan, que a 17 px se lee y una travesera no.
             case Id::insFlauta:
-            {
-                juce::Path cuerpo, boca;
-                cuerpo.addRoundedRectangle (3.4f, 11.6f, 16.6f, 3.0f, 1.5f);   // el tubo
-                boca.addEllipse (0.8f, 9.8f, 5.4f, 6.2f);                      // la embocadura
-                cuerpo.addRoundedRectangle (19.2f, 9.2f, 2.8f, 7.8f, 1.1f);    // el pie
-                for (int i = 0; i < 4; ++i)                                    // y las llaves
-                    cuerpo.addRoundedRectangle (6.6f + (float) i * 3.3f, 8.4f,
-                                                2.8f, 3.4f, 0.9f);
-                //  Y MAS INCLINADA: a 0.42 rad el tubo media 23 x 16 y el
-                //  marco se quedaba a 0.67 por el lado corto. El giro es lo
-                //  unico que llena los dos lados sin tocar la flauta.
-                //
-                //  Y HACIA ABAJO Y NO HACIA ARRIBA. Con -0.60 el tubo sube a la
-                //  derecha y eso ya lo hay: `bit` es una escalera que sube a la
-                //  derecha, y desenfocadas dos bandas diagonales en el mismo
-                //  sentido son el mismo dibujo —0.3935, el segundo par nuevo de
-                //  esta tanda—. Al otro lado llena el marco igual y no se cruza
-                //  con nadie.
-                const auto giro = juce::AffineTransform::rotation (0.60f, 12.0f, 12.0f);
-                cuerpo.applyTransform (giro);
-                boca.applyTransform (giro);
-                R.addPath (cuerpo);
-                L.addPath (boca);
-            }
+                //  ocupa: flauta de pan; la travesera girada era una diagonal fina que no ocupaba.
+                L.startNewSubPath (2.0f, 2.5f);
+                L.lineTo (2.0f, 21.5f);
+                for (int i = 0; i < 4; ++i)
+                {
+                    const float x = 2.0f + (float) i * 5.0f, y = 21.5f - (float) i * 3.6f;
+                    L.lineTo (x + 5.0f, y);
+                    L.lineTo (x + 5.0f, y - 3.6f);
+                }
+                L.lineTo (22.0f, 2.5f);
+                L.closeSubPath();
+                for (int i = 1; i < 4; ++i)   // peso: los tubos comparten pared
+                    linea (L, 2.0f + (float) i * 5.0f, 2.5f, 2.0f + (float) i * 5.0f, 21.5f - (float) i * 3.6f);
                 break;
 
             //  ARPAS: la columna curva, la base y las cuerdas, que van de mas
@@ -2339,10 +2210,9 @@ namespace Iconos
                 L.cubicTo (4.5f, 9.0f, 11.0f, 3.0f, 19.5f, 2.5f);
                 linea (L, 19.5f, 2.5f, 19.5f, 21.0f);
                 linea (L, 3.5f, 21.0f, 19.5f, 21.0f);
-                linea (L, 7.0f, 16.0f, 7.0f, 21.0f);
-                linea (L, 10.5f, 11.0f, 10.5f, 21.0f);
-                linea (L, 14.0f, 7.0f, 14.0f, 21.0f);
-                linea (L, 17.0f, 4.5f, 17.0f, 21.0f);
+                linea (L, 8.0f, 14.5f, 8.0f, 21.0f);
+                linea (L, 12.0f, 9.0f, 12.0f, 21.0f);
+                linea (L, 16.0f, 5.5f, 16.0f, 21.0f);
                 break;
 
             //  FM: la PILA DE OPERADORES, que es lo que esta forma es. No hay
@@ -2391,8 +2261,6 @@ namespace Iconos
                 L.addRoundedRectangle (18.0f, 4.0f, 4.5f, 16.0f, 1.2f);
                 L.startNewSubPath (6.0f, 4.5f);
                 L.lineTo (10.0f, 19.5f); L.lineTo (14.0f, 4.5f); L.lineTo (18.0f, 19.5f);
-                R.addEllipse (19.6f, 7.0f, 1.8f, 1.8f);
-                R.addEllipse (19.6f, 11.0f, 1.8f, 1.8f);
                 break;
 
             //  SITAR: la calabaza MACIZA abajo a la izquierda, el mastil
@@ -2401,7 +2269,7 @@ namespace Iconos
             //  CUERDA PULS, que es una caja de frente; los trastes y las
             //  clavijas son lo que lo separa de un circulo con un palo.
             case Id::insSitar:
-                R.addEllipse (1.5f, 11.5f, 11.0f, 10.5f);                  // la calabaza
+                L.addEllipse (1.5f, 11.5f, 11.0f, 10.5f);                  // la calabaza
                 //  El mastil, de la calabaza al clavijero: dos cantos
                 //  paralelos a trazo y no una banda maciza, que los trastes
                 //  encima de un macizo no se ven - se pintan con la misma
@@ -2456,15 +2324,15 @@ namespace Iconos
             //  sostiene un oboe.
             case Id::insCana:
                 bandaV (R, 12.0f, 0.8f, 2.8f);                             // la cana
-                R.startNewSubPath (10.4f, 3.6f);                           // el cuerpo, conico
-                R.lineTo (13.6f, 3.6f); R.lineTo (14.4f, 16.0f);
-                R.lineTo (9.6f, 16.0f); R.closeSubPath();
+                L.startNewSubPath (10.4f, 3.6f);                           // el cuerpo, conico
+                L.lineTo (13.6f, 3.6f); L.lineTo (14.4f, 16.0f);
+                L.lineTo (9.6f, 16.0f); L.closeSubPath();
                 //  Y EL PABELLON ABRE MAS: con la boca de 12.8 px el dibujo
                 //  media 14 de ancho por 24 de alto, o sea 0.58 del marco por
                 //  el lado corto.
-                R.startNewSubPath (9.6f, 16.0f);                           // y el pabellon
-                R.lineTo (14.4f, 16.0f); R.lineTo (20.8f, 22.2f);
-                R.lineTo (3.2f, 22.2f); R.closeSubPath();
+                L.startNewSubPath (9.6f, 16.0f);                           // y el pabellon
+                L.lineTo (14.4f, 16.0f); L.lineTo (20.8f, 22.2f);
+                L.lineTo (3.2f, 22.2f); L.closeSubPath();
                 for (int i = 0; i < 3; ++i)                                // las tres llaves
                 {
                     const float y = 6.2f + (float) i * 3.4f;
@@ -2629,6 +2497,45 @@ namespace Iconos
         return { x0, y0, x1 - x0, y1 - y0 };
     }
 
+    //  ocupa: lo que el ojo mide de un icono es su casco convexo; un cuadrado lleno y un circulo del mismo lado no ocupan lo mismo.
+    inline constexpr float kCasco = 0.56f;
+
+    //  ocupa: area y perimetro del casco convexo de los puntos de relleno y linea, en unidades de la rejilla.
+    inline std::pair<float, float> casco (const Trazo& t)
+    {
+        std::vector<juce::Point<float>> v;
+        for (const auto* p : { &t.relleno, &t.linea })
+        {
+            juce::PathFlatteningIterator it (*p);
+            while (it.next()) { v.push_back ({ it.x1, it.y1 }); v.push_back ({ it.x2, it.y2 }); }
+        }
+        if (v.size() < 3) return { 0.0f, 0.0f };
+        std::sort (v.begin(), v.end(), [] (auto a, auto b) { return a.x < b.x || (! (b.x < a.x) && a.y < b.y); });
+        const auto giro = [] (juce::Point<float> o, juce::Point<float> a, juce::Point<float> b)
+            { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); };
+        std::vector<juce::Point<float>> h (2 * v.size());
+        size_t k = 0;
+        for (size_t i = 0; i < v.size(); ++i)
+        {
+            while (k >= 2 && giro (h[k - 2], h[k - 1], v[i]) <= 0.0f) --k;
+            h[k++] = v[i];
+        }
+        for (size_t i = v.size() - 1, t0 = k + 1; i > 0; --i)
+        {
+            while (k >= t0 && giro (h[k - 2], h[k - 1], v[i - 1]) <= 0.0f) --k;
+            h[k++] = v[i - 1];
+        }
+        h.resize (k - 1);
+        float a = 0.0f, per = 0.0f;
+        for (size_t i = 0; i < h.size(); ++i)
+        {
+            const auto& p = h[i]; const auto& q = h[(i + 1) % h.size()];
+            a += p.x * q.y - q.x * p.y;
+            per += p.getDistanceFrom (q);
+        }
+        return { std::abs (a) * 0.5f, per };
+    }
+
     //  EL GROSOR SALE DEL LADO. Un trazo de 2 px es una linea en una caja de 24
     //  y un pelo en una de 44, y esta app dibuja las dos: la fila de modulos
     //  mide 26 px en dos de las siete pantallas y 44 en las otras cinco.
@@ -2694,8 +2601,17 @@ namespace Iconos
             //  El 96% y no el 100%: el trazo se ensancha DESPUES de escalar, y
             //  un dibujo que llena la caja al ras se come su propio pelo por
             //  los bordes.
-            const float objetivo = lado * 0.96f * juce::jlimit (0.5f, 1.0f, t.lleno);
+            const float objetivo = lado * 0.96f;
             esc = juce::jmin (objetivo / lim.getWidth(), objetivo / lim.getHeight());
+            //  ocupa: el casco convexo pintado vale kCasco de la caja, y el lado de 0.96 es solo el tope.
+            const auto [a0, p0] = casco (t);
+            if (a0 > 0.0f)
+            {
+                const float r = t.linea.isEmpty() ? 0.0f : grosorPara (lado * 0.96f) * 0.5f;
+                const float b = p0 * r, k = juce::MathConstants<float>::pi * r * r - kCasco * lado * lado;
+                if (k < 0.0f)
+                    esc = juce::jmin (esc, (-b + std::sqrt (b * b - 4.0f * a0 * k)) / (2.0f * a0));
+            }
             dx = caja.getCentreX() - lim.getCentreX() * esc;
             dy = caja.getCentreY() - lim.getCentreY() * esc;
         }
