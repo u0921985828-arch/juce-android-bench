@@ -50,6 +50,10 @@ juce_add_binary_data(ZatiData SOURCES
     Source/fonts/OswaldMedium.ttf
     Source/fonts/JetBrainsMonoRegular.ttf
     Source/fonts/JetBrainsMonoBold.ttf
+    Source/texturas/papel.png
+    Source/texturas/grafito.png
+    Source/texturas/acero.png
+    Source/texturas/laca.png
 )
 
 target_sources(Zati PRIVATE

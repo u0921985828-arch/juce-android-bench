@@ -1,39 +1,42 @@
 #!/usr/bin/env python3
-#  Las cuatro texturas del chasis, de las baldosas de PixelLab a Source/Texturas.h.
+#  Las cuatro texturas del chasis, de las imagenes de PixelLab a Source/texturas/*.png.
 #
 #      python3 -I ci/texturas.py papel.png grafito.png acero.png laca.png
 #
-#  Cada PNG se pasa a gris sin el marco del borde y sin tocar un pixel: ni escalado,
-#  ni mezcla, ni desenfoque. La app lo estira al ancho del chasis con el pixel entero.
-#  Se guarda como desviacion de la media: la app pone el color, esto solo el relieve.
+#  Cada imagen viene ya del tamano del chasis. Se pasa a gris, se quita el borde liso
+#  que a veces deja PixelLab y la luz de gran escala (la pone la app), y se guarda
+#  como relieve: 128 es la media y 40 una desviacion tipica. Ni escalado ni desenfoque:
+#  cada pixel de PixelLab llega entero.
 import sys, os
-from PIL import Image
+import numpy as np
+from PIL import Image, ImageFilter
 
-def baldosa (path):
-    #  sin el marco que PixelLab deja en el borde: se leia como una reja de baldosas
+NOMBRES = ("papel", "grafito", "acero", "laca")
+
+def sin_borde (a):
+    #  filas y columnas lisas del borde, como la franja gris de los lados
+    plana = lambda v: v.std() < 3.0
+    t, b, l, r = 0, a.shape[0], 0, a.shape[1]
+    while t < b - 1 and plana (a[t, l:r]): t += 1
+    while b > t + 1 and plana (a[b - 1, l:r]): b -= 1
+    while l < r - 1 and plana (a[t:b, l]): l += 1
+    while r > l + 1 and plana (a[t:b, r - 1]): r -= 1
+    return a[t:b, l:r]
+
+def relieve (path):
     im = Image.open (path).convert ("L")
-    c = im.width // 8
-    im = im.crop ((c, c, im.width - c, im.height - c))
-    d = list (im.get_flattened_data())
-    m = sum (d) / len (d)
-    sd = (sum ((x - m) ** 2 for x in d) / len (d)) ** 0.5 or 1.0
-    return im.width, [max (-127, min (127, int (round ((x - m) / sd * 40)))) for x in d]
+    a = sin_borde (np.asarray (im, dtype=np.float64))
+    #  la luz de gran escala fuera: solo se resta, el pixel no se toca
+    luz = np.asarray (Image.fromarray (a.astype (np.uint8)).filter (ImageFilter.GaussianBlur (12)), dtype=np.float64)
+    d = a - luz
+    d = (d - d.mean()) / (d.std() or 1.0) * 40.0
+    return Image.fromarray (np.clip (np.rint (d + 128.0), 0, 255).astype (np.uint8), "L")
 
 if len (sys.argv) != 5:
     sys.exit ("uso: texturas.py papel.png grafito.png acero.png laca.png")
-fuera = os.path.join (os.path.dirname (os.path.abspath (__file__)), "..", "Source", "Texturas.h")
-lados, datos = zip (*(baldosa (p) for p in sys.argv[1:]))
-if len (set (lados)) != 1: sys.exit ("las cuatro baldosas tienen que medir lo mismo")
-LADO = lados[0]
-with open (fuera, "w") as f:
-    f.write ("#pragma once\n//  Generado por ci/texturas.py desde baldosas de PixelLab. No editar a mano.\n")
-    f.write ("//  Desviacion del gris medio, 40 = una desviacion tipica.\n\n")
-    f.write ("namespace Texturas\n{\n    inline constexpr int kLado = %d;\n\n" % LADO)
-    f.write ("    inline constexpr signed char kRelieve[4][%d] =\n    {\n" % (LADO * LADO))
-    for d in datos:
-        f.write ("        {\n")
-        for i in range (0, len (d), LADO):
-            f.write ("            " + ",".join (str (x) for x in d[i:i + LADO]) + ",\n")
-        f.write ("        },\n")
-    f.write ("    };\n}\n")
-print ("escrito", os.path.normpath (fuera))
+fuera = os.path.join (os.path.dirname (os.path.abspath (__file__)), "..", "Source", "texturas")
+os.makedirs (fuera, exist_ok=True)
+for nombre, p in zip (NOMBRES, sys.argv[1:]):
+    im = relieve (p)
+    im.convert ("RGB").save (os.path.join (fuera, nombre + ".png"), optimize=True)
+    print ("escrito", nombre, "%dx%d" % im.size)

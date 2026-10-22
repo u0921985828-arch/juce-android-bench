@@ -22,7 +22,6 @@
 //  component. Fonts: Oswald/JetBrains Mono, bundled.
 // ============================================================================
 #include "Iconos.h"
-#include "Texturas.h"
 
 namespace ZatiColours
 {
@@ -331,14 +330,14 @@ namespace ZatiColours
     //  acabado: brillo suave, sin ruido; cuanto, por carcasa (esmalte, goma, acero, aluminio).
     inline float brilloDelChasis (int skin) noexcept
     {
-        static const float alfa[4] = { 0.35f, 0.035f, 0.35f, 0.03f };
+        static const float alfa[4] = { 0.35f, 0.060f, 0.50f, 0.05f };
         return alfa[((skin % 4) + 4) % 4];
     }
 
     //  textura: cuanto relieve lleva cada carcasa, en alfa por desviacion tipica.
     inline float relieveDelChasis (int skin) noexcept
     {
-        static const float alfa[4] = { 0.028f, 0.040f, 0.040f, 0.300f };
+        static const float alfa[4] = { 0.038f, 0.029f, 0.029f, 0.094f };
         return alfa[((skin % 4) + 4) % 4];
     }
 
@@ -347,6 +346,17 @@ namespace ZatiColours
     {
         static const float luz[4] = { 1.0f, 1.0f, 1.0f, 0.27f };
         return luz[((skin % 4) + 4) % 4];
+    }
+
+    //  textura: el relieve en gris de cada carcasa, 128 la media y 40 una desviacion tipica.
+    inline juce::Image relieveDeLaCarcasa (int skin)
+    {
+        static const juce::Image img[4] = {
+            juce::ImageFileFormat::loadFrom (BinaryData::papel_png,   BinaryData::papel_pngSize),
+            juce::ImageFileFormat::loadFrom (BinaryData::grafito_png, BinaryData::grafito_pngSize),
+            juce::ImageFileFormat::loadFrom (BinaryData::acero_png,   BinaryData::acero_pngSize),
+            juce::ImageFileFormat::loadFrom (BinaryData::laca_png,    BinaryData::laca_pngSize) };
+        return img[((skin % 4) + 4) % 4];
     }
 
     //  acabado: el fondo horneado, degradado mas un brillo radial desde arriba a la izquierda.
@@ -365,24 +375,30 @@ namespace ZatiColours
         g.setGradientFill (brillo);
         g.fillRect (full);
 
-        //  textura: el pixel de PixelLab entero, la baldosa al ancho del chasis y en espejo hacia abajo.
+        //  textura: la imagen de PixelLab cubre el chasis entera, un pixel suyo por pixel, sin repetir ni suavizar.
+        const auto rel = relieveDeLaCarcasa (currentSkin);
+        if (! rel.isValid()) return;
         const float amp = relieveDelChasis (currentSkin), luz = luzDelRelieve (currentSkin);
-        constexpr int n = Texturas::kLado;
-        const auto* rel = Texturas::kRelieve[currentSkin];
-        const float paso = w / (float) n;
-        for (int f = 0; (float) f * paso < h; ++f)
+        const int iw = juce::jmax (1, (int) std::ceil (w)), ih = juce::jmax (1, (int) std::ceil (h));
+        const float esc = juce::jmax ((float) iw / (float) rel.getWidth(), (float) ih / (float) rel.getHeight());
+        const float ox = ((float) rel.getWidth() - (float) iw / esc) * 0.5f, oy = ((float) rel.getHeight() - (float) ih / esc) * 0.5f;
+        juce::Image capa (juce::Image::ARGB, iw, ih, true);
         {
-            const int m = f % (2 * n), ty = m < n ? m : 2 * n - 1 - m;
-            const int y0 = juce::roundToInt ((float) f * paso), y1 = juce::roundToInt ((float) (f + 1) * paso);
-            for (int tx = 0; tx < n; ++tx)
+            const juce::Image::BitmapData src (rel, juce::Image::BitmapData::readOnly);
+            juce::Image::BitmapData dst (capa, juce::Image::BitmapData::writeOnly);
+            for (int y = 0; y < ih; ++y)
             {
-                const int x0 = juce::roundToInt ((float) tx * paso), x1 = juce::roundToInt ((float) (tx + 1) * paso);
-                const float d = (float) rel[ty * n + tx] / 40.0f;
-                const auto c = d >= 0.0f ? juce::Colours::white : juce::Colours::black;
-                g.setColour (c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp * (d >= 0.0f ? luz : 1.0f))));
-                g.fillRect (x0, y0, x1 - x0, y1 - y0);
+                const int sy = juce::jlimit (0, rel.getHeight() - 1, (int) (oy + ((float) y + 0.5f) / esc));
+                for (int x = 0; x < iw; ++x)
+                {
+                    const int sx = juce::jlimit (0, rel.getWidth() - 1, (int) (ox + ((float) x + 0.5f) / esc));
+                    const float d = ((float) src.getPixelColour (sx, sy).getBrightness() * 255.0f - 128.0f) / 40.0f;
+                    const auto c = d >= 0.0f ? juce::Colours::white : juce::Colours::black;
+                    dst.setPixelColour (x, y, c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp * (d >= 0.0f ? luz : 1.0f))));
+                }
             }
         }
+        g.drawImageAt (capa, 0, 0);
     }
 
     //  EL GRANO DEL CHASIS SE PROBO Y SE QUITO.

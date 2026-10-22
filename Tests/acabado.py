@@ -6,17 +6,20 @@
 #
 #      ZATI_FONDO=x.png ZATI_SKIN=n ./Zati
 #
-#  1. SE VE: en la misma fila, el punto del brillo contra el extremo opuesto, dE >= 1,
-#     medido sobre la media de 31 px para que la textura no tape el brillo.
+#  1. SE VE: en la misma franja de arriba, el punto del brillo contra el extremo opuesto,
+#     dE >= 1, cada uno la media de un recuadro de 61x31 para que la textura no tape el brillo.
 #  2. NO ENSUCIA: una fila de la media de 31 px no abre mas de 12 dE (el degradado da 3
 #     a 5; las manchas grandes del material, el resto). El grano lo caza la regla 5.
 #  3. NO COME CONTRASTE: la tinta contra el pixel mas claro del fondo sigue en MIN_TEXT.
 #  4. LA TEXTURA SE LEE COMO MATERIAL: quitado el degradado (media de 31 px), lo que
-#     queda tiene cuerpo a un palmo (desviacion >= 3 niveles, pico <= 24) y es una forma y
-#     no ruido (autocorrelacion a 3 px >= 0.4; el grano de antes da ~0).
-#  5. SIN DESENFOQUE: el pixel de PixelLab se ve entero. Entre pixeles vecinos, el 15 %
-#     de los saltos mas grandes lleva al menos el 80 % de todo el cambio: el borde de
-#     cada pixel es un escalon y dentro es plano. Desenfocada se reparte y no llega.
+#     queda tiene cuerpo a un palmo (desviacion >= 3 niveles) y ninguna mota pasa de un
+#     octavo de la escala (pico <= 32). Que sea material y no ruido lo dice la regla 5.
+#  5. ES LA IMAGEN DE PIXELLAB, PIXEL A PIXEL: la textura del fondo se compara con
+#     Source/texturas/<carcasa>.png puesta como la pone la app (cubre el chasis, un pixel
+#     suyo por pixel, centrada). Correlacion >= 0.9. Un mosaico, una baldosa repetida o
+#     un desenfoque no llegan.
+#
+#      ACABADO_BORROSO=1 python3 Tests/acabado.py   # desenfocada 3x3: tiene que fallar
 #
 #      python3 Tests/acabado.py
 #      ACABADO_RUIDO=1 python3 Tests/acabado.py     # el grano de antes: tiene que fallar
@@ -50,6 +53,12 @@ def fondo (skin):
     if len (raw) != W * H * 3: return None
     q = [[(raw[(y * W + x) * 3] << 16) | (raw[(y * W + x) * 3 + 1] << 8) | raw[(y * W + x) * 3 + 2]
           for x in range (W)] for y in range (H)]
+    if os.environ.get ("ACABADO_BORROSO"):
+        c = [r[:] for r in q]
+        for y in range (1, H - 1):
+            for x in range (1, W - 1):
+                q[y][x] = sum ((sum ((c[y + j][x + i] >> s) & 255 for j in (-1, 0, 1) for i in (-1, 0, 1)) // 9) << s
+                               for s in (16, 8, 0))
     if os.environ.get ("ACABADO_RUIDO"):
         rnd = random.Random (skin)
         for y in range (H):
@@ -58,6 +67,11 @@ def fondo (skin):
                 p = q[y][x]
                 q[y][x] = sum (max (0, min (255, ((p >> s) & 255) + d)) << s for s in (16, 8, 0))
     return q
+
+def recuadro (q, x0, y0, w=61, h=31):
+    #  acabado: el color medio de un recuadro, por canal
+    px = [q[y][x] for y in range (y0, y0 + h) for x in range (x0, x0 + w)]
+    return sum (int (round (sum ((p >> s) & 255 for p in px) / float (len (px)))) << s for s in (16, 8, 0))
 
 def media (q, R=15):
     #  acabado: media de 31 px por canal, con el borde recortado a la imagen.
@@ -77,32 +91,55 @@ def media (q, R=15):
                 out[y][x] |= int (round (v)) << s
     return out
 
-def textura (nombre, q):
-    #  acabado: residuo tras quitar el degradado, en la ventana central de 200x200.
-    lv = [[(((p >> 16) & 255) + ((p >> 8) & 255) + (p & 255)) / 3.0 for p in r] for r in q]
-    R, x0, y0, N = 15, 100, 300, 200
+def origen (nombre):
+    png = os.path.join (ROOT, "Source", "texturas", nombre.lower() + ".png")
+    if not os.path.exists (png): return None
+    sz = subprocess.run (["identify", "-format", "%w %h", png], capture_output=True, text=True).stdout.split()
+    sw, sh = int (sz[0]), int (sz[1])
+    raw = subprocess.run (["convert", png, "-colorspace", "Gray", "-depth", "8", "gray:-"], capture_output=True).stdout
+    if len (raw) != sw * sh: return None
+    return sw, sh, [list (raw[y * sw:(y + 1) * sw]) for y in range (sh)]
+
+R, X0, Y0, N = 15, 100, 300, 200
+
+def residuo (lv):
+    #  acabado: lo que queda tras quitar la media de 31 px, en la ventana central de 200x200.
     col = [[0.0] * (W + 1) for _ in range (H + 1)]
     for y in range (H):
         for x in range (W): col[y + 1][x + 1] = lv[y][x] + col[y][x + 1] + col[y + 1][x] - col[y][x]
     caja = lambda y, x: (col[y + R + 1][x + R + 1] - col[y - R][x + R + 1]
                          - col[y + R + 1][x - R] + col[y - R][x - R]) / float ((2 * R + 1) ** 2)
-    res = [[lv[y][x] - caja (y, x) for x in range (x0, x0 + N)] for y in range (y0, y0 + N)]
+    return [[lv[y][x] - caja (y, x) for x in range (X0, X0 + N)] for y in range (Y0, Y0 + N)]
+
+def textura (nombre, q):
+    lv = [[(((p >> 16) & 255) + ((p >> 8) & 255) + (p & 255)) / 3.0 for p in r] for r in q]
+    res = residuo (lv)
     vals = [v for r in res for v in r]
     m = sum (vals) / len (vals)
     var = sum ((v - m) ** 2 for v in vals) / len (vals)
     sd = math.sqrt (var)
     pico = max (abs (v - m) for v in vals)
-    L = 3
-    cov = sum ((res[y][x] - m) * (res[y][x + L] - m) + (res[y][x] - m) * (res[y + L][x] - m)
-               for y in range (N - L) for x in range (N - L)) / (2.0 * (N - L) ** 2)
-    ac = cov / var if var > 1e-9 else 0.0
-    saltos = sorted ((abs (lv[y][x + 1] - lv[y][x]) + abs (lv[y + 1][x] - lv[y][x])
-                      for y in range (y0, y0 + N) for x in range (x0, x0 + N)), reverse=True)
-    nitidez = sum (saltos[:len (saltos) * 15 // 100]) / (sum (saltos) or 1.0)
-    mide ("%s: la textura va sin desenfoque" % nombre, nitidez >= 0.8,
-          "el 15 %% de los saltos lleva el %.0f %% (>= 80)" % (100 * nitidez))
-    mide ("%s: la textura se lee como material" % nombre, sd >= 3.0 and pico <= 24.0 and ac >= 0.4,
-          "desviacion %.2f (>= 3)  pico %.1f (<= 24)  forma %.2f (>= 0.4)" % (sd, pico, ac))
+    fuente = origen (nombre)
+    if fuente is None:
+        mide ("%s: la textura es la de PixelLab" % nombre, False, "no esta Source/texturas/%s.png" % nombre.lower())
+    else:
+        #  textura: la imagen puesta como la pone la app, cubriendo y centrada, pixel mas cercano
+        sw, sh, src = fuente
+        esc = max (W / sw, H / sh)
+        ox, oy = (sw - W / esc) * 0.5, (sh - H / esc) * 0.5
+        cx = [min (sw - 1, max (0, int (ox + (x + 0.5) / esc))) for x in range (W)]
+        cy = [min (sh - 1, max (0, int (oy + (y + 0.5) / esc))) for y in range (H)]
+        e = residuo ([[float (src[cy[y]][cx[x]]) for x in range (W)] for y in range (H)])
+        b = [v for r in e for v in r]
+        bm = sum (b) / len (b)
+        a = [v - m for v in vals]
+        b = [v - bm for v in b]
+        sa = math.sqrt (sum (v * v for v in a)); sb = math.sqrt (sum (v * v for v in b))
+        corr = sum (p * q for p, q in zip (a, b)) / (sa * sb) if sa > 0 and sb > 0 else 0.0
+        mide ("%s: la textura es la de PixelLab" % nombre, corr >= 0.9,
+              "correlacion %.2f con la imagen, pixel a pixel (>= 0.9)" % corr)
+    mide ("%s: la textura se lee como material" % nombre, sd >= 3.0 and pico <= 32.0,
+          "desviacion %.2f (>= 3)  pico %.1f (<= 32)" % (sd, pico))
 
 tabla = parse()
 for i, nombre in enumerate (SKINS):
@@ -111,8 +148,8 @@ for i, nombre in enumerate (SKINS):
         mide ("%s: el fondo se dibuja" % nombre, False, "la app no escribio el PNG")
         continue
     m = media (q)
-    yb = int (H * 0.05)
-    se_ve = dE (m[yb][int (W * 0.2)], m[yb][W - 1])
+    yb, xb = int (H * 0.05), int (W * 0.2)
+    se_ve = dE (recuadro (q, xb - 30, yb - 15), recuadro (q, W - 61, yb - 15))
     mide ("%s: el brillo se ve" % nombre, se_ve >= 1.0, "dE %.2f (liston 1.0)" % se_ve)
 
     fila = max (dE (min (r), max (r)) for r in (m[y] for y in range (0, H, 40)))
