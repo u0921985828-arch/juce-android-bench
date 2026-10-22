@@ -8,13 +8,15 @@
 #
 #  1. SE VE: en la misma fila, el punto del brillo contra el extremo opuesto, dE >= 1,
 #     medido sobre la media de 31 px para que la textura no tape el brillo.
-#  2. NO ENSUCIA: ningun pixel se separa de su vecino mas de 8 niveles por canal (sin
-#     escalones; el grano lo caza la forma de la regla 4), y una fila de la media de 31 px
-#     no abre mas de 12 dE (el degradado da 3 a 5; las manchas grandes del material, el resto).
+#  2. NO ENSUCIA: una fila de la media de 31 px no abre mas de 12 dE (el degradado da 3
+#     a 5; las manchas grandes del material, el resto). El grano lo caza la regla 5.
 #  3. NO COME CONTRASTE: la tinta contra el pixel mas claro del fondo sigue en MIN_TEXT.
 #  4. LA TEXTURA SE LEE COMO MATERIAL: quitado el degradado (media de 31 px), lo que
 #     queda tiene cuerpo a un palmo (desviacion >= 3 niveles, pico <= 24) y es una forma y
 #     no ruido (autocorrelacion a 3 px >= 0.4; el grano de antes da ~0).
+#  5. SIN DESENFOQUE: el pixel de PixelLab se ve entero. Entre pixeles vecinos, el 15 %
+#     de los saltos mas grandes lleva al menos el 80 % de todo el cambio: el borde de
+#     cada pixel es un escalon y dentro es plano. Desenfocada se reparte y no llega.
 #
 #      python3 Tests/acabado.py
 #      ACABADO_RUIDO=1 python3 Tests/acabado.py     # el grano de antes: tiene que fallar
@@ -94,6 +96,11 @@ def textura (nombre, q):
     cov = sum ((res[y][x] - m) * (res[y][x + L] - m) + (res[y][x] - m) * (res[y + L][x] - m)
                for y in range (N - L) for x in range (N - L)) / (2.0 * (N - L) ** 2)
     ac = cov / var if var > 1e-9 else 0.0
+    saltos = sorted ((abs (lv[y][x + 1] - lv[y][x]) + abs (lv[y + 1][x] - lv[y][x])
+                      for y in range (y0, y0 + N) for x in range (x0, x0 + N)), reverse=True)
+    nitidez = sum (saltos[:len (saltos) * 15 // 100]) / (sum (saltos) or 1.0)
+    mide ("%s: la textura va sin desenfoque" % nombre, nitidez >= 0.8,
+          "el 15 %% de los saltos lleva el %.0f %% (>= 80)" % (100 * nitidez))
     mide ("%s: la textura se lee como material" % nombre, sd >= 3.0 and pico <= 24.0 and ac >= 0.4,
           "desviacion %.2f (>= 3)  pico %.1f (<= 24)  forma %.2f (>= 0.4)" % (sd, pico, ac))
 
@@ -108,14 +115,8 @@ for i, nombre in enumerate (SKINS):
     se_ve = dE (m[yb][int (W * 0.2)], m[yb][W - 1])
     mide ("%s: el brillo se ve" % nombre, se_ve >= 1.0, "dE %.2f (liston 1.0)" % se_ve)
 
-    salto = lambda a, b: max (abs (((a >> s) & 255) - ((b >> s) & 255)) for s in (16, 8, 0))
-    vecino = 0
-    for y in range (0, H - 1, 3):
-        for x in range (0, W - 1, 3):
-            vecino = max (vecino, salto (q[y][x], q[y][x + 1]), salto (q[y][x], q[y + 1][x]))
     fila = max (dE (min (r), max (r)) for r in (m[y] for y in range (0, H, 40)))
-    mide ("%s: el brillo no ensucia" % nombre, vecino <= 8 and fila <= 12.0,
-          "vecino %d niveles (<= 8)  fila %.2f dE (<= 12)" % (vecino, fila))
+    mide ("%s: el brillo no ensucia" % nombre, fila <= 12.0, "fila %.2f dE (<= 12)" % fila)
 
     textura (nombre, q)
 

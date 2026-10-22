@@ -5436,6 +5436,9 @@ void MainComponent::pintaFondo (juce::Graphics& g)
         if (fondoCache.getWidth() != getWidth() || fondoCache.getHeight() != getHeight()
             || fondoSkin != ZatiColours::currentSkin)
             reconstruyeFondo();
+        //  textura: sin interpolar al escalar a pixeles del aparato, que desenfocaria el pixel.
+        juce::Graphics::ScopedSaveState guarda (g);
+        g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
         g.drawImageAt (fondoCache, 0, 0);
     }
     else

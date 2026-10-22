@@ -338,7 +338,7 @@ namespace ZatiColours
     //  textura: cuanto relieve lleva cada carcasa, en alfa por desviacion tipica.
     inline float relieveDelChasis (int skin) noexcept
     {
-        static const float alfa[4] = { 0.044f, 0.040f, 0.056f, 0.420f };
+        static const float alfa[4] = { 0.028f, 0.040f, 0.040f, 0.300f };
         return alfa[((skin % 4) + 4) % 4];
     }
 
@@ -365,27 +365,24 @@ namespace ZatiColours
         g.setGradientFill (brillo);
         g.fillRect (full);
 
-        //  textura: la baldosa de PixelLab a x4 con remuestreo suave, luz y sombra sobre el color.
+        //  textura: el pixel de PixelLab entero, la baldosa al ancho del chasis y en espejo hacia abajo.
         const float amp = relieveDelChasis (currentSkin), luz = luzDelRelieve (currentSkin);
-        //  x4 bilineal hecho aqui, que el relleno en mosaico de JUCE escala a escalones.
-        constexpr int n = Texturas::kLado, k = 4, lado = n * k;
+        constexpr int n = Texturas::kLado;
         const auto* rel = Texturas::kRelieve[currentSkin];
-        const auto en = [rel] (int x, int y) { return (float) rel[((y + n) % n) * n + ((x + n) % n)]; };
-        juce::Image t (juce::Image::ARGB, lado, lado, true);
-        for (int y = 0; y < lado; ++y)
-            for (int x = 0; x < lado; ++x)
+        const float paso = w / (float) n;
+        for (int f = 0; (float) f * paso < h; ++f)
+        {
+            const int m = f % (2 * n), ty = m < n ? m : 2 * n - 1 - m;
+            const int y0 = juce::roundToInt ((float) f * paso), y1 = juce::roundToInt ((float) (f + 1) * paso);
+            for (int tx = 0; tx < n; ++tx)
             {
-                const float fx = (float) x / k, fy = (float) y / k;
-                const int x0 = (int) fx, y0 = (int) fy;
-                const float ax = fx - (float) x0, ay = fy - (float) y0;
-                const float v = (en (x0, y0) * (1 - ax) + en (x0 + 1, y0) * ax) * (1 - ay)
-                              + (en (x0, y0 + 1) * (1 - ax) + en (x0 + 1, y0 + 1) * ax) * ay;
-                const float d = v / 40.0f;
+                const int x0 = juce::roundToInt ((float) tx * paso), x1 = juce::roundToInt ((float) (tx + 1) * paso);
+                const float d = (float) rel[ty * n + tx] / 40.0f;
                 const auto c = d >= 0.0f ? juce::Colours::white : juce::Colours::black;
-                t.setPixelAt (x, y, c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp * (d >= 0.0f ? luz : 1.0f))));
+                g.setColour (c.withAlpha (juce::jlimit (0.0f, 1.0f, std::abs (d) * amp * (d >= 0.0f ? luz : 1.0f))));
+                g.fillRect (x0, y0, x1 - x0, y1 - y0);
             }
-        g.setTiledImageFill (t, 0, 0, 1.0f);
-        g.fillRect (full);
+        }
     }
 
     //  EL GRANO DEL CHASIS SE PROBO Y SE QUITO.
