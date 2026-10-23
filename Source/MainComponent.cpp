@@ -18596,6 +18596,10 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
         {
             juce::Rectangle<int> r;
             for (auto* b : instBtns) r = r.getUnion (deComponente (b));
+            //  guia#anillo: con los rotulos de familia, que salen un pixel mas afuera que las tapas.
+            if (! r.isEmpty() && ! instBtns.isEmpty() && instBtns[0]->getParentComponent() != nullptr)
+                for (auto& c : instCatArea)
+                    if (! c.isEmpty()) r = r.getUnion (getLocalArea (instBtns[0]->getParentComponent(), c));
             return r;
         }
         case 15: return deComponente (&rackButton);
@@ -18604,7 +18608,14 @@ juce::Rectangle<int> MainComponent::tourObjetivo (int paso) const
         case 18: return deComponente (&exportMasterButton).getUnion (deComponente (&exportStemsButton));
         case 19: return unionDe ({ &projSaveButton, &projLoadButton, &projNewButton });
         case 20: return unionDe ({ &midiOutBtn, &midiInBtn });
-        case 21: return unionDe ({ &measureButton, &quantButton });
+        //  guia#corte: con su rotulo PRUEBAS, que va pegado encima.
+        case 21:
+        {
+            auto r = unionDe ({ &measureButton, &quantButton });
+            if (auto* p = measureButton.getParentComponent(); p != nullptr && ! r.isEmpty() && ! pruebasLabelArea.isEmpty())
+                r = r.getUnion (getLocalArea (p, pruebasLabelArea));
+            return r;
+        }
         //  El IDIOMA y la CARCASA. El cero SI es un vacio a proposito: es la
         //  portada. Un `default` que atiende dos casos -uno correcto y uno
         //  olvidado- es como se escondio este paso la primera vez.
@@ -18715,30 +18726,38 @@ juce::Font MainComponent::tourBodyFont() const
     return ZatiColours::monoFont (h, false).withExtraKerningFactor (0.02f);
 }
 
+//  guia#aire: interlinea de 1.45 la letra, que el parrafo es lo unico que se lee entero.
+float MainComponent::tourInterlinea() const
+{
+    return std::round (tourBodyFont().getHeight() * 0.45f);
+}
+
+const juce::TextLayout& MainComponent::tourCuerpo (int ancho) const
+{
+    const auto f = tourBodyFont();
+    const auto texto = guiaTexto (ZatiTour::cuerpos[tourPaso]);
+    const auto clave = texto + "|" + juce::String (ancho) + "|" + juce::String (f.getHeight())
+                     + "|" + ZatiColours::ink.toString();
+    if (clave != tourCuerpoClave)
+    {
+        juce::AttributedString as;
+        as.setJustification (Lang::start (juce::Justification::top));
+        as.setWordWrap (juce::AttributedString::byWord);
+        as.setReadingDirection (Lang::isRightToLeft (Lang::current()) ? juce::AttributedString::rightToLeft
+                                                                       : juce::AttributedString::leftToRight);
+        as.setLineSpacing (tourInterlinea());
+        as.append (texto, f, ZatiColours::ink);
+        tourCuerpoL.createLayout (as, (float) juce::jmax (1, ancho));
+        tourCuerpoClave = clave;
+    }
+    return tourCuerpoL;
+}
+
+//  guia#aire: lo que mide el parrafo de ESTE paso, no el mas largo de los veinticuatro.
 int MainComponent::tourBodyHeight (int ancho) const
 {
     if (ancho <= 0) return 0;
-    const auto f = tourBodyFont();
-    const int lineaH = (int) std::ceil (f.getHeight() * 1.15f);
-    static_assert (kTourPasos == std::tuple_size<decltype (tourAnchoCuerpo)>::value,
-                   "un ancho guardado por paso");
-    if (tourAnchoIdioma != (int) Lang::current() || ! juce::approximatelyEqual (tourAnchoAlto, f.getHeight()))
-    {
-        tourAnchoAlto = f.getHeight();
-        for (int i = 0; i < kTourPasos; ++i)
-            tourAnchoCuerpo[(size_t) i] = juce::GlyphArrangement::getStringWidth (f, guiaTexto (ZatiTour::cuerpos[i]));
-        tourAnchoIdioma = (int) Lang::current();
-    }
-    int peor = 1;
-    for (int i = 0; i < kTourPasos; ++i)
-    {
-        //  Ancho del texto seguido dividido por el ancho de la caja, mas uno:
-        //  drawFittedText parte por palabras, asi que una linea nunca se llena
-        //  del todo y redondear por abajo deja la ultima fuera.
-        const double w = tourAnchoCuerpo[(size_t) i];
-        peor = juce::jmax (peor, (int) std::ceil (w / (double) ancho) + 1);
-    }
-    return peor * lineaH;
+    return (int) std::ceil (tourCuerpo (ancho).getHeight());
 }
 
 

@@ -1565,16 +1565,16 @@ namespace
         //  Enumerarlos por su nombre valia cuando la fila ERA la lista. Con
         //  ranuras y un menu detras, esa frase se queda vieja con cada efecto
         //  que entra: se dice lo que la fila ES y no cuantos hay dentro.
-        { "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
-          "y lo abre. Son del CANAL en el que este el pad que tengas elegido: "
-          "cambiar de pad cambia la fila.", "Seis ranuras y un menú de efectos para llenarlas. Una vacía pone «+» y lo abre. Son del CANAL en el que esté el pad que tengas elegido: cambiar de pad cambia la fila.",
-          "Six slots and a menu of effects to fill them. An empty one shows «+» "
-          "and opens it. They belong to the CHANNEL the pad you picked is in: "
+        { "Seis ranuras de efectos. Toca un «+» para elegir uno; tocar un efecto "
+          "puesto lo enciende o lo apaga. Son del CANAL del pad elegido: cambiar "
+          "de pad cambia la fila.", "Seis ranuras de efectos. Toca un «+» para elegir uno; tocar un efecto puesto lo enciende o lo apaga. Son del CANAL del pad elegido: cambiar de pad cambia la fila.",
+          "Six effect slots. Tap a «+» to pick one; tapping an effect that is in "
+          "switches it on or off. They belong to the CHANNEL of the chosen pad: "
           "changing pad changes the row.",
-          "六个插槽，配有效果菜单来填充。空槽显示「+」，点触即打开。"
-          "效果属于所选音垫所在的通道：切换音垫即切换该行。",
-          "ست خانات وقائمة مؤثرات لملئها. الخانة الفارغة تعرض «+» وتفتحها. هي ملك "
-          "للقناة التي فيها الباد المختار: تغيير الباد يغير الصف." },
+          "六个效果插槽。点「+」选择效果；点已放入的效果可开关它。"
+          "插槽属于所选音垫所在的通道：切换音垫即切换该行。",
+          "ست خانات للمؤثرات. المس «+» لتختار مؤثرًا؛ ولمس مؤثر موضوع يشغّله أو يطفئه. "
+          "هي ملك للقناة التي فيها الباد المختار: تغيير الباد يغير الصف." },
 
         { "Dieciseis pasos por dieciseis pads. Toca una casilla y ese pad suena "
           "ahi; arrastra el dedo para escribir varias seguidas.", "Dieciséis pasos por dieciséis pads. Toca una casilla y ese pad suena ahí; arrastra el dedo para escribir varias seguidas.",

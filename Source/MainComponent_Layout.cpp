@@ -8324,12 +8324,10 @@ void MainComponent::maquetaTour()
         //  paso 11 abre la mesa» de «la abre donde lo explica».
         UiAudit::tourMixPag  = (mixPage == mixPageCanales ? 1 : 0);
 
-        const int anchoDock = getWidth();
-        //  La tarjeta de texto sola: el titulo, los puntos y el parrafo mas
-        //  largo. La botonera ya no se suma aqui porque no va siempre dentro.
+        //  guia#aire: la tarjeta flota a md del filo; su alto es el de SU parrafo.
+        const int anchoTexto = safeArea().reduced (Metrics::md).getWidth() - 2 * Metrics::margenFichaX;
         tourLetraBase = false;
-        int altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
-                        + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX);
+        int altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::sm + tourBodyHeight (anchoTexto);
 
         //  EN LA MITAD CONTRARIA A LA DEL OBJETIVO. Es lo unico que garantiza
         //  que el texto no tape lo que se esta senalando sin tener que negociar
@@ -8341,7 +8339,8 @@ void MainComponent::maquetaTour()
         //  y pareciendo un fallo de pintado. Abajo es lo mismo con la barra de
         //  gestos. La cara ya se maqueta asi desde el principio; el muelle se
         //  escribio con getLocalBounds y se quedo fuera de esa regla.
-        auto ventana = safeArea();
+        //  guia#aire: abajo solo sm, que la fila de RACK de la mesa llega hasta ahi (tour.py).
+        auto ventana = safeArea().reduced (Metrics::md).withBottom (safeArea().getBottom() - Metrics::sm);
         const int centro = ventana.getCentreY();
         //  Y ACOTADO A LA MITAD LARGA DE LA VENTANA. El alto sale de medir el
         //  parrafo mas largo, que es lo correcto, pero medir no es lo mismo que
@@ -8357,18 +8356,18 @@ void MainComponent::maquetaTour()
         //  ese sitio pasaba a ser EMPEZAR- (feria, J3). Una tapa que se pulsa
         //  veinticuatro veces seguidas tiene que estar veinticuatro veces en
         //  el mismo sitio, y abajo es donde llega el pulgar.
-        tourBotonera = ventana.removeFromBottom (Metrics::hit + 2 * Metrics::margenFichaY);
+        tourBotonera = ventana.removeFromBottom (Metrics::hit + 2 * Metrics::sm);
         const bool objetivoArriba = tourFoco.isEmpty() || tourFoco.getCentreY() < centro;
         //  accesibilidad#26: si la letra grande no cabe en el muelle, el parrafo vuelve a la normal.
         if (altoTarjeta > tope - (objetivoArriba ? tourBotonera.getHeight() : 0) && ZatiColours::escalaTexto.load() > 1.0f)
         {
             tourLetraBase = true;
-            altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::xs
-                        + tourBodyHeight (anchoDock - 2 * Metrics::margenFichaX);
+            altoTarjeta = Ficha::marco + Metrics::bandaTitulo + Metrics::sm + tourBodyHeight (anchoTexto);
         }
         if (objetivoArriba)
-            //  Tarjeta y botonera pegadas: un solo panel, el de siempre.
-            tourDock = ventana.removeFromBottom (juce::jmin (altoTarjeta, tope - tourBotonera.getHeight()))
+            //  Tarjeta y botonera pegadas: un solo panel; el aire de abajo lo pone la botonera.
+            tourDock = ventana.removeFromBottom (juce::jmin (altoTarjeta - Metrics::sm,
+                                                             tope - tourBotonera.getHeight()))
                               .getUnion (tourBotonera);
         else
             tourDock = ventana.removeFromTop (juce::jmin (altoTarjeta, tope));
@@ -8386,18 +8385,78 @@ void MainComponent::maquetaTour()
         //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
         //  el texto: sin leerlo el foco no explica nada.
         {
-            auto row = tourBotonera.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
+            auto row = tourBotonera.reduced (Metrics::margenFichaX, Metrics::sm);
             juce::TextButton* tb[3] = { &tourSkipBtn, &tourBackBtn, &tourNextBtn };
             layoutModuleBar (row, tb, 0, 3);
         }
         auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
-        inner.removeFromTop (Metrics::bandaTitulo + Metrics::xs);      // pintado: titulo y puntos
-        if (objetivoArriba)
+        inner.removeFromTop (Metrics::bandaTitulo + Metrics::sm);      // pintado: titulo y puntos
+        tourBodyArea = inner.withHeight (tourBodyHeight (anchoTexto)).getIntersection (tourDock);
+        //  guia#anillo: el hueco con xs de aire alrededor de lo que senala, y nunca debajo de la tarjeta.
+        if (! tourFoco.isEmpty())
         {
-            inner.removeFromBottom (Metrics::hit);                      // la botonera, ya puesta
-            inner.removeFromBottom (Metrics::sm);
+            auto libre = getLocalBounds();
+            for (auto r : { tourDock, tourBotonera })
+                if (! r.isEmpty())
+                {
+                    if (r.getCentreY() > tourFoco.getCentreY()) libre.setBottom (juce::jmin (libre.getBottom(), r.getY() - Metrics::xs));
+                    else                                         libre.setTop (juce::jmax (libre.getY(), r.getBottom() + Metrics::xs));
+                }
+            tourFoco = tourFoco.expanded (Metrics::xs).getIntersection (libre);
+            //  guia#corte: el filo no parte una tapa; la que cae casi entera dentro entra, la otra sale.
+            //  Lo que tapa una ficha de capa mayor no se ve, asi que no cuenta.
+            std::vector<std::pair<juce::Rectangle<int>, int>> fichas;
+            for (auto* c : getChildren())
+                if (auto* f = dynamic_cast<Sheet*> (c); f != nullptr && f != &tourSheet && f->isVisible())
+                    fichas.push_back ({ f->sheetBounds + f->getPosition(), (int) f->getProperties()["capa"] });
+            std::vector<juce::Rectangle<int>> tapas;
+            std::function<void (juce::Component&, int)> junta = [&] (juce::Component& c, int capa)
+            {
+                for (auto* h : c.getChildren())
+                {
+                    if (! h->isVisible() || h == &tourSheet) continue;
+                    const int k = h->getProperties().contains ("capa") ? (int) h->getProperties()["capa"] : capa;
+                    if (dynamic_cast<juce::Button*> (h) != nullptr || dynamic_cast<juce::Slider*> (h) != nullptr)
+                    {
+                        const auto r = getLocalArea (h, h->getLocalBounds());
+                        if (h->isEnabled() && std::none_of (fichas.begin(), fichas.end(), [&] (const auto& f)
+                                { return f.second > k && f.first.contains (r.getCentre()); }))
+                            tapas.push_back (r);
+                    }
+                    else
+                        junta (*h, k);
+                }
+            };
+            junta (*this, 0);
+            for (int vuelta = 0; vuelta < 8 && ! tourFoco.isEmpty(); ++vuelta)
+            {
+                bool cambio = false;
+                for (const auto& t : tapas)
+                {
+                    if (t.isEmpty() || ! t.intersects (tourFoco) || tourFoco.contains (t) || t.contains (tourFoco)) continue;
+                    const auto dentro = t.getIntersection (tourFoco);
+                    const auto conAire = t.expanded (Metrics::xs).getIntersection (getLocalBounds());
+                    if (vuelta < 4 && libre.contains (conAire)
+                        && (juce::int64) dentro.getWidth() * dentro.getHeight() * 2 > (juce::int64) t.getWidth() * t.getHeight())
+                        tourFoco = tourFoco.getUnion (conAire);
+                    else if (t.getY() < tourFoco.getY())               tourFoco.setTop (t.getBottom());
+                    else if (t.getBottom() > tourFoco.getBottom())     tourFoco.setBottom (t.getY());
+                    else if (t.getX() < tourFoco.getX())               tourFoco.setLeft (t.getRight());
+                    else                                               tourFoco.setRight (t.getX());
+                    cambio = true;
+                    if (tourFoco.isEmpty()) break;
+                }
+                if (! cambio) break;
+            }
+            if (tourFoco.getWidth() <= 0 || tourFoco.getHeight() <= 0) tourFoco = {};
+            UiAudit::tourFocoX = tourFoco.getX();  UiAudit::tourFocoY = tourFoco.getY();
+            UiAudit::tourFocoW = tourFoco.getWidth(); UiAudit::tourFocoH = tourFoco.getHeight();
         }
-        tourBodyArea = inner;
+        UiAudit::tourDockR   = tourDock;
+        UiAudit::tourBarR    = tourBotonera;
+        UiAudit::tourBtnR    = tourNextBtn.getBounds();
+        UiAudit::tourTituloR = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY)
+                                       .withHeight (Metrics::bandaTitulo);
         //  Y DONDE QUEDO SIGUIENTE, que es lo que esta regla mide: el mismo
         //  rectangulo en los veinticuatro pasos. Y si al pulsarla se cierra
         //  la guia, que solo puede pasar en el ultimo.

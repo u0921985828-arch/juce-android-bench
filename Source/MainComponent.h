@@ -4052,15 +4052,11 @@ private:
     //  Lo deciden la pulsacion y el rotulo desde esta misma linea.
     bool tourSigCierra() const { return tourPaso >= tourHasta; }
     int  tourBodyHeight (int ancho) const;
-    //  EL ANCHO DE CADA CUERPO, MEDIDO UNA VEZ POR IDIOMA. tourBodyHeight
-    //  corre dentro de resized(), que corre en cada toque, y media los
-    //  veinticuatro cuerpos cada vez: en arabe, con la fuente pasando por el
-    //  respaldo de fontconfig, era lo que mas pesaba de resized, y atasco.py
-    //  contaba 295 apretadas sobre 250 ms contra un tope de 200 y DESHACER a
-    //  1117 ms contra el de 1000. El texto solo cambia con el idioma.
-    mutable std::array<double, 24> tourAnchoCuerpo {};
-    mutable int tourAnchoIdioma = -1;
-    mutable float tourAnchoAlto = 0.0f;
+    //  guia#aire: el parrafo del paso, maquetado una vez por paso, idioma, ancho y letra (atasco.py).
+    const juce::TextLayout& tourCuerpo (int ancho) const;
+    mutable juce::TextLayout tourCuerpoL;
+    mutable juce::String tourCuerpoClave;
+    float tourInterlinea() const;
     bool tourLetraBase = false;   // accesibilidad#26: la letra grande no cabe en el muelle
     //  LA LETRA DEL PARRAFO DEL TOUR, en un solo sitio. La escribian dos -quien
     //  mide el alto del muelle y quien lo pinta- y tienen que decir lo MISMO o

@@ -3050,6 +3050,7 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     //  treinta veces por segundo mientras el transporte rueda.
     auto todo = tourSheet.getLocalBounds();
     const auto foco = tourFoco;
+    UiAudit::tourChapaR = {};
     g.setColour (juce::Colours::black.withAlpha (0.72f));
     if (foco.isEmpty())
     {
@@ -3071,36 +3072,7 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
         g.drawRoundedRectangle (foco.toFloat().expanded (2.0f), Metrics::radio, Metrics::filoFoco);
     }
 
-    //  EL NUMERO DEL PASO, junto al control y no dentro: dentro taparia
-    //  justamente lo que se senala. Se pone en el borde que tenga sitio, y si
-    //  no hay objetivo no se pinta - un numero suelto en mitad de la pantalla
-    //  no senala nada.
-    if (! foco.isEmpty())
-    {
-        const int d = 26;
-        juce::Rectangle<int> chapa (d, d);
-        //  Arriba, abajo, a la izquierda o a la derecha; NUNCA dentro, que es
-        //  lo que hacia el ultimo recurso y tapaba el control (feria, J3). Si
-        //  no cabe en ningun lado, en la esquina del muelle.
-        const auto libre = [&] (juce::Rectangle<int> c)
-        { return todo.contains (c) && ! c.intersects (tourDock) && ! c.intersects (tourBotonera); };
-        const juce::Rectangle<int> sitios[] = {
-            chapa.withPosition (foco.getX() - 2, foco.getY() - d - 6),
-            chapa.withPosition (foco.getX() - 2, foco.getBottom() + 6),
-            chapa.withPosition (foco.getX() - d - 6, foco.getY()),
-            chapa.withPosition (foco.getRight() + 6, foco.getY()) };
-        bool puesta = false;
-        for (auto& c : sitios)
-            if (libre (c)) { chapa = c; puesta = true; break; }
-        if (! puesta)
-            chapa.setPosition (tourDock.getRight() - d - 6, tourDock.getY() + 6);
-
-        g.setColour (ZatiColours::accent);
-        g.fillEllipse (chapa.toFloat());
-        g.setColour (ZatiColours::textOn (ZatiColours::accent));
-        g.setFont (ZatiColours::monoFont (12.0f, true));
-        g.drawText (juce::String (tourPaso + 1), chapa, juce::Justification::centred);
-    }
+    //  guia#chapa: el numero del paso ya va en la cifra del titulo; la chapa pisaba controles.
 
     //  LA BOTONERA, cuando el muelle se fue arriba y ella se quedo abajo: su
     //  propio panel, del mismo papel que el muelle. Cuando el muelle va abajo
@@ -3108,9 +3080,9 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     if (! tourBotonera.isEmpty() && ! tourDock.contains (tourBotonera))
     {
         g.setColour (ZatiColours::chassisTop);
-        g.fillRect (tourBotonera);
+        g.fillRoundedRectangle (tourBotonera.toFloat(), Metrics::radio);
         g.setColour (ZatiColours::ink.withAlpha (0.85f));
-        g.drawRect (tourBotonera.toFloat(), Metrics::filo);
+        g.drawRoundedRectangle (tourBotonera.toFloat().reduced (0.5f), Metrics::radio, Metrics::filo);
     }
 
     //  EL MUELLE. Su sitio lo decidio resized(), en la mitad contraria a la del
@@ -3119,10 +3091,10 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
     auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
 
     g.setColour (ZatiColours::chassisTop);
-    g.fillRect (tourDock);
+    g.fillRoundedRectangle (tourDock.toFloat(), Metrics::radio);
     g.setColour (ZatiColours::ink.withAlpha (0.85f));
     //  El muelle del tour SEPARA -es un panel sobre el chasis- asi que `filo`.
-    g.drawRect (tourDock.toFloat(), Metrics::filo);
+    g.drawRoundedRectangle (tourDock.toFloat().reduced (0.5f), Metrics::radio, Metrics::filo);
 
     auto titleRow = inner.removeFromTop (Metrics::bandaTitulo);
     g.setColour (ZatiColours::ink.withAlpha (0.9f));
@@ -3167,17 +3139,19 @@ void MainComponent::paintTourSheetContent (juce::Graphics& g)
         }
     }
 
-    inner.removeFromTop (Metrics::xs);
     if (tourBodyArea.isEmpty()) return;
-    g.setColour (ZatiColours::ink.withAlpha (0.8f));
-    g.setFont (tourBodyFont());
-    //  Y sin encoger: el ultimo parametro de drawFittedText es cuanto puede
-    //  apretar la letra antes que partir, y aqui vale uno a proposito. Un
-    //  parrafo que se estrecha para caber es justo lo contrario de lo que este
-    //  cambio busca - el muelle mide lo que el texto necesita, asi que caber es
-    //  su problema y no el de la letra.
-    g.drawFittedText (guiaTexto (ZatiTour::cuerpos[tourPaso]), tourBodyArea,
-                      Lang::start (juce::Justification::top), 8, 1.0f);
+    //  guia#letra: tinta entera, interlinea 1.45 y el sentido de lectura del idioma.
+    const auto& cuerpo = tourCuerpo (tourBodyArea.getWidth());
+    cuerpo.draw (g, tourBodyArea.toFloat());
+    juce::Rectangle<float> caja;
+    for (int i = 0; i < cuerpo.getNumLines(); ++i)
+        caja = i == 0 ? cuerpo.getLine (i).getLineBounds() : caja.getUnion (cuerpo.getLine (i).getLineBounds());
+    UiAudit::tourTextoR = (caja + tourBodyArea.getPosition().toFloat()).getSmallestIntegerContainer();
+    UiAudit::tourLetra  = tourBodyFont().getHeight();
+    UiAudit::tourLinea  = cuerpo.getNumLines() > 1 ? cuerpo.getLine (1).lineOrigin.y - cuerpo.getLine (0).lineOrigin.y
+                                                   : tourBodyFont().getHeight() + tourInterlinea();
+    UiAudit::tourTinta  = ZatiColours::ink.toDisplayString (false);
+    UiAudit::tourFondo  = ZatiColours::chassisTop.toDisplayString (false);
 }
 
 //  LA FICHA MIDI. Dos verbos, la convencion escrita y lo ultimo que paso.

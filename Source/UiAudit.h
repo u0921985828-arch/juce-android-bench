@@ -943,6 +943,15 @@ namespace UiAudit
     //  dice QUE pagina quedo, asi que caza tambien el caso contrario, que
     //  otro paso deje la mesa en CANALES, sin escribir una segunda regla.
     inline int tourMixPag = 0;
+    //  guia#aire: la tarjeta, su botonera, SIGUIENTE, el titulo, la tinta del parrafo y la chapa, para Tests/guia.py.
+    inline juce::Rectangle<int> tourDockR, tourBarR, tourBtnR, tourTituloR, tourTextoR, tourChapaR;
+    inline float tourLetra = 0.0f, tourLinea = 0.0f;
+    inline juce::String tourTinta, tourFondo;
+    inline std::string rectJson (juce::Rectangle<int> r)
+    {
+        return "[" + std::to_string (r.getX()) + "," + std::to_string (r.getY()) + ","
+             + std::to_string (r.getWidth()) + "," + std::to_string (r.getHeight()) + "]";
+    }
 
     inline int cabezalPiano = 0;
     //  Y cuantas veces se ha ALIMENTADO la pagina del piano. Son dos cifras y
@@ -1758,7 +1767,12 @@ namespace UiAudit
                       << ",\"tercera\":\"" << tourTercera << "\""
                       << ",\"puesto\":" << tourPuesto
                       << ",\"sigCierra\":" << tourSigCierra
-                      << ",\"mixpag\":" << tourMixPag << "}" << std::endl;
+                      << ",\"mixpag\":" << tourMixPag
+                      << ",\"dock\":" << rectJson (tourDockR) << ",\"bar\":" << rectJson (tourBarR)
+                      << ",\"btn\":" << rectJson (tourBtnR) << ",\"titulo\":" << rectJson (tourTituloR)
+                      << ",\"texto\":" << rectJson (tourTextoR) << ",\"chapa\":" << rectJson (tourChapaR)
+                      << ",\"letra\":" << juce::String (tourLetra, 2) << ",\"linea\":" << juce::String (tourLinea, 2)
+                      << ",\"tinta\":\"" << tourTinta << "\",\"fondo\":\"" << tourFondo << "\"}" << std::endl;
         walk (root, root, "root", 0);
 
         if (padSource != nullptr)

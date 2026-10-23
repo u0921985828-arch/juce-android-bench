@@ -1308,9 +1308,9 @@ namespace ZatiTour
           "PLAY pone en marcha el patron. Con esto ya se toca: EMPEZAR cierra "
           "esto y VER MAS sigue con el secuenciador, los efectos y lo demas.",
 
-          "Seis ranuras y un menu de efectos para llenarlas. Una vacia pone «+» "
-          "y lo abre. Son del CANAL en el que este el pad que tengas elegido: "
-          "cambiar de pad cambia la fila.",
+          "Seis ranuras de efectos. Toca un «+» para elegir uno; tocar un efecto "
+          "puesto lo enciende o lo apaga. Son del CANAL del pad elegido: cambiar "
+          "de pad cambia la fila.",
 
           "Los tres de arriba mueven el efecto que tengas abierto, y debajo pone "
           "lo que hace cada uno. Toca el nombre del efecto y pasan a mover el pad "
