@@ -25,8 +25,6 @@ static_assert (PianoRoll::kMaxNotas == AudioEngine::kExtraNotes + 1,
 static_assert (Iconos::kFamiliasConDibujo == Sintes::kFamilias,
                "cada familia de instrumento tiene que tener su dibujo");
 
-//  Los divisores del ENGANCHE, en el orden de sus chips: cero es libre.
-static constexpr int kDivSync[] = { 0, 1, 2, 4, 8, 16 };
 
 //  LA CARA GUARDADA EN UNA IMAGEN, por el telefono.
 //
@@ -3829,17 +3827,17 @@ void MainComponent::cableaMandos()
         }
 
         //  EL ENGANCHE, que existia desde la tanda del reloj y solo se
-        //  alcanzaba desde un preset. Cinco divisiones y LIBRE, en chips: no
-        //  es un giro, son seis posiciones.
-        for (int i = 0; i < (int) std::size (kDivSync); ++i)
+        //  alcanzaba desde un preset. Seis figuras y LIBRE, en chips: no
+        //  es un giro, son siete posiciones.
+        //  efectos#tempo: nombre y `div` salen de la tabla del motor; aqui "1/16" escribia un compas entero.
+        for (const auto& fg : AudioEngine::kFigurasSync)
         {
-            auto* b = new Boton (kDivSync[i] == 0 ? T ("LIBRE")
-                                                             : Lang::ltr ("1/" + juce::String (kDivSync[i])));
+            auto* b = new Boton (fg.div <= 0.5f ? T ("LIBRE") : Lang::ltr (fg.nombre));
             styleButton (*b, kStepOff);
             litAccent (*b);
-            b->onClick = [this, d = kDivSync[i]]
+            b->onClick = [this, d = fg.div]
             {
-                escribeFxParam (focusedFx, 3, (float) d);
+                escribeFxParam (focusedFx, 3, d);
                 refrescaFichaMandos();
             };
             mandosSheet.donde().addChildComponent (b);
@@ -8258,7 +8256,7 @@ void MainComponent::refrescaFichaMandos()
     for (int i = 0; i < mandosSyncBtns.size(); ++i)
     {
         mandosSyncBtns[i]->setVisible (sync);
-        mandosSyncBtns[i]->setToggleState (sync && kDivSync[i] == div, juce::dontSendNotification);
+        mandosSyncBtns[i]->setToggleState (sync && juce::roundToInt (AudioEngine::kFigurasSync[i].div) == div, juce::dontSendNotification);
     }
     mandosPresetsBtn.setVisible (platoModo == ModoPlato::fx);
     resized();

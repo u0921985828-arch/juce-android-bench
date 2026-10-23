@@ -615,17 +615,15 @@ if sangra (DEST, [int (h, 16) for h in dIco.get ("marca_cuerpo", ["0"])]):
         mide ("la letra esta centrada a lo alto", abs (arr - aba) <= TOL,
               "arriba %.0f  abajo %.0f  (difieren %.0f px)" % (arr, aba, abs (arr - aba)))
 
-        #  ico4: la Z lleva perfil oscuro y la tapa un marco interior en relieve.
+        #  ico4: se volvio al diseno anterior a peticion; la Z va directa sobre el cuerpo, sin perfil ni marco.
         cuerpoP = suyos[0]
         yBarra = min (ys) + int (2 * u)
         fuera = v (q[yBarra][max (0, min (xs) - int (0.5 * u))])
-        mide ("la Z lleva perfil", dE (fuera, cuerpoP) >= MIN_WELL and lum (fuera) < lum (cuerpoP),
-              "dE %.1f contra el cuerpo (liston %.1f)" % (dE (fuera, cuerpoP), MIN_WELL))
         y0 = next ((y for y in range (int (tapaT), min (ys)) if dE (v (q[y][512]), cuerpoP) < 2.0), min (ys))
         y1 = min (ys) - int (1.5 * u)
         relieve = max ([dE (v (q[y][512]), cuerpoP) for y in range (y0, max (y0 + 1, y1))])
-        mide ("la tapa lleva marco interior", relieve >= MIN_WELL,
-              "dE %.1f entre la banda y la letra (liston %.1f)" % (relieve, MIN_WELL))
+        mide ("la Z va directa sobre el cuerpo", dE (fuera, cuerpoP) < 2.0 and relieve < 2.0,
+              "perfil dE %.1f, marco dE %.1f (liston 2.0)" % (dE (fuera, cuerpoP), relieve))
 
 # ============================================================================
 #  EL ICONO DEL SPLASH, contra la zona segura de Android 12.

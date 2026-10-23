@@ -647,7 +647,8 @@ namespace FxVisor
                     //  La transferencia, con el MISMO tanh que suena.
                     const auto  dr = AudioEngine::driveDe (p0);
                     const float x  = -1.0f + 2.0f * t;
-                    pon (i, 0.5f + 0.5f * AudioEngine::saturaDe (x, dr));
+                    //  efectos#nivel: el motor sale a nivel (pico 0.11 a tope); se dibuja la forma escalada a su pico.
+                    pon (i, 0.5f + 0.5f * AudioEngine::saturaDe (x, dr) / AudioEngine::saturaDe (1.0f, dr));
                     break;
                 }
 

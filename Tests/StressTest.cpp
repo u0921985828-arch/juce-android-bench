@@ -6647,7 +6647,8 @@ int main()
             struct Caso { int fx; const char* nombre; float p0, p1; bool enDb; double tope; float hz; };
             const Caso casos[] = {
                 //  DRV lleva su eje en amplitud -1..+1 y no en dB.
-                { AudioEngine::kFxDrv, "DRV: dibujo contra el saturador", 0.55f,  8000.0f, false, 0.08,  220.0f },
+                //  efectos#nivel: ahora a escala de su pico; el tono y el 2x dejan 9-12 % de Gibbs en el seno saturado, que el dibujo no lleva.
+                { AudioEngine::kFxDrv, "DRV: dibujo contra el saturador", 0.55f,  8000.0f, false, 0.15,  220.0f },
                 { AudioEngine::kFxCmp, "CMP: dibujo contra el compresor", -18.0f, 4.0f,    true,  2.0,   220.0f },
                 { AudioEngine::kFxGte, "GTE: dibujo contra la puerta",    -30.0f, 120.0f,  true,  2.0,   220.0f },
                 { AudioEngine::kFxDss, "DSS: dibujo contra el de-esser",  6000.0f, 0.7f,   true,  2.5, 14000.0f },
@@ -6700,7 +6701,8 @@ int main()
                     }
                     else
                     {
-                        medido   = sale;
+                        //  efectos#nivel: DRV sale a nivel y el visor ensena la FORMA, escalada a su pico; se compara igual.
+                        medido   = sale / AudioEngine::saturaDe (1.0f, AudioEngine::driveDe (c.p0));
                         dibujado = curva[(size_t) i] * 2.0f - 1.0f;
                     }
 

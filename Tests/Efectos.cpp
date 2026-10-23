@@ -586,6 +586,25 @@ int main (int argc, char** argv)
                     falla ("%s al tempo: a %.0f bpm la figura 1/%.0f cae a %.1f ms y no a %.1f", kMandos[f].nombre, bpm, 16.0 / div, mide, espera);
             }
     }
+    if (solo < 0 || solo == AudioEngine::kFxDly)
+    {
+        //  efectos#tempo: cada chip suena a la figura que dice; si no cabe en el segundo de linea, a su mitad.
+        std::printf ("\nCHIPS  figura  espera ms  mide ms\n");
+        const double bpm = 150.0;
+        for (const auto& fg : AudioEngine::kFigurasSync)
+        {
+            if (fg.div <= 0.5f) continue;
+            const juce::String n (fg.nombre);
+            double negras = 4.0 / n.fromFirstOccurrenceOf ("/", false, false).getDoubleValue();
+            if (n.endsWithChar ('.')) negras *= 1.5;
+            double espera = 60000.0 / bpm * negras;
+            while (espera > 1000.0) espera *= 0.5;
+            const double mide = primerEco (AudioEngine::kFxDly, bpm, fg.div);
+            std::printf ("       %-6s %9.1f %8.1f\n", fg.nombre, espera, mide);
+            if (std::abs (mide - espera) > 1.0)
+                falla ("el chip %s del enganche suena a %.1f ms y no a %.1f", fg.nombre, mide, espera);
+        }
+    }
     if (solo < 0 || solo == AudioEngine::kFxRev)
     {
         std::printf ("\nREV  tamano  densidad  picos dB\n");

@@ -2117,8 +2117,8 @@ void MainComponent::maquetaMandos()
         else mandosPresetsBtn.setBounds ({});
         if (sync)
         {
-            juce::TextButton* chips[6];
-            const int nc = juce::jmin (6, mandosSyncBtns.size());
+            juce::TextButton* chips[(int) std::size (AudioEngine::kFigurasSync)];
+            const int nc = juce::jmin ((int) std::size (chips), mandosSyncBtns.size());
             for (int i = 0; i < nc; ++i) chips[i] = mandosSyncBtns[i];
             layoutModuleBar (inner.removeFromBottom (Metrics::btn), chips, 0, nc);
             inner.removeFromBottom (Metrics::sm);

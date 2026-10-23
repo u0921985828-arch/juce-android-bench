@@ -139,6 +139,9 @@ public:
     //  compas entero. El tope vive aqui y no en la cara porque lo que decide
     //  que significa el numero es `pasoMod`, que es del motor.
     static constexpr int kEngancheMax   = 16;
+    //  efectos#tempo: los chips del enganche, con el nombre que ensena la cara y el `div` que escriben.
+    struct FiguraSync { float div; const char* nombre; };
+    static constexpr FiguraSync kFigurasSync[] = { { 0, "LIBRE" }, { 16, "1/1" }, { 8, "1/2" }, { 4, "1/4" }, { 3, "1/8." }, { 2, "1/8" }, { 1, "1/16" } };
     //  Que indice es cada uno de los cuatro de dinamica, escrito UNA vez: los
     //  usa el bucle de la etapa, `setFxParam` y la cara para saber de cual
     //  leer la reduccion.
