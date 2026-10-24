@@ -1649,9 +1649,10 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
             //  was while the feel changes.
             const float sw = swing.load (std::memory_order_relaxed);
             const int u = juce::jmax (1, (int) std::lround (beatsPerStep * kUnidadesPorPulso));
-            const int lateBy = ((stepInPattern * u) % 24 == 12)   // la segunda semicorchea, mire la rejilla que mire (secuenciador#3)
-                                 ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep * 12.0 / (double) u)   // 75 % es 75 % del par (audio-dsp#5)
-                                 : 0;
+            const bool fina = 12 % u == 0;   // swing#rejilla: en 1/8 y tresillos, el paso impar como antes
+            const bool tarde = fina ? (stepInPattern * u) % 24 == 12 : (stepInPattern & 1) != 0;   // secuenciador#3
+            const int lateBy = tarde ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep * (fina ? 12.0 / (double) u : 1.0))   // audio-dsp#5
+                                     : 0;
 
             for (int p = 0; p < kNumPads; ++p)
             {

@@ -2629,6 +2629,8 @@ namespace
         return t;
     }
 
+    juce::CriticalSection& candado() { static juce::CriticalSection c; return c; }   // lang#hilo: el cargador traduce en su hilo
+
     Lang::Id currentId = Lang::es;
 
     juce::File preferenceFile()
@@ -2669,6 +2671,7 @@ void Lang::set (Id newLanguage)
 {
     currentId = (newLanguage >= 0 && newLanguage < numLanguages) ? newLanguage : es;
 
+    const juce::ScopedLock sl (candado());
     auto& t = table();
     t.clear();
 
@@ -2744,6 +2747,7 @@ juce::String Lang::ltr (const juce::String& latinRun)
 
 juce::String T (const juce::String& key)
 {
+    const juce::ScopedLock sl (candado());
     const auto& t = table();
 
     if (t.contains (key))

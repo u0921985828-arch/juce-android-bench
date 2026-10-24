@@ -195,7 +195,7 @@ namespace MidiArchivo
             //  su noteOff -que un fichero cortado tiene- duraria hasta el final.
             double dur = ppq * (double) juce::jmax (1, u) / 48.0;   // un paso, en la unidad del fichero
             if (auto* off = ev->noteOffObject)
-                dur = juce::jmax (1.0, off->message.getTimeStamp() - ev->message.getTimeStamp());
+                dur = juce::jmax (smpte ? 1.0e-3 : 1.0, off->message.getTimeStamp() - ev->message.getTimeStamp());   // midi#smpte: en segundos
 
             Nota n;
             n.paso  = paso;

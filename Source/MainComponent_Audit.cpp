@@ -9604,6 +9604,7 @@ void MainComponent::auditMidi()
         const auto aB = aviso (basura), aV = aviso (vacio), aT = aviso (tarde);
         closeAllSheets();
         std::cout << "{\"midi\":\"smpte\",\"paso_de_la_negra\":" << (leidas.size() > 1 ? leidas[1].paso : -1)
+                  << ",\"largo_corta\":" << (leidas.empty() ? -1 : leidas[0].largo)
                   << ",\"basura\":\"" << aB << "\",\"vacio\":\"" << aV << "\",\"tarde\":\"" << aT << "\"}" << std::endl;
     }
 

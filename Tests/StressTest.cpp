@@ -10062,7 +10062,7 @@ int main()
 
     //  EL SWING AL MAXIMO deja el golpe impar al 75 % del par (audio-dsp#5),
     //  mire la rejilla que mire (secuenciador#3).
-    for (int u : { 12, 6, 4 })
+    for (int u : { 12, 6, 4, 24, 8 })   // swing#rejilla: 1/8 y 1/16T tambien
     {
         const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
         e.prepareToPlay (48000.0, 64); e.setPolyphony (8, 2); enCanalCero (e);
@@ -10072,7 +10072,7 @@ int main()
         sb->sourceSampleRate = 48000.0;
         e.publishSample (0, sb); e.setPadGain (0, 1.0f);
         e.setBpm (120.0); e.setPasoUnidades (u); e.setPatternLength (0, 64); e.setEditPattern (0);
-        e.setStep (0, 0, 0, true); e.setStep (0, 12 / u, 0, true);
+        e.setStep (0, 0, 0, true); e.setStep (0, juce::jmax (1, 12 / u), 0, true);
         e.setSwing (0.75f);
         juce::AudioBuffer<float> b (2, 64);
         b.clear(); e.renderNextBlock (b, 0, 64);
@@ -10090,9 +10090,9 @@ int main()
             }
         }
         e.setPlaying (false);
-        const double paso = 48000.0 * 60.0 / 120.0 / 4.0;
+        const double paso = 48000.0 * 60.0 / 120.0 * (12 % u == 0 ? 12 : u) / 48.0;
         const double par = golpes.size() == 2 ? (double) (golpes[1] - golpes[0]) / (2.0 * paso) : 0.0;
-        const juce::String nom = "swing maximo es 75 % en " + juce::String (u == 12 ? "1/16" : u == 6 ? "1/32" : "1/32T");
+        const juce::String nom = "swing maximo es 75 % en " + juce::String (u == 12 ? "1/16" : u == 6 ? "1/32" : u == 4 ? "1/32T" : u == 24 ? "1/8" : "1/16T");
         std::printf ("%-34s el impar cae al %.1f %% del par (75), %d golpes   %s\n", nom.toRawUTF8(),
                      par * 100.0, (int) golpes.size(), std::abs (par * 100.0 - 75.0) < 1.0 ? "OK" : zatiFalla());
     }

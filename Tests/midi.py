@@ -121,6 +121,9 @@ def main():
                % (sm["paso_de_la_negra"], sm["basura"], sm["vacio"], sm["tarde"]))
         if sm["paso_de_la_negra"] != 4:
             malas.append ("con division SMPTE la negra cae en el paso %d y no en el 4" % sm["paso_de_la_negra"])
+        #  midi#smpte: una nota de 100 ms dura menos de dos pasos, no un segundo.
+        if not 0 <= sm.get ("largo_corta", -1) < 8:
+            malas.append ("con division SMPTE una nota de 100 ms vuelve con largo %s (un segundo son 32)" % sm.get ("largo_corta"))
         if len ({sm["basura"], sm["vacio"], sm["tarde"]}) != 3:
             malas.append ("un fichero roto, uno sin notas y uno con notas que no caben reciben el mismo aviso")
 

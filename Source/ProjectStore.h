@@ -208,7 +208,15 @@ public:
         for (const auto& f : ficherosParaZip (destino))
         {
             const bool audio = f.hasFileExtension ("wav;ogg;flac;mp3;aif;aiff");
-            zip.addFile (f, audio ? 0 : 6, f.getRelativePathFrom (raiz).replaceCharacter ('\\', '/'));
+            const auto nombre = f.getRelativePathFrom (raiz).replaceCharacter ('\\', '/');
+            if (nombre.startsWith (".sesion/"))   // zip#vivo: la sesion se abre ya; si el autoguardado la cambia, va la de este momento
+            {
+                auto in = std::make_unique<juce::FileInputStream> (f);
+                if (! in->openedOk()) continue;
+                zip.addEntry (std::move (in), audio ? 0 : 6, nombre, f.getLastModificationTime());
+            }
+            else if (f.existsAsFile()) zip.addFile (f, audio ? 0 : 6, nombre);
+            else continue;
             ++n;
         }
         return zip.writeToStream (out, nullptr) ? n : -1;
@@ -329,6 +337,24 @@ public:
     //  fuera, esta misma pregunta es la que decide si GUARDAR encuentra donde
     //  escribir: caer al defecto es peor que fallar solo si nadie lo dice, asi
     //  que el que llama se entera por `elegidaVale`.
+    //  carpeta#sonda: la misma ruta se prueba como mucho una vez cada 2 s.
+    static bool sondaReciente (Carpeta q, const juce::File& dir)
+    {
+        static juce::SpinLock sl;
+        static juce::File ultima[4];
+        static juce::uint32 cuando[4] {};
+        const auto i = (size_t) q;
+        const auto ahora = juce::Time::getMillisecondCounter();
+        {
+            const juce::SpinLock::ScopedLockType l (sl);
+            if (dir == ultima[i] && ahora - cuando[i] < 2000) return true;
+        }
+        if (! canReallyWriteInto (dir)) return false;
+        const juce::SpinLock::ScopedLockType l (sl);
+        ultima[i] = dir; cuando[i] = ahora;
+        return true;
+    }
+
     static juce::File carpeta (Carpeta q)
     {
         const auto f = prefDe (q);
@@ -338,7 +364,7 @@ public:
             if (ruta.isNotEmpty())
             {
                 juce::File elegida (ruta);
-                if (canReallyWriteInto (elegida))
+                if (sondaReciente (q, elegida))
                     return elegida;
             }
         }
