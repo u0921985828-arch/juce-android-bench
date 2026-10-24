@@ -617,6 +617,33 @@ int main (int argc, char** argv)
             if (pi > kPicosMax)    falla ("REV a %.2f: la cola tiene picos de %.1f dB (tope %.1f)", tam, pi, kPicosMax);
         }
     }
+    if (solo < 0 || solo == AudioEngine::kFxExc)
+    {
+        //  exc#armonicos: un agudo flojo a fuerza 1 gana armonicos, no +6 dB en su propia frecuencia.
+        auto banda = [] (const std::vector<float>& y, double hz)
+        {
+            double re = 0.0, im = 0.0;
+            for (size_t i = 24000; i < y.size(); ++i)
+            {
+                const double w = 2.0 * juce::MathConstants<double>::pi * hz * (double) i / kSr;
+                re += y[i] * std::cos (w); im += y[i] * std::sin (w);
+            }
+            return std::sqrt (re * re + im * im) * 2.0 / (double) (y.size() - 24000);
+        };
+        std::vector<float> y;
+        auto e = monta (-1, seno (6000.0, 0.03f), 0.0f);
+        e->postNoteOn (0, 1.0f); corre (*e, 48000, y);
+        const double seco = banda (y, 6000.0);
+        auto g = monta (AudioEngine::kFxExc, seno (6000.0, 0.03f), 1.0f);
+        g->setFxParam (kCanal, AudioEngine::kFxExc, 0, 3000.0f);
+        g->setFxParam (kCanal, AudioEngine::kFxExc, 1, 1.0f);
+        g->postNoteOn (0, 1.0f); corre (*g, 48000, y);
+        const double fund = 20.0 * std::log10 (banda (y, 6000.0) / seco);
+        const double arm  = 20.0 * std::log10 ((banda (y, 12000.0) + banda (y, 18000.0)) / seco);
+        std::printf ("\nEXC  6 kHz a -30 dB, fuerza 1: la nota %+.1f dB, armonicos %.1f dBc\n", fund, arm);
+        if (std::abs (fund) > 1.5) falla ("EXC sube %.1f dB la propia nota (tope 1.5): es un realce, no armonicos", fund);
+        if (arm < -40.0) falla ("EXC no anade armonicos: %.1f dBc (minimo -40)", arm);
+    }
     std::printf (fallos == 0 ? "OK  los %d efectos, sin pliegue, sin chasquido, a nivel y con la cola limpia\n"
                              : "%d FALLA\n", fallos == 0 ? AudioEngine::kNumFx : fallos);
     return fallos == 0 ? 0 : 1;

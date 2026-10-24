@@ -168,6 +168,7 @@ namespace MidiIo
         std::uint16_t gateMs = 0; // secuenciador#11: el largo; cero es la puerta de siempre
         enum class Tipo : std::uint8_t { Nota, Reloj, Arranca, Para };
         Tipo         tipo = Tipo::Nota;   // secuenciador#11: reloj 24 ppq, Start y Stop
+        float        retrasoMs = 0.0f;    // midi#reloj: donde cae dentro del bloque
     };
 
     //  secuenciador#11: lo que no es nota sale tal cual.
@@ -435,8 +436,14 @@ namespace MidiIo
                 {
                     if (out == nullptr) return;
                     didSomething = true;
+                    if (e.tipo == NoteEvent::Tipo::Reloj && e.retrasoMs > 0.0f && relojes.size() < relojes.max_size())
+                    {
+                        relojes.push (ahora + (double) e.retrasoMs);   // midi#reloj: sale cuando le toca, no con el bloque
+                        return;
+                    }
                     if (e.tipo != NoteEvent::Tipo::Nota)   // secuenciador#11
                     {
+                        if (e.tipo == NoteEvent::Tipo::Para) relojes.vacia();
                         if (e.tipo != NoteEvent::Tipo::Reloj) corriendo = (e.tipo == NoteEvent::Tipo::Arranca);
                         out->sendMessageNow (mensajeDe (e));
                         return;
@@ -452,7 +459,13 @@ namespace MidiIo
                 //  Las puertas que vencen, por reloj y no por vueltas: una
                 //  vuelta de un milisegundo dura mas de uno, y en una nota de
                 //  dos segundos eso se nota (secuenciador#11).
-                const bool anyOpen = out != nullptr && puertas.vence (juce::Time::getMillisecondCounterHiRes(), envia);
+                const double luego = juce::Time::getMillisecondCounterHiRes();
+                while (out != nullptr && relojes.size() > 0 && relojes.primero() <= luego)
+                {
+                    relojes.saca();
+                    out->sendMessageNow (juce::MidiMessage::midiClock());
+                }
+                const bool anyOpen = out != nullptr && puertas.vence (luego, envia);
 
                 if (anyOpen || didSomething || corriendo || (src != nullptr && src->numReady() > 0))
                     juce::Thread::sleep (1);
@@ -467,6 +480,7 @@ namespace MidiIo
         void allNotesOff()
         {
             if (out == nullptr) return;
+            relojes.vacia();
             const int ch = channel.load (std::memory_order_relaxed);
             puertas.todas ([this] (bool, int canal, int nota, int) { out->sendMessageNow (juce::MidiMessage::noteOff (canal, nota)); });
             if (corriendo) { out->sendMessageNow (juce::MidiMessage::midiStop()); corriendo = false; }   // secuenciador#11
@@ -510,6 +524,17 @@ namespace MidiIo
         std::atomic<int>  modo { (int) Modo::Pads };   // lo de siempre por defecto
         std::atomic<int>  padTeclado { 0 };
         Puertas           puertas;              // midi#acorde: cada nota con su puerta, su canal y su pad
+        struct Relojes   // midi#reloj: los pendientes, en orden y sin reservar
+        {
+            std::array<double, 64> t {};
+            size_t ini = 0, n = 0;
+            size_t size() const noexcept { return n; }
+            static constexpr size_t max_size() noexcept { return 64; }
+            void push (double x) noexcept { t[(ini + n++) % 64] = x; }
+            double primero() const noexcept { return t[ini]; }
+            void saca() noexcept { ini = (ini + 1) % 64; --n; }
+            void vacia() noexcept { ini = n = 0; }
+        } relojes;
         bool              corriendo = false;    // secuenciador#11: entre Start y Stop el hilo no duerme
     };
 }

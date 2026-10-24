@@ -728,8 +728,16 @@ public:
     //  Y aqui y no en applyState, que es la unica puerta por la que pasan
     //  todos los caminos - el fichero, el mando, el bloqueo de paso y el kit.
     void setPadGain    (int slot, float g)     noexcept { store (padGain,    slot, acota (0.0f, 4.0f, g, 1.0f)); }
-    void setPadStart   (int slot, int s)       noexcept { store (padStart,   slot, s); }
-    void setPadEnd     (int slot, int e)       noexcept { store (padEnd,     slot, e); }
+    void setPadStart   (int slot, int s)       noexcept { setPadVentana (slot, s, getPadEnd (slot)); }
+    void setPadEnd     (int slot, int e)       noexcept { setPadVentana (slot, getPadStart (slot), e); }
+    void setPadVentana (int slot, int s, int e) noexcept   // ventana#par: inicio y fin bajo el mismo contador
+    {
+        if (! juce::isPositiveAndBelow (slot, kNumPads)) return;
+        ventanaSeq[(size_t) slot].fetch_add (1);
+        padStart[(size_t) slot].store (s);
+        padEnd[(size_t) slot].store (e);
+        ventanaSeq[(size_t) slot].fetch_add (1);
+    }
     int  getPadStart   (int slot) const noexcept { return juce::isPositiveAndBelow (slot, kNumPads) ? padStart[(size_t) slot].load() : 0; }
     int  getPadEnd     (int slot) const noexcept { return juce::isPositiveAndBelow (slot, kNumPads) ? padEnd[(size_t) slot].load() : 0; }
     //  La ventana con la que sonaria ahora un golpe del pad, en el hilo de audio (estabilidad#31; la usa el banco).
@@ -867,7 +875,8 @@ public:
     //  them except the audio thread, and it reads them after they are set.
     void setPolyphony (int totalVoices, int perPad) noexcept
     {
-        voiceLimit = juce::jlimit (4, kNumVoices, totalVoices);
+        const int lim = juce::jlimit (4, kNumVoices, totalVoices);
+        limitePedido.store (lim);   // voces#limite: lo aplica el audio, que apaga lo que queda fuera
         //  EL SUELO SALE DEL ACORDE Y NO DE LA GAMA. Un acorde escrito en la
         //  rejilla suena entero o la rejilla miente, y el tope por pad estaba
         //  en 4 en la gama baja y 6 en la media: al subir el acorde a ocho
@@ -882,10 +891,10 @@ public:
         //
         //  Salvo que el aparato no de ni para eso: con un pool de 4 voces el
         //  suelo es el pool, porque un pad no puede llevarse mas de lo que hay.
-        const int piso = juce::jmin (voiceLimit, kExtraNotes + 1);
-        maxVoicesOnPad = juce::jlimit (piso, voiceLimit, juce::jmax (perPad, piso));
+        const int piso = juce::jmin (lim, kExtraNotes + 1);
+        porPadPedido.store (juce::jlimit (piso, lim, juce::jmax (perPad, piso)));
     }
-    int getPolyphony() const noexcept { return voiceLimit; }
+    int getPolyphony() const noexcept { return limitePedido.load(); }
 
     //  Where this pad's read head is inside its whole source, 0..1, or -1 when
     //  nothing of it is sounding. Cosmetic: the UI draws it, nobody acts on it,
@@ -938,8 +947,7 @@ public:
         if (juce::isPositiveAndBelow (slot, kNumPads))
         {
             ventanaPara[(size_t) slot].store (nullptr);   // estabilidad#31: la ventana la escribe solo este hilo
-            padStart[(size_t) slot].store (0);
-            padEnd[(size_t) slot].store (0);
+            setPadVentana (slot, 0, 0);
             padSrcSr[(size_t) slot].store (0.0f, std::memory_order_relaxed);
             pendingClear[(size_t) slot].store (true, std::memory_order_release);
         }
@@ -2664,8 +2672,9 @@ private:
     //  la polifonia ni se pueden robar, y viven 72 muestras.
     static constexpr int kColaRobo      = 4;
     std::array<Voice, kNumVoices + kColaRobo> voices {};
-    int voiceLimit      = 48;   // <= kNumVoices, message thread sets, audio reads
+    int voiceLimit      = 48;   // <= kNumVoices, solo el audio; se pide por limitePedido
     int maxVoicesOnPad  = 8;
+    std::atomic<int> limitePedido { 48 }, porPadPedido { 8 };   // voces#limite
 
     //  Which voices belong to which pad, rebuilt once per render segment.
     //  Without it the block cost was pads x voices - sixteen scans of the
@@ -2857,6 +2866,7 @@ private:
     std::array<std::atomic<float>, kNumPads> padGain {};
     std::array<std::atomic<int>,   kNumPads> padStart {};
     std::array<std::atomic<int>,   kNumPads> padEnd {};
+    std::array<std::atomic<std::uint32_t>, kNumPads> ventanaSeq {};   // ventana#par: impar mientras se escribe
     std::array<std::atomic<bool>,  kNumPads> padLoop {};
     std::array<std::atomic<bool>,  kNumPads> padReverse {};
     std::array<std::atomic<bool>,  kNumPads> padKeepLength {};   // true = pitch only, false = tape
@@ -4018,6 +4028,7 @@ private:
         float smWidAncho = 0.0f;
         Dinamica::Svf excAlta[2][2], excBaja[2][2];
         float smExcFuerza = 0.0f;
+        float excGrave[2] = {}, excEnv[2] = {};   // exc#armonicos: lo que queda bajo el cruce, y la envolvente
 
         //  TRN: los dos seguidores de envolvente, uno rapido y uno lento.
         float trnRapido = 0.0f, trnLento = 0.0f;

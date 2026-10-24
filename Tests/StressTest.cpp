@@ -506,6 +506,30 @@ int main()
                      (countOk && mapOk && velOk && fromSeq > 0 && notaSeq == 43 && whenOff == 0) ? "OK" : zatiFalla());
     }
 
+    //  midi#reloj: con bloques de 1024 los relojes salen a 20.83 ms entre si, no a rafagas.
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 1024); e.setPolyphony (8, 2); enCanalCero (e);
+        e.setMidiOutEnabled (true); e.setBpm (120.0);
+        juce::AudioBuffer<float> b (2, 1024);
+        b.clear(); e.renderNextBlock (b, 0, 1024);
+        e.midiOutQueue().drain ([] (const MidiIo::NoteEvent&) {});
+        e.setPlaying (true);
+        std::vector<double> t;
+        for (int blk = 0; blk < 100; ++blk)
+        {
+            b.clear(); e.renderNextBlock (b, 0, 1024);
+            const double base = blk * 1024.0 / 48.0;
+            e.midiOutQueue().drain ([&] (const MidiIo::NoteEvent& ev)
+                { if (ev.tipo == MidiIo::NoteEvent::Tipo::Reloj) t.push_back (base + ev.retrasoMs); });
+        }
+        e.setPlaying (false);
+        double peor = 0.0;
+        for (size_t i = 1; i < t.size(); ++i) peor = juce::jmax (peor, std::abs (t[i] - t[i - 1] - 125.0 / 6.0));
+        std::printf ("%-34s %d relojes, el peor hueco se aparta %.2f ms de 20.83   %s\n", "midi: reloj sin rafagas",
+                     (int) t.size(), peor, t.size() > 90 && peor < 0.1 ? "OK" : zatiFalla());
+    }
+
     //  secuenciador#11: la puerta es el largo de la nota, y el reloj sale.
     {
         const auto monton_e = std::make_unique<AudioEngine>();
@@ -860,6 +884,47 @@ int main()
         std::printf ("%-34s recorte %d..%d tras vaciar   vieja %d..%d  nueva %d..%d   %s\n", "la ventana viaja con su muestra",
                      rs, re, antes.first, antes.second, despues.first, despues.second,
                      (recorte && viaja) ? "OK" : zatiFalla());
+    }
+
+    //  ventana#par: inicio y fin se leen juntos; mientras se mueven no sale una mezcla de dos ventanas.
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 64);
+        juce::AudioBuffer<float> eb (2, 64);
+        e.publishSample (0, makeSample (48000.0, 1.0, 220.0f));
+        e.setPadVentana (0, 30000, 40000);
+        runBlocks (e, eb, 64, 1);
+        std::atomic<bool> fin { false };
+        std::thread w ([&] { for (int i = 0; ! fin.load(); ++i) (i & 1) ? e.setPadVentana (0, 30000, 40000) : e.setPadVentana (0, 100, 200); });
+        int mezclas = 0, vistas = 0;
+        const auto hasta = std::chrono::steady_clock::now() + std::chrono::milliseconds (400);
+        while (std::chrono::steady_clock::now() < hasta)
+        {
+            eb.clear(); e.renderNextBlock (eb, 0, 64);
+            const auto v = e.ventanaQueSuena (0);
+            ++vistas;
+            if (v != std::make_pair (30000, 40000) && v != std::make_pair (100, 200)) ++mezclas;
+        }
+        fin = true; w.join();
+        std::printf ("%-34s %d mezclas en %d bloques   %s\n", "ventana: inicio y fin juntos", mezclas, vistas,
+                     mezclas == 0 && vistas > 1000 ? "OK" : zatiFalla());
+    }
+
+    //  voces#limite: bajar la polifonia con 16 sonando no deja voces vivas fuera del pool.
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 64); e.setPolyphony (32, 8); enCanalCero (e);
+        juce::AudioBuffer<float> eb (2, 64);
+        for (int p = 0; p < 16; ++p) { e.publishSample (p, makeSample (48000.0, 10.0, 220.0f)); e.setPadGain (p, 1.0f); }
+        runBlocks (e, eb, 64, 1);
+        for (int p = 0; p < 16; ++p) e.postNoteOn (p);
+        runBlocks (e, eb, 64, 2);
+        const int antes = e.getActiveVoiceCount();
+        e.setPolyphony (4, 2);
+        runBlocks (e, eb, 64, 20);
+        const int despues = e.getActiveVoiceCount();
+        std::printf ("%-34s %d sonando, tras bajar a 4: %d vivas (<= 8)   %s\n", "voces: bajar el limite",
+                     antes, despues, antes == 16 && despues <= 8 ? "OK" : zatiFalla());
     }
 
     //  CERRAR CON QUITAR RUIDO EN VUELO (estabilidad#24): el pool espera al trabajo, y el trabajo tiene que oir que se cierra.

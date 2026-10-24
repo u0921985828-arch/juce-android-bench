@@ -196,19 +196,36 @@ public:
             if (f.hasFileExtension ("zip") && f.getSize() == 0) continue;     // zip#dentro: la recien abierta por content://
             fs.add (f);
         }
+        for (auto q : { Carpeta::proyectos, Carpeta::kits })   // zip#fuera: la elegida fuera de ZATI tambien
+        {
+            const auto dir = carpeta (q);
+            if (dir == home() || dir.isAChildOf (home())) continue;
+            for (const auto& e : juce::RangedDirectoryIterator (dir, true, "*", juce::File::findFiles))
+                if (! e.getFile().getFileName().startsWith (".zati-write-test")) fs.add (e.getFile());
+        }
         return fs;
+    }
+
+    //  zip#fuera: dentro de ZATI su ruta; de una carpeta elegida fuera, bajo el nombre de la de siempre.
+    static juce::String nombreEnZip (const juce::File& f)
+    {
+        const auto raiz = home();
+        if (! f.isAChildOf (raiz))
+            for (auto q : { Carpeta::proyectos, Carpeta::kits })
+                if (f.isAChildOf (carpeta (q)))
+                    return juce::String (nombreDe (q)) + "/" + f.getRelativePathFrom (carpeta (q)).replaceCharacter ('\\', '/');
+        return f.getRelativePathFrom (raiz).replaceCharacter ('\\', '/');
     }
 
     //  android#2: la biblioteca entera en un zip, sesion incluida; devuelve cuantos ficheros.
     static int zipBiblioteca (juce::OutputStream& out, const juce::File& destino = {})
     {
-        const auto raiz = home();
         juce::ZipFile::Builder zip;
         int n = 0;
         for (const auto& f : ficherosParaZip (destino))
         {
             const bool audio = f.hasFileExtension ("wav;ogg;flac;mp3;aif;aiff");
-            const auto nombre = f.getRelativePathFrom (raiz).replaceCharacter ('\\', '/');
+            const auto nombre = nombreEnZip (f);
             if (nombre.startsWith (".sesion/"))   // zip#vivo: la sesion se abre ya; si el autoguardado la cambia, va la de este momento
             {
                 auto in = std::make_unique<juce::FileInputStream> (f);

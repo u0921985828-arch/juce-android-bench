@@ -442,10 +442,11 @@ std::pair<int, int> AudioEngine::ventanaDe (int slot, const SampleBuffer* sb) no
     //  estabilidad#31: la ventana vale si es de ESTA muestra, leida entre dos miradas al dueno; si no, la ultima buena.
     const int len = sb->buffer.getNumSamples();
     auto& viva = ventanaViva[(size_t) slot];
-    if (ventanaPara[(size_t) slot].load() == sb)
+    const auto q0 = ventanaSeq[(size_t) slot].load();
+    if ((q0 & 1u) == 0 && ventanaPara[(size_t) slot].load() == sb)
     {
         const int s0 = padStart[(size_t) slot].load(), e0 = padEnd[(size_t) slot].load();
-        if (ventanaPara[(size_t) slot].load() == sb) viva = { s0, e0 };
+        if (ventanaSeq[(size_t) slot].load() == q0 && ventanaPara[(size_t) slot].load() == sb) viva = { s0, e0 };   // ventana#par
     }
     int st = viva.first, en = viva.second;
     if (en <= 0 || en > len) en = len;
@@ -456,7 +457,11 @@ std::pair<int, int> AudioEngine::ventanaDe (int slot, const SampleBuffer* sb) no
 std::pair<int, int> AudioEngine::ventanaQueSuena (int slot) noexcept
 {
     if (! juce::isPositiveAndBelow (slot, kNumPads) || padSample[(size_t) slot] == nullptr) return { 0, 0 };
-    return ventanaDe (slot, padSample[(size_t) slot]);
+    const int len = padSample[(size_t) slot]->buffer.getNumSamples();   // ventana#solo: lee la que recogio el audio, sin escribirla
+    int st = ventanaViva[(size_t) slot].first, en = ventanaViva[(size_t) slot].second;
+    if (en <= 0 || en > len) en = len;
+    if (st < 0 || st >= en)  st = 0;
+    return { st, en };
 }
 
 void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola,
@@ -982,6 +987,13 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
     //    A clear is consumed FIRST so that "empty this pad, then load a new
     //    sound into it" in the same block ends with the new sound rather than
     //    with nothing.
+    if (const int lim = limitePedido.load (std::memory_order_relaxed); lim != voiceLimit)   // voces#limite
+    {
+        for (size_t v = (size_t) lim; v < voices.size(); ++v) voices[v].kill();
+        voiceLimit = lim;
+    }
+    maxVoicesOnPad = porPadPedido.load (std::memory_order_relaxed);
+
     for (int slot = 0; slot < kNumPads; ++slot)
     {
         if (pendingClear[(size_t) slot].exchange (false, std::memory_order_acquire))
@@ -995,14 +1007,14 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             ventanaViva[(size_t) slot] = { 0, 0 };   // estabilidad#31: la ventana compartida ya no la toca este hilo
         }
 
-        if (padSample[(size_t) slot] != nullptr) ventanaDe (slot, padSample[(size_t) slot]);   // estabilidad#31: recoge el recorte de la que suena
-
         if (auto* incoming = pendingPad[(size_t) slot].exchange (nullptr, std::memory_order_acquire))
         {
             retired.push (padSample[(size_t) slot]);
             padSample[(size_t) slot] = incoming;
             ventanaViva[(size_t) slot] = { 0, incoming->buffer.getNumSamples() };
         }
+
+        if (padSample[(size_t) slot] != nullptr) ventanaDe (slot, padSample[(size_t) slot]);   // estabilidad#31: recoge el recorte de la que suena
     }
 
     //  Y LA TABLA DE CLIPS, por el mismo camino y por la misma razon: un
@@ -1612,7 +1624,8 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
                                                      / 24.0 * systemSampleRate);
         const bool manda = midiOutOn.load (std::memory_order_relaxed);
         for (; relojMidi < (double) numSamples; relojMidi += porReloj)
-            if (manda) midiOut.push ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Reloj });
+            if (manda) midiOut.push ({ 0, 0, false, 0, 0, MidiIo::NoteEvent::Tipo::Reloj,
+                                       (float) (relojMidi * 1000.0 / systemSampleRate) });   // midi#reloj
         relojMidi -= (double) numSamples;
     }
 
@@ -3260,6 +3273,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     {
                         for (auto& fila : I.excAlta) for (auto& st : fila) st = {};
                         for (auto& fila : I.excBaja) for (auto& st : fila) st = {};
+                        I.excGrave[0] = I.excGrave[1] = I.excEnv[0] = I.excEnv[1] = 0.0f;
                     }
                     I.carWasActive[(size_t) c] = carVivo[c];
 
@@ -3272,6 +3286,8 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                         //  banda BAJA no se toca, que es lo que separa un
                         //  excitador de una distorsion.
                         const float emp = 1.0f + 8.0f * I.smExcFuerza;
+                        const float gHp = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * P (kFxExc, 0) / (float) systemSampleRate);
+                        const float rel = std::exp (-1.0f / (0.05f * (float) systemSampleRate));
 
                         for (int ch = 0; ch < chans; ++ch)
                         {
@@ -3282,7 +3298,13 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                                 Dinamica::cruza (w[i], I.excAlta[ch], I.excBaja[ch],
                                                  cr.a1, cr.a2, cr.a3, cr.k, b, a);
                                 const float sat = AudioEngine::fastTanh (a * emp) / emp;
-                                const float y = b + a + I.smExcFuerza * sat;   // suma armonicos, no resta el agudo (audio-dsp#17)
+                                I.excEnv[ch] = juce::jmax (std::abs (sat), I.excEnv[ch] * rel);   // pico: el cociente nunca pasa de |sat|
+                                const float env = I.excEnv[ch] + 1.0e-6f;
+                                const float x = juce::jlimit (-1.0f, 1.0f, sat / env);   // exc#armonicos: Chebyshev, la 2a y la 3a sin tocar la propia nota
+                                const float t2 = env * (2.0f * x * x - 1.0f);
+                                const float t3 = env * x * (4.0f * x * x - 3.0f);
+                                I.excGrave[ch] += gHp * (t2 - I.excGrave[ch]);
+                                const float y = b + a + I.smExcFuerza * (0.1f * (t2 - I.excGrave[ch]) - 0.1f * t3);   // suma armonicos, no resta el agudo (audio-dsp#17)
                                 w[i] = std::isfinite (y) ? y : 0.0f;
                             }
                         }
@@ -5075,8 +5097,7 @@ void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept
 
     // Reset this pad's trim window to the full new sample, stamped with its owner (estabilidad#31).
     ventanaPara[(size_t) slot].store (nullptr);
-    padStart[(size_t) slot].store (0);
-    padEnd[(size_t) slot].store (newBuffer->buffer.getNumSamples());
+    setPadVentana (slot, 0, newBuffer->buffer.getNumSamples());
     ventanaPara[(size_t) slot].store (newBuffer.get());
     padSrcSr[(size_t) slot].store ((float) newBuffer->sourceSampleRate, std::memory_order_relaxed);
 

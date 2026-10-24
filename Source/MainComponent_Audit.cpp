@@ -1755,8 +1755,7 @@ void MainComponent::auditDemo()
         padStart01[(size_t) demoBase] = juce::jlimit (0.0f, 0.99f, a);
         padEnd01[(size_t) demoBase]   = juce::jlimit (padStart01[(size_t) demoBase] + 0.01f, 1.0f, b);
         const int len = padSourceLength (demoBase);
-        engine.setPadStart (demoBase, (int) (padStart01[(size_t) demoBase] * (float) len));
-        engine.setPadEnd   (demoBase, (int) (padEnd01[(size_t) demoBase]   * (float) len));
+        engine.setPadVentana (demoBase, (int) (padStart01[(size_t) demoBase] * (float) len), (int) (padEnd01[(size_t) demoBase]   * (float) len));
         selectPad (demoBase);
     }
 
@@ -4186,6 +4185,28 @@ void MainComponent::auditOpen (const juce::String& pedido)
             }
             aqui.deleteFile();
         }
+        //  zip#fuera: la carpeta de proyectos elegida fuera de ZATI tambien va en la copia.
+        int fuera = -1;
+        {
+            using Q = ProjectStore::Carpeta;
+            const auto ext = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("zati-fuera-proyectos");
+            ext.deleteRecursively();
+            ext.getChildFile ("FUERA").createDirectory();
+            ext.getChildFile ("FUERA").getChildFile ("project.xml").replaceWithText ("<p/>");
+            const auto pref = ProjectStore::prefDe (Q::proyectos);
+            const bool habia = pref.existsAsFile();
+            const auto previa = habia ? pref.loadFileAsString() : juce::String();
+            if (ProjectStore::setCarpeta (Q::proyectos, ext))
+            {
+                juce::MemoryOutputStream mo;
+                ProjectStore::zipBiblioteca (mo);
+                juce::MemoryInputStream mi (mo.getData(), mo.getDataSize(), false);
+                juce::ZipFile zf (mi);
+                fuera = zf.getIndexOfFileName ("Projects/FUERA/project.xml") >= 0 ? 1 : 0;
+            }
+            if (habia) pref.replaceWithText (previa); else pref.deleteFile();
+            ext.deleteRecursively();
+        }
         juce::ZipFile zip (destino);
         bool sesion = false;
         for (int i = 0; i < zip.getNumEntries(); ++i)
@@ -4202,7 +4223,7 @@ void MainComponent::auditOpen (const juce::String& pedido)
                   << ",\"saltados\":" << vuelta.second << ",\"vuelve\":" << (vuelve ? 1 : 0)
                   << ",\"importar\":" << (projImportButton.isVisible() && ! projImportButton.getBounds().isEmpty() ? 1 : 0)
                   << ",\"ficheros\":" << n << ",\"entradas\":" << zip.getNumEntries()
-                  << ",\"dentro\":" << dentro
+                  << ",\"dentro\":" << dentro << ",\"fuera\":" << fuera
                   << ",\"sesion\":" << (sesion ? 1 : 0) << ",\"seborra\":" << (ProjectStore::seBorraAlDesinstalar() ? 1 : 0)
                   << ",\"aviso\":\"" << status.getText().replace ("\"", "'").toStdString() << "\""
                   << ",\"boton\":" << (projZipButton.isVisible() && ! projZipButton.getBounds().isEmpty() ? 1 : 0) << "}" << std::endl;

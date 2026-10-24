@@ -3975,8 +3975,7 @@ void MainComponent::cableaPads()
         const int len = padSourceLength (selectedPad);
         if (len > 0)
         {
-            engine.setPadStart (selectedPad, (int) (s * len));
-            engine.setPadEnd   (selectedPad, (int) (e * len));
+            engine.setPadVentana (selectedPad, (int) (s * len), (int) (e * len));
         }
         startSlider.setValue (s, juce::dontSendNotification);
         endSlider.setValue   (e, juce::dontSendNotification);
@@ -11041,8 +11040,7 @@ void MainComponent::denoisePad()
             padName[(size_t) pad]    = keepName;
             padStart01[(size_t) pad] = keepStart;
             padEnd01[(size_t) pad]   = keepEnd;
-            engine.setPadStart (pad, (int) (keepStart * (float) len));
-            engine.setPadEnd   (pad, (int) (keepEnd   * (float) len));
+            engine.setPadVentana (pad, (int) (keepStart * (float) len), (int) (keepEnd   * (float) len));
             if (auto* p = pads[pad])
                 p->setSampleInfo (uiSample[(size_t) pad], padName[(size_t) pad],
                                   padStart01[(size_t) pad], padEnd01[(size_t) pad]);
@@ -11146,8 +11144,7 @@ void MainComponent::recortaPad()
     padName[sp]    = keepName;
     padStart01[sp] = 0.0f;
     padEnd01[sp]   = 1.0f;
-    engine.setPadStart (selectedPad, 0);
-    engine.setPadEnd   (selectedPad, n);
+    engine.setPadVentana (selectedPad, 0, n);
     if (auto* pb = pads[selectedPad])
         pb->setSampleInfo (uiSample[sp], padName[sp], padStart01[sp], padEnd01[sp]);
     selectPad (selectedPad);
@@ -12964,8 +12961,7 @@ void MainComponent::applyAutoChop()
         padName[(size_t) i]      = baseName + " " + juce::String (k + 1).paddedLeft ('0', 2);
 
         engine.publishSample (i, src);   // resets trim to full length — override right after
-        engine.setPadStart   (i, st);
-        engine.setPadEnd     (i, en);
+        engine.setPadVentana (i, st, en);
         engine.setPadGain    (i, padGain[(size_t) i]);
         engine.setPadPitch   (i, padPitch[(size_t) i] + padCents[(size_t) i] / 100.0f);
         engine.setPadKeepLength (i, padKeepLen[(size_t) i]);
@@ -14399,8 +14395,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
                                 : engine.getSampleLength (i);
             if (len > 0)
             {
-                engine.setPadStart (i, (int) (padStart01[(size_t) i] * len));
-                engine.setPadEnd   (i, (int) (padEnd01[(size_t) i]   * len));
+                engine.setPadVentana (i, (int) (padStart01[(size_t) i] * len), (int) (padEnd01[(size_t) i]   * len));
             }
 
             engine.setPadPitch   (i, padPitch[(size_t) i] + padCents[(size_t) i] / 100.0f);
@@ -21151,8 +21146,7 @@ void MainComponent::montaResintesis (int pad, SampleBuffer::Ptr sb)
     padStart01[(size_t) pad] = keepStart;
     padEnd01[(size_t) pad]   = keepEnd;
     const int len = sb->buffer.getNumSamples();
-    engine.setPadStart (pad, (int) (keepStart * (float) len));
-    engine.setPadEnd   (pad, (int) (keepEnd   * (float) len));
+    engine.setPadVentana (pad, (int) (keepStart * (float) len), (int) (keepEnd   * (float) len));
     if (auto* p = pads[pad])
         p->setSampleInfo (uiSample[(size_t) pad], padName[(size_t) pad], keepStart, keepEnd);
 
