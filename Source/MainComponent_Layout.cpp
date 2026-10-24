@@ -4485,9 +4485,10 @@ void MainComponent::maquetaVst (juce::Rectangle<int> full)
         //  Y LA CUENTA ES LA DEL RENGLON, ENTERA: la cruz, su aire, PAD, su
         //  aire, VOLVER y lo que el titulo pide. Los dos `xs` faltaban, que es
         //  la otra mitad del pixel de «needs 35 has 34».
-        const bool volverArriba = vstVolver.isVisible()
-                                    && anchoTitulo >= Metrics::hit * 2 + 2 * Metrics::xs
-                                                        + pideVolver + pideTit;
+        //  vst#barra: la fila de abajo se guarda solo si VOLVER no cabe arriba, se vea o no
+        const bool cabeArriba = anchoTitulo >= Metrics::hit * 2 + 2 * Metrics::xs
+                                                 + pideVolver + pideTit;
+        const bool volverArriba = vstVolver.isVisible() && cabeArriba;
         auto inner = sheetFromBottom (vstSheet, Ficha::cromo + cabecera
                                                   + (presetArriba ? 0 : Metrics::xs + filaP)
                                                   + Metrics::sm + Metrics::hit + teclas
@@ -4501,7 +4502,7 @@ void MainComponent::maquetaVst (juce::Rectangle<int> full)
                                                   //  esos 8 se los come lo ultimo que se maqueta, que es la
                                                   //  banda de pie: «la banda de pie mide 34 px y el
                                                   //  contrato dice 42», 22 veces en `expo.py`.
-                                                  + Metrics::sm + (volverArriba ? 0 : Metrics::hit)
+                                                  + Metrics::sm + (cabeArriba ? 0 : Metrics::hit)
                                                   + Ficha::pie (3));
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -4687,12 +4688,13 @@ void MainComponent::maquetaVst (juce::Rectangle<int> full)
             inner.removeFromTop (Metrics::sm);
 
             //  Y AQUI SOLO SI ARRIBA NO CABIA. Ver el renglon del titulo.
-            if (! volverArriba && vstVolver.isVisible())
+            if (! cabeArriba)
             {
                 auto filaV = inner.removeFromTop (Metrics::hit).reduced (Metrics::lg, 0);
-                vstVolver.setBounds (Lang::takeStart (filaV, juce::jmin (Metrics::hit * 3,
-                                                                         filaV.getWidth() / 3))
-                                         .withHeight (Metrics::hit));
+                if (vstVolver.isVisible())
+                    vstVolver.setBounds (Lang::takeStart (filaV, juce::jmin (Metrics::hit * 3,
+                                                                             filaV.getWidth() / 3))
+                                             .withHeight (Metrics::hit));
             }
         }
         inner.removeFromTop (Metrics::sm);
