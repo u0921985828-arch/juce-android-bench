@@ -4174,7 +4174,18 @@ void MainComponent::auditOpen (const juce::String& pedido)
         session.flush (2000);
         const auto destino = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("copia.zip");
         int n = -1;
-        if (auto out = destino.createOutputStream()) n = ProjectStore::zipBiblioteca (*out);
+        if (auto out = destino.createOutputStream()) n = ProjectStore::zipBiblioteca (*out, destino);
+        //  zip#dentro: guardada DENTRO de la biblioteca, la copia no se mete a si misma.
+        int dentro = -1;
+        {
+            const auto aqui = ProjectStore::home().getChildFile ("copia-dentro.zip");
+            if (auto o = aqui.createOutputStream())
+            {
+                const auto fs = ProjectStore::ficherosParaZip (aqui);
+                dentro = (int) std::count (fs.begin(), fs.end(), aqui);
+            }
+            aqui.deleteFile();
+        }
         juce::ZipFile zip (destino);
         bool sesion = false;
         for (int i = 0; i < zip.getNumEntries(); ++i)
@@ -4191,6 +4202,7 @@ void MainComponent::auditOpen (const juce::String& pedido)
                   << ",\"saltados\":" << vuelta.second << ",\"vuelve\":" << (vuelve ? 1 : 0)
                   << ",\"importar\":" << (projImportButton.isVisible() && ! projImportButton.getBounds().isEmpty() ? 1 : 0)
                   << ",\"ficheros\":" << n << ",\"entradas\":" << zip.getNumEntries()
+                  << ",\"dentro\":" << dentro
                   << ",\"sesion\":" << (sesion ? 1 : 0) << ",\"seborra\":" << (ProjectStore::seBorraAlDesinstalar() ? 1 : 0)
                   << ",\"aviso\":\"" << status.getText().replace ("\"", "'").toStdString() << "\""
                   << ",\"boton\":" << (projZipButton.isVisible() && ! projZipButton.getBounds().isEmpty() ? 1 : 0) << "}" << std::endl;

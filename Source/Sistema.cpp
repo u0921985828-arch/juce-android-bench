@@ -160,8 +160,7 @@ juce::BorderSize<int> Sistema::gestos()
 void Sistema::excluyeGestos (const juce::Array<juce::Rectangle<int>>& zonas)
 {
     if (zonas == pedida) return;
-    pedida = zonas;
-    if (juce::getAndroidSDKVersion() < 29) return;
+    if (juce::getAndroidSDKVersion() < 29) { pedida = zonas; return; }   // sis#pedida: solo se apunta lo que llego a aplicarse
     auto* env = juce::getEnv();
     auto decor = vistaRaiz (env);
     if (decor == nullptr) return;
@@ -179,7 +178,7 @@ void Sistema::excluyeGestos (const juce::Array<juce::Rectangle<int>>& zonas)
         if (fallo (env)) return;
     }
     env->CallVoidMethod (decor, juce::ZatiSisView.setSystemGestureExclusionRects, lista.get());
-    fallo (env);
+    if (! fallo (env)) pedida = zonas;
 }
 
 #else

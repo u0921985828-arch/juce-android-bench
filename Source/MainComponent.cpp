@@ -20119,7 +20119,7 @@ void MainComponent::copiaZip()
                                                  : url.createOutputStream())
                 {
                     if (auto* fo = dynamic_cast<juce::FileOutputStream*> (out.get())) { fo->setPosition (0); fo->truncate(); }
-                    n = ProjectStore::zipBiblioteca (*out);
+                    n = ProjectStore::zipBiblioteca (*out, url.isLocalFile() ? url.getLocalFile() : juce::File());
                 }
                 juce::MessageManager::callAsync ([yo, n]
                 {

@@ -2273,17 +2273,38 @@ public:
 
     //  export#cola: lo que el rebote deja sonar tras el ultimo compas.
     //  Y LAS VOCES: la muestra que el ultimo golpe deja sonando, a su afinacion, mas su suelta.
+    //  export#cola: solo los pads que algun paso dispara, a la nota mas grave que se les pide.
     double getColaSeconds() const noexcept
     {
+        std::uint64_t usados = 0;
+        std::array<int, kNumPads> grave {};
+        for (int pt = 0; pt < kNumPatterns; ++pt)
+        {
+            const int largoPat = juce::jlimit (0, kNumSteps, patternLength[(size_t) pt].load (std::memory_order_relaxed));
+            for (int st = 0; st < largoPat; ++st)
+            {
+                const std::uint64_t m = patternBank[(size_t) pt][(size_t) st].load (std::memory_order_relaxed);
+                for (int p = 0; p < kNumPads; ++p)
+                {
+                    if ((m & ((std::uint64_t) 1u << p)) == 0) continue;
+                    const int n = (int) stepNote[(size_t) pt][(size_t) st][(size_t) p].load (std::memory_order_relaxed);
+                    if ((usados & ((std::uint64_t) 1u << p)) == 0 || n < grave[(size_t) p]) grave[(size_t) p] = n;
+                    usados |= (std::uint64_t) 1u << p;
+                }
+            }
+        }
+
         double t = getFxTailSeconds();
         for (int p = 0; p < kNumPads; ++p)
         {
+            if ((usados & ((std::uint64_t) 1u << p)) == 0) continue;
             const double sr = (double) padSrcSr[(size_t) p].load (std::memory_order_relaxed);
             if (sr <= 0.0 || effectiveGain (p) <= 0.0f) continue;
             const int largo = juce::jmax (0, getPadEnd (p) - getPadStart (p));
             if (largo <= 0) continue;
+            const double semis = (double) getPadPitch (p) + (double) grave[(size_t) p];
             const double suena = padLoop[(size_t) p].load (std::memory_order_relaxed)
-                                   ? 0.0 : (double) largo / sr * std::pow (2.0, -(double) getPadPitch (p) / 12.0);
+                                   ? 0.0 : (double) largo / sr * std::pow (2.0, -semis / 12.0);
             t = juce::jmax (t, suena + (double) padRelease[(size_t) p].load (std::memory_order_relaxed) * 0.001);
         }
         return juce::jmin (t, 20.0);

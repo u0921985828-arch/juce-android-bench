@@ -208,10 +208,14 @@ void SampleLoader::loadAsync (const juce::URL& url, int slot,
                                 auto* job = juce::ThreadPoolJob::getCurrentThreadPoolJob();   // por trozos, y se sale si cierran (estabilidad#24)
                                 for (int i = 0; i < numSamples && ! (job != nullptr && job->shouldExit()); i += 1 << 16)
                                     reader->read (&sb->buffer, i, juce::jmin (1 << 16, numSamples - i), i, true, true);
-                                if (job != nullptr && job->shouldExit()) return;
+                                const bool cortada = job != nullptr && job->shouldExit();   // carga#aviso: cortada tambien avisa, como fallo
                                 sb->sourceSampleRate = rate;
-                                const float pico = SampleBuffer::sanea (sb->buffer);
-                                if (pico > SampleBuffer::kPicoMax)
+                                const float pico = cortada ? 0.0f : SampleBuffer::sanea (sb->buffer);
+                                if (cortada)
+                                {
+                                    detail = T ("Cancelado");
+                                }
+                                else if (pico > SampleBuffer::kPicoMax)
                                 {
                                     detail = T ("muestra corrupta");
                                 }

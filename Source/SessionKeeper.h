@@ -165,6 +165,7 @@ private:
 
     //  El estado encargado y todavia no escrito, bajo `lock`. Vacio es nada.
     juce::String estadoPendiente;
+    int directos = 0;   // sesion#orden: estados que writeState escribio en mano, bajo `lock`
 
     //  Lo ultimo que llego a disco, y el cerrojo que serializa las dos manos
     //  que escriben state.xml: el escritor y `writeState` desde `onPause`. Sin

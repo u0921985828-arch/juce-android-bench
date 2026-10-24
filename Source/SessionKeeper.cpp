@@ -201,6 +201,7 @@ bool SessionKeeper::writeState (const juce::ValueTree& state, const juce::String
     {
         const juce::ScopedLock sl (lock);
         estadoPendiente.clear();
+        ++directos;
     }
     return escribeEstado (textoDe (state, projectName, guardado));
 }
@@ -337,7 +338,7 @@ void SessionKeeper::run()
         int pad = -1;
         SampleBuffer::Ptr sb;
         juce::String estado;
-        int gen = 0;
+        int gen = 0, dir = 0;
 
         {
             const juce::ScopedLock sl (lock);
@@ -350,6 +351,7 @@ void SessionKeeper::run()
             {
                 estado = std::move (estadoPendiente);
                 estadoPendiente.clear();
+                dir = directos;
                 writing = true;
             }
 
@@ -372,7 +374,9 @@ void SessionKeeper::run()
             {
                 //  sesion#gen: con el cerrojo de escritura puesto, el estado nuevo de writeState no cae entre escribir y borrar.
                 const juce::ScopedLock el (escribiendoEstado);
-                if (generacion.load (std::memory_order_acquire) == gen)
+                //  sesion#orden: si writeState escribio despues de sacarlo de la cola, este estado es mas viejo.
+                const bool vigente = [this, dir] { const juce::ScopedLock sl (lock); return directos == dir; }();
+                if (vigente && generacion.load (std::memory_order_acquire) == gen)
                 {
                     escribeEstado (estado);
                     if (generacion.load (std::memory_order_acquire) != gen) stateFile().deleteFile();   // estabilidad#23

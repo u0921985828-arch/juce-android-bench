@@ -184,16 +184,29 @@ public:
             || (ext != juce::File() && (h == ext || h.isAChildOf (ext)));
     }
 
+    //  android#2: lo que entra en la copia de la biblioteca.
+    static juce::Array<juce::File> ficherosParaZip (const juce::File& destino = {})
+    {
+        juce::Array<juce::File> fs;
+        for (const auto& e : juce::RangedDirectoryIterator (home(), true, "*", juce::File::findFiles))
+        {
+            const auto f = e.getFile();
+            if (f.getFileName().startsWith (".zati-write-test")) continue;
+            if (destino != juce::File() && f == destino) continue;              // zip#dentro
+            if (f.hasFileExtension ("zip") && f.getSize() == 0) continue;     // zip#dentro: la recien abierta por content://
+            fs.add (f);
+        }
+        return fs;
+    }
+
     //  android#2: la biblioteca entera en un zip, sesion incluida; devuelve cuantos ficheros.
-    static int zipBiblioteca (juce::OutputStream& out)
+    static int zipBiblioteca (juce::OutputStream& out, const juce::File& destino = {})
     {
         const auto raiz = home();
         juce::ZipFile::Builder zip;
         int n = 0;
-        for (const auto& e : juce::RangedDirectoryIterator (raiz, true, "*", juce::File::findFiles))
+        for (const auto& f : ficherosParaZip (destino))
         {
-            const auto f = e.getFile();
-            if (f.getFileName().startsWith (".zati-write-test")) continue;
             const bool audio = f.hasFileExtension ("wav;ogg;flac;mp3;aif;aiff");
             zip.addFile (f, audio ? 0 : 6, f.getRelativePathFrom (raiz).replaceCharacter ('\\', '/'));
             ++n;

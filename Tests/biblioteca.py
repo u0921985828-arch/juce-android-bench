@@ -58,6 +58,7 @@ def main():
         if musica.get ("ficheros", -1) <= 0 or musica.get ("entradas") != musica.get ("ficheros"):
             malas.append ("el zip tiene %s entradas de %s ficheros" % (musica.get ("entradas"), musica.get ("ficheros")))
         if not musica.get ("sesion"): malas.append ("el zip no lleva la sesion (.sesion/)")
+        if musica.get ("dentro") != 0: malas.append ("zip#dentro: guardada en la biblioteca, la copia se incluye a si misma (%s)" % musica.get ("dentro"))
         if not musica.get ("boton"):  malas.append ("ZIP no esta en la pagina de PROYECTOS")
         if musica.get ("seborra"):    malas.append ("Musica/ZATI se da por borrable")
         if not musica.get ("estaba"): malas.append ("4. el proyecto de prueba no llego a guardarse")

@@ -64,6 +64,7 @@ public:
     void prepare (double sampleRate, int channels)
     {
         fs = juce::jmax (8000.0, sampleRate);
+        ultSize = ultDamp = -1.0f;   // rev#pow: el exponente cambia con fs
         chans = juce::jlimit (1, 2, channels);
 
         //  Los difusores, tambien primos y mucho mas cortos: su trabajo es
@@ -155,6 +156,8 @@ public:
 
     void setParameters (float size, float damping) noexcept
     {
+        if (juce::exactlyEqual (size, ultSize) && juce::exactlyEqual (damping, ultDamp)) return;   // rev#pow: sin mando movido no hay 16 pow
+        ultSize = size; ultDamp = damping;
         //  Ver realimentacionDe y amortiguadoDe: los dos numeros viven arriba
         //  desde que `tauSegundos` los necesita para decir cuanto dura la cola.
         fb    = realimentacionDe (size);
@@ -330,5 +333,6 @@ private:
     float profundidad = 0.0f;
 
     float fb    = 0.85f;
+    float ultSize = -1.0f, ultDamp = -1.0f;
     float dampC = 0.4f;
 };

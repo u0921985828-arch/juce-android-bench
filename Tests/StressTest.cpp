@@ -10335,15 +10335,21 @@ int main()
         const double eco = e.getColaSeconds();
         e.setCanalSend (0, AudioEngine::kFxDly, 0.0f);
         e.publishSample (0, makeSample (48000.0, 3.0, 220.0f));
-        e.setPadGain (0, 1.0f); e.setPadGain (1, 1.0f);
+        e.setPadGain (0, 1.0f); e.setPadGain (1, 1.0f); e.setPadGain (2, 1.0f);
+        e.setStep (0, 0, 0, true);
         const double larga = e.getColaSeconds();
-        e.clearPad (0);
+        e.setStepNote (0, 0, 0, -12);
+        const double grave = e.getColaSeconds();
+        e.setStep (0, 0, 0, false);
+        e.publishSample (2, makeSample (48000.0, 15.0, 220.0f));   // en ningun paso
+        const double callada = e.getColaSeconds();
         e.publishSample (1, makeSample (48000.0, 0.1, 220.0f));
         e.setPadRelease (1, 2000.0f);
+        e.setStep (0, 4, 1, true);
         const double suelta = e.getColaSeconds();
-        std::printf ("%-34s eco 1/4 a 70 %.2f s (>= 3.4), muestra de 3 s %.2f, suelta de 2 s %.2f   %s\n",
-                     "export, cola", eco, larga, suelta,
-                     (eco >= 3.4 && larga >= 2.9 && suelta >= 2.0) ? "OK" : zatiFalla());
+        std::printf ("%-34s eco 1/4 a 70 %.2f s (>= 3.4), muestra de 3 s %.2f, a -12 %.2f, la que no suena %.2f, suelta de 2 s %.2f   %s\n",
+                     "export, cola", eco, larga, grave, callada, suelta,
+                     (eco >= 3.4 && larga >= 2.9 && grave >= 5.9 && callada < 3.5 && suelta >= 2.0 && suelta < 3.5) ? "OK" : zatiFalla());
     }
 
     //  secuenciador#fase: con el paso multiplo del bloque la fase publicada no llega a uno.
