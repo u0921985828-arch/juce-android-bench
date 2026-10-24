@@ -49,15 +49,23 @@ public:
     {
         escritura.fill (0); lectura.fill (0);
         buf.clear();
+        pedido = -1.0f;   // anillo#cpu: un tope nuevo vuelve a recortar
     }
 
     void setDelay (float nuevo) noexcept
     {
+        if (juce::exactlyEqual (nuevo, pedido)) return;   // anillo#cpu: el mismo retardo, los mismos pesos
+        pedido = nuevo;
         const auto tope = (float) getMaximumDelayInSamples();
         retardo = juce::jlimit (0.0f, tope, nuevo);
-        entero  = static_cast<int> (std::floor (retardo));
+        entero  = static_cast<int> (retardo);   // anillo#cpu: retardo >= 0, truncar es floor
         frac    = retardo - (float) entero;
         if (frac < 2.0f && entero >= 1) { frac++; entero--; }
+        const float d1 = frac - 1.f, d2 = frac - 2.f, d3 = frac - 3.f;
+        c1 = -d1 * d2 * d3 / 6.f;
+        c2 = d2 * d3 * 0.5f;
+        c3 = -d1 * d3 * 0.5f;
+        c4 = d1 * d2 / 6.f;
     }
 
     void pushSample (int ch, float x) noexcept
@@ -81,11 +89,6 @@ public:
         }
         const float* s = buf.getReadPointer (ch);
         const float v1 = s[i1], v2 = s[i2], v3 = s[i3], v4 = s[i4];
-        const float d1 = frac - 1.f, d2 = frac - 2.f, d3 = frac - 3.f;
-        const float c1 = -d1 * d2 * d3 / 6.f;
-        const float c2 = d2 * d3 * 0.5f;
-        const float c3 = -d1 * d3 * 0.5f;
-        const float c4 = d1 * d2 / 6.f;
         if (avanza) r = (r == 0) ? total - 1 : r - 1;
         return v1 * c1 + frac * (v2 * c2 + v3 * c3 + v4 * c4);
     }
@@ -104,4 +107,5 @@ private:
     std::array<int, kMaxCanales> escritura {}, lectura {};
     int total = 4, canales = 1, entero = 0;
     float retardo = 0.0f, frac = 0.0f;
+    float pedido = -1.0f, c1 = 0.0f, c2 = 0.0f, c3 = 0.0f, c4 = 0.0f;   // anillo#cpu: los pesos del ultimo retardo pedido
 };

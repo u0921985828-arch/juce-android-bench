@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <cmath>
+#include <limits>
 
 //  UNA REVERB DE RED DE RETARDOS REALIMENTADA (FDN).
 //
@@ -80,7 +81,7 @@ public:
         for (int i = 0; i < kLines; ++i)
         {
             const double hz = (0.31 + 0.137 * i);
-            const double w = 2.0 * juce::MathConstants<double>::pi * hz / fs;
+            const double w = 2.0 * juce::MathConstants<double>::pi * hz * kSub / fs;   // rev#cpu: un paso por tramo
             rotC[i] = (float) std::cos (w); rotS[i] = (float) std::sin (w);
         }
         const int extra = (int) std::ceil (2.0f * profundidad) + 4;
@@ -89,13 +90,13 @@ public:
 
         for (int i = 0; i < kLines; ++i)
         {
-            line[i].setSize (chans, lineLen[i] + extra, false, true, true);
+            line[i].setSize (1, lineLen[i] + extra, false, true, true);   // rev#cpu: una red para los dos lados
             line[i].clear();
             lineIdx[i] = 0;
         }
         for (int i = 0; i < kDiff; ++i)
         {
-            dif[i].setSize (chans, difLen[i], false, true, true);
+            dif[i].setSize (1, difLen[i], false, true, true);
             dif[i].clear();
             difIdx[i] = 0;
         }
@@ -106,15 +107,17 @@ public:
     {
         for (auto& b : line) b.clear();
         for (auto& b : dif)  b.clear();
-        for (auto& d : damp) d[0] = d[1] = 0.0f;
+        for (auto& d : damp) d = 0.0f;
         for (auto& i : lineIdx) i = 0;
         for (auto& i : difIdx)  i = 0;
-        for (int c = 0; c < 2; ++c)
-            for (int i = 0; i < kLines; ++i)
-            {
-                const double a = 2.0 * juce::MathConstants<double>::pi * ((double) i / kLines + c * 0.31);
-                osc[c][i][0] = (float) std::cos (a); osc[c][i][1] = (float) std::sin (a);
-            }
+        quedaSub = 0;
+        ladoE[0] = ladoE[1] = 0.0f;
+        ladoG[0] = ladoG[1] = 1.0f;
+        for (int i = 0; i < kLines; ++i)
+        {
+            const double a = 2.0 * juce::MathConstants<double>::pi * ((double) i / kLines);
+            oscC[i] = (float) std::cos (a); oscS[i] = (float) std::sin (a);
+        }
     }
 
     //  size 0..1 -> cuanto dura la cola. damping 0..1 -> cuanto se apagan los
@@ -169,15 +172,19 @@ public:
     float oscDesvio() const noexcept
     {
         float peor = 0.0f;
-        for (int c = 0; c < 2; ++c)
-            for (int i = 0; i < kLines; ++i)
-                peor = juce::jmax (peor, std::abs (std::hypot (osc[c][i][0], osc[c][i][1]) - 1.0f));
+        for (int i = 0; i < kLines; ++i)
+            peor = juce::jmax (peor, std::abs (std::hypot (oscC[i], oscS[i]) - 1.0f));
         return peor;
     }
 
     //  Sustituye el contenido del bloque por la senal HUMEDA, que es lo que
     //  este bus necesita: el seco llego al master por el camino directo y
     //  sumarlo otra vez solo lo peinaria.
+    //
+    //  rev#cpu: UNA red para los dos lados. Eran dos redes de dieciseis lineas,
+    //  una por canal, que con una muestra centrada llevaban casi lo mismo; ahora
+    //  entra la media de los dos y cada lado sale de las mismas lineas con sus
+    //  signos (kSale), que es lo que da el ancho. La mitad de trabajo.
     void process (juce::AudioBuffer<float>& buf, int start, int num) noexcept
     {
         const int ch = juce::jmin (chans, buf.getNumChannels());
@@ -187,95 +194,135 @@ public:
         for (int c = 0; c < ch; ++c) w[c] = buf.getWritePointer (c, start);
 
         //  rev#osc: la rotacion en float se va de radio uno; se devuelve a uno cada bloque.
-        for (auto& oc : osc)
-            for (auto& o : oc)
+        for (int i = 0; i < kLines; ++i)
+        {
+            float& o0 = oscC[i];
+            float& o1 = oscS[i];
+            const float r2 = o0 * o0 + o1 * o1;
+            const float g = r2 > 1.0e-12f ? 1.0f / std::sqrt (r2) : 0.0f;
+            if (g > 0.0f) { o0 *= g; o1 *= g; } else { o0 = 1.0f; o1 = 0.0f; }
+        }
+
+        //  rev#cpu: punteros y largos una vez por bloque, no una por muestra y linea.
+        float* lp[kLines];
+        float* dp[kDiff];
+        float tamF[kLines];
+        int tam[kLines];
+        for (int i = 0; i < kLines; ++i)
+        {
+            tam[i] = line[i].getNumSamples(); tamF[i] = (float) tam[i];
+            lp[i] = line[i].getWritePointer (0);
+        }
+        for (int d = 0; d < kDiff; ++d) dp[d] = dif[d].getWritePointer (0);
+
+        //  rev#lado: la red es una, asi que el lado de la cola sale de cuanto entra
+        //  por cada lado, con memoria de unos 300 ms; centrado da uno y uno.
+        float gL0 = ladoG[0], gR0 = ladoG[1];
+        if (ch > 1)
+        {
+            float eL = 0.0f, eR = 0.0f;
+            for (int n = 0; n < num; ++n) { eL += w[0][n] * w[0][n]; eR += w[1][n] * w[1][n]; }
+            const float a = 1.0f - std::exp (-(float) num / (0.3f * (float) fs));
+            ladoE[0] += a * (eL - ladoE[0]);
+            ladoE[1] += a * (eR - ladoE[1]);
+            const float t = ladoE[0] + ladoE[1];
+            if (t > 1.0e-20f)
             {
-                const float r2 = o[0] * o[0] + o[1] * o[1];
-                const float g = r2 > 1.0e-12f ? 1.0f / std::sqrt (r2) : 0.0f;
-                if (g > 0.0f) { o[0] *= g; o[1] *= g; } else { o[0] = 1.0f; o[1] = 0.0f; }
+                ladoG[0] = std::sqrt (2.0f * ladoE[0] / t);
+                ladoG[1] = std::sqrt (2.0f * ladoE[1] / t);
             }
+        }
+        const float dL = (ladoG[0] - gL0) / (float) juce::jmax (1, num);
+        const float dR = (ladoG[1] - gR0) / (float) juce::jmax (1, num);
 
         for (int n = 0; n < num; ++n)
         {
+            float x = ch > 1 ? 0.5f * (w[0][n] + w[1][n]) : w[0][n];
+
+            //  1. Difusion: cuatro allpass en serie. y = -g*x + z ; z' = x + g*y
+            for (int d = 0; d < kDiff; ++d)
+            {
+                float* dl = dp[d];
+                const int   di = difIdx[d];
+                const float z  = dl[di];
+                const float y  = -kDiffG * x + z;
+                dl[di] = x + kDiffG * y;
+                x = y;
+            }
+
+            //  2. Leer las lineas, cada una con su largo respirando.
+            //  rev#cpu: la respiracion se recalcula cada kSub muestras; dentro del
+            //  tramo la cabeza avanza una muestra por muestra, como la de escritura.
+            if (--quedaSub <= 0)
+            {
+                quedaSub = kSub;
+                for (int i = 0; i < kLines; ++i)
+                {
+                    const float nc = oscC[i] * rotC[i] - oscS[i] * rotS[i];
+                    oscS[i] = oscC[i] * rotS[i] + oscS[i] * rotC[i];
+                    oscC[i] = nc;
+                    const float atras = (float) lineLen[i] + profundidad * (1.0f + oscS[i]);
+                    float pos = (float) lineIdx[i] - atras;
+                    pos += pos < 0.0f ? tamF[i] : 0.0f;   // atras < tam, basta una vuelta
+                    int k = (int) pos;
+                    const bool sobra = k >= tam[i];   // rev#i0: -epsilon + tam redondea a tam
+                    k -= sobra ? tam[i] : 0;
+                    pos -= sobra ? tamF[i] : 0.0f;
+                    leeIdx[i] = k;
+                    leeFr[i] = pos - (float) k;
+                }
+            }
+            float s[kLines];
+            for (int i = 0; i < kLines; ++i)
+            {
+                const float* r = lp[i];
+                const int k = leeIdx[i];
+                const int k1 = k + 1 < tam[i] ? k + 1 : 0;
+                s[i] = r[k] + leeFr[i] * (r[k1] - r[k]);
+                leeIdx[i] = k1;
+            }
+
+            //  3. Hadamard de dieciseis, normalizada: ortogonal, conserva la energia.
+            float hz[kLines];
+            for (int i = 0; i < kLines; ++i) hz[i] = s[i];
+            for (int paso = 1; paso < kLines; paso <<= 1)
+                for (int i = 0; i < kLines; i += paso << 1)
+                    for (int j = i; j < i + paso; ++j)
+                    {
+                        const float u = hz[j], v = hz[j + paso];
+                        hz[j] = u + v; hz[j + paso] = u - v;
+                    }
+            constexpr float kNorm = 0.25f;   // 1/sqrt(16)
+
+            //  4. Escribir de vuelta: entrada + realimentacion amortiguada.
+            for (int i = 0; i < kLines; ++i)
+            {
+                const float v = kEntra[i] * x + fbLinea[i] * kNorm * hz[i];
+                //  Un polo por linea: la cola se oscurece con cada vuelta,
+                //  que es lo que hace el aire de una sala de verdad.
+                const float d = damp[i] + dampC * (v - damp[i]);
+                //  Y LA BARRERA, aqui dentro y no a la salida: un NaN que
+                //  entra en un estado realimentado se queda para siempre.
+                damp[i] = std::abs (d) <= std::numeric_limits<float>::max() ? d : 0.0f;   // rev#cpu: isfinite sin rama
+            }
+            for (int i = 0; i < kLines; ++i) lp[i][lineIdx[i]] = damp[i];
+
+            //  5. La salida es la suma de las lineas, atenuada para que
+            //     dieciseis lineas sumadas no lleguen dieciseis veces mas fuerte.
             for (int c = 0; c < ch; ++c)
             {
-                float x = w[c][n];
-
-                //  1. Difusion: cuatro allpass en serie. y = -g*x + z ; z' = x + g*y
-                for (int d = 0; d < kDiff; ++d)
-                {
-                    float* dl = dif[d].getWritePointer (c);
-                    const int   di = difIdx[d];
-                    const float z  = dl[di];
-                    const float y  = -kDiffG * x + z;
-                    dl[di] = x + kDiffG * y;
-                    x = y;
-                }
-
-                //  2. Leer las lineas, cada una con su largo respirando.
-                float s[kLines];
-                for (int i = 0; i < kLines; ++i)
-                {
-                    auto& o = osc[c][i];
-                    const float nc = o[0] * rotC[i] - o[1] * rotS[i];
-                    o[1] = o[0] * rotS[i] + o[1] * rotC[i];
-                    o[0] = nc;
-                    const float atras = (float) lineLen[i] + profundidad * (1.0f + o[1]);
-                    const int   tam   = line[i].getNumSamples();
-                    float pos = (float) lineIdx[i] - atras;
-                    while (pos < 0.0f) pos += (float) tam;
-                    int i0 = (int) pos;
-                    if (i0 >= tam) { i0 -= tam; pos -= (float) tam; }   // rev#i0: -epsilon + tam redondea a tam
-                    const float fr = pos - (float) i0;
-                    const float* r = line[i].getReadPointer (c);
-                    const float a0 = r[i0], a1 = r[i0 + 1 < tam ? i0 + 1 : 0];
-                    s[i] = a0 + fr * (a1 - a0);
-                }
-
-                //  3. Hadamard de dieciseis, normalizada: ortogonal, conserva la energia.
-                float hz[kLines];
-                for (int i = 0; i < kLines; ++i) hz[i] = s[i];
-                for (int paso = 1; paso < kLines; paso <<= 1)
-                    for (int i = 0; i < kLines; i += paso << 1)
-                        for (int j = i; j < i + paso; ++j)
-                        {
-                            const float u = hz[j], v = hz[j + paso];
-                            hz[j] = u + v; hz[j + paso] = u - v;
-                        }
-                constexpr float kNorm = 0.25f;   // 1/sqrt(16)
-
-                //  4. Escribir de vuelta: entrada + realimentacion amortiguada.
-                for (int i = 0; i < kLines; ++i)
-                {
-                    float v = kEntra[i] * x + fbLinea[i] * kNorm * hz[i];
-                    //  Un polo por linea: la cola se oscurece con cada vuelta,
-                    //  que es lo que hace el aire de una sala de verdad.
-                    damp[i][c] += dampC * (v - damp[i][c]);
-                    v = damp[i][c];
-                    //  Y LA BARRERA, aqui dentro y no a la salida.
-                    //
-                    //  Las tres que tiene la app -Voice::start, fastTanh y el
-                    //  master- protegen lo que SALE, y este estado se
-                    //  realimenta: un NaN que entre una vez se queda dentro
-                    //  para siempre, y solo se limpia en prepareToPlay, o sea
-                    //  al cambiar de ruta. La reverb quedaba muda hasta
-                    //  reiniciar la app. Comparar con NaN siempre es falso, asi
-                    //  que se pregunta por lo finito y no por lo malo.
-                    if (! std::isfinite (v)) { v = 0.0f; damp[i][c] = 0.0f; }
-                    line[i].getWritePointer (c)[lineIdx[i]] = v;
-                }
-
-                //  5. La salida es la suma de las lineas, atenuada para que
-                //     dieciseis lineas sumadas no lleguen dieciseis veces mas fuerte.
                 float suma = 0.0f;
                 for (int i = 0; i < kLines; ++i) suma += kSale[c][i] * s[i];
                 w[c][n] = kSalida * suma;
             }
+            if (ch > 1)
+            {
+                gL0 += dL; gR0 += dR;
+                w[0][n] *= gL0; w[1][n] *= gR0;
+            }
 
-            //  Los indices avanzan UNA vez por muestra, no una por canal: son
-            //  la posicion en la linea, no un estado del canal.
             for (int i = 0; i < kLines; ++i)
-                if (++lineIdx[i] >= line[i].getNumSamples()) lineIdx[i] = 0;
+                if (++lineIdx[i] >= tam[i]) lineIdx[i] = 0;
             for (int d = 0; d < kDiff; ++d)
                 if (++difIdx[d] >= difLen[d]) difIdx[d] = 0;
         }
@@ -294,17 +341,16 @@ public:
     //  de lo que ya ha salido.
     bool ringing() const noexcept
     {
-        for (const auto& d : damp)
-            for (float v : d)
-            {
-                //  Y UN NaN CUENTA COMO ENERGIA. `std::abs(NaN) > 1e-6` es
-                //  FALSO -comparar con NaN siempre lo es- asi que un bus
-                //  envenenado se declaraba MUERTO: dejaba de renderizarse y por
-                //  tanto no habia forma de que se limpiara solo. La barrera de
-                //  arriba lo impide, y esto es el cinturon: lo que no es finito
-                //  no es silencio.
-                if (! std::isfinite (v) || std::abs (v) > 1.0e-6f) return true;
-            }
+        for (float v : damp)
+        {
+            //  Y UN NaN CUENTA COMO ENERGIA. `std::abs(NaN) > 1e-6` es
+            //  FALSO -comparar con NaN siempre lo es- asi que un bus
+            //  envenenado se declaraba MUERTO: dejaba de renderizarse y por
+            //  tanto no habia forma de que se limpiara solo. La barrera de
+            //  arriba lo impide, y esto es el cinturon: lo que no es finito
+            //  no es silencio.
+            if (! std::isfinite (v) || std::abs (v) > 1.0e-6f) return true;
+        }
         return false;
     }
 
@@ -326,10 +372,14 @@ private:
     juce::AudioBuffer<float> dif[kDiff];
     int lineLen[kLines] {}, lineIdx[kLines] {};
     int difLen[kDiff] {},   difIdx[kDiff] {};
-    float damp[kLines][2] {};
+    float damp[kLines] {};
     float exponente[kLines] {}, fbLinea[kLines] {};
     float rotC[kLines] {}, rotS[kLines] {};
-    float osc[2][kLines][2] {};
+    float oscC[kLines] {}, oscS[kLines] {};   // rev#cpu: coseno y seno en filas separadas
+    static constexpr int kSub = 32;   // rev#cpu: muestras entre dos recalculos de la respiracion
+    int leeIdx[kLines] {}, quedaSub = 0;
+    float leeFr[kLines] {};
+    float ladoE[2] {}, ladoG[2] { 1.0f, 1.0f };   // rev#lado: energia que entra por cada lado y la ganancia de cada salida
     float profundidad = 0.0f;
 
     float fb    = 0.85f;
