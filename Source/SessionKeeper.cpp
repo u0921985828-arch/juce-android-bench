@@ -47,6 +47,9 @@ bool SessionKeeper::exists()
 
 juce::File SessionKeeper::padFile (int pad)
 {
+    if (pad >= kPadsSesion)   // tomas#lista
+        return folder().getChildFile ("samples")
+                       .getChildFile ("toma" + juce::String (pad - kPadsSesion + 1).paddedLeft ('0', 2) + ".wav");
     return folder().getChildFile ("samples")
                    .getChildFile ("pad" + juce::String (pad + 1).paddedLeft ('0', 2) + ".wav");
 }
@@ -91,7 +94,7 @@ void SessionKeeper::sync (const SampleBuffer::Ptr* live, int numPads,
                 if (live[i] != nullptr)
                 {
                     dueno = i;
-                    for (int j = 0; j < i; ++j)
+                    for (int j = i < kPadsSesion ? 0 : kPadsSesion; j < i; ++j)
                         if (live[j].get() == live[i].get()) { dueno = j; break; }
                 }
                 cambia = live[i].get() != seen[(size_t) i].get() || dueno != ownedBy[(size_t) i];
@@ -112,7 +115,7 @@ void SessionKeeper::sync (const SampleBuffer::Ptr* live, int numPads,
             if (live[i] != nullptr)
             {
                 dueno = i;
-                for (int j = 0; j < i; ++j)
+                for (int j = i < kPadsSesion ? 0 : kPadsSesion; j < i; ++j)
                     if (live[j].get() == live[i].get()) { dueno = j; break; }
             }
 

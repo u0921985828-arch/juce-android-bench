@@ -2667,7 +2667,11 @@ private:
     //  dieciseis ValueTree y dieciseis juegos de punteros con cuenta, que se
     //  sueltan en el hilo de mensajes como todo lo demas.
     static constexpr int kUndoDepth = 16;
-    struct Snapshot { juce::ValueTree state; PadSet pads; juce::String label; };
+    //  tomas#lista: las tomas de voz son de la cancion y no ocupan pads
+    struct Toma { SampleBuffer::Ptr buf; juce::String nombre; };
+    static constexpr int kMaxTomas = 64;
+    std::vector<Toma> tomas;
+    struct Snapshot { juce::ValueTree state; PadSet pads; juce::String label; std::vector<Toma> tomas; };
     std::vector<Snapshot> undoStack, redoStack;
     void vaciaDeshacer();
 
@@ -2993,7 +2997,7 @@ private:
     //  pad, y que ventana de ese pad- y no cuando cambia donde esta puesto.
     struct OndaClip
     {
-        int pad = -1, desde = -1, largo = -1;
+        int pad = -1, desde = -1, largo = -1, toma = -2;
         juce::Array<float> mm;      // intercalada min,max por columna
     };
     std::vector<OndaClip> songClipsOnda;
@@ -3869,6 +3873,7 @@ private:
         //  escribio ninguno). Ver ProjectStore::sampleFile con marca.
         juce::String marca;
         std::array<juce::String, AudioEngine::kNumPads> wav;
+        std::vector<juce::String> wavTomas;     // tomas#lista
     };
     std::unique_ptr<PadSaveJob> padSaveJob;
 
@@ -5031,8 +5036,18 @@ private:
         int   desde  = 0;       // primera muestra que suena
         int   largo  = 0;       // cuantas
         float gain   = 1.0f;
+        int   toma   = -1;      // tomas#lista: indice en `tomas`, o -1 si sale de un pad
+        bool  debajo = false;   // tomas#capas: tapado por otra toma, no suena
     };
     std::vector<ClipUI> clips;
+    SampleBuffer* fuenteClip (const ClipUI& c) const;
+    void ponToma (SampleBuffer::Ptr sb, int pista, int paso);
+    void rotaToma (int indice);
+    int  capasDe (int indice) const;
+    void cargaTomas (const juce::ValueTree& s, const juce::File& carpeta);
+    std::array<SampleBuffer::Ptr, AudioEngine::kNumPads + kMaxTomas> vivosSesion;
+    const SampleBuffer::Ptr* vivos();
+    static constexpr int kVivos = AudioEngine::kNumPads + kMaxTomas;
 
     //  Traduce los clips a la tabla del motor resolviendo pad -> buffer, y la
     //  publica. Se llama desde el hilo de mensajes y en ningun otro sitio.
@@ -5178,6 +5193,11 @@ private:
     int  selectedPad   = -1;
     bool loadArmed     = false;
     bool recordingActive = false;
+    bool tomaArmada = false;     // tomas#vacia: la apertura llego a armar la toma
+    bool cuentaAlParar = false;
+    bool tomaVista = false;      // tomas#vacia: el motor llego a grabar esta toma
+    void pintaTomaEnVivo();
+    int  pasoToma = 0;           // tomas#lista: paso donde cae la toma al arreglo  // tomas#vacia: se paro con la cuenta atras en marcha
     int  tomaCompartida  = -1;
     int  anunciosHechos  = 0;    // avisos mandados al lector de pantalla   // la toma del micro ya estaba publicada al recortarla (estabilidad#2)
     int  recordingSlot = -1;

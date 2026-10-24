@@ -142,7 +142,8 @@ private:
     //  Al menos AudioEngine::kNumPads. Era 32 cuando la maquina tenia 16, y
     //  pasar a 64 habria dejado de proteger la mitad sin avisar - sync() y
     //  adopt() acotan las dos con jmin.
-    static constexpr int kMaxPads = 64;
+    static constexpr int kPadsSesion = 64;
+    static constexpr int kMaxPads = kPadsSesion + 64;   // tomas#lista: detras de los pads, las tomas
     std::array<SampleBuffer::Ptr, kMaxPads> seen, queued;
     std::array<bool, kMaxPads> dirty {};
     //  De que pad sale el audio de cada uno: el indice mas bajo que comparte su

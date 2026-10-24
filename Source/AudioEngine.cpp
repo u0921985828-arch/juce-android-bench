@@ -945,6 +945,7 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
             for (int ch = 0; ch < chans; ++ch)
                 recordBuffer.copyFrom (ch, rp, out.getReadPointer (ch, startSample), n);
 
+            apuntaPicos (rp, rp + n);
             rp += n;
             recordPos.store (rp, std::memory_order_release);
         }
@@ -1604,6 +1605,7 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
         //  los pasos que quedaran de la anterior sin que nadie los hubiera
         //  pedido.
         cuentaPasos.store (0, std::memory_order_relaxed);
+        grabarTrasCuenta.store (false, std::memory_order_relaxed);   // tomas#cuenta: sin esto la toma se arma sola al volver a PLAY
         //  Y AL PARAR, EL PAD VUELVE A SER EL PAD. El bloqueo de corte dura
         //  hasta que otro paso diga otra cosa, y con el transporte parado no va
         //  a decirlo nadie: sin esto, parar en mitad de un barrido dejaba el
@@ -1859,6 +1861,9 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
 
                 const int bar = songStep / pasosCompas;
                 songBar.store (bar, std::memory_order_relaxed);
+                //  tomas#lista: una toma sin cuenta atras empieza en el compas de su primer paso
+                if (recording.load (std::memory_order_relaxed) && compasGrabado.load (std::memory_order_relaxed) < 0)
+                    compasGrabado.store (bar, std::memory_order_relaxed);
 
                 //  LA AUTOMATIZACION, EN EL BORDE DE PASO y no por bloque: si
                 //  se aplicara al consumir la cola llegaria un bloque tarde -
@@ -4640,6 +4645,7 @@ void AudioEngine::faseToma (Mezcla& mz) noexcept
                     recordBuffer.copyFrom (ch, rp, out.getReadPointer (ch, startSample), nRec);
             }
 
+            apuntaPicos (rp, rp + nRec);
             rp += nRec;
             recordPos.store (rp, std::memory_order_release);
         }
@@ -5889,11 +5895,30 @@ void AudioEngine::startRecording (int slot, bool fromMaster) noexcept
     //  Set the SOURCE before arming, or a block that lands between the two
     //  records the wrong thing.
     recordFromMaster.store (fromMaster, std::memory_order_release);
+    compasGrabado.store (-1, std::memory_order_relaxed);   // tomas#lista: lo apunta el primer paso
     recording.store (true, std::memory_order_release);
+}
+
+void AudioEngine::apuntaPicos (int desde, int hasta) noexcept
+{
+    if (desde == 0) { picoParcial = 0.0f; picosN.store (0, std::memory_order_relaxed); }
+    const float* d = recordBuffer.getReadPointer (0);
+    int k = picosN.load (std::memory_order_relaxed);
+    for (int i = desde; i < hasta; ++i)
+    {
+        picoParcial = juce::jmax (picoParcial, std::abs (d[i]));
+        if ((i + 1) % kPicoHop == 0 && k < kPicosMax)
+        {
+            picos[(size_t) k++] = picoParcial;
+            picoParcial = 0.0f;
+        }
+    }
+    picosN.store (k, std::memory_order_release);
 }
 
 SampleBuffer::Ptr AudioEngine::finishRecording (bool publica) noexcept
 {
+    grabarTrasCuenta.store (false, std::memory_order_seq_cst);   // tomas#cuenta
     recording.store (false, std::memory_order_seq_cst);
     //  estabilidad#9: el bloque que ya vio la toma armada acaba antes de leerla.
     for (int i = 0; escribiendoToma.load (std::memory_order_seq_cst) && i < 200000; ++i)

@@ -133,6 +133,9 @@ public:
         //  liso con el numero del pad no dice donde entra el golpe.
         const float* onda = nullptr;
         int columnas      = 0;
+        int  toma   = -1;     // tomas#lista: numero de toma, o -1 si sale de un pad
+        int  capas  = 1;      // tomas#capas: cuantas tomas hay apiladas aqui
+        bool debajo = false;  // tapada por otra: ni se pinta ni se toca
     };
 
     //  UN BLOQUE DE PATRON, TAL Y COMO ESTA REJILLA LO VE: en pasos, como un
@@ -217,6 +220,17 @@ public:
     //  buscar el pad, abrir su ficha y bajar a la pagina RIG: cuatro pasos
     //  para una cosa que se esta mirando.
     std::function<void (int indice)> onClipChop;
+    std::function<void (int indice)> onClipToma;   // tomas#capas: MUTE sobre una pila
+
+    //  tomas#onda: la toma que esta entrando, a su nivel real y no normalizada
+    void setGrabando (int pista, int desdePaso, int hastaPaso, const float* picos, int n)
+    {
+        grabPista = pista; grabDesde = desdePaso; grabHasta = juce::jmax (desdePaso + 1, hastaPaso);
+        grabPicos = picos; grabN = n;
+        repaint();
+    }
+    void sinGrabando() { if (grabPista >= 0) { grabPista = -1; grabPicos = nullptr; grabN = 0; repaint(); } }
+    int  grabandoPicos() const noexcept { return grabPista >= 0 ? grabN : -1; }
     //  Y EL LARGO, arrastrando un filo. Llega en PASOS porque es lo que esta
     //  rejilla sabe: quien traduce a muestras es quien tiene el tempo.
     std::function<void (int indice, int desdePaso, int hastaPaso)> onClipLargo;
@@ -693,6 +707,7 @@ public:
         }
 
         pintaClips (g);
+        pintaGrabando (g);
 
         //  LA SELECCION SE VE POR RELLENO, como en el piano: el cabezal al
         //  55 % sobre lo que haya debajo, bloques y clips incluidos, que es lo
@@ -813,7 +828,19 @@ public:
         //  Con el LAPIZ y la brocha en CLIP, un hueco suelta un clip; encima de
         //  uno que ya esta, el lapiz no tiene nada que decir.
         if (herramienta == hLapiz && pincelClip) return ! clipBajoElDedo (e);
+        if (herramienta == hMute) return tomaApilada (e) >= 0;   // tomas#capas
         return false;
+    }
+
+    int tomaApilada (const juce::MouseEvent& e) const
+    {
+        auto r = getLocalBounds();
+        if (e.x < r.getX() + kGutter) return -1;
+        const float pistaH = (float) r.getHeight() / (float) kAudioLanes;
+        if (pistaH <= 0.0f) return -1;
+        const int pista = juce::jlimit (0, kAudioLanes - 1, (int) ((float) (e.y - r.getY()) / pistaH));
+        const int i = clipEn (pista, pasoDeX (e.x));
+        return (i >= 0 && clips[i].toma >= 0 && clips[i].capas > 1) ? i : -1;
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -1103,7 +1130,7 @@ public:
         for (int i = 0; i < numClips; ++i)
         {
             const ClipVista& c = clips[i];
-            if (! juce::isPositiveAndBelow (c.pista, kAudioLanes)) continue;
+            if (! juce::isPositiveAndBelow (c.pista, kAudioLanes) || c.debajo) continue;
             const int d = juce::jmax (c.desdePaso, base);
             const int h = juce::jmin (c.hastaPaso, tope);
             if (h <= d) continue;                       // no cae en esta pagina
@@ -1116,7 +1143,8 @@ public:
             //  un clip que no se puede agarrar para deshacerlo.
             auto caja = cajaPaso (c.pista, d, h);
             caja = caja.reduced (juce::jmin (1.5f, caja.getWidth() * 0.25f), 1.5f);
-            const auto col = (zati != nullptr && juce::isPositiveAndBelow (c.pad, zatis))
+            const auto col = c.toma >= 0 ? ZatiColours::accentBright   // tomas#lista
+                           : (zati != nullptr && juce::isPositiveAndBelow (c.pad, zatis))
                                  ? Zati::colour (zati[c.pad]) : Zati::colour (c.pad);
             const bool mudo = (mudoAudio & (1u << (unsigned) c.pista)) != 0;
 
@@ -1184,7 +1212,32 @@ public:
             g.setColour (mudo ? col.withAlpha (0.85f)
                               : ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
             g.setFont (ZatiColours::monoFont (Metrics::fMeta, true));
-            g.drawText (juce::String (c.pad + 1).paddedLeft ('0', 2), caja, juce::Justification::centred);
+            g.drawText (c.toma >= 0 ? "T" + juce::String (c.toma + 1) + (c.capas > 1 ? " x" + juce::String (c.capas) : juce::String())
+                                    : juce::String (c.pad + 1).paddedLeft ('0', 2),
+                        caja, juce::Justification::centred);
+        }
+    }
+
+    void pintaGrabando (juce::Graphics& g)
+    {
+        if (! juce::isPositiveAndBelow (grabPista, kAudioLanes)) return;
+        const int pc   = juce::jmax (1, pasosCompas);
+        const int base = primerCompas * pc, tope = base + barsView * pc;
+        const int d = juce::jmax (grabDesde, base), h = juce::jmin (grabHasta, tope);
+        if (h <= d) return;
+        auto caja = cajaPaso (grabPista, d, h).reduced (0.0f, 1.5f);
+        g.setColour (ZatiColours::red.withAlpha (0.25f)); g.fillRect (caja);
+        g.setColour (ZatiColours::red);                   g.drawRect (caja, Metrics::filo);
+        if (grabPicos == nullptr || grabN <= 0) return;
+        const auto todo = cajaPaso (grabPista, grabDesde, grabHasta);
+        const float w = todo.getWidth() / (float) grabN;
+        const float medio = caja.getCentreY(), alto = caja.getHeight() * 0.5f - 2.0f;
+        for (int k = 0; k < grabN; ++k)
+        {
+            const float x = todo.getX() + w * (float) k;
+            if (x + w <= caja.getX() || x >= caja.getRight()) continue;
+            const float a = juce::jlimit (0.0f, 1.0f, grabPicos[k]) * alto;
+            g.fillRect (x, medio - a, juce::jmax (1.0f, w), juce::jmax (1.0f, 2.0f * a));
         }
     }
 
@@ -1194,7 +1247,7 @@ public:
     int clipEn (int pista, int paso) const
     {
         for (int i = 0; i < numClips; ++i)
-            if (clips[i].pista == pista
+            if (clips[i].pista == pista && ! clips[i].debajo
                 && paso >= clips[i].desdePaso && paso < clips[i].hastaPaso)
                 return i;
         return -1;
@@ -1220,6 +1273,11 @@ public:
         const int pegado = (paso / u) * u;
         if (paso / pc >= totalBars) return;
 
+        if (herramienta == hMute)
+        {
+            if (! arrastrando && onClipToma) { const int i = tomaApilada (e); if (i >= 0) onClipToma (i); }
+            return;
+        }
         if (! arrastrando)
         {
             arrastrado = clipEn (pista, paso);
@@ -1520,6 +1578,8 @@ private:
     bool             clipsVistos = false;
     const ClipVista* clips = nullptr;
     int              numClips = 0;
+    int          grabPista = -1, grabDesde = 0, grabHasta = 1, grabN = 0;   // tomas#onda
+    const float* grabPicos = nullptr;
     int              clipSel  = -1;   // el que se esta moviendo, para que se vea
     int              arrastrado = -1; // el que este dedo agarro
     //  El asa de un BLOQUE de patron, que no es la de un clip: aquella vive en

@@ -37,7 +37,7 @@ import json, os, subprocess, sys, tempfile
 from kits import PANTALLA                                          # noqa: E402
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
-APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
+APP  = os.environ.get ("ZATI_BIN") or os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 
 #  SIN PANTALLA NO SE MIDE NADA, y hay que DECIRLO: sin esta guarda un Xvfb
@@ -82,50 +82,73 @@ def main():
         return 1
 
     f = corre()
-    if 1 not in f or 2 not in f or 3 not in f:
-        print ("FALLA  la app no publico las tres lineas de las tomas")
+    if any (k not in f for k in (1, 2, 3, 5, 8, 9)):
+        print ("FALLA  la app no publico las lineas de las tomas (%s)" % sorted (f))
         return 1
 
     malas = []
     a, b, c = f[1], f[2], f[3]
-    banco = chr (ord ("A") + a["banco"])
 
-    #  1. LA TOMA CAE EN EL BANCO DE TOMAS *Y EL PAD 01 SIGUE INTACTO*.
-    #
-    #     Dos cifras porque una se engaña: «cae en C01» lo cumple tambien un
-    #     codigo que escribe siempre el mismo pad, y «el 01 sigue intacto» lo
-    #     cumple una toma que no llego a grabarse. La segunda es la queja tal
-    #     cual llego.
-    print ("destino  primera %s   segunda %s   nombre %s   (banco de tomas %s)"
-           % (a["primera"], a["segunda"], a["nombre"], banco))
+    #  1. tomas#lista: LAS TOMAS VAN A LA LISTA DE LA CANCION Y NINGUN PAD CAMBIA.
+    #     Dos tomas grabadas por la tapa, dos en la lista, dos clips que suenan
+    #     de ellas, y los sesenta y cuatro pads con el mismo audio que antes.
+    print ("lista    grabadas %d   en la lista %d   clips de toma %d (con audio %d)   pads cambiados %d"
+           % (a["grabadas"], a["lista"], a["clips_toma"], a["con_audio"], a["pads_cambiados"]))
     print ("pad 01   antes %-10s ahora %s" % (a["pad01antes"], a["pad01"]))
-    if not a["primera"].startswith (banco):
-        malas.append ("la toma no cae en el banco de tomas: %s" % a["primera"])
-    if a["pad01"] != a["pad01antes"]:
-        malas.append ("la toma se comio el pad 01: era «%s» y es «%s»"
-                      % (a["pad01antes"], a["pad01"]))
+    if a["grabadas"] != 2 or a["lista"] != 2:
+        malas.append ("dos tomas por la tapa y la lista tiene %d" % a["lista"])
+    if a["con_audio"] != 2:
+        malas.append ("los clips de toma no suenan de su toma: %d de 2" % a["con_audio"])
+    if a["pads_cambiados"] != 0 or a["pad01"] != a["pad01antes"]:
+        malas.append ("grabar al arreglo toco %d pads" % a["pads_cambiados"])
 
-    #  2. Y LA SEGUNDA CAE EN OTRO PAD. Es la mitad que no se ve: un clip apunta
-    #     al PAD, asi que dos tomas en el mismo hueco reescriben el audio de la
-    #     primera.
-    if a["primera"] == a["segunda"]:
-        malas.append ("las dos tomas caen en el mismo pad (%s): la segunda "
-                      "reescribe el audio de la primera y su clip pasa a sonar "
-                      "otra cosa" % a["primera"])
-    if not a["nombre"].startswith ("TOMA"):
-        malas.append ("la toma no se llama TOMA n: «%s»" % a["nombre"])
+    #  2. tomas#capas: LA NUEVA ENCIMA, LA VIEJA DEBAJO, Y MUTE ELIGE.
+    e5 = f[5]
+    print ("pila     debajo %d   suena T%d   tras MUTE suena T%d"
+           % (a["debajo"], a["arriba"] + 1, e5["suena_despues"] + 1))
+    if a["debajo"] != 1 or a["arriba"] != 1:
+        malas.append ("la segunda toma no queda encima de la primera (debajo %d, suena %d)"
+                      % (a["debajo"], a["arriba"]))
+    if e5["suena_despues"] != 0 or e5["debajo"] != 1:
+        malas.append ("MUTE sobre la pila no pasa a la otra toma (suena %d)" % e5["suena_despues"])
 
-    #  3. CON EL BANCO LLENO DE LO QUE PUSO LA PERSONA, NO GRABA Y LO DICE.
-    #
-    #     Con dos cifras: sin la segunda, «dice que esta lleno» lo cumple
-    #     tambien una app que lo dice y graba igual.
-    print ("lleno    lo dice %d   arranco %d" % (b["lleno"], b["grabando"]))
-    if b["lleno"] != 1:
-        malas.append ("con los dieciseis puestos por la persona, la puerta "
-                      "sigue encontrando sitio")
-    if b["grabando"] != 0:
-        malas.append ("el banco esta lleno y la toma arranca igual: se va a "
-                      "comer algo que pusiste tu")
+    #  3. tomas#onda: LA PISTA VE LA TOMA MIENTRAS ENTRA, a su nivel.
+    print ("onda     picos en la pista %d   pico %.3f" % (a["picos_vistos"], a["pico"]))
+    if a["picos_vistos"] <= 0 or a["pico"] <= 0.0:
+        malas.append ("la pista no dibuja la toma mientras se graba (%d picos)" % a["picos_vistos"])
+
+    #  4. LAS TOMAS VUELVEN: WAV de sesion, arbol y deshacer.
+    e9 = f[9]
+    print ("vuelven  wav de sesion %d   clips con audio %d   deshacer deja %d de %d"
+           % (e9["wav_sesion"], e9["vuelven"], e9["tras_deshacer"], e9["lista"]))
+    if e9["wav_sesion"] != 1:
+        malas.append ("la sesion no escribe el WAV de la toma")
+    if e9["vuelven"] != 2:
+        malas.append ("al volver de la sesion los clips de toma no tienen audio (%d de 2)" % e9["vuelven"])
+    print ("proyecto clips de toma con audio tras guardar y abrir %d" % e9.get ("proyecto", -1))
+    if e9.get ("proyecto") != 2:
+        malas.append ("al abrir el proyecto los clips de toma no tienen audio (%s de 2)" % e9.get ("proyecto"))
+    if e9["tras_deshacer"] != e9["lista"] - 1:
+        malas.append ("deshacer no quita la ultima toma (%d de %d)" % (e9["tras_deshacer"], e9["lista"]))
+
+    #  5. tomas#vacia: CON CUENTA ATRAS, UN CUADRO NO PARA LA TOMA QUE ESPERA.
+    #     Era el «No se grabo nada» del telefono: el cuadro veia el motor sin
+    #     grabar -la cuenta, o el micro abriendo- y cerraba la toma vacia.
+    #     Y parar en la cuenta dice por que.
+    e8 = f[8]
+    print ("cuenta   armada %d   sigue tras un cuadro %d   «%s»"
+           % (e8["en_cuenta"], e8["sigue"], e8["estado"]))
+    if e8["en_cuenta"] != 1:
+        malas.append ("la toma no quedo armada en la cuenta atras")
+    if e8["sigue"] != 1:
+        malas.append ("un cuadro con la cuenta en marcha cierra la toma vacia: «No se grabo nada»")
+    if "cuenta" not in e8["estado"].lower():
+        malas.append ("parar en la cuenta no dice por que no hay toma: «%s»" % e8["estado"])
+
+    #  6. CON EL BANCO DE TOMAS LLENO SE GRABA AL ARREGLO IGUAL: no ocupa pads.
+    print ("lleno    arranco %d" % b["grabando"])
+    if b["grabando"] != 1:
+        malas.append ("con el banco de tomas lleno, grabar al arreglo no arranca")
 
     #  4. Y LA MARCA VUELVE DEL FICHERO. Sin ella la regla cambiaria entre el
     #     primer arranque y el segundo -la sesion devuelve los sesenta y cuatro
@@ -164,7 +187,7 @@ def main():
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1
-    print ("las tomas caen en el banco %s, en orden, y nada de lo tuyo se pisa" % banco)
+    print ("las tomas van a la cancion, se apilan, se ven entrar y vuelven")
     return 0
 
 

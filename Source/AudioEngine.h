@@ -2583,6 +2583,15 @@ public:
     SampleBuffer::Ptr finishRecording (bool publica = true) noexcept;   // stop + build + publish; returns the buffer
     bool isRecording() const noexcept { return recording.load (std::memory_order_relaxed); }
     float getRecordSeconds() const noexcept;
+    int   getRecordPos() const noexcept { return recordPos.load (std::memory_order_acquire); }
+    //  tomas#cuenta: armada y esperando a que acabe la cuenta atras
+    bool  tomaEnCuenta() const noexcept { return grabarTrasCuenta.load (std::memory_order_acquire); }
+
+    //  tomas#onda: un pico cada kPicoHop muestras de la toma en curso, para dibujarla mientras entra
+    static constexpr int kPicoHop  = 512;
+    static constexpr int kPicosMax = 16384;
+    int   picosToma() const noexcept { return picosN.load (std::memory_order_acquire); }
+    const float* picosDatos() const noexcept { return picos.data(); }
 
 private:
     void handleCommand (const Command& c) noexcept;               // audio thread
@@ -3188,6 +3197,10 @@ private:
     std::atomic<int>  recordPos { 0 };
     std::atomic<bool> escribiendoToma { false };   // estabilidad#9
     juce::AudioBuffer<float> recordBuffer;   // allocated in prepareToPlay, never in the callback
+    std::array<float, kPicosMax> picos {};   // tomas#onda: los escribe solo el hilo de audio
+    std::atomic<int> picosN { 0 };
+    float picoParcial = 0.0f;                // audio-thread only
+    void apuntaPicos (int desde, int hasta) noexcept;
     int    recordChannels = 1;               // how many of the input channels we keep
     double recordSeconds  = 60.0;
     bool   recordAllowStereo = true;

@@ -9673,72 +9673,128 @@ void MainComponent::auditTomas()
     //  tocado - y recien abierta la app ese es el primero.
     selectPad (0);
 
-    auto toma = [this] () -> int
+    //  tomas#lista: grabar al arreglo por la tapa, del master, y apuntar
+    //  cuantos picos vio la pista mientras entraba (tomas#onda).
+    int picosVistos = -1;
+    float picoMax = 0.0f;
+    auto toma = [this, &picosVistos, &picoMax] () -> bool
     {
+        bombeaAudioDePrueba();                // el motor ve el transporte parado entre toma y toma
         pulsaTapa (&songRecBtn);
-        if (! grabandoAlArreglo) return -1;         // no habia sitio: no arranco
-        //  Y SE ESPERA A QUE ABRA. Desde que grabar abre en el hilo abridor
-        //  (Tribunal 2026-09, 4.3), la toma se arma al recoger la apertura y no
-        //  al apretar; medir sin esperar medía el estado a medio arranque y
-        //  sacaba las dos tomas en el mismo pad.
+        if (! grabandoAlArreglo) return false;
         esperaAbridor (15000);
-        const int slot = recordingSlot;
-        engine.startRecording (slot, true);         // el master en vez del micro
+        engine.startRecording (recordingSlot, true);         // el master en vez del micro
         engine.setPlaying (true);
-        for (int i = 0; i < 4; ++i) bombeaAudioDePrueba();
+        for (int i = 0; i < 64; ++i) bombeaAudioDePrueba();
+        pintaCuadro (16.7);                   // el cuadro es quien pinta la toma en vivo
+        picosVistos = songGrid.grabandoPicos();
+        for (int k = 0; k < engine.picosToma(); ++k) picoMax = juce::jmax (picoMax, engine.picosDatos()[k]);
         pulsaTapa (&songRecBtn);
-        return slot;
+        return true;
     };
-
     auto cuantosDeFabrica = [this]
     {
         int n = 0;
         for (int i = 0; i < kNumPads; ++i) if (padDeFabrica[(size_t) i]) ++n;
         return n;
     };
+    auto nDebajo = [this]
+    {
+        int n = 0;
+        for (const auto& c : clips) if (c.toma >= 0 && c.debajo) ++n;
+        return n;
+    };
 
-    //  1. LA TOMA CAE EN EL BANCO DE TOMAS *Y EL PAD 01 SIGUE INTACTO*.
-    //
-    //  Con DOS cifras porque una se engaña: «cae en C01» lo cumple tambien un
-    //  codigo que escribe siempre el mismo pad, y «el 01 sigue intacto» lo
-    //  cumple una toma que no llego a grabarse. La segunda es la queja tal cual
-    //  llego -«cuando grabo se sobrescribe el pad uno»- y con la caida de antes
-    //  sale `A01` y el nombre de fabrica sustituido.
+    //  1. DOS TOMAS EN EL MISMO SITIO: van a la lista, ningun pad cambia y la
+    //     nueva queda encima de la vieja.
     const juce::String nombre01 = padName[0];
-    const int primera = toma();
+    std::array<SampleBuffer*, kNumPads> padsAntes {};
+    for (int i = 0; i < kNumPads; ++i) padsAntes[(size_t) i] = uiSample[(size_t) i].get();
+    clips.clear();
+    tomas.clear();
+    const bool t1 = toma();
+    const bool t2 = toma();
+    int padsCambiados = 0;
+    for (int i = 0; i < kNumPads; ++i) if (uiSample[(size_t) i].get() != padsAntes[(size_t) i]) ++padsCambiados;
+    int clipsToma = 0, conAudio = 0;
+    for (const auto& c : clips) if (c.toma >= 0) { ++clipsToma; if (fuenteClip (c) != nullptr) ++conAudio; }
+    const int debajo = nDebajo();
+    int arriba = -1;
+    for (int i = 0; i < (int) clips.size(); ++i) if (clips[(size_t) i].toma >= 0 && ! clips[(size_t) i].debajo) arriba = clips[(size_t) i].toma;
 
-    //  2. Y LA SEGUNDA CAE EN OTRO PAD. Es la mitad que no se ve: un clip
-    //     apunta al PAD, asi que dos tomas en el mismo hueco reescriben el
-    //     audio de la primera y el clip ya puesto pasa a sonar otra cosa.
-    const int segunda = toma();
+    std::cout << "{\"tomas\":1,\"grabadas\":" << ((t1 ? 1 : 0) + (t2 ? 1 : 0))
+              << ",\"lista\":" << tomas.size()
+              << ",\"clips_toma\":" << clipsToma << ",\"con_audio\":" << conAudio
+              << ",\"pads_cambiados\":" << padsCambiados
+              << ",\"pad01\":\"" << padName[0] << "\",\"pad01antes\":\"" << nombre01
+              << "\",\"debajo\":" << debajo << ",\"arriba\":" << arriba
+              << ",\"picos_vistos\":" << picosVistos << ",\"pico\":" << picoMax << "}" << std::endl;
 
-    std::cout << "{\"tomas\":1,\"primera\":\"" << etiquetaPad (juce::jmax (0, primera))
-              << "\",\"segunda\":\"" << etiquetaPad (juce::jmax (0, segunda))
-              << "\",\"pad01\":\"" << padName[0]
-              << "\",\"pad01antes\":\"" << nombre01
-              << "\",\"nombre\":\"" << padName[(size_t) juce::jmax (0, primera)]
-              << "\",\"banco\":" << bancoTomas << "}" << std::endl;
+    //  2. MUTE SOBRE LA PILA pasa a sonar la otra toma.
+    int rotaA = -1;
+    for (int i = 0; i < (int) clips.size(); ++i)
+        if (clips[(size_t) i].toma >= 0 && ! clips[(size_t) i].debajo) { rotaToma (i); break; }
+    publicaClips();
+    for (int i = 0; i < (int) clips.size(); ++i) if (clips[(size_t) i].toma >= 0 && ! clips[(size_t) i].debajo) rotaA = clips[(size_t) i].toma;
+    std::cout << "{\"tomas\":5,\"suena_antes\":" << arriba << ",\"suena_despues\":" << rotaA
+              << ",\"debajo\":" << nDebajo() << "}" << std::endl;
 
-    //  3. CON EL BANCO LLENO DE LO QUE PUSO LA PERSONA, NO GRABA Y LO DICE.
-    //
-    //  El estado se pone a mano -los dieciseis del banco dejan de ser de
-    //  fabrica, que es lo que pasa cuando los cargas tu- y lo que se mide es la
-    //  puerta: que `padParaToma` diga -1 y que la tapa NO arranque. Con dos
-    //  cifras: sin la segunda, «dice que esta lleno» lo cumple tambien una app
-    //  que lo dice y graba igual.
+    //  3. LAS TOMAS VUELVEN: sesion en disco, arbol y deshacer.
+    session.sync (vivos(), kVivos, [this] { return textoSesion(); });
+    session.flush (10000);
+    const int wavSesion = SessionKeeper::padFile (kNumPads).existsAsFile() ? 1 : 0;
+    const auto arbolT = captureState();
+    tomas.clear();
+    cargaTomas (arbolT, {});
+    applyState (arbolT);
+    int vuelvenT = 0;
+    for (const auto& c : clips) if (c.toma >= 0 && fuenteClip (c) != nullptr) ++vuelvenT;
+    const int antesDeshacer = (int) tomas.size();
+    performUndo();                        // la rotacion
+    performUndo();                        // la segunda toma
+    const int trasDeshacer = (int) tomas.size();
+    performRedo();
+    performRedo();
+    saveProject ("BANCO_TOMAS");
+    while (padSaveJob != nullptr) stepPadSaveJob();
+    tomas.clear();
+    clips.clear();
+    loadProject ("BANCO_TOMAS");
+    while (padJob != nullptr) stepPadJob();
+    int vuelvenP = 0;
+    for (const auto& c : clips) if (c.toma >= 0 && fuenteClip (c) != nullptr) ++vuelvenP;
+    std::cout << "{\"tomas\":9,\"wav_sesion\":" << wavSesion << ",\"vuelven\":" << vuelvenT << ",\"proyecto\":" << vuelvenP
+              << ",\"lista\":" << antesDeshacer << ",\"tras_deshacer\":" << trasDeshacer << "}" << std::endl;
+
+    //  4. tomas#vacia: con cuenta atras, el latido no para la toma que espera,
+    //     y parar en la cuenta dice por que no hay toma.
+    pulsaTapa (cuentaButtons[1]);
+    pulsaTapa (&songRecBtn);
+    esperaAbridor (15000);
+    const int enCuenta = engine.tomaEnCuenta() ? 1 : 0;
+    pintaCuadro (16.7);                   // un cuadro con la cuenta en marcha
+    const int sigue = recordingActive ? 1 : 0;
+    if (grabandoAlArreglo) pulsaTapa (&songRecBtn);
+    esperaAbridor (15000);
+    std::cout << "{\"tomas\":8,\"en_cuenta\":" << enCuenta << ",\"sigue\":" << sigue
+              << ",\"estado\":\"" << status.getText() << "\"}" << std::endl;
+    pulsaTapa (cuentaButtons[0]);
+
+    //  5. CON EL BANCO DE TOMAS LLENO, GRABAR AL ARREGLO ARRANCA IGUAL: ya no
+    //     ocupa pads.
     const int base = bancoTomas * kPadsPerBank;
     for (int i = 0; i < kPadsPerBank; ++i)
     {
         padHasSample[(size_t) (base + i)] = true;
         padDeFabrica[(size_t) (base + i)] = false;
     }
-    const int hueco = padParaToma();
     pulsaTapa (&songRecBtn);
     const int arranco = grabandoAlArreglo ? 1 : 0;
+    esperaAbridor (15000);
     if (grabandoAlArreglo) { pulsaTapa (&songRecBtn); }
+    esperaAbridor (15000);
 
-    std::cout << "{\"tomas\":2,\"lleno\":" << (hueco < 0 ? 1 : 0)
-              << ",\"grabando\":" << arranco << "}" << std::endl;
+    std::cout << "{\"tomas\":2,\"grabando\":" << arranco << "}" << std::endl;
 
     //  4. Y LA MARCA VUELVE DEL FICHERO.
     //
@@ -11744,7 +11800,7 @@ void MainComponent::auditGuardado()
     chopByHits    = false;
     selectPad (0);
     applyAutoChop();
-    session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
+    session.sync (vivos(), kVivos, [this] { return textoSesion(); });
     session.flush (30000);
 
     int alDia = 0, borrados = 0;
@@ -11817,7 +11873,7 @@ void MainComponent::auditGuardado()
         marca.deleteFile();
         session.clear();
         session.frenoPruebaMs.store (1500);
-        session.sync (uiSample.data(), kNumPads);
+        session.sync (vivos(), kVivos);
         juce::Thread::sleep (150);
         session.clear();
         session.frenoPruebaMs.store (0);
@@ -12803,7 +12859,7 @@ void MainComponent::auditFeria()
     //  Los pads limpios primero: `sync` lleva el estado consigo cuando un pad
     //  cambio, y con la fabrica recien cargada eso pasaria la medida por otra
     //  puerta. El control de abajo -sin soltar- lo comprueba.
-    session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
+    session.sync (vivos(), kVivos, [this] { return textoSesion(); });
     //  Y sin nada encargado: la `f` de arriba lee texto con el lector del mando,
     //  y desde `tecladoEncarga` eso es teclear y deja el estado pedido.
     estadoTrasToqueMs = -1.0;

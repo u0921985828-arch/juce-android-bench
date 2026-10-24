@@ -4834,9 +4834,11 @@ void MainComponent::cableaCancion()
     //  EL ATAJO A CORTAR. `selectedPad` es lo que `openChopSheet` mira -es la
     //  ficha del pad elegido- asi que sembrarlo con el del clip es todo lo que
     //  hace falta: la puerta ya existe y lo que no existia era el camino.
+    songGrid.onClipToma = [this] (int i) { rotaToma (i); };
     songGrid.onClipChop = [this] (int i)
     {
         if (! juce::isPositiveAndBelow (i, (int) clips.size())) return;
+        if (clips[(size_t) i].toma >= 0) return;   // tomas#lista: una toma no es un pad
         const int pad = clips[(size_t) i].pad;
         if (! juce::isPositiveAndBelow (pad, kNumPads)) return;
         selectPad (pad);
@@ -12644,6 +12646,7 @@ void MainComponent::pushUndo (const juce::String& what)
     Snapshot snap;
     snap.state = captureState();
     capturePads (snap.pads);
+    snap.tomas = tomas;
     snap.label = what;
     undoStack.push_back (std::move (snap));
     //  La pila tiene fondo: el mas viejo se cae por abajo. Sin tope, una sesion
@@ -12703,6 +12706,7 @@ void MainComponent::performUndo()
     Snapshot now;
     now.state = captureState();
     capturePads (now.pads);
+    now.tomas = tomas;
     now.label = undoStack.back().label;
     redoStack.push_back (std::move (now));
 
@@ -12710,6 +12714,7 @@ void MainComponent::performUndo()
     undoStack.pop_back();
 
     restorePads (snap.pads);
+    tomas = snap.tomas;
     applyState (snap.state);
     //  Los nombres viven en el estado y `applyState` los repone en padName,
     //  pero la tecla ensena el que le pusieron al cargar: sin volver a sellar
@@ -12732,6 +12737,7 @@ void MainComponent::performRedo()
     Snapshot now;
     now.state = captureState();
     capturePads (now.pads);
+    now.tomas = tomas;
     now.label = redoStack.back().label;
     undoStack.push_back (std::move (now));
 
@@ -12739,6 +12745,7 @@ void MainComponent::performRedo()
     redoStack.pop_back();
 
     restorePads (snap.pads);
+    tomas = snap.tomas;
     applyState (snap.state);
     //  Los nombres viven en el estado y `applyState` los repone en padName,
     //  pero la tecla ensena el que le pusieron al cargar: sin volver a sellar
@@ -13395,8 +13402,21 @@ juce::ValueTree MainComponent::captureState() const
                 //  paso en cero, que es exactamente como sonaba.
                 filas << c.pad << " " << c.pista << " " << c.compas << " "
                       << c.desde << " " << c.largo << " " << juce::String (c.gain, 4)
-                      << " " << c.paso << ";";
+                      << " " << c.paso << " " << c.toma << " " << (c.debajo ? 1 : 0) << ";";
             song.setProperty ("clips", filas, nullptr);
+        }
+        //  tomas#lista: nombre de cada toma; el WAV lo pone quien guarda
+        if (! tomas.empty())
+        {
+            juce::ValueTree lista ("TOMAS");
+            for (size_t i = 0; i < tomas.size(); ++i)
+            {
+                juce::ValueTree t ("T");
+                t.setProperty ("i", (int) i, nullptr);
+                t.setProperty ("nombre", tomas[i].nombre, nullptr);
+                lista.appendChild (t, nullptr);
+            }
+            song.appendChild (lista, nullptr);
         }
 
         //  Y LA AUTOMATIZACION, DISPERSA Y POR LA MISMA RAZON. «paso fx par
@@ -14698,11 +14718,14 @@ void MainComponent::applyState (const juce::ValueTree& s)
             c.gain   = n[5].getFloatValue();
             //  Septimo campo y opcional: ver el comentario de la escritura.
             c.paso   = (n.size() >= 7) ? n[6].getIntValue() : 0;
+            c.toma   = (n.size() >= 8) ? n[7].getIntValue() : -1;   // tomas#lista
+            c.debajo = (n.size() >= 9) && n[8].getIntValue() != 0;
+            if (! juce::isPositiveAndBelow (c.toma, (int) tomas.size())) c.toma = -1;
             //  Se acota EN LA PUERTA, que es donde entra un fichero que puede
             //  venir de otra epoca o corrupto: cada consumidor volviendo a
             //  validar es como el color de un bloque acabo leyendo fuera del
             //  array. Ver setSongCell.
-            if (! juce::isPositiveAndBelow (c.pad, kNumPads)) continue;
+            if (c.toma < 0 && ! juce::isPositiveAndBelow (c.pad, kNumPads)) continue;
             if (c.largo <= 0) continue;
             c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, c.pista);
             c.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, c.compas);
@@ -14849,9 +14872,27 @@ void MainComponent::stepPadSaveJob()
         }
     }
 
-    setBusyProgress ((float) padSaveJob->next / (float) kNumPads);
+    //  tomas#lista: detras de los pads, cada toma con la marca de este guardado
+    while (padSaveJob->next >= kNumPads && padSaveJob->wavTomas.size() < tomas.size()
+           && juce::Time::getMillisecondCounterHiRes() - t0 < 25.0)
+    {
+        const int i = (int) padSaveJob->wavTomas.size();
+        juce::String w;
+        if (auto sb = tomas[(size_t) i].buf; sb != nullptr && sb->buffer.getNumSamples() > 0)
+        {
+            const auto dest = padSaveJob->folder.getChildFile ("samples")
+                                .getChildFile ("toma" + juce::String (i + 1).paddedLeft ('0', 2)
+                                               + "-" + padSaveJob->marca + ".wav");
+            if (ProjectStore::writeSample (dest, sb->buffer, sb->sourceSampleRate)) w = dest.getFileName();
+            else ++padSaveJob->failed;
+        }
+        padSaveJob->wavTomas.push_back (w);
+    }
 
-    if (padSaveJob->next >= kNumPads)
+    setBusyProgress ((float) (padSaveJob->next + (int) padSaveJob->wavTomas.size())
+                     / (float) (kNumPads + (int) tomas.size()));
+
+    if (padSaveJob->next >= kNumPads && padSaveJob->wavTomas.size() >= tomas.size())
     {
         auto job = std::move (padSaveJob);
         endBusy();
@@ -14887,6 +14928,12 @@ void MainComponent::finishProjectSave (PadSaveJob& job)
         if (juce::isPositiveAndBelow (i, kNumPads) && job.wav[(size_t) i].isNotEmpty())
             p.setProperty ("wav", job.wav[(size_t) i], nullptr);
     }
+    for (auto t : arbol.getChildWithName ("song").getChildWithName ("TOMAS"))
+    {
+        const int i = (int) t.getProperty ("i", -1);
+        if (juce::isPositiveAndBelow (i, (int) job.wavTomas.size()))
+            t.setProperty ("wav", job.wavTomas[(size_t) i], nullptr);
+    }
     const auto xml     = arbol.toXmlString();
     const auto xmlFile = folder.getChildFile ("project.xml");
     const auto samples = folder.getChildFile ("samples");
@@ -14904,6 +14951,8 @@ void MainComponent::finishProjectSave (PadSaveJob& job)
         //  este guardado escribio se va: no lo nombra nadie.
         for (const auto& w : job.wav)
             if (w.isNotEmpty()) samples.getChildFile (w).deleteFile();
+        for (const auto& w : job.wavTomas)
+            if (w.isNotEmpty()) samples.getChildFile (w).deleteFile();
         status.setText (T ("NO se pudo guardar en %1: el anterior sigue como estaba",
                            Lang::ltr (rutaCorta (folder))),
                         juce::dontSendNotification);
@@ -14917,7 +14966,9 @@ void MainComponent::finishProjectSave (PadSaveJob& job)
     //  medias. Si la app muere aqui, solo quedan ficheros de mas.
     for (const auto& f : samples.findChildFiles (juce::File::findFiles, false))
         if (! std::any_of (job.wav.begin(), job.wav.end(),
-                           [&f] (const juce::String& w) { return w == f.getFileName(); }))
+                           [&f] (const juce::String& w) { return w == f.getFileName(); })
+            && ! std::any_of (job.wavTomas.begin(), job.wavTomas.end(),
+                              [&f] (const juce::String& w) { return w == f.getFileName(); }))
             f.deleteFile();
 
     apuntaProyecto (name);
@@ -14986,6 +15037,7 @@ void MainComponent::finishProjectOpen (const juce::String& name, const juce::Val
     Bitacora::paso ("proyecto/fin");   // estabilidad#27
     int missing = 0;
     vaciaDeshacer();
+    cargaTomas (tree, ProjectStore::folderFor (name));
     applyState (tree);
     //  EL MIX GUARDADO ES DEL PROYECTO DE ANTES: encender un efecto apagado de
     //  este devolveria el que tenia aquel. Aqui y no en `applyState`, que
@@ -15411,6 +15463,7 @@ void MainComponent::newProject()
     //  proyecto que ya no es este (persistencia#1).
     vaciaDeshacer();
     pushUndo (T ("NUEVO"));
+    tomas.clear();
 
     for (int i = 0; i < kNumPads; ++i)
     {
@@ -15509,7 +15562,7 @@ void MainComponent::newProject()
     //  A new project means there is nothing to come back to: without this the
     //  next launch would restore the machine the user just emptied.
     session.clear();
-    session.adopt (uiSample.data(), kNumPads);
+    session.adopt (vivos(), kVivos);
 
     selectPad (0);
     closeAllSheets();
@@ -17408,41 +17461,23 @@ void MainComponent::grabaAlArreglo()
     if (! esperaAbridor (kEsperaCierreMs)) return;
     if (grabandoAlArreglo)
     {
-        //  Parar: la toma se cierra por el camino de siempre y ademas cae en la
-        //  linea de tiempo, en el compas que el motor apunto al arrancarla.
-        grabandoAlArreglo = false;
-        const int compas = juce::jmax (0, engine.getCompasGrabado());
+        //  Parar: la toma se cierra por el camino de siempre y cae en la linea
+        //  de tiempo, en el compas que el motor apunto al arrancarla. En PASOS:
+        //  una toma que se arma al empezar un compas entra en su primer paso.
+        pasoToma = juce::jmax (0, engine.getCompasGrabado()) * juce::jmax (1, engine.pasosPorCompas());
+        cuentaAlParar = engine.tomaEnCuenta();
         engine.setPlaying (false);
-        toggleMicSampling();                  // cierra la toma y la deja en el pad
-        if (padHasSample[(size_t) recordingSlot])
-        {
-            const int guarda = selectedPad;
-            selectedPad = recordingSlot;      // ponClip pone LO QUE SUENA en el pad elegido
-            //  En PASOS y no en compases: `ponClip` recibe el paso absoluto
-            //  desde que un clip puede caer dentro del compas. Una toma que se
-            //  arma al empezar un compas entra en su primer paso.
-            ponClip (pistaGrabacion, compas * juce::jmax (1, engine.pasosPorCompas()));
-            selectedPad = guarda;
-        }
+        toggleMicSampling();                  // tomas#lista: la deja en la lista de TOMAS, no en un pad
+        grabandoAlArreglo = false;
         styleButton (songRecBtn, kKey);
         songRecBtn.setButtonText (T ("GRABAR"));
         refreshSong (true);
         return;
     }
 
-    //  Empezar. El destino sale del BANCO DE TOMAS y no de «el primero vacio»,
-    //  que en una maquina de fabrica no existe: los sesenta y cuatro vienen
-    //  llenos, asi que la caida que habia aqui se comia el pad elegido -el 01-
-    //  en cada toma. Ver padParaToma.
-    const int slot = padParaToma();
-    if (slot < 0)
-    {
-        //  Y NO SE GRABA. Pisar la toma anterior seria ademas llevarse el audio
-        //  de su clip, que ya esta puesto en la linea de tiempo.
-        status.setText (T ("El banco de tomas esta lleno: vacia un pad o elige otro"),
-                        juce::dontSendNotification);
-        return;
-    }
+    //  Empezar. tomas#lista: la toma va a la lista de la cancion y ningun pad
+    //  se toca; el hueco del motor es solo donde se apunta la grabacion.
+    const int slot = 0;
     recordingSlot = slot;
 
     //  El clic y la cuenta salen de la preferencia. Ver armaCuentaSiToca.
@@ -17452,6 +17487,7 @@ void MainComponent::grabaAlArreglo()
     {
         recordingActive = true;               // el camino de PARAR es el del micro
         grabandoAlArreglo = true;
+        tomaArmada = cuentaAlParar = tomaVista = false;
         //  Una apertura, en el hilo que abre: ver toggleMicSampling. Y la
         //  frontera va por donde duele: lo que es ESTADO DE LA APP -tapas,
         //  rotulo, «estoy grabando»- va YA, porque quien aprieta PARAR a
@@ -17466,6 +17502,7 @@ void MainComponent::grabaAlArreglo()
         pideEncargoAudio ([this] { abreCon (2); }, [this, slot]
         {
             aplicaMonitor (false);
+            tomaArmada = true;
             engine.setSongMode (true);
             //  Con la cuenta a cero la toma entra YA y el transporte arranca igual:
             //  grabar al arreglo sin transporte no es grabar al arreglo.
@@ -17486,7 +17523,7 @@ void MainComponent::grabaAlArreglo()
             //  texto pintado y no cuesta un pixel; en la tapa no, que esa fila se
             //  reparte por el TEXTO y un rotulo que crece le quita el dedo a sus
             //  hermanas.
-            status.setText (T ("La toma va al pad %1", etiquetaPad (slot)),
+            status.setText (T ("La toma va a la pista %1", juce::String (pistaGrabacion + 1)),
                             juce::dontSendNotification);
     };
 
@@ -17783,6 +17820,9 @@ void MainComponent::refreshSong (bool repintarTarjeta)
             Playlist::ClipVista v;
             v.pista     = c.pista;
             v.pad       = c.pad;
+            v.toma      = c.toma;
+            v.debajo    = c.debajo;
+            v.capas     = capasDe ((int) i);
             v.desdePaso = c.compas * pc + juce::jlimit (0, pc - 1, c.paso);
             v.hastaPaso = v.desdePaso
                         + juce::jmax (1, (int) std::ceil ((double) c.largo / porPaso));
@@ -17792,12 +17832,11 @@ void MainComponent::refreshSong (bool repintarTarjeta)
             //  enseñaria una forma que no es la que se oye - el mismo fallo que
             //  «el clip toma el recorte del pad» arreglo en el motor.
             auto& onda = songClipsOnda[i];
-            if (onda.pad != c.pad || onda.desde != c.desde || onda.largo != c.largo)
+            if (onda.pad != c.pad || onda.desde != c.desde || onda.largo != c.largo || onda.toma != c.toma)
             {
-                onda.pad = c.pad; onda.desde = c.desde; onda.largo = c.largo;
+                onda.pad = c.pad; onda.desde = c.desde; onda.largo = c.largo; onda.toma = c.toma;
                 onda.mm.clearQuick();
-                auto* buf = juce::isPositiveAndBelow (c.pad, kNumPads)
-                                ? uiSample[(size_t) c.pad].get() : nullptr;
+                auto* buf = fuenteClip (c);
                 if (buf != nullptr && buf->buffer.getNumSamples() > 0
                     && buf->buffer.getNumChannels() > 0)
                 {
@@ -17925,12 +17964,27 @@ void MainComponent::publicaClips()
 {
     std::array<AudioEngine::ClipAudio, AudioEngine::kMaxClips> tabla {};
     const int pc = juce::jmax (1, engine.pasosPorCompas());
+    //  tomas#capas: en cada pila suena una, la ultima que quedo encima
+    for (size_t i = 0; i < clips.size(); ++i)
+    {
+        auto& c = clips[i];
+        if (c.toma < 0) { c.debajo = false; continue; }
+        int arriba = -1, ultima = -1;
+        for (size_t j = 0; j < clips.size(); ++j)
+        {
+            const auto& o = clips[j];
+            if (o.toma < 0 || o.pista != c.pista || o.compas * pc + o.paso != c.compas * pc + c.paso) continue;
+            ultima = (int) j;
+            if (! o.debajo) arriba = (int) j;
+        }
+        c.debajo = (int) i != (arriba >= 0 ? arriba : ultima);
+    }
     int n = 0;
     for (const auto& c : clips)
     {
         if (n >= AudioEngine::kMaxClips) break;
-        if (! juce::isPositiveAndBelow (c.pad, kNumPads)) continue;
-        auto* fuente = uiSample[(size_t) c.pad].get();
+        if (c.debajo) continue;                // tomas#capas
+        auto* fuente = fuenteClip (c);
         if (fuente == nullptr || c.largo <= 0) continue;
 
         auto& d = tabla[(size_t) n++];
@@ -17943,6 +17997,113 @@ void MainComponent::publicaClips()
         d.gain   = c.gain;
     }
     engine.publicaClips (tabla.data(), n);
+}
+
+SampleBuffer* MainComponent::fuenteClip (const ClipUI& c) const
+{
+    if (c.toma >= 0)
+        return juce::isPositiveAndBelow (c.toma, (int) tomas.size()) ? tomas[(size_t) c.toma].buf.get() : nullptr;
+    return juce::isPositiveAndBelow (c.pad, kNumPads) ? uiSample[(size_t) c.pad].get() : nullptr;
+}
+
+//  tomas#lista: pads y tomas en una tira, que es lo que guarda la sesion
+const SampleBuffer::Ptr* MainComponent::vivos()
+{
+    for (int i = 0; i < kVivos; ++i)
+        vivosSesion[(size_t) i] = i < kNumPads ? uiSample[(size_t) i]
+                                : (i - kNumPads < (int) tomas.size() ? tomas[(size_t) (i - kNumPads)].buf : nullptr);
+    return vivosSesion.data();
+}
+
+//  tomas#lista: las tomas vuelven del disco antes que los clips que las nombran
+void MainComponent::cargaTomas (const juce::ValueTree& s, const juce::File& carpeta)
+{
+    tomas.clear();
+    const auto lista = s.getChildWithName ("song").getChildWithName ("TOMAS");
+    for (auto t : lista)
+    {
+        const int i = (int) t.getProperty ("i", -1);
+        if (i != (int) tomas.size() || i >= kMaxTomas) break;
+        const auto wav = t.getProperty ("wav").toString();
+        const auto f = carpeta == juce::File() ? SessionKeeper::padFile (kNumPads + i)
+                     : (wav.isEmpty() || wav.containsAnyOf ("/\\:") || wav.startsWithChar ('.'))
+                         ? juce::File() : carpeta.getChildFile ("samples").getChildFile (wav);
+        tomas.push_back ({ f == juce::File() ? nullptr : ProjectStore::readSample (f),
+                           t.getProperty ("nombre").toString() });
+    }
+}
+
+//  tomas#capas: cuantas tomas comparten el sitio de este clip, el incluido
+int MainComponent::capasDe (int indice) const
+{
+    const auto& c = clips[(size_t) indice];
+    if (c.toma < 0) return 1;
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const int d = c.compas * pc + c.paso;
+    int n = 0;
+    for (const auto& o : clips)
+        if (o.toma >= 0 && o.pista == c.pista && o.compas * pc + o.paso == d) ++n;
+    return n;
+}
+
+//  tomas#lista: la toma nueva entra encima; las que tapa quedan debajo
+void MainComponent::ponToma (SampleBuffer::Ptr sb, int pista, int paso)
+{
+    if (sb == nullptr || (int) tomas.size() >= kMaxTomas || (int) clips.size() >= AudioEngine::kMaxClips)
+    {
+        status.setText (T ("No caben mas tomas en la cancion"), juce::dontSendNotification);
+        return;
+    }
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const int p  = juce::jlimit (0, AudioEngine::kSongBars * pc - 1, paso);
+    pushUndo (T ("GRABAR"));
+    tomas.push_back ({ sb, "TOMA " + juce::String ((int) tomas.size() + 1) });
+    ClipUI c;
+    c.toma   = (int) tomas.size() - 1;
+    c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, pista);
+    c.compas = p / pc;
+    c.paso   = p % pc;
+    c.largo  = sb->buffer.getNumSamples();
+    for (auto& o : clips)
+        if (o.toma >= 0 && o.pista == c.pista && o.compas * pc + o.paso == p) o.debajo = true;
+    clips.push_back (c);
+    publicaClips();
+    refreshSong (false);
+}
+
+//  tomas#onda: la toma que entra se pinta en su pista, desde su compas
+void MainComponent::pintaTomaEnVivo()
+{
+    const int compas = engine.getCompasGrabado();
+    if (compas < 0) return;
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const double porPaso = juce::jmax (1.0, engine.muestrasPorCompas()) / (double) pc;
+    const int desde = compas * pc;
+    const int hasta = desde + juce::jmax (1, (int) std::ceil ((double) engine.getRecordPos() / porPaso));
+    songGrid.setGrabando (pistaGrabacion, desde, hasta, engine.picosDatos(), engine.picosToma());
+}
+
+//  tomas#capas: tocar una pila con MUTE pasa a sonar la siguiente toma
+void MainComponent::rotaToma (int indice)
+{
+    if (! juce::isPositiveAndBelow (indice, (int) clips.size()) || clips[(size_t) indice].toma < 0) return;
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const auto& c = clips[(size_t) indice];
+    const int d = c.compas * pc + c.paso, pista = c.pista;
+    std::vector<int> pila;
+    for (int i = 0; i < (int) clips.size(); ++i)
+        if (clips[(size_t) i].toma >= 0 && clips[(size_t) i].pista == pista
+            && clips[(size_t) i].compas * pc + clips[(size_t) i].paso == d) pila.push_back (i);
+    if (pila.size() < 2) return;
+    size_t arriba = 0;
+    for (size_t k = 0; k < pila.size(); ++k) if (! clips[(size_t) pila[k]].debajo) arriba = k;
+    pushUndo (T ("TOMA"));
+    for (int i : pila) clips[(size_t) i].debajo = true;
+    const int sigue = pila[(arriba + 1) % pila.size()];
+    clips[(size_t) sigue].debajo = false;
+    status.setText (T ("Suena %1", tomas[(size_t) clips[(size_t) sigue].toma].nombre), juce::dontSendNotification);
+    publicaClips();
+    refreshSong (false);
 }
 
 //  LOS BLOQUES, AL MOTOR. Mismo camino que los clips y por la misma razon: la
@@ -21879,7 +22040,7 @@ void MainComponent::autosave()
     //  pasan a salir de otro, y el escritor los haria antes de que state.xml
     //  dijera que sobran. Ver SessionKeeper::sync.
     session.writeState (captureState(), currentProject, huellaGuardada);
-    session.sync (uiSample.data(), kNumPads);
+    session.sync (vivos(), kVivos);
 }
 
 //  Coming back from a cold start. Same shape as loadProject, from the folder
@@ -22091,7 +22252,7 @@ void MainComponent::restoreSession()
             status.setText (T ("La sesion anterior no se pudo leer; copia en %1", copia.getFileName()),
                             juce::dontSendNotification);
         }
-        session.adopt (uiSample.data(), kNumPads);
+        session.adopt (vivos(), kVivos);
         return;
     }
 
@@ -22114,6 +22275,7 @@ void MainComponent::restoreSession()
 
 void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int restored)
 {
+    cargaTomas (tree, {});
     applyState (tree);
 
     //  A pad the state says had a sound, and whose audio did not come back.
@@ -22146,7 +22308,7 @@ void MainComponent::finishSessionRestore (const juce::ValueTree& tree, int resto
     refreshProjectList();
 
     //  These buffers came off this very folder: nothing to write back.
-    session.adopt (uiSample.data(), kNumPads);
+    session.adopt (vivos(), kVivos);
 
     //  LA CUENTA, COMO CIFRA Y NO DENTRO DE UNA FRASE.
     //
@@ -22333,7 +22495,7 @@ void MainComponent::toggleResample()
         assignSampleToPad (resamplingSlot, sb, "TOMA " + juce::String (resamplingSlot % kPadsPerBank + 1));
         refreshPad (resamplingSlot);
         refreshPadArt (resamplingSlot);
-        session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
+        session.sync (vivos(), kVivos, [this] { return textoSesion(); });
         status.setText (T ("Pad %1 remuestreado", juce::String (resamplingSlot + 1)),
                         juce::dontSendNotification);
     }
@@ -22386,6 +22548,7 @@ void MainComponent::toggleMicSampling()
             pideEncargoAudio ([this] { abreCon (2); }, [this, slot]
             {
                 aplicaMonitor (false);
+                tomaArmada = true;
                 //  Y AQUI TAMBIEN LA CUENTA ATRAS, que era la mitad que faltaba: una
                 //  toma que entra a ojo entra corrida, la grabes sobre el arreglo o
                 //  sola. El mecanismo es el mismo que ya usaba el otro camino - lo
@@ -22396,6 +22559,7 @@ void MainComponent::toggleMicSampling()
             {
                 recordingSlot = slot;
                 recordingActive = true;
+                tomaArmada = cuentaAlParar = tomaVista = false;
                 styleButton (micButton, kRec);
                 micButton.setButtonText (T ("PARAR"));
                 status.setText (espera
@@ -22423,6 +22587,11 @@ void MainComponent::toggleMicSampling()
     else
     {
         recordingActive = false;
+        //  tomas#vacia: el porque de una toma vacia se mira antes de cerrarla
+        const bool enCuenta = cuentaAlParar || engine.tomaEnCuenta();
+        const bool armada = tomaArmada;
+        cuentaAlParar = tomaArmada = tomaVista = false;
+        songGrid.sinGrabando();
         auto sb = engine.finishRecording (false);   // se recorta antes de publicarla (estabilidad#2)
         tomaCompartida = (sb != nullptr && sb->getReferenceCount() > 1) ? 1 : 0;
 
@@ -22482,7 +22651,14 @@ void MainComponent::toggleMicSampling()
         pideEncargoAudio ([this] { abreCon (0); });
         styleButton (micButton, kKey);
         micButton.setButtonText (T ("GRABAR MIC"));
-        if (sb != nullptr)
+        if (sb != nullptr && grabandoAlArreglo)
+        {
+            ponToma (sb, pistaGrabacion, pasoToma);   // tomas#lista
+            status.setText (T ("%1 en la pista %2  [%3s]", tomas.empty() ? juce::String() : tomas.back().nombre,
+                               juce::String (pistaGrabacion + 1), juce::String (engine.getRecordSeconds(), 1)),
+                            juce::dontSendNotification);
+        }
+        else if (sb != nullptr)
         {
             //  Y PASA POR DESHACER, como su gemela. REMUESTREAR aterriza
             //  exactamente igual -`finishRecording` y a un pad- y llevaba su
@@ -22502,7 +22678,11 @@ void MainComponent::toggleMicSampling()
         }
         else
         {
-            status.setText (T ("No se grabo nada"), juce::dontSendNotification);
+            const char* porque = enCuenta ? "Paraste en la cuenta atras: la toma no llego a empezar"
+                               : ! armada ? "El micro no llego a abrir: prueba otra vez"
+                                          : "El micro no entrego sonido: mira el permiso o la entrada";
+            status.setText (T (porque), juce::dontSendNotification);
+            DBG ("tomas#vacia " << porque);
         }
     }
 }
@@ -23015,7 +23195,7 @@ void MainComponent::timerCallback()
     if ((sessionSyncMs += dt) >= kSyncSesionMs)
     {
         sessionSyncMs = 0.0;
-        session.sync (uiSample.data(), kNumPads, [this] { return textoSesion(); });
+        session.sync (vivos(), kVivos, [this] { return textoSesion(); });
         refreshSystemInsets();
         Metrics::holdMsVivo = Sistema::pulsacionLargaMs (Metrics::holdMs);   // accesibilidad#31: cambia en Ajustes sin reiniciar
         {
@@ -23713,14 +23893,27 @@ void MainComponent::pintaCuadro (double dtMs)
     {
         //  The take stops itself when the buffer fills; say so rather than
         //  letting the counter freeze and look like a hang.
-        if (! engine.isRecording())
-            toggleMicSampling();
-        else
-            status.setText (T ("Grabando pad %1  %2s / %3s", etiquetaPad (recordingSlot),
-                               juce::String (engine.getRecordSeconds(), 1),
-                               juce::String ((int) engine.getRecordLimitSeconds())),
+        //  tomas#vacia: solo una toma que llego a entrar se para sola; en la
+        //  cuenta atras o con el micro abriendo, el motor aun no graba
+        if (engine.isRecording()) tomaVista = true;
+        if (! engine.isRecording() && tomaVista)
+        {
+            if (grabandoAlArreglo) grabaAlArreglo(); else toggleMicSampling();
+        }
+        else if (engine.isRecording())
+        {
+            status.setText (grabandoAlArreglo
+                              ? T ("Grabando en la pista %1  %2s / %3s", juce::String (pistaGrabacion + 1),
+                                   juce::String (engine.getRecordSeconds(), 1),
+                                   juce::String ((int) engine.getRecordLimitSeconds()))
+                              : T ("Grabando pad %1  %2s / %3s", etiquetaPad (recordingSlot),
+                                   juce::String (engine.getRecordSeconds(), 1),
+                                   juce::String ((int) engine.getRecordLimitSeconds())),
                             juce::dontSendNotification);
+            if (grabandoAlArreglo) pintaTomaEnVivo();
+        }
     }
+    else songGrid.sinGrabando();
 
     if (resamplingActive && ! engine.isRecording())   // buffer lleno (estabilidad#7)
         toggleResample();
