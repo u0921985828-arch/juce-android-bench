@@ -224,6 +224,58 @@ namespace MidiIo
         std::atomic<int> dropped { 0 };
     };
 
+    //  midi#acorde: una puerta por nota y no por pad; el acorde de un pad son varias notas con su largo cada una.
+    struct Puertas
+    {
+        struct Puerta { double hasta = 0.0; int pad = -1, nota = 0, canal = 1; };
+        std::array<Puerta, kMaxPads> p {};
+
+        //  `envia (on, canal, nota, vel)`.
+        template <typename Envia>
+        void enciende (int pad, int nota, int canal, int vel, double hasta, Envia&& envia)
+        {
+            //  La misma nota otra vez: se apaga y se reusa. Si no, un hueco; sin hueco, la que antes vence.
+            Puerta* q = nullptr;
+            for (auto& x : p)
+                if (x.hasta > 0.0 && x.canal == canal && x.nota == nota) { q = &x; break; }
+            if (q == nullptr)
+                for (auto& x : p)
+                    if (x.hasta <= 0.0) { q = &x; break; }
+            if (q == nullptr)
+            {
+                q = &p[0];
+                for (auto& x : p) if (x.hasta < q->hasta) q = &x;
+            }
+            if (q->hasta > 0.0) envia (false, q->canal, q->nota, 0);
+            envia (true, canal, nota, vel);
+            *q = { hasta, pad, nota, canal };
+        }
+
+        template <typename Envia>
+        void apaga (int pad, Envia&& envia)
+        {
+            for (auto& q : p)
+                if (q.hasta > 0.0 && q.pad == pad) { envia (false, q.canal, q.nota, 0); q.hasta = 0.0; }
+        }
+
+        //  Cierra las vencidas y dice si queda alguna abierta.
+        template <typename Envia>
+        bool vence (double ahora, Envia&& envia)
+        {
+            bool abiertas = false;
+            for (auto& q : p)
+            {
+                if (q.hasta <= 0.0) continue;
+                if (q.hasta <= ahora) { envia (false, q.canal, q.nota, 0); q.hasta = 0.0; }
+                else abiertas = true;
+            }
+            return abiertas;
+        }
+
+        template <typename Envia>
+        void todas (Envia&& envia) { vence (std::numeric_limits<double>::max(), envia); }
+    };
+
     //  EL PUENTE: los aparatos, y los dos hilos que no son el de audio.
     //
     //  Vive en el hilo de mensajes salvo por su propio hilo de envio. Abrir y
@@ -373,7 +425,13 @@ namespace MidiIo
                 bool didSomething = false;
                 const double ahora = juce::Time::getMillisecondCounterHiRes();
 
-                if (src != nullptr) src->drain ([this, &didSomething, ahora] (const NoteEvent& e) noexcept
+                const auto envia = [this] (bool on, int canal, int nota, int vel)
+                {
+                    out->sendMessageNow (on ? juce::MidiMessage::noteOn (canal, nota, (juce::uint8) vel)
+                                            : juce::MidiMessage::noteOff (canal, nota));
+                };
+
+                if (src != nullptr) src->drain ([this, &didSomething, ahora, &envia] (const NoteEvent& e) noexcept
                 {
                     if (out == nullptr) return;
                     didSomething = true;
@@ -383,45 +441,18 @@ namespace MidiIo
                         out->sendMessageNow (mensajeDe (e));
                         return;
                     }
-                    const int ch   = channel.load (std::memory_order_relaxed);
-                    const int note = e.on ? notaDe (e) : enviada[e.pad];
-
+                    const int ch = channel.load (std::memory_order_relaxed);
                     if (e.on)
-                    {
-                        //  El mismo pad otra vez antes de que se cierre la
-                        //  puerta: se apaga primero. Sin esto, el segundo
-                        //  encendido no se oye en un aparato que ya tiene esa
-                        //  nota pisada, y el primer apagado mata a los dos.
-                        if (gate[e.pad] > 0.0)
-                            out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[e.pad], enviada[e.pad]));
-
-                        out->sendMessageNow (juce::MidiMessage::noteOn (ch, note, (juce::uint8) e.vel));
-                        gate[e.pad] = ahora + (e.gateMs > 0 ? (double) e.gateMs : (double) kGateMs);   // secuenciador#11
-                        enviada[e.pad] = note;
-                        canalDe[e.pad] = ch;
-                    }
-                    else if (gate[e.pad] > 0.0)
-                    {
-                        out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[e.pad], note));
-                        gate[e.pad] = 0.0;
-                    }
+                        puertas.enciende (e.pad, notaDe (e), ch, e.vel,
+                                          ahora + (e.gateMs > 0 ? (double) e.gateMs : (double) kGateMs), envia);   // secuenciador#11
+                    else
+                        puertas.apaga (e.pad, envia);
                 });
 
                 //  Las puertas que vencen, por reloj y no por vueltas: una
                 //  vuelta de un milisegundo dura mas de uno, y en una nota de
                 //  dos segundos eso se nota (secuenciador#11).
-                bool anyOpen = false;
-                const double luego = juce::Time::getMillisecondCounterHiRes();
-                for (int p = 0; p < kMaxPads; ++p)
-                {
-                    if (gate[p] <= 0.0) continue;
-                    if (gate[p] <= luego && out != nullptr)
-                    {
-                        out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[p], enviada[p]));
-                        gate[p] = 0.0;
-                    }
-                    else anyOpen = true;
-                }
+                const bool anyOpen = out != nullptr && puertas.vence (juce::Time::getMillisecondCounterHiRes(), envia);
 
                 if (anyOpen || didSomething || corriendo || (src != nullptr && src->numReady() > 0))
                     juce::Thread::sleep (1);
@@ -437,8 +468,7 @@ namespace MidiIo
         {
             if (out == nullptr) return;
             const int ch = channel.load (std::memory_order_relaxed);
-            for (int p = 0; p < kMaxPads; ++p)
-                if (gate[p] > 0.0) { out->sendMessageNow (juce::MidiMessage::noteOff (canalDe[p], enviada[p])); gate[p] = 0.0; }
+            puertas.todas ([this] (bool, int canal, int nota, int) { out->sendMessageNow (juce::MidiMessage::noteOff (canal, nota)); });
             if (corriendo) { out->sendMessageNow (juce::MidiMessage::midiStop()); corriendo = false; }   // secuenciador#11
             out->sendMessageNow (juce::MidiMessage::allNotesOff (ch));
         }
@@ -479,9 +509,7 @@ namespace MidiIo
         std::atomic<int>  channel { 10 };      // percusion, por convenio
         std::atomic<int>  modo { (int) Modo::Pads };   // lo de siempre por defecto
         std::atomic<int>  padTeclado { 0 };
-        double            gate[kMaxPads] {};   // cuando se apaga cada nota, en ms del reloj de JUCE
-        int               enviada[kMaxPads] {}; // la nota que se mando, para apagarla
-        int               canalDe[kMaxPads] {}; // y por que canal: cambiar de canal no deja notas pisadas
+        Puertas           puertas;              // midi#acorde: cada nota con su puerta, su canal y su pad
         bool              corriendo = false;    // secuenciador#11: entre Start y Stop el hilo no duerme
     };
 }

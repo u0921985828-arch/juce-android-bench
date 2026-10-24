@@ -369,8 +369,15 @@ void SessionKeeper::run()
 
         if (estado.isNotEmpty())
         {
-            escribeEstado (estado);
-            if (generacion.load (std::memory_order_acquire) != gen) stateFile().deleteFile();   // estabilidad#23
+            {
+                //  sesion#gen: con el cerrojo de escritura puesto, el estado nuevo de writeState no cae entre escribir y borrar.
+                const juce::ScopedLock el (escribiendoEstado);
+                if (generacion.load (std::memory_order_acquire) == gen)
+                {
+                    escribeEstado (estado);
+                    if (generacion.load (std::memory_order_acquire) != gen) stateFile().deleteFile();   // estabilidad#23
+                }
+            }
             const juce::ScopedLock sl (lock);
             writing = false;
             continue;

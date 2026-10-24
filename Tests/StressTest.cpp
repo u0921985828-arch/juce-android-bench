@@ -20,6 +20,7 @@
 #include <memory>
 #include <thread>
 #include <vector>
+#include <tuple>
 #include <atomic>
 #include <functional>
 #include "../Source/AudioEngine.h"
@@ -39,6 +40,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <tuple>
 #include <algorithm>
 
 using Clock = std::chrono::steady_clock;
@@ -10288,6 +10290,72 @@ int main()
         std::printf ("%-34s %d de %d fases en cada bloque, cubren %.0f%% del bloque, la peor %.3f ms de %.2f   %s\n",
                      "fases del bloque", corridas, AudioEngine::kFases, 100.0 * cubre, peor, budgetMs,
                      (corridas == AudioEngine::kFases && cubre >= 0.8 && peor < budgetMs) ? "OK" : zatiFalla());
+    }
+
+    //  rev#osc: el oscilador de cada linea no se va de radio uno por mucho que suene.
+    {
+        Fdn f; f.prepare (48000.0, 2); f.setParameters (0.7f, 0.3f);
+        juce::AudioBuffer<float> b (2, 512);
+        for (long n = 0; n < 48000L * 120; n += 512) { b.clear(); f.process (b, 0, 512); }
+        const float d = f.oscDesvio();
+        std::printf ("%-34s desvio del radio %.2e tras 2 min   %s\n", "reverb, oscilador de las lineas", (double) d,
+                     d < 1.0e-3f ? "OK" : zatiFalla());
+    }
+
+    //  midi#acorde: tres notas en un pad son tres puertas, cada una con su largo.
+    {
+        MidiIo::Puertas pu;
+        std::vector<std::tuple<bool, int, int>> log;
+        const auto envia = [&log] (bool on, int, int nota, int) { log.emplace_back (on, nota, 0); };
+        pu.enciende (0, 60, 1, 100, 500.0, envia);
+        pu.enciende (0, 64, 1, 100, 300.0, envia);
+        pu.enciende (0, 67, 1, 100, 500.0, envia);
+        int offsAntes = 0; for (auto& m : log) if (! std::get<0> (m)) ++offsAntes;
+        log.clear(); pu.vence (400.0, envia);
+        const bool soloE = log.size() == 1 && std::get<1> (log[0]) == 64;
+        log.clear(); pu.vence (600.0, envia);
+        const bool restoAl = log.size() == 2;
+        log.clear(); pu.enciende (0, 60, 1, 100, 900.0, envia); pu.enciende (0, 60, 1, 100, 950.0, envia);
+        const bool redispara = log.size() == 3 && ! std::get<0> (log[1]) && std::get<1> (log[1]) == 60;
+        std::printf ("%-34s apagados al tocar el acorde %d, el corto solo %s, el resto %s, la misma nota se redispara %s   %s\n",
+                     "midi, acorde en un pad", offsAntes, soloE ? "si" : "no", restoAl ? "si" : "no", redispara ? "si" : "no",
+                     (offsAntes == 0 && soloE && restoAl && redispara) ? "OK" : zatiFalla());
+    }
+
+    //  export#cola: la cola cuenta el eco enganchado, la muestra larga y la suelta.
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 512);
+        enCanalCero (e);
+        e.setBpm (70.0);
+        e.setFxParam (0, AudioEngine::kFxDly, 0, 50.0f);
+        e.setFxParam (0, AudioEngine::kFxDly, 2, 1.0f);
+        e.setFxParam (0, AudioEngine::kFxDly, 3, 4.0f);
+        e.setCanalSend (0, AudioEngine::kFxDly, 1.0f);
+        const double eco = e.getColaSeconds();
+        e.setCanalSend (0, AudioEngine::kFxDly, 0.0f);
+        e.publishSample (0, makeSample (48000.0, 3.0, 220.0f));
+        e.setPadGain (0, 1.0f); e.setPadGain (1, 1.0f);
+        const double larga = e.getColaSeconds();
+        e.clearPad (0);
+        e.publishSample (1, makeSample (48000.0, 0.1, 220.0f));
+        e.setPadRelease (1, 2000.0f);
+        const double suelta = e.getColaSeconds();
+        std::printf ("%-34s eco 1/4 a 70 %.2f s (>= 3.4), muestra de 3 s %.2f, suelta de 2 s %.2f   %s\n",
+                     "export, cola", eco, larga, suelta,
+                     (eco >= 3.4 && larga >= 2.9 && suelta >= 2.0) ? "OK" : zatiFalla());
+    }
+
+    //  secuenciador#fase: con el paso multiplo del bloque la fase publicada no llega a uno.
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 500);
+        e.setBpm (120.0);
+        e.setPlaying (true);
+        juce::AudioBuffer<float> b (2, 500);
+        float peor = 0.0f;
+        for (int blk = 0; blk < 240; ++blk) { b.clear(); e.renderNextBlock (b, 0, 500); peor = juce::jmax (peor, e.getStepPhase()); }
+        std::printf ("%-34s la mayor %.6f   %s\n", "transporte, fase del paso", (double) peor, peor < 1.0f ? "OK" : zatiFalla());
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

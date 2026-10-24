@@ -45,22 +45,28 @@ namespace
     }
 }
 
-//  Por la extension si es conocida; si no, todo menos MP3 primero, que "encuentra" un marco en cualquier basura (estabilidad#4).
+//  Por la extension primero; si no es conocida o miente, todos menos MP3, que "encuentra" un marco en cualquier basura (estabilidad#4).
+//  carga#ext: MP3 solo se prueba sin extension o con la suya; un .wav que no es WAV puede ser FLAC o AIFF, no MP3.
 juce::AudioFormatReader* SampleLoader::abreLector (std::unique_ptr<juce::InputStream> s, const juce::String& ext)
 {
-    if (auto* f = ext.isNotEmpty() ? formatManager.findFormatForFileExtension (ext) : nullptr)
-        return f->createReaderFor (s.release(), true);
+    auto* porExt = ext.isNotEmpty() ? formatManager.findFormatForFileExtension (ext) : nullptr;
     auto* mp3 = formatManager.findFormatForFileExtension (".mp3");
     const auto inicio = s->getPosition();
+    if (porExt != nullptr)
+    {
+        if (auto* r = porExt->createReaderFor (s.get(), false)) { s.release(); return r; }
+        if (porExt == mp3) return nullptr;
+    }
     for (int i = 0; i < formatManager.getNumKnownFormats(); ++i)
     {
         auto* f = formatManager.getKnownFormat (i);
-        if (f == mp3) continue;
+        if (f == mp3 || f == porExt) continue;
         s->setPosition (inicio);
         if (auto* r = f->createReaderFor (s.get(), false)) { s.release(); return r; }
     }
+    if (porExt != nullptr || mp3 == nullptr) return nullptr;
     s->setPosition (inicio);
-    return mp3 != nullptr ? mp3->createReaderFor (s.release(), true) : nullptr;
+    return mp3->createReaderFor (s.release(), true);
 }
 
 SampleLoader::SampleLoader (AudioEngine& engineToLoadInto)

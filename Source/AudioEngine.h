@@ -940,6 +940,7 @@ public:
             ventanaPara[(size_t) slot].store (nullptr);   // estabilidad#31: la ventana la escribe solo este hilo
             padStart[(size_t) slot].store (0);
             padEnd[(size_t) slot].store (0);
+            padSrcSr[(size_t) slot].store (0.0f, std::memory_order_relaxed);
             pendingClear[(size_t) slot].store (true, std::memory_order_release);
         }
     }
@@ -2261,13 +2262,31 @@ public:
                     && canalSend[(size_t) c][(size_t) f].load (std::memory_order_relaxed) > 0.0f;
             };
             if (suena (kFxDly))
-                t = juce::jmax (t, 4.0 * (double) fxParamDe (c, kFxDly, 0).load (std::memory_order_relaxed) * 0.001);
+                t = juce::jmax (t, 4.0 * (double) retardoDe (c, kFxDly, systemSampleRate - 1.0) / systemSampleRate);   // export#sync
             if (suena (kFxPng))
-                t = juce::jmax (t, 4.0 * (double) fxParamDe (c, kFxPng, 0).load (std::memory_order_relaxed) * 0.001);
+                t = juce::jmax (t, 4.0 * (double) retardoDe (c, kFxPng, systemSampleRate - 1.0) / systemSampleRate);   // export#sync
             if (suena (kFxRev))
                 t = juce::jmax (t, 3.0);
         }
         return t;
+    }
+
+    //  export#cola: lo que el rebote deja sonar tras el ultimo compas.
+    //  Y LAS VOCES: la muestra que el ultimo golpe deja sonando, a su afinacion, mas su suelta.
+    double getColaSeconds() const noexcept
+    {
+        double t = getFxTailSeconds();
+        for (int p = 0; p < kNumPads; ++p)
+        {
+            const double sr = (double) padSrcSr[(size_t) p].load (std::memory_order_relaxed);
+            if (sr <= 0.0 || effectiveGain (p) <= 0.0f) continue;
+            const int largo = juce::jmax (0, getPadEnd (p) - getPadStart (p));
+            if (largo <= 0) continue;
+            const double suena = padLoop[(size_t) p].load (std::memory_order_relaxed)
+                                   ? 0.0 : (double) largo / sr * std::pow (2.0, -(double) getPadPitch (p) / 12.0);
+            t = juce::jmax (t, suena + (double) padRelease[(size_t) p].load (std::memory_order_relaxed) * 0.001);
+        }
+        return juce::jmin (t, 20.0);
     }
 
     // --- Scope (message thread): copy the last n post-FX master samples ---
@@ -2828,6 +2847,7 @@ private:
     std::array<std::atomic<float>, kNumPads> padAncho {};    // 0 mono .. 1 como viene .. 2 doble
     std::array<std::atomic<float>, kNumPads> padAttack {};   // ms
     std::array<std::atomic<float>, kNumPads> padRelease {};  // ms
+    std::array<std::atomic<float>, kNumPads> padSrcSr {};    // export#cola: frecuencia de la muestra publicada, 0 sin muestra
     std::array<std::atomic<int>,   kNumPads> padSueltaPreset {};  // 1 = manda el preset
 
     //  El filtro del pad: corte, resonancia, y UN BIT por pad que dice si hay

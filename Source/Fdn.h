@@ -162,6 +162,16 @@ public:
         for (int i = 0; i < kLines; ++i) fbLinea[i] = std::pow (fb, exponente[i]);
     }
 
+    //  rev#osc: lo que el oscilador de cada linea se ha ido de radio uno; el banco lo mira.
+    float oscDesvio() const noexcept
+    {
+        float peor = 0.0f;
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < kLines; ++i)
+                peor = juce::jmax (peor, std::abs (std::hypot (osc[c][i][0], osc[c][i][1]) - 1.0f));
+        return peor;
+    }
+
     //  Sustituye el contenido del bloque por la senal HUMEDA, que es lo que
     //  este bus necesita: el seco llego al master por el camino directo y
     //  sumarlo otra vez solo lo peinaria.
@@ -172,6 +182,15 @@ public:
 
         float* w[2] = { nullptr, nullptr };
         for (int c = 0; c < ch; ++c) w[c] = buf.getWritePointer (c, start);
+
+        //  rev#osc: la rotacion en float se va de radio uno; se devuelve a uno cada bloque.
+        for (auto& oc : osc)
+            for (auto& o : oc)
+            {
+                const float r2 = o[0] * o[0] + o[1] * o[1];
+                const float g = r2 > 1.0e-12f ? 1.0f / std::sqrt (r2) : 0.0f;
+                if (g > 0.0f) { o[0] *= g; o[1] *= g; } else { o[0] = 1.0f; o[1] = 0.0f; }
+            }
 
         for (int n = 0; n < num; ++n)
         {
@@ -202,7 +221,8 @@ public:
                     const int   tam   = line[i].getNumSamples();
                     float pos = (float) lineIdx[i] - atras;
                     while (pos < 0.0f) pos += (float) tam;
-                    const int   i0 = (int) pos;
+                    int i0 = (int) pos;
+                    if (i0 >= tam) { i0 -= tam; pos -= (float) tam; }   // rev#i0: -epsilon + tam redondea a tam
                     const float fr = pos - (float) i0;
                     const float* r = line[i].getReadPointer (c);
                     const float a0 = r[i0], a1 = r[i0 + 1 < tam ? i0 + 1 : 0];

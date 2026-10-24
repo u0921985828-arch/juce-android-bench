@@ -219,7 +219,7 @@ public:
         p.pasosCompas = juce::jmax (1, e.pasosPorCompas());
         const double sps = (60.0 / juce::jmax (20.0, e.getBpm())) * (double) e.getStepBeats();
         p.cuerpo  = sps * (double) p.pasos;
-        p.cola    = juce::jmax (kColaMin, e.getFxTailSeconds());
+        p.cola    = juce::jmax (kColaMin, e.getColaSeconds());
         p.cuerpoN = (juce::int64) std::llround (p.cuerpo * sr);
         p.colaN   = (juce::int64) std::llround (p.cola * sr);
         return p;

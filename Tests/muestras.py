@@ -25,6 +25,16 @@ def seno (n, canales, amp=0.5):
 def f32 (vals, canales):
     return b"".join (struct.pack ("<f", v) * canales for v in vals)
 
+def aiff (ruta, datos, canales, sr):
+    #  carga#ext: AIFF con nombre de .wav; la extension miente y el contenido no.
+    e = 16383 + 15; m = sr << (63 - 15)
+    while m >= 1 << 64: m >>= 1; e += 1
+    while m < 1 << 63: m <<= 1; e -= 1
+    comm = struct.pack (">hIh", canales, len (datos) // (2 * canales), 16) + struct.pack (">HQ", e, m)
+    ssnd = struct.pack (">II", 0, 0) + datos
+    cuerpo = b"AIFF" + b"COMM" + struct.pack (">I", len (comm)) + comm + b"SSND" + struct.pack (">I", len (ssnd)) + ssnd
+    open (ruta, "wb").write (b"FORM" + struct.pack (">I", len (cuerpo)) + cuerpo)
+
 def escribe (d):
     n = 48000
     wav (os.path.join (d, "00-control.wav"), seno (n, 2), 2, 48000)
@@ -39,10 +49,13 @@ def escribe (d):
     open (os.path.join (d, "08-mp3-falso.mp3"), "wb").write (bytes ((i * 2654435761) >> 13 & 0xff for i in range (200000)))
     #  Un .wav no se decodifica como MP3 (estabilidad#4).
     wav (os.path.join (d, "09-f64.wav"), b"".join (struct.pack ("<d", 0.1 * math.sin (0.05 * i)) for i in range (20736)), 1, 48000, 64, 3)
+    aiff (os.path.join (d, "11-aiff-como-wav.wav"),
+          b"".join (struct.pack (">h", int (0.5 * 32767 * math.sin (0.05 * i))) for i in range (n)), 1, 48000)
     open (os.path.join (d, "10-wav-basura.wav"), "wb").write (bytes ((i * 40503) >> 7 & 0xff for i in range (200000)))
 
 #  Lo unico que puede salir de esos dos si entran: lo que su cabecera declara.
-DECLARA = { "09-f64.wav": (1, 48000), "10-wav-basura.wav": None }
+DECLARA = { "09-f64.wav": (1, 48000), "10-wav-basura.wav": None, "11-aiff-como-wav.wav": (1, 48000) }
+DEBE_ENTRAR = [ "11-aiff-como-wav.wav" ]
 
 def main():
     if not os.path.exists (CARGA):
@@ -90,6 +103,9 @@ def main():
             malas.append ("%s por %s: %d canales" % (r["f"], r["via"], r["ch"]))
         if not 4000 <= r["sr"] <= 768000:
             malas.append ("%s por %s: frecuencia %.0f" % (r["f"], r["via"], r["sr"]))
+    for f in DEBE_ENTRAR:   # carga#ext
+        if not any (r.get ("f") == f and r.get ("via") == "cargador" and r.get ("ok") for r in filas):
+            malas.append ("%s no entra por el cargador" % f)
     ctl = [r for r in filas if r.get ("f") == "00-control.wav" and r.get ("via") in ("cargador", "sesion") and r.get ("ok")]
     if len (ctl) != 2:
         malas.append ("el control no entro por los dos lectores")

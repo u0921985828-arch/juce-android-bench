@@ -1530,8 +1530,10 @@ void AudioEngine::faseEventos() noexcept
                 //  ya. La condicion estaba al reves: lo tocado a tiempo
                 //  esperaba casi un paso entero y lo tocado tarde sonaba sin
                 //  cuantizar (auditoria 2026-10, secuenciador#0).
-                const double toNext = sps - stepAccum;
-                if (stepAccum >= sps * 0.5)
+                //  secuenciador#fase: un borde aplazado a este bloque es "acabas de pasar uno".
+                const double acc = stepAccum >= sps - 1.0e-9 ? stepAccum - sps : stepAccum;
+                const double toNext = sps - acc;
+                if (acc >= sps * 0.5)
                 {
                     pending[(size_t) numPending++] = { (int) toNext, local[i].slot,
                                                        (int) local[i].semitones, local[i].velocity };
@@ -2046,7 +2048,7 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
 
             fireDueHits();
         }
-        stepPhase.store ((float) (stepAccum / samplesPerStep), std::memory_order_relaxed);
+        stepPhase.store (juce::jmin (0.99999f, (float) (stepAccum / samplesPerStep)), std::memory_order_relaxed);   // secuenciador#fase: el borde aplazado no publica 1.0
     }
 }
 
@@ -3169,16 +3171,23 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                                 const int rango = juce::jmin ((int) (gran * 0.25f), (int) (0.012f * fsF));
                                 const int largo = juce::jmin (128, juce::jmax (16, (int) (gran * 0.25f)));
                                 const int base = (int) dOtra;
-                                float mejor = -1.0e30f; int mejorO = 0;
-                                for (int o = 0; o <= rango; ++o)
+                                const int l0 = (int) std::lround (dn);
+                                const auto corr = [&] (int o, int paso)
                                 {
-                                    const int l = (int) std::lround (dn) + o;
                                     float cc = 0.0f;
                                     for (int ch = 0; ch < chans; ++ch)
-                                        for (int j = 0; j < largo; j += 2)
-                                            cc += I.pitLine.atras (ch, base + j) * I.pitLine.atras (ch, l + j);
-                                    if (cc > mejor) { mejor = cc; mejorO = o; }
-                                }
+                                        for (int j = 0; j < largo; j += paso)
+                                            cc += I.pitLine.atras (ch, base + j) * I.pitLine.atras (ch, l0 + o + j);
+                                    return cc;
+                                };
+                                //  pit#coste: de cuatro en cuatro a trazo grueso y luego fino alrededor; la busqueda entera costaba 74k MAC en una muestra.
+                                float mejor = -1.0e30f; int mejorO = 0;
+                                for (int o = 0; o <= rango; o += 4)
+                                    if (const float cc = corr (o, 4); cc > mejor) { mejor = cc; mejorO = o; }
+                                const int grueso = mejorO;
+                                mejor = -1.0e30f;
+                                for (int o = juce::jmax (0, grueso - 3); o <= juce::jmin (rango, grueso + 3); ++o)
+                                    if (const float cc = corr (o, 2); cc > mejor) { mejor = cc; mejorO = o; }
                                 I.pitOff[nueva] = (float) mejorO + (dOtra - (float) base) - (dn - std::round (dn));
                             }
                         }
@@ -5068,6 +5077,7 @@ void AudioEngine::publishSample (int slot, SampleBuffer::Ptr newBuffer) noexcept
     padStart[(size_t) slot].store (0);
     padEnd[(size_t) slot].store (newBuffer->buffer.getNumSamples());
     ventanaPara[(size_t) slot].store (newBuffer.get());
+    padSrcSr[(size_t) slot].store ((float) newBuffer->sourceSampleRate, std::memory_order_relaxed);
 
     newBuffer->incReferenceCount();
     if (auto* old = pendingPad[(size_t) slot].exchange (newBuffer.get(), std::memory_order_release))
