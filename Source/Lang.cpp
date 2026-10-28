@@ -1797,6 +1797,19 @@ namespace
         { "GLIDE", "", "GLIDE", "滑音", "انزلاق" },   // LS6
         { "Glide en %1 pasos", "", "Glide on %1 steps", "%1 个步进加滑音", "انزلاق في %1 خطوات" },
         { "Glide quitado", "", "Glide removed", "已删除滑音", "أزيل الانزلاق" },
+        { "VEL", "", "VEL", "力度", "سرعة" },   // LS7
+        { "AUTO SUBE", "", "AUTO UP", "自动化上升", "أتمتة صاعدة" },   // LS8
+        { "AUTO BAJA", "", "AUTO DOWN", "自动化下降", "أتمتة هابطة" },
+        { "Mueve antes un mando de efecto", "", "Move an effect knob first", "请先转动一个效果旋钮", "حرك مقبض مؤثر أولاً" },
+        { "AUTO %1 sube en %2 pasos", "", "AUTO %1 rises over %2 steps", "自动化 %1 在 %2 个步进上升", "أتمتة %1 تصعد في %2 خطوات" },
+        { "AUTO %1 baja en %2 pasos", "", "AUTO %1 falls over %2 steps", "自动化 %1 在 %2 个步进下降", "أتمتة %1 تهبط في %2 خطوات" },
+        { "VEL SUBE", "", "VEL UP", "力度渐强", "سرعة صاعدة" },
+        { "VEL BAJA", "", "VEL DOWN", "力度渐弱", "سرعة هابطة" },
+        { "VEL ONDA", "", "VEL WAVE", "力度波形", "سرعة موجة" },
+        { "Hacen falta dos notas", "", "Two notes are needed", "需要两个音符", "تلزم نوتتان" },
+        { "Fuerza en rampa que sube en %1 notas", "", "Rising velocity ramp on %1 notes", "%1 个音符力度渐强", "منحدر سرعة صاعد على %1 نوتات" },
+        { "Fuerza en rampa que baja en %1 notas", "", "Falling velocity ramp on %1 notes", "%1 个音符力度渐弱", "منحدر سرعة هابط على %1 نوتات" },
+        { "Fuerza en onda en %1 notas", "", "Velocity wave on %1 notes", "%1 个音符力度波形", "موجة سرعة على %1 نوتات" },
         { "SUBE|arp", "SUBE", "UP", "上行", "صاعد" },
         { "BAJA|arp", "BAJA", "DOWN", "下行", "هابط" },
         { "VAIVEN|arp", "VAIVÉN", "UP-DOWN", "往返", "ذهاب وإياب" },

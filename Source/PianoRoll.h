@@ -364,9 +364,11 @@ public:
     //  dar a confundirse donde pone uno las notas siguiendo los pasos».
     void setSource (const signed char* notas, int pasos, int base,
                     int pasoTocando, int zati, float fase = 0.0f,
-                    const unsigned char* largos = nullptr, int desdePaso = 0)
+                    const unsigned char* largos = nullptr, int desdePaso = 0,
+                    const unsigned char* fuerzasPaso = nullptr)
     {
         datos = notas; nPasos = juce::jmax (1, pasos); semiBase = base;
+        fuerzas = fuerzasPaso;
         primerPaso = juce::jmax (0, desdePaso);
         cuartos = largos;
         tocando = pasoTocando; color = zati;
@@ -394,6 +396,11 @@ public:
                   && sombra.size() == n
                   && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0
                   && largosIguales;
+        const bool fuerzasIguales = fuerzas == nullptr
+                                      ? sombraFuerzas.empty()
+                                      : sombraFuerzas.size() == (size_t) nPasos
+                                          && std::memcmp (sombraFuerzas.data(), fuerzas, (size_t) nPasos) == 0;   // LS7
+        igual = igual && fuerzasIguales;
         if (igual) return;
 
         const auto antes = marcaDe (prevTocando);
@@ -403,9 +410,10 @@ public:
                               && color == prevColor
                               && sombra.size() == n
                               && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0
-                              && largosIguales;
+                              && largosIguales && fuerzasIguales;
 
         sombra.resize (n);
+        if (fuerzas != nullptr) sombraFuerzas.assign (fuerzas, fuerzas + nPasos); else sombraFuerzas.clear();
         if (datos != nullptr) std::memcpy (sombra.data(), datos, n * sizeof (signed char));
         sombraLargos.assign ((size_t) nPasos, 0);
         if (cuartos != nullptr)
@@ -564,6 +572,12 @@ public:
                     g.fillRect (barra);
                     g.setColour (filoNota());
                     g.drawRect (barra, grosorFilo);
+                    if (fuerzas != nullptr && fuerzas[c] > 0)   // LS7 la fuerza, una raya abajo tan larga como fuerte
+                    {
+                        g.setColour (ZatiColours::ink.withAlpha (0.85f));
+                        g.fillRect (barra.withTop (barra.getBottom() - kRayaFuerza)
+                                         .withWidth (barra.getWidth() * (float) fuerzas[c] / 127.0f));
+                    }
                     //  Y el ARRANQUE marcado, que en una barra de cuatro
                     //  casillas es lo unico que dice donde empieza la nota.
                     if (cu > 4)
@@ -1037,6 +1051,11 @@ private:
     //  y comparten largo, que es lo que un acorde es.
     const unsigned char* cuartos = nullptr;
     std::vector<unsigned char> sombraLargos;
+    const unsigned char* fuerzas = nullptr;   // LS7
+    std::vector<unsigned char> sombraFuerzas;
+public:
+    static constexpr float kRayaFuerza = 3.0f;
+private:
     int filas = kFilasMin;              // ver setFilas
     //  La eleccion y el tope que el maquetado midio. Ver setFilas / acota.
     int filasPedidas = kFilasMin, tope = kFilasMax;

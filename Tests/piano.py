@@ -551,6 +551,20 @@ else:
     mide ("y el glide vuelve del proyecto", d["glide_guardado"] == 3, "tras guardar y abrir %d" % d["glide_guardado"])
     mide ("y deshacer lo quita", d["glide_deshecho"] == 0, "tras deshacer %d" % d["glide_deshecho"])
 
+#  LS7 VEL. Roto a proposito -sin raya de fuerza en el piano- medido: pixeles 0.
+d = una ("vel")
+if d is None:
+    mide ("forma de la fuerza", False, "no salio")
+else:
+    mide ("VEL en la tira, sin pisar a GLIDE", d["visible"] == 1, "visible %d" % d["visible"])
+    mide ("el rotulo dice la forma que toca", d["texto"] == "VEL SUBE/VEL BAJA", "texto %s" % d["texto"])
+    mide ("rampa que sube por el tiempo de cada nota", d["sube"] == "32 67 127", "sube %s" % d["sube"])
+    mide ("rampa que baja", d["baja"] == "127 92 32", "baja %s" % d["baja"])
+    mide ("onda de dos vueltas", d["onda"] == "80 33 80", "onda %s" % d["onda"])
+    mide ("cada toque una entrada de deshacer", d["undos"] == 3, "entradas %d" % d["undos"])
+    mide ("y deshacer devuelve la rampa que baja", d["deshecho"] == "127 92 32", "tras deshacer %s" % d["deshecho"])
+    mide ("la fuerza se ve: sube y baja pintan distinto", d["pixeles"] > 20, "pixeles distintos %d" % d["pixeles"])
+
 #  LS5 ARP. Roto a proposito -sin guardar el arp en el proyecto- medido: guardado 011.
 d = una ("arp")
 if d is None:

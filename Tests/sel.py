@@ -30,7 +30,7 @@ import json, os, subprocess, sys
 from kits import PANTALLA                                          # noqa: E402
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
-APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
+APP  = os.environ.get ("ZATI_BIN") or os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
 
 
 def display_alive():
@@ -99,7 +99,7 @@ def main():
     f = corre()
     faltan = [k for k in ("sec original", "sec copiado", "sec pegado", "sec borrado",
                           "cancion inicial", "cancion clip", "cancion copiado",
-                          "cancion pegado", "cancion borrado", "cancion corte")
+                          "cancion pegado", "cancion borrado", "cancion corte", "cancion auto")
               if k not in f]
     if faltan:
         print ("FALLA  la sonda no dijo: %s" % ", ".join (faltan))
@@ -183,9 +183,20 @@ def main():
     #  deshacer una vez dejaria el trozo copiado pero no borrado.
     juzga ("corte, una entrada de undo", f["cancion corte"]["undo"], 1)
 
+    #  LS8 AUTO: rampa del ultimo mando de punta a punta de la banda, que se ve,
+    #  viaja con COPIAR/PEGAR, se va con BORRAR, vuelve con deshacer y se guarda.
+    au = f["cancion auto"]
+    juzga ("auto, rampa sube y baja",   [au["puestos"], au["sube"], au["baja"], au["undos"]], [32, 1, 1, 2])
+    juzga ("auto, llega al motor",      au["publicada"], 32)
+    juzga ("auto, se dibuja",           au["pintados"] > 0, True)
+    juzga ("auto, copia y pega",        [au["copiados"], au["pegados"]], [32, 32])
+    juzga ("auto, borra y deshace",     [au["borrados"], au["deshecho"]], [0, 32])
+    juzga ("auto, se guarda",           au["guardados"], 64)
+    juzga ("auto, el boton cambia",     au["texto"], "AUTO SUBE/AUTO BAJA")
+
     print ()
     if fallos:
-        print ("FALLA  %d de %d: %s" % (len (fallos), 15, ", ".join (fallos)))
+        print ("FALLA  %d de %d: %s" % (len (fallos), 22, ", ".join (fallos)))
         return 1
     print ("las dos bandas recortan por sus filos, y lo que copian viaja entero")
     return 0

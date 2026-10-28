@@ -708,6 +708,7 @@ public:
 
         pintaClips (g);
         pintaGrabando (g);
+        pintaAutos (g);        // LS8
         pintaMarcadores (g);   // LS4 encima de todo: dicen por donde va a pasar el cabezal
 
         //  LA SELECCION SE VE POR RELLENO, como en el piano: el cabezal al
@@ -1259,6 +1260,48 @@ public:
     }
     int marcadoresPintados() const noexcept { return marcadoresVistos; }
 
+    //  LS8 la automatizacion se ve: una linea por parametro, de abajo (minimo) a arriba (maximo).
+    struct AutoVista { int paso = 0; int serie = 0; float v01 = 0.0f; };
+    void setAutos (std::vector<AutoVista> v)
+    {
+        const bool igual = v.size() == autos.size()
+                        && std::equal (v.begin(), v.end(), autos.begin(),
+                                       [] (const AutoVista& a, const AutoVista& b)
+                                       { return a.paso == b.paso && a.serie == b.serie && std::abs (a.v01 - b.v01) < 1.0e-6f; });
+        if (igual) return;
+        autos = std::move (v);
+        repaint();
+    }
+    int autosPintados() const noexcept { return autosVistos; }
+
+    void pintaAutos (juce::Graphics& g)
+    {
+        autosVistos = 0;
+        if (autos.empty()) return;
+        const int pc = juce::jmax (1, pasosCompas);
+        const int base = primerCompas * pc, tope = base + barsView * pc;
+        const auto r = getLocalBounds().toFloat().reduced (0.0f, 3.0f);
+        int serie = -1; juce::Path p; bool abierto = false;
+        auto cierra = [&]
+        {
+            if (abierto) g.strokePath (p, juce::PathStrokeType (2.0f));
+            p.clear(); abierto = false;
+        };
+        g.setColour (ZatiColours::playhead.withAlpha (0.9f));
+        for (const auto& a : autos)   // vienen por serie y por paso
+        {
+            if (a.serie != serie) { cierra(); serie = a.serie; }
+            if (a.paso < base || a.paso >= tope) continue;
+            const auto caja = cajaPaso (0, a.paso, a.paso + 1);
+            const float x = caja.getCentreX();
+            const float y = r.getBottom() - r.getHeight() * juce::jlimit (0.0f, 1.0f, a.v01);
+            if (! abierto) { p.startNewSubPath (x, y); abierto = true; } else p.lineTo (x, y);
+            g.fillEllipse (x - 1.5f, y - 1.5f, 3.0f, 3.0f);
+            ++autosVistos;
+        }
+        cierra();
+    }
+
     void pintaMarcadores (juce::Graphics& g)
     {
         marcadoresVistos = 0;
@@ -1659,6 +1702,8 @@ private:
     const float* grabPicos = nullptr;
     int          fundidosVistos = 0;   // LS1
     std::vector<MarcadorVista> marcadores;   // LS4
+    std::vector<AutoVista> autos;   // LS8
+    int autosVistos = 0;
     int          marcadoresVistos = 0;
     int              clipSel  = -1;   // el que se esta moviendo, para que se vea
     int              arrastrado = -1; // el que este dedo agarro

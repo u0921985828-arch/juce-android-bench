@@ -4603,7 +4603,7 @@ void MainComponent::cableaCancion()
     //  y PEGAR solo con portapapeles, que es la misma regla que la tira del
     //  piano: una tapa que no puede hacer nada no es informacion.
     for (auto* b : { &songCopiaBtn, &songCorteSelBtn, &songPegaBtn, &songBorraSelBtn, &songAudioSelBtn,
-                     &songMarcadorBtn })
+                     &songMarcadorBtn, &songAutoSelBtn })
     {
         styleButton (*b, kKey);
         songSheet.addAndMakeVisible (*b);
@@ -4611,6 +4611,7 @@ void MainComponent::cableaCancion()
     litAccent (songMarcadorBtn);
     songAudioSelBtn.onClick = [this] { songAudioSel(); };
     songMarcadorBtn.onClick = [this] { songMarcadorSel(); };
+    songAutoSelBtn.onClick  = [this] { songAutoSel(); };
     songCopiaBtn.onClick    = [this] { songCopiaSel(); };
     songCorteSelBtn.onClick = [this] { songCortaSel(); };
     songPegaBtn.onClick     = [this] { songPegaSel(); };
@@ -5190,7 +5191,7 @@ void MainComponent::cableaPiano()
         //  seleccionar no se busca entre las herramientas: sale donde miras.
         for (juce::TextButton* b : { &pianoCopiaBtn, &pianoCorteSelBtn,
                                      &pianoPegaBtn, &pianoBorraSelBtn,
-                                     &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn })
+                                     &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn, &pianoVelBtn })
         {
             styleButton (*b, kKey);
             seqSheet.addChildComponent (*b);
@@ -5208,6 +5209,7 @@ void MainComponent::cableaPiano()
         pianoFlamBtn.onClick     = [this] { pianoFlamSel(); };
         litAccent (pianoGlideBtn);
         pianoGlideBtn.onClick    = [this] { pianoMarcaSel (AudioEngine::kMarcaGlide); };
+        pianoVelBtn.onClick      = [this] { pianoFormaVel(); };
         for (juce::TextButton* b : { &pianoArpBtn, &pianoArpDivBtn, &pianoArpOctBtn })   // LS5
         {
             styleButton (*b, kKey);
@@ -6345,6 +6347,7 @@ void MainComponent::escribeFxParam (int f, int pi, float v)
     //  el hilo de audio, asi que copiarlo habria sido la misma regla escrita
     //  dos veces. Ver AudioEngine::setFxParam.
     engine.setFxParam (canalActual, f, pi, v);
+    autoUltimo = { canalActual, f, pi };   // LS8
 
     //  Y SI ESTA ARMADO, SE ESCRIBE. Aqui y no en `onValueChange` del mando:
     //  por esta funcion pasan TODOS los caminos que mueven un parametro -el
@@ -6794,6 +6797,89 @@ void MainComponent::anotaAutomacion (int canal, int fx, int par, float v)
 void MainComponent::publicaAutomacion()
 {
     engine.publicaAutomacion (autoEventos.data(), (int) autoEventos.size());
+    publicaAutosVista();
+}
+
+bool MainComponent::rangoFx (int f, int pi, double& lo, double& hi) const   // LS8
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx) || ! juce::isPositiveAndBelow (pi, kParamsPorFx)) return false;
+    if (pi < 3) { lo = fxDefs[f].spec[pi].lo; hi = fxDefs[f].spec[pi].hi; }
+    else if (pi == 3) { lo = 0.0; hi = (double) AudioEngine::kEngancheMax; }
+    else
+    {
+        if (! AudioEngine::tieneMando (f, pi)) return false;
+        const auto sp = specExtra (f, pi);
+        lo = sp.lo; hi = sp.hi;
+    }
+    return hi > lo;
+}
+
+//  LS8 lo que la linea de tiempo dibuja: cada parametro una serie, ordenada por paso.
+void MainComponent::publicaAutosVista()
+{
+    std::vector<Playlist::AutoVista> v;
+    v.reserve (autoEventos.size());
+    std::vector<int> claves;
+    for (const auto& e : autoEventos)
+    {
+        double lo = 0.0, hi = 1.0;
+        if (! rangoFx (e.fx, e.par, lo, hi)) continue;
+        const int clave = (e.canal << 16) | (e.fx << 8) | e.par;
+        auto it = std::find (claves.begin(), claves.end(), clave);
+        const int serie = (int) (it - claves.begin());
+        if (it == claves.end()) claves.push_back (clave);
+        v.push_back ({ e.paso, serie, (float) ((e.valor - lo) / (hi - lo)) });
+    }
+    std::sort (v.begin(), v.end(), [] (const Playlist::AutoVista& a, const Playlist::AutoVista& b)
+               { return a.serie != b.serie ? a.serie < b.serie : a.paso < b.paso; });
+    songGrid.setAutos (std::move (v));
+}
+
+//  LS8 AUTO en la banda: una rampa del ultimo mando de efecto tocado, de punta a punta del tramo.
+void MainComponent::songAutoSel()
+{
+    if (! songSel.activa()) return;
+    double lo = 0.0, hi = 1.0;
+    if (autoUltimo.fx < 0 || ! rangoFx (autoUltimo.fx, autoUltimo.par, lo, hi))
+    {
+        status.setText (T ("Mueve antes un mando de efecto"), juce::dontSendNotification);
+        return;
+    }
+    const auto cc = (juce::uint8) AudioEngine::canalDeParam (autoUltimo.canal, autoUltimo.fx);
+    const auto fx = (juce::uint8) autoUltimo.fx, par = (juce::uint8) autoUltimo.par;
+    const int p0 = songSel.paso0, p1 = songSel.paso1;
+    const int n = p1 - p0;
+    const int salto = juce::jmax (1, (n + 255) / 256);
+
+    pushUndo (T ("AUTO"));
+    autoEventos.erase (std::remove_if (autoEventos.begin(), autoEventos.end(),
+                                       [&] (const AudioEngine::EventoAuto& e)
+                                       { return e.fx == fx && e.par == par && e.canal == cc
+                                             && e.paso >= p0 && e.paso < p1; }),
+                       autoEventos.end());
+    const bool sube = songAutoForma == 0;
+    int puestos = 0;
+    for (int st = p0; st < p1; st += salto)
+    {
+        const int paso = (st + salto >= p1) ? p1 - 1 : st;
+        if ((int) autoEventos.size() >= AudioEngine::kMaxAuto) break;
+        const double t = n > 1 ? (double) (paso - p0) / (double) (n - 1) : 1.0;
+        const double v = sube ? lo + (hi - lo) * t : hi - (hi - lo) * t;
+        autoEventos.push_back ({ paso, fx, par, cc, (float) v });
+        ++puestos;
+        if (paso == p1 - 1) break;
+    }
+    publicaAutomacion();
+    status.setText (T (sube ? "AUTO %1 sube en %2 pasos" : "AUTO %1 baja en %2 pasos",
+                       juce::String (fxDefs[autoUltimo.fx].name), Lang::ltr (juce::String (puestos))),
+                    juce::dontSendNotification);
+    songAutoForma = 1 - songAutoForma;
+    ponTextoAutoSel();
+}
+
+void MainComponent::ponTextoAutoSel()
+{
+    songAutoSelBtn.setButtonText (songAutoForma == 0 ? T ("AUTO SUBE") : T ("AUTO BAJA"));
 }
 
 void MainComponent::ponAutoArmado (bool on)
@@ -8495,7 +8581,7 @@ void MainComponent::showSeqPage (int page)
                                  &pianoSelBtn, &pianoZoomBtn,
                                  &pianoCopiaBtn, &pianoCorteSelBtn,
                                  &pianoPegaBtn, &pianoBorraSelBtn,
-                                 &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn, &pianoArpBtn })
+                                 &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn, &pianoVelBtn, &pianoArpBtn })
     {
         b->setVisible (onPiano);
         if (! onPiano) b->setBounds ({});
@@ -11826,6 +11912,7 @@ void MainComponent::retranslateUi()
     songPegaBtn    .setButtonText (T ("PEGAR"));
     songBorraSelBtn.setButtonText (T ("BORRAR"));
     songAudioSelBtn.setButtonText (T ("A AUDIO"));
+    ponTextoAutoSel();
     ponTextoMarcador();
     seqFollowBtn.setButtonText (T ("SEGUIR"));
     patLeftBtn  .setButtonText (T ("ATRAS"));
@@ -11965,6 +12052,7 @@ void MainComponent::retranslateUi()
     pianoLegatoBtn  .setButtonText (T ("LEGATO"));
     pianoFlamBtn    .setButtonText (T ("FLAM"));
     pianoGlideBtn   .setButtonText (T ("GLIDE"));
+    ponTextoVel();
     ponTextoArp();
     //  El rotulo dice CUANTO se ve, no un verbo: es la misma gramatica que
     //  pianoVerBtn y que la tapa de vista de la cancion.
@@ -16680,6 +16768,14 @@ MainComponent::PortaCancion MainComponent::recortaBanda (const Playlist::Sel& se
         k.paso   = rel % pc;
         r.clips.push_back (k);
     }
+
+    for (const auto& e : autoEventos)   // LS8
+        if (e.paso >= sel.paso0 && e.paso < sel.paso1)
+        {
+            auto c = e;
+            c.paso = e.paso - sel.paso0;
+            r.autos.push_back (c);
+        }
     return r;
 }
 
@@ -16869,6 +16965,13 @@ void MainComponent::vaciaBanda (int lane0, int lane1, int paso0, int paso1, bool
         }
     }
     publicaClips();
+
+    const auto antes = autoEventos.size();   // LS8 la automatizacion del tramo se va con el
+    autoEventos.erase (std::remove_if (autoEventos.begin(), autoEventos.end(),
+                                       [=] (const AudioEngine::EventoAuto& e)
+                                       { return e.paso >= paso0 && e.paso < paso1; }),
+                       autoEventos.end());
+    if (autoEventos.size() != antes) publicaAutomacion();
 }
 
 void MainComponent::songBorraSel()
@@ -16904,7 +17007,8 @@ void MainComponent::songCortaSel()
 //  debajo obliga a borrar a mano primero, que son dos operaciones para una.
 void MainComponent::songPegaSel()
 {
-    if (songPortapapeles.bloques.empty() && songPortapapeles.clips.empty()) return;
+    if (songPortapapeles.bloques.empty() && songPortapapeles.clips.empty()
+        && songPortapapeles.autos.empty()) return;
 
     const int pc    = juce::jmax (1, engine.pasosPorCompas());
     const int total = engine.getSongLength() * pc;
@@ -16942,6 +17046,14 @@ void MainComponent::songPegaSel()
         clips.push_back (c);
     }
     publicaClips();
+    for (const auto& e : songPortapapeles.autos)   // LS8
+    {
+        if ((int) autoEventos.size() >= AudioEngine::kMaxAuto) break;
+        auto c = e;
+        c.paso = paso0 + e.paso;
+        if (c.paso >= 0 && c.paso < total) autoEventos.push_back (c);
+    }
+    if (! songPortapapeles.autos.empty()) publicaAutomacion();
 
     //  Y LA BANDA SE PONE SOBRE LO PEGADO, que es donde vas a seguir trabajando.
     songSel.lane0 = lane0;
@@ -17487,6 +17599,67 @@ void MainComponent::pianoMarcaSel (int marca)
     refreshPiano (false);
 }
 
+//  LS7 FORMA DE LA FUERZA: rampa que sube, que baja u onda, por el tiempo de cada nota en la seleccion.
+void MainComponent::pianoFormaVel()
+{
+    if (pianoSel.empty() || selectedPad < 0) return;
+    const int b = selectedPattern, p = selectedPad;
+    const int len = engine.getPatternLength (b);
+    std::vector<int> pasos;
+    for (const auto& n : pianoSel)
+    {
+        const int st = pasoDeCelda (n.paso);
+        if (st >= 0 && st < len && pattern[(size_t) b][(size_t) st][(size_t) p]
+            && std::find (pasos.begin(), pasos.end(), st) == pasos.end())
+            pasos.push_back (st);
+    }
+    if (pasos.size() < 2)
+    {
+        status.setText (T ("Hacen falta dos notas"), juce::dontSendNotification);
+        return;
+    }
+    std::sort (pasos.begin(), pasos.end());
+    const int forma = pianoVelForma;
+    pushUndo (T ("VEL"));
+    const double ancho = (double) (pasos.back() - pasos.front());
+    for (const int st : pasos)
+    {
+        const double t = (double) (st - pasos.front()) / ancho;
+        const double v = forma == 0 ? 32.0 + 95.0 * t
+                       : forma == 1 ? 127.0 - 95.0 * t
+                                    : 80.0 + 47.0 * std::sin (juce::MathConstants<double>::twoPi * t * 2.0);
+        engine.setStepVel (b, st, p, juce::jlimit (1, 127, (int) std::lround (v)));
+    }
+    const auto cuantos = Lang::ltr (juce::String ((int) pasos.size()));
+    status.setText (forma == 0 ? T ("Fuerza en rampa que sube en %1 notas", cuantos)
+                  : forma == 1 ? T ("Fuerza en rampa que baja en %1 notas", cuantos)
+                               : T ("Fuerza en onda en %1 notas", cuantos),
+                    juce::dontSendNotification);
+    pianoVelForma = (forma + 1) % 3;
+    ponTextoVel();
+    refreshPiano (false);
+}
+
+void MainComponent::ponTextoVel()
+{
+    pianoVelBtn.setButtonText (pianoVelForma == 0 ? T ("VEL SUBE")
+                             : pianoVelForma == 1 ? T ("VEL BAJA") : T ("VEL ONDA"));
+}
+
+int MainComponent::accionesSel (juce::TextButton** out) const   // LS7 la misma lista para pedir y para colocar
+{
+    int n = 0;
+    out[n++] = const_cast<Boton*> (&pianoCopiaBtn);
+    out[n++] = const_cast<Boton*> (&pianoCorteSelBtn);
+    if (! pianoPortapapeles.empty()) out[n++] = const_cast<Boton*> (&pianoPegaBtn);
+    out[n++] = const_cast<Boton*> (&pianoBorraSelBtn);
+    out[n++] = const_cast<Boton*> (&pianoLegatoBtn);
+    out[n++] = const_cast<Boton*> (&pianoFlamBtn);
+    out[n++] = const_cast<Boton*> (&pianoGlideBtn);
+    out[n++] = const_cast<Boton*> (&pianoVelBtn);
+    return n;
+}
+
 bool MainComponent::pianoSelConFlam() const { return pianoSelConMarca (AudioEngine::kMarcaFlam); }
 
 bool MainComponent::pianoSelConMarca (int marca) const
@@ -17621,6 +17794,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
         for (int k = 0; k < PianoRoll::kMaxNotas; ++k)
             pianoCells[c * PianoRoll::kMaxNotas + k] = -128;
         pianoLargos[c] = 0;
+        pianoFuerzas[c] = 0;
     }
 
     //  UNA COLUMNA SON `ppc` PASOS GUARDADOS, y la columna ensena el primero
@@ -17645,6 +17819,8 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
         pianoLargos[c] = (unsigned char) juce::jmin (255, engine.getStepLen (b, st, p) / ppc);   // LS3 un legato largo daba la vuelta al byte
 
         int n = 0;
+        if (pattern[(size_t) b][(size_t) st][(size_t) p])
+            pianoFuerzas[c] = (unsigned char) juce::jlimit (1, 127, engine.getStepVel (b, st, p));
         if (pattern[(size_t) b][(size_t) st][(size_t) p])
             pianoCells[c * PianoRoll::kMaxNotas + n++] = (signed char) engine.getStepNote (b, st, p);
         for (int e = 0; e < AudioEngine::kExtraNotes && n < PianoRoll::kMaxNotas; ++e)
@@ -17677,7 +17853,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
                          (ps >= 0 && ps < cols) ? ps : -1,
                          padZati[(size_t) p],
                          ps >= 0 ? engine.getStepPhase() : 0.0f,
-                         pianoLargos, seqPrimerCelda);
+                         pianoLargos, seqPrimerCelda, pianoFuerzas);
     //  La regla, en columnas de ESTA ventana: lo que caiga fuera se recorta
     //  al pintar. El cursor se acota al patron, que un cursor en una casilla
     //  que ya no existe pegaria en el vacio.

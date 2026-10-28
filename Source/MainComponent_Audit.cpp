@@ -5199,6 +5199,46 @@ void MainComponent::auditPiano()
         performUndo();
         const int glideDeshecho = glides();
 
+        //  LS7 VEL: tres toques dan rampa que sube, que baja y onda; la raya de fuerza se pinta distinta.
+        auto fuerzas = [this, p]
+        {
+            juce::String r;
+            for (const int st : { 1, 5, 12 }) r << engine.getStepVel (0, st, p) << " ";
+            return r.trim();
+        };
+        auto foto = [this]
+        {
+            refreshPiano (false);
+            return pianoGrid.createComponentSnapshot (pianoGrid.getLocalBounds(), true, 1.0f);
+        };
+        pianoVelForma = 0; ponTextoVel();
+        const juce::String velTexto0 = pianoVelBtn.getButtonText();
+        const int undoAntesVel = (int) undoStack.size();
+        if (pianoVelBtn.onClick) pianoVelBtn.onClick();
+        const juce::String velSube = fuerzas();
+        const juce::String velTexto1 = pianoVelBtn.getButtonText();
+        const auto fotoSube = foto();
+        if (pianoVelBtn.onClick) pianoVelBtn.onClick();
+        const juce::String velBaja = fuerzas();
+        const auto fotoBaja = foto();
+        if (pianoVelBtn.onClick) pianoVelBtn.onClick();
+        const juce::String velOnda = fuerzas();
+        const int velUndos = (int) undoStack.size() - undoAntesVel;
+        int velDistintos = 0;
+        if (fotoSube.getBounds() == fotoBaja.getBounds())
+            for (int y = 0; y < fotoSube.getHeight(); ++y)
+                for (int x = 0; x < fotoSube.getWidth(); ++x)
+                    if (fotoSube.getPixelAt (x, y) != fotoBaja.getPixelAt (x, y)) ++velDistintos;
+        const bool velVisible = pianoVelBtn.isVisible() && ! pianoVelBtn.getBounds().isEmpty()
+                             && ! pianoVelBtn.getBounds().intersects (pianoGlideBtn.getBounds());
+        performUndo();
+        const juce::String velDeshecho = fuerzas();
+        std::cout << "{\"piano\":\"vel\",\"sube\":\"" << velSube << "\",\"baja\":\"" << velBaja
+                  << "\",\"onda\":\"" << velOnda << "\",\"deshecho\":\"" << velDeshecho
+                  << "\",\"undos\":" << velUndos << ",\"pixeles\":" << velDistintos
+                  << ",\"visible\":" << (velVisible ? 1 : 0)
+                  << ",\"texto\":\"" << velTexto0 << "/" << velTexto1 << "\"}" << std::endl;
+
         std::cout << "{\"piano\":\"toque\",\"largos\":[" << l1 << "," << l5 << "," << l12 << "]"
                   << ",\"undo_legato\":" << undoLegato
                   << ",\"flam\":" << flamPuesto
@@ -10836,6 +10876,68 @@ void MainComponent::auditSelecciones()
     songCortaSel();
     std::cout << "{\"sel\":\"cancion corte\",\"undo\":" << ((int) undoStack.size() - undoAntes)
               << ",\"bloques\":" << (int) bloques.size() << "}" << std::endl;
+
+    //  LS8 AUTO en la banda: rampa, dibujo, pegar, borrar, deshacer y guardado.
+    {
+        autoEventos.clear();
+        publicaAutomacion();
+        autoUltimo.canal = 0; autoUltimo.fx = 0; autoUltimo.par = 0;
+        songAutoForma = 0;
+        ponTextoAutoSel();
+        double lo = 0.0, hi = 1.0;
+        rangoFx (0, 0, lo, hi);
+        auto cuenta = [this] (int a, int b)
+        {
+            int k = 0;
+            for (const auto& e : autoEventos) if (e.paso >= a && e.paso < b) ++k;
+            return k;
+        };
+        auto pinta = [this]
+        {
+            if (songGrid.getWidth() > 0 && songGrid.getHeight() > 0)
+                songGrid.createComponentSnapshot (songGrid.getLocalBounds());
+            return songGrid.autosPintados();
+        };
+        const juce::String texto0 = songAutoSelBtn.getButtonText();
+        const int undo0 = (int) undoStack.size();
+        songBanda (0, 16, 0, 48);
+        if (songAutoSelBtn.onClick) songAutoSelBtn.onClick();
+        const int n1 = (int) autoEventos.size();
+        const bool sube = n1 > 1 && std::abs (autoEventos.front().valor - (float) lo) < 1.0e-4f
+                                 && std::abs (autoEventos.back().valor - (float) hi) < 1.0e-4f
+                                 && autoEventos.front().paso == 16 && autoEventos.back().paso == 47;
+        const int publicada = engine.automacionPublicada();
+        const int pintados = pinta();
+        const juce::String texto1 = songAutoSelBtn.getButtonText();
+        if (songAutoSelBtn.onClick) songAutoSelBtn.onClick();
+        const int n2 = (int) autoEventos.size();
+        const bool baja = n2 == n1 && std::abs (autoEventos.front().valor - (float) hi) < 1.0e-4f
+                                   && std::abs (autoEventos.back().valor - (float) lo) < 1.0e-4f;
+        const int undos = (int) undoStack.size() - undo0;
+        songBanda (0, 16, 0, 48);
+        songCopiaSel();
+        const int copiados = (int) songPortapapeles.autos.size();
+        songMarcaLane = 0;
+        songMarcaPaso = 64;
+        songPegaSel();
+        const int pegados = cuenta (64, 96);
+        songBanda (0, 16, 0, 48);
+        songBorraSel();
+        const int trasBorrar = cuenta (16, 48);
+        performUndo();
+        const int trasDeshacer = cuenta (16, 48);
+        const auto foto = captureState();
+        autoEventos.clear();
+        applyState (foto);
+        const int guardados = (int) autoEventos.size();
+        std::cout << "{\"sel\":\"cancion auto\",\"puestos\":" << n1
+                  << ",\"sube\":" << (sube ? 1 : 0) << ",\"baja\":" << (baja ? 1 : 0)
+                  << ",\"publicada\":" << publicada << ",\"pintados\":" << pintados
+                  << ",\"undos\":" << undos << ",\"copiados\":" << copiados
+                  << ",\"pegados\":" << pegados << ",\"borrados\":" << trasBorrar
+                  << ",\"deshecho\":" << trasDeshacer << ",\"guardados\":" << guardados
+                  << ",\"texto\":\"" << texto0 << "/" << texto1 << "\"}" << std::endl;
+    }
 }
 
 // ==========================================================================

@@ -573,6 +573,7 @@ private:
     signed char pianoCells[AudioEngine::kNumSteps * PianoRoll::kMaxNotas] {};
     //  Un largo por paso, en cuartos. Ver AudioEngine::setStepLen.
     unsigned char pianoLargos[AudioEngine::kNumSteps] {};
+    unsigned char pianoFuerzas[AudioEngine::kNumSteps] {};   // LS7
     void refreshPiano (bool repintarTarjeta = true);
     void seguirCompas (int pasoAbsoluto);
 
@@ -645,6 +646,11 @@ private:
                      pianoCorteSelBtn { "CORTE" }, pianoBorraSelBtn { "BORRAR" },
                      pianoLegatoBtn { "LEGATO" }, pianoFlamBtn { "FLAM" };   // LS3
     Boton pianoGlideBtn { "GLIDE" };   // LS6
+    Boton pianoVelBtn { "VEL SUBE" };   // LS7
+    int pianoVelForma = 0;   // LS7 0 sube, 1 baja, 2 onda
+    void pianoFormaVel();
+    void ponTextoVel();
+    int  accionesSel (juce::TextButton** out) const;
     Boton pianoArpBtn { "ARP" }, pianoArpDivBtn { "x1" }, pianoArpOctBtn { "1 OCT" };   // LS5
 
     //  CUANTAS COLUMNAS SE VEN. Ocho es medio compas con celdas del doble de
@@ -5148,6 +5154,7 @@ private:
     {
         std::vector<BloqueUI> bloques;
         std::vector<ClipUI>   clips;
+        std::vector<AudioEngine::EventoAuto> autos;   // LS8 la automatizacion viaja con el tramo
         int carriles = 0, pasos = 0;
     };
     PortaCancion songPortapapeles;
@@ -5181,7 +5188,14 @@ private:
     //  portapapeles. Calco de la tira del piano.
     Boton songCopiaBtn { "COPIAR" }, songPegaBtn { "PEGAR" },
                      songCorteSelBtn { "CORTE" }, songBorraSelBtn { "BORRAR" },
-                     songAudioSelBtn { "A AUDIO" }, songMarcadorBtn { "MARCA" };
+                     songAudioSelBtn { "A AUDIO" }, songMarcadorBtn { "MARCA" },
+                     songAutoSelBtn { "AUTO SUBE" };   // LS8
+    struct { int canal = -1, fx = -1, par = -1; } autoUltimo;   // LS8 el ultimo mando de efecto tocado
+    int  songAutoForma = 0;   // LS8 0 sube, 1 baja
+    void songAutoSel();
+    void ponTextoAutoSel();
+    void publicaAutosVista();
+    bool rangoFx (int f, int pi, double& lo, double& hi) const;
 
     //  LA VISTA DE ANTES DE LA LUPA. Un toque sin arrastre vuelve a donde
     //  estabas: sin eso, acercar un tramo es un viaje de ida y volver pide
