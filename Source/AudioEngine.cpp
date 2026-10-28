@@ -6294,6 +6294,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (padKeepLength, s.padKeepLength);
     copyArr (padChoke,   s.padChoke);
     copyArr (padPan,     s.padPan);
+    copyArr (padAncho,   s.padAncho);   // LS9 la exportacion perdia el ancho
     copyArr (padAttack,  s.padAttack);
     copyArr (padRelease, s.padRelease);
     copyArr (padSueltaPreset, s.padSueltaPreset);

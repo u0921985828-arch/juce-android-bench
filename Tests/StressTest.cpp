@@ -6404,6 +6404,25 @@ int main()
                      ok ? "OK" : zatiFalla());
     }
 
+    //  LS9 el ancho estereo del pad viaja al motor de exportar.
+    {
+        const auto monton_a = std::make_unique<AudioEngine>();
+        AudioEngine& a = *monton_a;
+        a.prepareToPlay (48000.0, 512);
+        a.setPadAncho (3, 0.0f);
+        a.setPadAncho (5, 2.0f);
+
+        const auto monton_b = std::make_unique<AudioEngine>();
+        AudioEngine& b = *monton_b;
+        b.prepareToPlay (48000.0, 512);
+        b.copyStateFrom (a);
+
+        const bool ok = std::abs (b.getPadAncho (3)) < 1.0e-6f && std::abs (b.getPadAncho (5) - 2.0f) < 1.0e-6f;
+        std::printf ("%-34s pad 3 %.1f   pad 5 %.1f   %s\n",
+                     "el ancho sale en el rebote", (double) b.getPadAncho (3), (double) b.getPadAncho (5),
+                     ok ? "OK" : zatiFalla());
+    }
+
     //  ------------------------------------------------------------------
     //  EL ECUALIZADOR DE CINCO BANDAS, con TRES cifras y no una.
     //
