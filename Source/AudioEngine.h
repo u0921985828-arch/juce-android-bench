@@ -588,15 +588,31 @@ public:
     //  carriles era el tope de cabezas del modelo viejo, y partir cada una
     //  por la mitad no deberia toparse con el techo.
     static constexpr int kMaxBloques = 256;
+    //  LS4 marcadores de la cancion: una marca que solo nombra, INICIO (PLAY y exportar arrancan ahi),
+    //  BUCLE (al acabar vuelve aqui), SALTO (al llegar salta a la marca siguiente) y PAUSA (para y reanuda ahi).
+    enum TipoMarcador { kMarcaSolo = 0, kMarcaInicio, kMarcaBucle, kMarcaSalto, kMarcaPausa, kTiposMarcador };
+    struct MarcadorSong
+    {
+        int compas = 0;
+        int paso   = 0;
+        int tipo   = kMarcaSolo;
+    };
+    static constexpr int kMaxMarcadores = 16;
     struct TablaBloques
     {
         int n = 0;
         std::array<BloqueSong, kMaxBloques> b {};
+        int nm = 0;                                          // LS4 viajan con los bloques
+        std::array<MarcadorSong, kMaxMarcadores> m {};
     };
     //  La construye y la publica el hilo de mensajes, como publicaClips. Sin
     //  punteros dentro, asi que la vieja solo necesita un `delete` fuera del
     //  hilo de audio.
     void publicaBloques (const BloqueSong* bloques, int cuantos) noexcept;
+    void publicaMarcadores (const MarcadorSong* marcas, int cuantas) noexcept;   // LS4
+    //  LS4 en el rebote no hay BUCLE ni PAUSA: la exportacion llega al final.
+    void setMarcadoresEnVivo (bool v) noexcept { marcadoresEnVivo.store (v, std::memory_order_relaxed); }
+    bool tomaPausaMarcador() noexcept { return pausaMarcador.exchange (false, std::memory_order_relaxed); }
     int  numBloques() const noexcept { return bloquesVivos.load (std::memory_order_relaxed); }
     //  LA SONDA DEL BANCO: que patron y que paso del patron disparo cada
     //  carril en su ultimo paso, `(bank << 16) | pasoDelPatron`, o -1 si el
@@ -1003,6 +1019,10 @@ public:
     //  de cada fuente mientras la tabla viva: un clip cuyo buffer se suelte por
     //  otro lado dejaria al audio leyendo memoria liberada.
     void publicaClips (const ClipAudio* clips, int cuantos) noexcept;
+    //  LS2 los clips publicados en `s`, a este motor (rebote): pista < 0 todos.
+    void copiaClipsDe (const AudioEngine& s, int pista = -1) noexcept;
+    //  Cuantos clips con fuente hay en la ultima tabla publicada (mensajes).
+    int  clipsPublicados (int pista = -1) const noexcept;
 
     // ------------------------------------------------------------------
     //  LA AUTOMATIZACION, que es lo que separa «toco los efectos» de «el
@@ -1191,6 +1211,7 @@ public:
     //  frecuencia supuesta es la regla duplicada de siempre, y el sintoma
     //  seria un clip dibujado donde no suena.
     double muestrasPorCompas() const noexcept { return samplesPerStepNow() * (double) pasosPorCompas(); }
+    double getSystemSampleRate() const noexcept { return systemSampleRate; }   // LS2
 
     //  EL METRONOMO. Una ayuda para tocar y no parte de la cancion: ver
     //  copyStateFrom, donde deliberadamente NO viaja.
@@ -1355,6 +1376,7 @@ public:
         std::uint16_t largo    = (std::uint16_t) kLenSuelto;
         std::uint64_t acorde   = 0;
         std::uint32_t bloqueos = 0;
+        std::uint8_t  marcas   = 0;   // LS3
     };
 
     Paso leePaso      (int patternIdx, int step, int pad) const noexcept;
@@ -1421,6 +1443,24 @@ public:
     //  el hilo de audio suena distinto cada vuelta y no es un groove, es ruido.
     void setStepNudge (int patternIdx, int step, int pad, int centesimas) noexcept;
     int  getStepNudge (int patternIdx, int step, int pad) const noexcept;
+
+    //  LS3 banderas por paso: flam (golpe de gracia en la rejilla, el bueno kFlamMs despues, como la 909).
+    static constexpr int kMarcaFlam = 1, kMarcaGlide = 2;
+    static constexpr double kFlamMs = 22.0;
+    static constexpr double kGlideMs = 70.0;   // LS6 lo que tarda en llegar, o el largo de la nota si es menos
+    void setStepMarca (int patternIdx, int step, int pad, int marca, bool on) noexcept;
+    bool getStepMarca (int patternIdx, int step, int pad, int marca) const noexcept;
+    int  getStepMarcas (int patternIdx, int step, int pad) const noexcept;
+    void setStepMarcas (int patternIdx, int step, int pad, int v) noexcept;
+
+    //  LS5 arpegiador por pad: reparte las notas del paso (raiz y acorde, por octavas) a `div` por paso
+    //  durante todo el largo de la nota. Un byte: modo 0..2, div-1 3..4, octavas-1 5..6.
+    enum ModoArp { kArpNo = 0, kArpSube, kArpBaja, kArpVaiven, kArpAzar, kModosArp };
+    static constexpr int kArpDivMax = 4, kArpOctMax = 3;
+    void setPadArp (int pad, int modo, int div, int octavas) noexcept;
+    int  getPadArpModo (int pad) const noexcept;
+    int  getPadArpDiv  (int pad) const noexcept;
+    int  getPadArpOct  (int pad) const noexcept;
 
     //  EL LARGO DE LA NOTA, EN CUARTOS DE PASO.
     //
@@ -2607,7 +2647,7 @@ private:
     //  para que el mando no se mueva solo. Ver setStepPLock.
     void triggerPad (int slot, int extraSemis = 0, float vel = 1.0f,
                      float from01 = -1.0f, bool cortaSuCola = true,
-                     int gate = kGateAuto, std::uint32_t plock = 0) noexcept;   // audio thread
+                     int gate = kGateAuto, std::uint32_t plock = 0, bool glide = false) noexcept;   // audio thread
 
     template <typename Arr, typename V>
     static void store (Arr& a, int slot, V v) noexcept
@@ -3058,6 +3098,7 @@ private:
     //  El empujon de cada paso. Ver setStepNudge. Cero es "en su sitio", que
     //  es lo que dice un patron escrito antes de que esto existiera.
     std::array<std::array<std::array<std::atomic<std::int8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepNudge {};
+    std::array<std::array<std::array<std::atomic<std::uint8_t>, kNumPads>, kNumSteps>, kNumPatterns> stepMarcas {};   // LS3
     //  El largo de cada paso, en cuartos de paso. Ver setStepLen y kLenMax:
     //  uint16 desde que el techo es un patron entero (768) y no 63.
     static_assert (std::atomic<std::uint16_t>::is_always_lock_free,
@@ -3100,7 +3141,7 @@ private:
     //  del pad como siempre, y las que la acompanan no, o se matarian entre
     //  ellas antes de sonar. Ver triggerPad.
     struct PendingHit { int countdown; int pad; int semis; float vel; bool corta = true; int gate = -1;
-                        std::uint32_t plock = 0; };
+                        std::uint32_t plock = 0; bool glide = false; };
     //  DIMENSIONADA A LOS SESENTA Y CUATRO PADS, no a los dieciseis de antes.
     //
     //  Eran 96 huecos "para los dieciseis pads", y hay 64: un paso con los 64
@@ -3117,6 +3158,13 @@ private:
     static constexpr int kMaxPending = 512;
     std::array<PendingHit, kMaxPending> pending {};
     int numPending = 0;
+    std::array<std::atomic<std::uint8_t>, kNumPads> padArp {};   // LS5
+    struct ArpVivo { int quedan = 0, pos = 0, n = 0, div = 1, gate = 32, modo = 0, semilla = 0;
+                     float vel = 1.0f; std::uint32_t plock = 0; std::int64_t desde = -1;
+                     std::int8_t notas[(kExtraNotes + 1) * kArpOctMax] {}; };
+    std::array<ArpVivo, kNumPads> arpVivo {};   // solo hilo de audio
+    std::array<int, kNumPads> ultimaNota {};    // LS6 la raiz que sono la ultima vez en cada pad; -999 ninguna
+    std::int64_t pasosDados = 0;
 
     // Song / playlist.
     std::atomic<bool> songMode { false };
@@ -3133,6 +3181,14 @@ private:
     TablaQueueDe<TablaBloques>  bloquesRetiradas;
     std::atomic<int>            bloquesVivos     { 0 };
     TablaBloques                bloquesCara;
+    std::atomic<bool>           marcadoresEnVivo { true };   // LS4
+    std::atomic<bool>           pausaMarcador    { false };
+    int                         reanudaEn = -1;              // solo el hilo de audio
+    int  aplicaMarcadores (int previo, int paso, int total, int pc, bool& pausa) noexcept;
+    int  pasosTocados (int fin, int pc) const noexcept;
+    //  LS2 copia de mensajes de la ultima tabla de clips, para el rebote.
+    TablaClips                  clipsCara;
+    mutable juce::SpinLock      clipsCaraLock;
     std::array<std::atomic<int>, kSongLanes> ultimoDisparo {};   // ver getUltimoDisparo
     //  El tramo en bucle, en COMPASES y medio abierto: [A, B). A >= B es
     //  apagado, que es lo que vale un proyecto que no lo conocia.

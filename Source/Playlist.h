@@ -708,6 +708,7 @@ public:
 
         pintaClips (g);
         pintaGrabando (g);
+        pintaMarcadores (g);   // LS4 encima de todo: dicen por donde va a pasar el cabezal
 
         //  LA SELECCION SE VE POR RELLENO, como en el piano: el cabezal al
         //  55 % sobre lo que haya debajo, bloques y clips incluidos, que es lo
@@ -1216,6 +1217,82 @@ public:
                                     : juce::String (c.pad + 1).paddedLeft ('0', 2),
                         caja, juce::Justification::centred);
         }
+
+        //  LS1 la X del fundido donde dos clips de la pista se pisan.
+        fundidosVistos = 0;
+        for (int i = 0; i < numClips; ++i)
+            for (int j = 0; j < numClips; ++j)
+            {
+                const ClipVista& a = clips[i];
+                const ClipVista& b = clips[j];
+                if (i == j || a.debajo || b.debajo || a.pista != b.pista
+                    || ! juce::isPositiveAndBelow (a.pista, kAudioLanes)) continue;
+                if (! (a.desdePaso < b.desdePaso && b.desdePaso < a.hastaPaso && a.hastaPaso < b.hastaPaso)) continue;
+                const int d = juce::jmax (b.desdePaso, base), h = juce::jmin (a.hastaPaso, tope);
+                if (h <= d) continue;
+                const auto x = cajaPaso (a.pista, b.desdePaso, a.hastaPaso).reduced (0.0f, 2.0f);
+                g.saveState();
+                g.reduceClipRegion (cajaPaso (a.pista, d, h).toNearestInt());
+                g.setColour (ZatiColours::groove (0.55f)); g.fillRect (x);
+                g.setColour (ZatiColours::ink);
+                g.drawLine (x.getX(), x.getY(), x.getRight(), x.getBottom(), Metrics::filoFoco);
+                g.drawLine (x.getX(), x.getBottom(), x.getRight(), x.getY(), Metrics::filoFoco);
+                g.restoreState();
+                ++fundidosVistos;
+            }
+    }
+
+    int fundidosPintados() const noexcept { return fundidosVistos; }
+
+    //  LS4 los marcadores: una raya a lo alto y una bandera con su dibujo, sin letra que traducir.
+    struct MarcadorVista { int paso = 0; int tipo = 0; };
+    void setMarcadores (const MarcadorVista* m, int n)
+    {
+        std::vector<MarcadorVista> v (m, m + juce::jmax (0, n));
+        const bool igual = v.size() == marcadores.size()
+                        && std::equal (v.begin(), v.end(), marcadores.begin(),
+                                       [] (const MarcadorVista& a, const MarcadorVista& b)
+                                       { return a.paso == b.paso && a.tipo == b.tipo; });
+        if (igual) return;
+        marcadores = std::move (v);
+        repaint();
+    }
+    int marcadoresPintados() const noexcept { return marcadoresVistos; }
+
+    void pintaMarcadores (juce::Graphics& g)
+    {
+        marcadoresVistos = 0;
+        const int pc = juce::jmax (1, pasosCompas);
+        const int base = primerCompas * pc, tope = base + barsView * pc;
+        const auto r = getLocalBounds().toFloat();
+        for (const auto& m : marcadores)
+        {
+            if (m.paso < base || m.paso >= tope) continue;
+            const float x = cajaPaso (0, m.paso, m.paso + 1).getX();
+            const auto col = m.tipo == 1 ? ZatiColours::green : ZatiColours::ink;
+            g.setColour (col.withAlpha (0.85f));
+            g.fillRect (x, r.getY(), 2.0f, r.getHeight());
+            const juce::Rectangle<float> f (x, r.getY(), 14.0f, 14.0f);
+            g.setColour (col);
+            g.fillRect (f);
+            g.setColour (ZatiColours::bestOn (col, ZatiColours::ink, juce::Colours::white));
+            const auto d = f.reduced (3.5f);
+            juce::Path p;
+            switch (m.tipo)
+            {
+                case 1:  p.addTriangle (d.getX(), d.getY(), d.getX(), d.getBottom(), d.getRight(), d.getCentreY()); break;
+                case 2:  p.addCentredArc (d.getCentreX(), d.getCentreY(), d.getWidth() * 0.5f, d.getHeight() * 0.5f,
+                                          0.0f, 0.6f, 5.6f, true);
+                         g.strokePath (p, juce::PathStrokeType (1.6f)); p.clear(); break;
+                case 3:  p.addTriangle (d.getX(), d.getY(), d.getX(), d.getBottom(), d.getCentreX(), d.getCentreY());
+                         p.addTriangle (d.getCentreX(), d.getY(), d.getCentreX(), d.getBottom(), d.getRight(), d.getCentreY()); break;
+                case 4:  p.addRectangle (d.getX(), d.getY(), d.getWidth() * 0.35f, d.getHeight());
+                         p.addRectangle (d.getRight() - d.getWidth() * 0.35f, d.getY(), d.getWidth() * 0.35f, d.getHeight()); break;
+                default: p.addRectangle (d.reduced (1.0f)); break;
+            }
+            g.fillPath (p);
+            ++marcadoresVistos;
+        }
     }
 
     void pintaGrabando (juce::Graphics& g)
@@ -1580,6 +1657,9 @@ private:
     int              numClips = 0;
     int          grabPista = -1, grabDesde = 0, grabHasta = 1, grabN = 0;   // tomas#onda
     const float* grabPicos = nullptr;
+    int          fundidosVistos = 0;   // LS1
+    std::vector<MarcadorVista> marcadores;   // LS4
+    int          marcadoresVistos = 0;
     int              clipSel  = -1;   // el que se esta moviendo, para que se vea
     int              arrastrado = -1; // el que este dedo agarro
     //  El asa de un BLOQUE de patron, que no es la de un clip: aquella vive en

@@ -219,9 +219,15 @@ def main():
     juzga ("la celda se puede agarrar", celda[0] >= DEDO and celda[1] >= DEDO,
            "%dx%d px" % (celda[0], celda[1]))
 
+    #  14. LS1 dos clips que se pisan en una pista se ven fundidos (la X);
+    #  dos que solo se tocan, no.
+    juzga ("lo pisado se ve fundido",
+           d.get ("fundido_pisan") == 1 and d.get ("fundido_separados") == 0,
+           "pisan %s  separados %s" % (d.get ("fundido_pisan"), d.get ("fundido_separados")))
+
     print()
     print ("la banda de audio hace lo que dice" if malas == 0
-           else "%d de 13 no" % malas)
+           else "%d de 14 no" % malas)
     return 1 if malas else 0
 
 

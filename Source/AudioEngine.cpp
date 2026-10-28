@@ -19,6 +19,7 @@ using juce::jlimit;
 
 AudioEngine::AudioEngine()
 {
+    ultimaNota.fill (-999);   // LS6
     //  Y CUANTOS INSERTOS HAY LO CUENTA `fxSustituye`, que es la unica linea
     //  que separa las dos familias. La comprobacion vive AQUI -dentro del
     //  cuerpo de una funcion miembro- y no al lado de `kNumIns`, porque el
@@ -465,7 +466,7 @@ std::pair<int, int> AudioEngine::ventanaQueSuena (int slot) noexcept
 }
 
 void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01, bool cortaSuCola,
-                              int gate, std::uint32_t plock) noexcept
+                              int gate, std::uint32_t plock, bool glide) noexcept
 {
     if (slot < 0 || slot >= kNumPads)
         return;
@@ -867,6 +868,13 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     //  teclas distintas pueden acabar con el mismo numero. Lo que identifica a
     //  la tecla es lo que pidio quien disparo.
     chosen->nota = extraSemis;
+
+    if (glide && ultimaNota[(size_t) slot] > -999)   // LS6
+    {
+        const int dur = (int) (kGlideMs * 0.001 * systemSampleRate);
+        chosen->glide ((double) (ultimaNota[(size_t) slot] - extraSemis), gate > 0 ? juce::jmin (dur, gate) : dur);
+    }
+    if (cortaSuCola) ultimaNota[(size_t) slot] = extraSemis;
 }
 
 void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
@@ -1581,6 +1589,8 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
         currentStep = -1; stepAccum = 0.0; chainPos = 0; numPending = 0;
         relojPaso = 0.0;   // el LFO a tempo arranca con el bombo (audio-dsp#18)
         songStep = -1; songBar.store (-1, std::memory_order_relaxed);
+        for (auto& av : arpVivo) av.quedan = 0;   // LS5
+        ultimaNota.fill (-999);   // LS6
         //  Y el paso de la automatizacion, que si no quien graba seguiria
         //  escribiendo en el ultimo paso que sono antes de parar.
         pasoAuto.store (-1, std::memory_order_relaxed);
@@ -1654,7 +1664,46 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
         //  a roll makes it speak several times, so what a step produces is a
         //  little list of hits with sample offsets, and the render loop below
         //  stops at each of them.
-        auto firePatternStep = [this, samplesPerStep, beatsPerStep] (int bank, int stepInPattern) noexcept
+        auto retraso = [this, samplesPerStep, beatsPerStep] (int stepInPattern) noexcept
+        {
+            const float sw = swing.load (std::memory_order_relaxed);
+            const int u = juce::jmax (1, (int) std::lround (beatsPerStep * kUnidadesPorPulso));
+            const bool fina = 12 % u == 0;   // swing#rejilla: en 1/8 y tresillos, el paso impar como antes
+            const bool tarde = fina ? (stepInPattern * u) % 24 == 12 : (stepInPattern & 1) != 0;   // secuenciador#3
+            return tarde ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep * (fina ? 12.0 / (double) u : 1.0))   // audio-dsp#5
+                         : 0;
+        };
+
+        auto encolaArp = [this, samplesPerStep] (ArpVivo& av, int p, int base) noexcept   // LS5
+        {
+            const int k = juce::jmin (av.div, av.quedan);
+            for (int i = 0; i < k; ++i)
+            {
+                if (numPending >= (int) pending.size() || av.n <= 0)
+                    { droppedCommands.fetch_add (1, std::memory_order_relaxed); break; }
+                int idx = av.pos % av.n;
+                if (av.modo == kArpAzar)
+                {
+                    auto h = (std::uint32_t) av.semilla * 2654435761u + (std::uint32_t) av.pos * 40503u;
+                    h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+                    idx = (int) (h % (std::uint32_t) av.n);
+                }
+                const int at = base + (int) (samplesPerStep * (double) i / (double) av.div);
+                pending[(size_t) numPending++] = { at, p, (int) av.notas[idx], av.vel, true, av.gate, av.plock };
+                ++av.pos; --av.quedan;
+            }
+        };
+
+        auto sigueArps = [this, &encolaArp, &retraso] () noexcept   // LS5 la nota larga sigue arpegiando
+        {
+            for (int p = 0; p < kNumPads; ++p)
+            {
+                auto& av = arpVivo[(size_t) p];
+                if (av.quedan > 0 && av.desde != pasosDados) encolaArp (av, p, retraso (currentStep));
+            }
+        };
+
+        auto firePatternStep = [this, samplesPerStep, &retraso, &encolaArp] (int bank, int stepInPattern) noexcept
         {
             const std::uint64_t mask = patternBank[(size_t) bank][(size_t) stepInPattern].load (std::memory_order_relaxed);
             if (mask == 0) return;
@@ -1662,12 +1711,7 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
             //  Swing: the odd sixteenths arrive late by a fraction of a step.
             //  The even ones never move - that is what keeps the bar where it
             //  was while the feel changes.
-            const float sw = swing.load (std::memory_order_relaxed);
-            const int u = juce::jmax (1, (int) std::lround (beatsPerStep * kUnidadesPorPulso));
-            const bool fina = 12 % u == 0;   // swing#rejilla: en 1/8 y tresillos, el paso impar como antes
-            const bool tarde = fina ? (stepInPattern * u) % 24 == 12 : (stepInPattern & 1) != 0;   // secuenciador#3
-            const int lateBy = tarde ? (int) ((double) (sw - 0.5f) * 2.0 * samplesPerStep * (fina ? 12.0 / (double) u : 1.0))   // audio-dsp#5
-                                     : 0;
+            const int lateBy = retraso (stepInPattern);
 
             for (int p = 0; p < kNumPads; ++p)
             {
@@ -1738,13 +1782,65 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
                 const std::uint32_t plock = stepPLock[(size_t) bank][(size_t) stepInPattern][(size_t) p]
                                                 .load (std::memory_order_relaxed);
 
+                const int marcas = (int) stepMarcas[(size_t) bank][(size_t) stepInPattern][(size_t) p]
+                                       .load (std::memory_order_relaxed);
+                const int flam = (marcas & kMarcaFlam) != 0
+                                   ? (int) juce::jmin (kFlamMs * 0.001 * systemSampleRate,
+                                                       samplesPerStep / (2.0 * (double) hits))
+                                   : 0;
+
+                const int arp = (int) padArp[(size_t) p].load (std::memory_order_relaxed);
+                if ((arp & 7) != kArpNo)   // LS5
+                {
+                    auto& av = arpVivo[(size_t) p];
+                    av.modo = juce::jlimit (1, kModosArp - 1, arp & 7);
+                    av.div  = ((arp >> 3) & 3) + 1;
+                    const int oct = juce::jlimit (1, kArpOctMax, ((arp >> 5) & 3) + 1);
+                    int base[kExtraNotes + 1]; int nb = 0;
+                    base[nb++] = semis;
+                    for (int e = 0; e < kExtraNotes; ++e)
+                        if ((acorde & ((std::uint64_t) 1u << (56u + (unsigned) e))) != 0)
+                            base[nb++] = (int) (std::int8_t) ((acorde >> ((unsigned) e * 8u)) & 0xFFu);
+                    std::sort (base, base + nb);
+                    nb = (int) (std::unique (base, base + nb) - base);
+                    int sube[(kExtraNotes + 1) * kArpOctMax]; int ns = 0;
+                    for (int o = 0; o < oct; ++o)
+                        for (int i = 0; i < nb; ++i) sube[ns++] = juce::jlimit (-60, 60, base[i] + 12 * o);
+                    av.n = 0;
+                    if (av.modo == kArpBaja)
+                        for (int i = ns - 1; i >= 0; --i) av.notas[av.n++] = (std::int8_t) sube[i];
+                    else
+                    {
+                        for (int i = 0; i < ns; ++i) av.notas[av.n++] = (std::int8_t) sube[i];
+                        if (av.modo == kArpVaiven)
+                            for (int i = ns - 2; i >= 1 && av.n < (int) std::size (av.notas); --i)
+                                av.notas[av.n++] = (std::int8_t) sube[i];
+                    }
+                    const double pasos = cuartos > 0 ? (double) cuartos / 4.0 : 1.0;
+                    av.quedan  = juce::jlimit (1, 64 * kArpDivMax, (int) std::lround (pasos * av.div));
+                    av.pos     = 0;
+                    av.vel     = vel;
+                    av.plock   = plock;
+                    av.gate    = juce::jmax (32, (int) (samplesPerStep / (double) av.div * 0.85));
+                    av.semilla = bank * 1009 + stepInPattern * 131 + p * 7;
+                    av.desde   = pasosDados;
+                    encolaArp (av, p, juce::jmax (0, lateBy + empuje));
+                    continue;
+                }
+
                 for (int h = 0; h < hits; ++h)
                 {
                     if (numPending >= (int) pending.size())
                         { droppedCommands.fetch_add (1, std::memory_order_relaxed); break; }
-                    const int at = juce::jmax (0, lateBy + empuje
-                                                 + (int) (samplesPerStep * (double) h / (double) hits));
-                    pending[(size_t) numPending++] = { at, p, semis, vel, true, gate, plock };
+                    int at = juce::jmax (0, lateBy + empuje
+                                           + (int) (samplesPerStep * (double) h / (double) hits));
+                    if (flam > 0 && h == 0 && numPending + 1 < (int) pending.size())
+                    {
+                        pending[(size_t) numPending++] = { at, p, semis, vel * 0.5f, true, gate, plock };   // LS3 gracia
+                        at += flam;
+                    }
+                    pending[(size_t) numPending++] = { at, p, semis, vel, true, gate, plock,
+                                                       h == 0 && (marcas & kMarcaGlide) != 0 };   // LS6
 
                     //  El acorde suena en el MISMO instante que su raiz: si se
                     //  repartieran, seria un arpegio, y el arpegio se escribe
@@ -1764,7 +1860,7 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
             }
         };
 
-        auto fireStep = [this, chainLen, &patternIdx, &firePatternStep]() noexcept
+        auto fireStep = [this, chainLen, &patternIdx, &firePatternStep, &sigueArps]() noexcept
         {
             //  EL CLIC SE REDISPARA AQUI, en el borde de paso y ANTES de la
             //  puerta de la cuenta atras: durante la cuenta el transporte no
@@ -1811,6 +1907,8 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
                 return;
             }
 
+            ++pasosDados;   // LS5
+
             //  Y LA TOMA EMPIEZA AQUI: en el primer paso que ya no es de la
             //  cuenta, o sea exactamente en la linea de compas. Es un store y
             //  nada mas - `recordBuffer` se reserva en prepareToPlay y nunca
@@ -1845,7 +1943,11 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
                 //  del tramo en cuanto el compas se sale dejaria sonar el
                 //  primer paso del compas siguiente antes de volver, que es un
                 //  golpe de mas en cada vuelta - justo el que se oye.
+                const int previo = songStep;
                 songStep = (songStep + 1) % total;
+                bool pausa = false;
+                songStep = aplicaMarcadores (previo, songStep, total, pasosCompas, pausa);
+                if (pausa) return;   // LS4 la PAUSA no suena: para justo antes
 
                 const int la = songLoopA.load (std::memory_order_relaxed);
                 const int lb = songLoopB.load (std::memory_order_relaxed);
@@ -1925,6 +2027,7 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
                 if (bancoVisto >= 0) playingPattern.store (bancoVisto, std::memory_order_relaxed);
 
                 currentStep = songStep % pasosCompas;
+                sigueArps();
                 playStep.store (pasoVisto >= 0 ? pasoVisto : currentStep, std::memory_order_relaxed);
                 return;
             }
@@ -1943,6 +2046,7 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
             }
 
             firePatternStep (patternIdx, currentStep);
+            sigueArps();
             playStep.store (currentStep, std::memory_order_relaxed);
         };
 
@@ -1996,7 +2100,7 @@ void AudioEngine::faseSecuenciador (Mezcla& mz) noexcept
                 if (pending[(size_t) i].countdown <= 0)
                 {
                     const auto h = pending[(size_t) i];
-                    triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta, h.gate, h.plock);
+                    triggerPad (h.pad, h.semis, h.vel, -1.0f, h.corta, h.gate, h.plock, h.glide);
                 }
                 else
                     pending[(size_t) w++] = pending[(size_t) i];
@@ -5170,6 +5274,14 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
     //  distancia. Fuera del bucle porque no depende del clip.
     const double porPaso = porCompas / (double) juce::jmax (1, pasosPorCompas());
 
+    std::int64_t inis[kMaxClips], fins[kMaxClips];
+    for (int i = 0; i < clips->n; ++i)
+    {
+        const ClipAudio& c = clips->c[(size_t) i];
+        inis[i] = (std::int64_t) ((double) c.compas * porCompas + (double) c.paso * porPaso);
+        fins[i] = inis[i] + (c.fuente != nullptr ? juce::jmax (0, c.largo) : 0);
+    }
+
     for (int i = 0; i < clips->n; ++i)
     {
         const ClipAudio& c = clips->c[(size_t) i];
@@ -5177,10 +5289,18 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
         if (pistaMute[(size_t) juce::jlimit (0, kAudioTracks - 1, c.pista)]
                 .load (std::memory_order_relaxed)) continue;
 
-        const auto cIni = (std::int64_t) ((double) c.compas * porCompas
-                                          + (double) c.paso * porPaso);
-        const auto cFin = cIni + c.largo;
+        const auto cIni = inis[i];
+        const auto cFin = fins[i];
         if (fin <= cIni || ini >= cFin) continue;          // no toca este segmento
+
+        //  LS1 lo pisado con el vecino de la pista se funde a potencia igual.
+        std::int64_t entra = 0, sale = 0;
+        for (int j = 0; j < clips->n; ++j)
+        {
+            if (j == i || clips->c[(size_t) j].pista != c.pista || fins[j] <= inis[j]) continue;
+            if (inis[j] < cIni && fins[j] > cIni && fins[j] < cFin) entra = juce::jmax (entra, fins[j] - cIni);
+            if (inis[j] > cIni && inis[j] < cFin && fins[j] > cFin) sale  = juce::jmax (sale,  cFin - inis[j]);
+        }
 
         //  El trozo que se solapa, en coordenadas de la cancion y de la fuente.
         const auto desdeCancion = juce::jmax (ini, cIni);
@@ -5197,9 +5317,28 @@ void AudioEngine::renderClips (juce::AudioBuffer<float>& out, int offset, int n,
         const int  destino = offset + (int) (desdeCancion - ini);
         const int  srcCh   = juce::jmax (1, src.getNumChannels());
 
-        for (int ch = 0; ch < canales; ++ch)
-            out.addFrom (ch, destino, src, juce::jmin (ch, srcCh - 1),
-                         (int) enFuente, copiar, c.gain);
+        const auto dentro = desdeCancion - cIni;          // muestra del clip donde empieza
+        if ((entra <= 0 || dentro >= entra) && (sale <= 0 || dentro + copiar <= c.largo - sale))
+        {
+            for (int ch = 0; ch < canales; ++ch)
+                out.addFrom (ch, destino, src, juce::jmin (ch, srcCh - 1),
+                             (int) enFuente, copiar, c.gain);
+            continue;
+        }
+
+        constexpr float medioPi = juce::MathConstants<float>::halfPi;
+        for (int k = 0; k < copiar; ++k)
+        {
+            const auto m = dentro + k;
+            float g = c.gain;
+            if (entra > 0 && m < entra)
+                g *= std::sin (medioPi * ((float) m + 0.5f) / (float) entra);
+            if (sale > 0 && m >= c.largo - sale)
+                g *= std::cos (medioPi * ((float) (m - (c.largo - sale)) + 0.5f) / (float) sale);
+            for (int ch = 0; ch < canales; ++ch)
+                out.addSample (ch, destino + k,
+                               g * src.getSample (juce::jmin (ch, srcCh - 1), (int) enFuente + k));
+        }
     }
 }
 
@@ -5330,8 +5469,35 @@ void AudioEngine::publicaClips (const ClipAudio* entrada, int cuantos) noexcept
     //  publicar dieciseis veces dentro de un mismo bloque de audio.
     clipsRetiradas.drain ([] (TablaClips* v) { sueltaTabla (v); });
 
+    {
+        const juce::SpinLock::ScopedLockType sl (clipsCaraLock);
+        clipsCara = *t;
+    }
     if (auto* anterior = pendingClips.exchange (t, std::memory_order_release))
         sueltaTabla (anterior);          // nadie llego a adoptarla: es nuestra
+}
+
+//  LS2 bajo el cerrojo de `s`: mientras se tiene, la tabla que nombra su cara
+//  sigue viva, y `publicaClips` se queda sus referencias antes de soltarlo.
+void AudioEngine::copiaClipsDe (const AudioEngine& s, int pista) noexcept
+{
+    std::array<ClipAudio, kMaxClips> sel {};
+    const juce::SpinLock::ScopedLockType sl (s.clipsCaraLock);
+    int n = 0;
+    for (int i = 0; i < s.clipsCara.n; ++i)
+        if (pista < 0 || s.clipsCara.c[(size_t) i].pista == pista)
+            sel[(size_t) n++] = s.clipsCara.c[(size_t) i];
+    publicaClips (sel.data(), n);
+}
+
+int AudioEngine::clipsPublicados (int pista) const noexcept
+{
+    const juce::SpinLock::ScopedLockType sl (clipsCaraLock);
+    int n = 0;
+    for (int i = 0; i < clipsCara.n; ++i)
+        if (clipsCara.c[(size_t) i].fuente != nullptr && clipsCara.c[(size_t) i].largo > 0
+            && (pista < 0 || clipsCara.c[(size_t) i].pista == pista)) ++n;
+    return n;
 }
 
 //  Suelta una tabla y las referencias que se quedo. SIEMPRE en el hilo de
@@ -5365,13 +5531,108 @@ void AudioEngine::publicaBloques (const BloqueSong* entrada, int cuantos) noexce
             return;
     }
 
-    auto* t = new TablaBloques();
+    auto* t = new TablaBloques (bloquesCara);   // LS4 con los marcadores que ya hubiera
     t->n = juce::jlimit (0, kMaxBloques, cuantos);
     for (int i = 0; i < t->n; ++i) t->b[(size_t) i] = entrada[i];
     bloquesCara = *t;
 
     bloquesRetiradas.drain ([] (TablaBloques* v) { delete v; });
     if (auto* anterior = pendingBloques.exchange (t, std::memory_order_release)) delete anterior;
+}
+
+void AudioEngine::publicaMarcadores (const MarcadorSong* entrada, int cuantas) noexcept
+{
+    const int n = juce::jlimit (0, kMaxMarcadores, cuantas);
+    if (n == bloquesCara.nm
+        && (n == 0 || std::memcmp (bloquesCara.m.data(), entrada, (size_t) n * sizeof (MarcadorSong)) == 0))
+        return;
+
+    auto* t = new TablaBloques (bloquesCara);
+    t->nm = n;
+    for (int i = 0; i < n; ++i) t->m[(size_t) i] = entrada[i];
+    bloquesCara = *t;
+
+    bloquesRetiradas.drain ([] (TablaBloques* v) { delete v; });
+    if (auto* anterior = pendingBloques.exchange (t, std::memory_order_release)) delete anterior;
+}
+
+//  LS4 lo que los marcadores le hacen al paso que acaba de avanzar. Hilo de audio.
+int AudioEngine::aplicaMarcadores (int previo, int paso, int total, int pc, bool& pausa) noexcept
+{
+    pausa = false;
+    if (bloques == nullptr || bloques->nm <= 0) { reanudaEn = -1; return paso; }
+    const auto& t = *bloques;
+    const bool vivo = marcadoresEnVivo.load (std::memory_order_relaxed);
+    auto pos = [&] (int i) { return t.m[(size_t) i].compas * pc + t.m[(size_t) i].paso; };
+    auto busca = [&] (int tipo)
+    {
+        for (int i = 0; i < t.nm; ++i)
+            if (t.m[(size_t) i].tipo == tipo && pos (i) < total) return pos (i);
+        return -1;
+    };
+
+    if (previo < 0)
+    {
+        if (vivo && reanudaEn >= 0 && reanudaEn < total) { const int r = reanudaEn; reanudaEn = -1; return r; }
+        reanudaEn = -1;
+        const int ini = busca (kMarcaInicio);
+        return ini >= 0 ? ini : paso;
+    }
+
+    if (paso == 0 && previo == total - 1)
+    {
+        const int b = vivo ? busca (kMarcaBucle) : -1;
+        const int ini = busca (kMarcaInicio);
+        paso = b >= 0 ? b : (ini >= 0 ? ini : paso);
+    }
+
+    for (int i = 0; i < t.nm; ++i)
+    {
+        if (pos (i) != paso) continue;
+        if (t.m[(size_t) i].tipo == kMarcaSalto)
+        {
+            int sig = -1;
+            for (int j = 0; j < t.nm; ++j)
+                if (pos (j) > paso && pos (j) < total && (sig < 0 || pos (j) < sig)) sig = pos (j);
+            if (sig >= 0) return sig;
+        }
+        else if (t.m[(size_t) i].tipo == kMarcaPausa && vivo)
+        {
+            pausa = true;
+            reanudaEn = paso;
+            playing.store (false, std::memory_order_relaxed);
+            pausaMarcador.store (true, std::memory_order_relaxed);
+        }
+    }
+    return paso;
+}
+
+//  LS4 cuantos pasos suenan de 0 a `fin` con INICIO y SALTO, igual que los recorre el motor.
+int AudioEngine::pasosTocados (int fin, int pc) const noexcept
+{
+    const auto& t = bloquesCara;
+    if (t.nm <= 0 || fin <= 0) return fin;
+    auto pos = [&] (int i) { return t.m[(size_t) i].compas * pc + t.m[(size_t) i].paso; };
+    int p = 0;
+    for (int i = 0; i < t.nm; ++i)
+        if (t.m[(size_t) i].tipo == kMarcaInicio && pos (i) < fin) { p = pos (i); break; }
+    int n = 0;
+    while (p < fin && n <= fin)
+    {
+        ++n;
+        int q = p + 1;
+        for (int i = 0; i < t.nm; ++i)
+        {
+            if (t.m[(size_t) i].tipo != kMarcaSalto || pos (i) != q) continue;
+            int sig = -1;
+            for (int j = 0; j < t.nm; ++j)
+                if (pos (j) > q && (sig < 0 || pos (j) < sig)) sig = pos (j);
+            if (sig >= 0) q = sig;
+            break;
+        }
+        p = q;
+    }
+    return n;
 }
 
 void AudioEngine::collectRetiredSamples() noexcept
@@ -5434,6 +5695,8 @@ void AudioEngine::clearPattern (int patternIdx) noexcept
     for (auto& fila : stepChord[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
     for (auto& fila : stepNudge[(size_t) patternIdx])
+        for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
+    for (auto& fila : stepMarcas[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
     for (auto& fila : stepLock[(size_t) patternIdx])
         for (auto& celda : fila) celda.store (0, std::memory_order_relaxed);
@@ -5500,6 +5763,48 @@ int AudioEngine::getStepLen (int patternIdx, int step, int pad) const noexcept
     if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
         || pad < 0 || pad >= kNumPads) return kLenSuelto;
     return (int) stepLen[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+}
+
+void AudioEngine::setStepMarcas (int patternIdx, int step, int pad, int v) noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return;
+    stepMarcas[(size_t) patternIdx][(size_t) step][(size_t) pad]
+        .store ((std::uint8_t) (v & (kMarcaFlam | kMarcaGlide)), std::memory_order_relaxed);
+}
+
+void AudioEngine::setPadArp (int pad, int modo, int div, int octavas) noexcept
+{
+    if (pad < 0 || pad >= kNumPads) return;
+    const int m = juce::jlimit (0, kModosArp - 1, modo);
+    const int d = juce::jlimit (1, kArpDivMax, div) - 1;
+    const int o = juce::jlimit (1, kArpOctMax, octavas) - 1;
+    padArp[(size_t) pad].store ((std::uint8_t) (m | (d << 3) | (o << 5)), std::memory_order_relaxed);
+}
+
+int AudioEngine::getPadArpModo (int pad) const noexcept
+{ return pad >= 0 && pad < kNumPads ? juce::jlimit (0, kModosArp - 1, padArp[(size_t) pad].load (std::memory_order_relaxed) & 7) : 0; }
+int AudioEngine::getPadArpDiv (int pad) const noexcept
+{ return pad >= 0 && pad < kNumPads ? ((padArp[(size_t) pad].load (std::memory_order_relaxed) >> 3) & 3) + 1 : 1; }
+int AudioEngine::getPadArpOct (int pad) const noexcept
+{ return pad >= 0 && pad < kNumPads ? juce::jlimit (1, kArpOctMax, ((padArp[(size_t) pad].load (std::memory_order_relaxed) >> 5) & 3) + 1) : 1; }
+
+int AudioEngine::getStepMarcas (int patternIdx, int step, int pad) const noexcept
+{
+    if (patternIdx < 0 || patternIdx >= kNumPatterns || step < 0 || step >= kNumSteps
+        || pad < 0 || pad >= kNumPads) return 0;
+    return (int) stepMarcas[(size_t) patternIdx][(size_t) step][(size_t) pad].load (std::memory_order_relaxed);
+}
+
+void AudioEngine::setStepMarca (int patternIdx, int step, int pad, int marca, bool on) noexcept
+{
+    const int v = getStepMarcas (patternIdx, step, pad);
+    setStepMarcas (patternIdx, step, pad, on ? (v | marca) : (v & ~marca));
+}
+
+bool AudioEngine::getStepMarca (int patternIdx, int step, int pad, int marca) const noexcept
+{
+    return (getStepMarcas (patternIdx, step, pad) & marca) != 0;
 }
 
 int AudioEngine::getStepNudge (int patternIdx, int step, int pad) const noexcept
@@ -5626,6 +5931,7 @@ void AudioEngine::vaciaPaso (int patternIdx, int step, int pad) noexcept
     setStepLock    (patternIdx, step, pad, kNoLock);
     setStepChordRaw (patternIdx, step, pad, 0);
     setStepPLockRaw (patternIdx, step, pad, 0);
+    setStepMarcas   (patternIdx, step, pad, 0);
 }
 
 //  LEER Y ESCRIBIR UN PASO ENTERO. Ver el comentario de `Paso` en la cabecera:
@@ -5653,6 +5959,7 @@ AudioEngine::Paso AudioEngine::leePaso (int patternIdx, int step, int pad) const
     s.largo    = (std::uint16_t) getStepLen   (patternIdx, step, pad);
     s.acorde   = getStepChordRaw (patternIdx, step, pad);
     s.bloqueos = getStepPLockRaw (patternIdx, step, pad);
+    s.marcas   = (std::uint8_t) getStepMarcas (patternIdx, step, pad);
     return s;
 }
 
@@ -5667,6 +5974,7 @@ void AudioEngine::escribePaso (int patternIdx, int step, int pad, const Paso& s)
     setStepLock     (patternIdx, step, pad, s.corte);
     setStepChordRaw (patternIdx, step, pad, s.acorde);
     setStepPLockRaw (patternIdx, step, pad, s.bloqueos);
+    setStepMarcas   (patternIdx, step, pad, s.marcas);
 }
 
 //  EL MAXIMO COMUN DIVISOR DE TODO LO ESCRITO. Ver `mcdOcupacion` en la
@@ -6052,6 +6360,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     //  for AUTOCUT, which the clone's constructor defaults to true, so a pad
     //  deliberately left to stack was cut in the export and nowhere else.
     copyArr (padSelfCut, s.padSelfCut);
+    copyArr (padArp, s.padArp);   // LS5
     swing.store (s.swing.load (std::memory_order_relaxed), std::memory_order_relaxed);
 
     for (size_t b = 0; b < patternBank.size(); ++b)
@@ -6075,11 +6384,14 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
             copyArr (stepLen[b2][s2],   s.stepLen[b2][s2]);
             copyArr (stepLock[b2][s2],  s.stepLock[b2][s2]);
             copyArr (stepPLock[b2][s2], s.stepPLock[b2][s2]);
+            copyArr (stepMarcas[b2][s2], s.stepMarcas[b2][s2]);
         }
 
     //  Los bloques de la cancion: la copia de mensajes del motor de escucha,
     //  publicada en este. Sin esto el rebote de una cancion sale VACIO.
     if (s.bloquesCara.n > 0) publicaBloques (s.bloquesCara.b.data(), s.bloquesCara.n);
+    publicaMarcadores (s.bloquesCara.m.data(), s.bloquesCara.nm);   // LS4
+    copiaClipsDe (s);   // LS2 sin esto el rebote salia sin los clips de audio
     //  Y el silenciado de carriles y el tramo en bucle, que son estado de la
     //  cancion igual que los bloques: sin esto, exportar una mezcla que se
     //  monta con un motor aparte sonaria con los cuatro carriles y la cancion
@@ -6218,8 +6530,20 @@ int AudioEngine::lengthInSteps() const noexcept
             const int hasta = b.compas * pc + b.paso + juce::jmax (1, b.largo);   // exclusivo
             last = juce::jmax (last, (hasta - 1) / pc);
         }
+        {
+            //  LS4 y lo que suenan los clips: una cancion de solo audio medía cero pasos.
+            const juce::SpinLock::ScopedLockType l (clipsCaraLock);
+            const double sps = juce::jmax (1.0, samplesPerStepNow());
+            for (int i = 0; i < clipsCara.n; ++i)
+            {
+                const auto& c = clipsCara.c[(size_t) i];
+                if (c.fuente == nullptr || c.largo <= 0) continue;
+                const int hasta = c.compas * pc + c.paso + (int) std::ceil ((double) c.largo / sps);
+                last = juce::jmax (last, (hasta - 1) / pc);
+            }
+        }
         last = juce::jmin (last, bars - 1);
-        return (last < 0) ? 0 : (last + 1) * pc;
+        return (last < 0) ? 0 : pasosTocados ((last + 1) * pc, pc);
     }
 
     const int chainLen = chainLength.load (std::memory_order_relaxed);
@@ -6251,6 +6575,7 @@ bool AudioEngine::hasContentToRender() const noexcept
 
     if (songMode.load (std::memory_order_relaxed))
     {
+        if (clipsPublicados() > 0) return true;   // LS2
         for (int i = 0; i < bloquesCara.n; ++i)
         {
             const auto& b = bloquesCara.b[(size_t) i];

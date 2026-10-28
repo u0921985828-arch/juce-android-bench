@@ -4602,11 +4602,15 @@ void MainComponent::cableaCancion()
     //  LA TIRA DE LA BANDA. Solo existe con seleccion -el reparto la esconde-
     //  y PEGAR solo con portapapeles, que es la misma regla que la tira del
     //  piano: una tapa que no puede hacer nada no es informacion.
-    for (auto* b : { &songCopiaBtn, &songCorteSelBtn, &songPegaBtn, &songBorraSelBtn })
+    for (auto* b : { &songCopiaBtn, &songCorteSelBtn, &songPegaBtn, &songBorraSelBtn, &songAudioSelBtn,
+                     &songMarcadorBtn })
     {
         styleButton (*b, kKey);
         songSheet.addAndMakeVisible (*b);
     }
+    litAccent (songMarcadorBtn);
+    songAudioSelBtn.onClick = [this] { songAudioSel(); };
+    songMarcadorBtn.onClick = [this] { songMarcadorSel(); };
     songCopiaBtn.onClick    = [this] { songCopiaSel(); };
     songCorteSelBtn.onClick = [this] { songCortaSel(); };
     songPegaBtn.onClick     = [this] { songPegaSel(); };
@@ -5185,7 +5189,8 @@ void MainComponent::cableaPiano()
         //  justo al aparecer ellas. Una accion sobre lo que acabas de
         //  seleccionar no se busca entre las herramientas: sale donde miras.
         for (juce::TextButton* b : { &pianoCopiaBtn, &pianoCorteSelBtn,
-                                     &pianoPegaBtn, &pianoBorraSelBtn })
+                                     &pianoPegaBtn, &pianoBorraSelBtn,
+                                     &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn })
         {
             styleButton (*b, kKey);
             seqSheet.addChildComponent (*b);
@@ -5198,6 +5203,20 @@ void MainComponent::cableaPiano()
         pianoCorteSelBtn.onClick = [this] { pianoCortaSel(); };
         pianoPegaBtn.onClick     = [this] { pianoPegaSel(); };
         pianoBorraSelBtn.onClick = [this] { pianoBorraSel(); };
+        litAccent (pianoFlamBtn);
+        pianoLegatoBtn.onClick   = [this] { pianoLegatoSel(); };
+        pianoFlamBtn.onClick     = [this] { pianoFlamSel(); };
+        litAccent (pianoGlideBtn);
+        pianoGlideBtn.onClick    = [this] { pianoMarcaSel (AudioEngine::kMarcaGlide); };
+        for (juce::TextButton* b : { &pianoArpBtn, &pianoArpDivBtn, &pianoArpOctBtn })   // LS5
+        {
+            styleButton (*b, kKey);
+            seqSheet.addChildComponent (*b);
+        }
+        litAccent (pianoArpBtn);
+        pianoArpBtn.onClick    = [this] { pianoArpCambia (0); };
+        pianoArpDivBtn.onClick = [this] { pianoArpCambia (1); };
+        pianoArpOctBtn.onClick = [this] { pianoArpCambia (2); };
 
         //  EL ZOOM HORIZONTAL. Ocho columnas son medio compas con celdas del
         //  doble de ancho -que es lo que hace falta para escribir en 1/32- y
@@ -8475,10 +8494,16 @@ void MainComponent::showSeqPage (int page)
                                  //  volver, que es la regla del RESIDUO: 24.
                                  &pianoSelBtn, &pianoZoomBtn,
                                  &pianoCopiaBtn, &pianoCorteSelBtn,
-                                 &pianoPegaBtn, &pianoBorraSelBtn })
+                                 &pianoPegaBtn, &pianoBorraSelBtn,
+                                 &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn, &pianoArpBtn })
     {
         b->setVisible (onPiano);
         if (! onPiano) b->setBounds ({});
+    }
+    for (juce::TextButton* b : { &pianoArpDivBtn, &pianoArpOctBtn })   // LS5
+    {
+        b->setVisible (onPiano && arpVisible());
+        if (! b->isVisible()) b->setBounds ({});
     }
     if (! onPiano) pianoGrid.setBounds ({});
 
@@ -10322,6 +10347,7 @@ void MainComponent::selectPad (int index)
 {
     selectedPad = index;
     for (int i = 0; i < pads.size(); ++i) pads[i]->setToggleState (i == index, juce::dontSendNotification);   // accesibilidad#24
+    ponTextoArp();   // LS5
     //  Y EL TECLADO MIDI VA CON EL. En modo TECLADO lo que se toca es el pad
     //  ELEGIDO, y no un ajuste aparte que haya que acordarse de mover: dos
     //  numeros que significan lo mismo son dos numeros que un dia no coinciden.
@@ -11799,6 +11825,8 @@ void MainComponent::retranslateUi()
     songCorteSelBtn.setButtonText (T ("CORTE"));
     songPegaBtn    .setButtonText (T ("PEGAR"));
     songBorraSelBtn.setButtonText (T ("BORRAR"));
+    songAudioSelBtn.setButtonText (T ("A AUDIO"));
+    ponTextoMarcador();
     seqFollowBtn.setButtonText (T ("SEGUIR"));
     patLeftBtn  .setButtonText (T ("ATRAS"));
     patRightBtn .setButtonText (T ("ADELANTE"));
@@ -11934,6 +11962,10 @@ void MainComponent::retranslateUi()
     //  portapapeles.
     pianoCorteSelBtn.setButtonText (T ("CORTE"));
     pianoBorraSelBtn.setButtonText (T ("BORRAR"));
+    pianoLegatoBtn  .setButtonText (T ("LEGATO"));
+    pianoFlamBtn    .setButtonText (T ("FLAM"));
+    pianoGlideBtn   .setButtonText (T ("GLIDE"));
+    ponTextoArp();
     //  El rotulo dice CUANTO se ve, no un verbo: es la misma gramatica que
     //  pianoVerBtn y que la tapa de vista de la cancion.
     pianoZoomBtn   .setButtonText (pianoCols == 8  ? T ("1/2 COMPAS")
@@ -13381,6 +13413,12 @@ juce::ValueTree MainComponent::captureState() const
         //  `bmudos` -el silencio por compas, cuatro mascaras de 64 bits- ya no
         //  se escribe: el silencio viaja DENTRO de cada bloque, que es de quien
         //  siempre fue. Se sigue LEYENDO al abrir un proyecto viejo.
+        if (! marcadores.empty())   // LS4
+        {
+            juce::String filas;
+            for (const auto& m : marcadores) filas << m.compas << " " << m.paso << " " << m.tipo << ";";
+            song.setProperty ("marcadores", filas, nullptr);
+        }
         song.setProperty ("bucleA", engine.getSongLoopFrom(), nullptr);
         song.setProperty ("bucleB", engine.getSongLoopTo(), nullptr);
 
@@ -13656,6 +13694,9 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("choke",   padChokeUI[(size_t) i], nullptr);
         p.setProperty ("pan",     padPan[(size_t) i],     nullptr);
         p.setProperty ("ancho",   padAnchoUI[(size_t) i], nullptr);
+        if (engine.getPadArpModo (i) != AudioEngine::kArpNo)   // LS5
+            p.setProperty ("arp", juce::String (engine.getPadArpModo (i)) + " " + juce::String (engine.getPadArpDiv (i))
+                                    + " " + juce::String (engine.getPadArpOct (i)), nullptr);
         p.setProperty ("attack",  padAttack[(size_t) i],  nullptr);
         p.setProperty ("release", padRelease[(size_t) i], nullptr);
         //  QUIEN MANDA EN LA SUELTA, y SOLO cuando manda el preset.
@@ -13810,7 +13851,7 @@ juce::ValueTree MainComponent::captureState() const
         //  tripletes "paso pad valor", y lo que no esta vale su defecto - que
         //  es ademas lo que hace que un proyecto viejo, que no tiene ni la
         //  propiedad, suene exactamente igual que antes.
-        juce::String chords, nudges, locks, lens, plocks;
+        juce::String chords, nudges, locks, lens, plocks, marcas;
         for (int st = 0; st < kNumSteps; ++st)
             for (int p = 0; p < kNumPads; ++p)
             {
@@ -13828,12 +13869,15 @@ juce::ValueTree MainComponent::captureState() const
                 //  dato que el motor ya guarda junto.
                 if (const auto pl = engine.getStepPLockRaw (b, st, p); pl != 0)
                     plocks << st << " " << p << " " << juce::String::toHexString ((juce::int64) pl) << " ";
+                if (const int mc = engine.getStepMarcas (b, st, p); mc != 0)
+                    marcas << st << " " << p << " " << mc << " ";   // LS3
             }
         if (chords.isNotEmpty()) bk.setProperty ("chords", chords.trim(), nullptr);
         if (nudges.isNotEmpty()) bk.setProperty ("nudges", nudges.trim(), nullptr);
         if (locks.isNotEmpty())  bk.setProperty ("locks",  locks.trim(),  nullptr);
         if (lens.isNotEmpty())   bk.setProperty ("lens",   lens.trim(),   nullptr);
         if (plocks.isNotEmpty()) bk.setProperty ("plocks", plocks.trim(), nullptr);
+        if (marcas.isNotEmpty()) bk.setProperty ("marcas", marcas.trim(), nullptr);
 
         banks.addChild (bk, -1, nullptr);
     }
@@ -14306,6 +14350,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
             //  exactamente como se guardo. El cero del array seria mono.
             padAnchoUI[(size_t) i] = (float) p.getProperty ("ancho", 1.0);
             engine.setPadAncho (i, padAnchoUI[(size_t) i]);
+            {
+                const auto a = juce::StringArray::fromTokens (p.getProperty ("arp").toString(), " ", "");   // LS5
+                engine.setPadArp (i, a.size() > 0 ? a[0].getIntValue() : 0,
+                                  a.size() > 1 ? a[1].getIntValue() : 1, a.size() > 2 ? a[2].getIntValue() : 1);
+            }
             padAttack[(size_t) i]  = (float) p.getProperty ("attack", 2.0);
             padRelease[(size_t) i] = (float) p.getProperty ("release", 5.0);
             //  Ausente = falso = manda el `release` de arriba. Ver captureState.
@@ -14484,6 +14533,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
                     engine.setStepLock  (b, s2, p, AudioEngine::kNoLock);
                     engine.setStepLen   (b, s2, p, AudioEngine::kLenSuelto);
                     engine.setStepPLockRaw (b, s2, p, 0);
+                    engine.setStepMarcas (b, s2, p, 0);
                 }
             }
 
@@ -14557,6 +14607,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 for (int i2 = 0; i2 + 2 < pl.size(); i2 += 3)
                     engine.setStepPLockRaw (b, pl[i2].getIntValue(), pl[i2 + 1].getIntValue(),
                                             (std::uint32_t) pl[i2 + 2].getHexValue64());
+
+                const auto mc = tripletes ("marcas");
+                for (int i2 = 0; i2 + 2 < mc.size(); i2 += 3)
+                    engine.setStepMarcas (b, mc[i2].getIntValue(), mc[i2 + 1].getIntValue(),
+                                          mc[i2 + 2].getIntValue());
             }
         }
         rebuildChain();
@@ -14688,6 +14743,17 @@ void MainComponent::applyState (const juce::ValueTree& s)
         }
         engine.setSongLoop ((int) song.getProperty ("bucleA", 0),
                             (int) song.getProperty ("bucleB", 0));
+
+        marcadores.clear();   // LS4
+        for (const auto& fila : juce::StringArray::fromTokens (song.getProperty ("marcadores").toString(), ";", ""))
+        {
+            const auto n = juce::StringArray::fromTokens (fila.trim(), " ", "");
+            if (n.size() < 3 || (int) marcadores.size() >= AudioEngine::kMaxMarcadores) continue;
+            AudioEngine::MarcadorSong m { juce::jlimit (0, AudioEngine::kSongBars - 1, n[0].getIntValue()),
+                                          juce::jlimit (0, pc - 1, n[1].getIntValue()), n[2].getIntValue() };
+            if (! juce::isPositiveAndBelow (m.tipo, (int) AudioEngine::kTiposMarcador) || marcadorEn (m.compas * pc + m.paso) >= 0) continue;
+            marcadores.push_back (m);
+        }
 
         songPrimerCompas = 0;
         songCursor = 0;
@@ -16175,6 +16241,8 @@ void MainComponent::insertSongBar()
     }
     corredBloques (at, +1);
     corredClips (at, +1);
+    for (auto& m : marcadores)   // LS4
+        if (m.compas >= at) m.compas = juce::jmin (AudioEngine::kSongBars - 1, m.compas + 1);
 
     engine.setSongLength (len + 1);
     songLenSlider.setValue (len + 1, juce::dontSendNotification);
@@ -16221,6 +16289,10 @@ void MainComponent::removeSongBar()
     //  compas quitado se queda donde estaba, que es lo que hace la celda de
     //  patron de al lado — lo que ocupaba ese compas pasa a ocupar el siguiente.
     corredClips (at + 1, -1);
+    marcadores.erase (std::remove_if (marcadores.begin(), marcadores.end(),   // LS4
+                                      [at] (const AudioEngine::MarcadorSong& m) { return m.compas == at; }),
+                      marcadores.end());
+    for (auto& m : marcadores) if (m.compas > at) --m.compas;
 
     engine.setSongLength (len - 1);
     songLenSlider.setValue (len - 1, juce::dontSendNotification);
@@ -16474,6 +16546,7 @@ int MainComponent::celdaCancion (int lane, int bar) const
 void MainComponent::vaciaCancion()
 {
     bloques.clear();
+    marcadores.clear();   // LS4
     songSel = {};
     songMarcaLane = songMarcaPaso = -1;
 }
@@ -16562,53 +16635,145 @@ void MainComponent::songMueveSel (int dLane, int dPaso)
 //
 //  Y en coordenadas RELATIVAS a la esquina de la banda, como el piano: sin eso
 //  pegar caeria donde se copio y no donde se toca.
-void MainComponent::songCopiaSel()
+//  LS2 el recorte de COPIAR, suelto: lo usan COPIAR y A AUDIO.
+MainComponent::PortaCancion MainComponent::recortaBanda (const Playlist::Sel& sel) const
 {
-    if (! songSel.activa()) return;
-
+    PortaCancion r;
     const int pc = juce::jmax (1, engine.pasosPorCompas());
     const double porPaso = juce::jmax (1.0, engine.muestrasPorCompas()) / (double) pc;
 
-    songPortapapeles.bloques.clear();
-    songPortapapeles.clips.clear();
-    songPortapapeles.carriles = songSel.lane1 - songSel.lane0 + 1;
-    songPortapapeles.pasos    = songSel.paso1 - songSel.paso0;
+    r.carriles = sel.lane1 - sel.lane0 + 1;
+    r.pasos    = sel.paso1 - sel.paso0;
 
     for (const auto& b : bloques)
     {
-        if (b.lane < songSel.lane0 || b.lane > songSel.lane1) continue;
+        if (b.lane < sel.lane0 || b.lane > sel.lane1) continue;
         const int d = b.compas * pc + b.paso, h = d + b.largo;
-        const int a = juce::jmax (d, songSel.paso0), z = juce::jmin (h, songSel.paso1);
+        const int a = juce::jmax (d, sel.paso0), z = juce::jmin (h, sel.paso1);
         if (z <= a) continue;
 
         const int len = b.bank >= 0 ? juce::jmax (1, engine.getPatternLength (b.bank)) : 1;
         BloqueUI c = b;
-        c.lane   = b.lane - songSel.lane0;
+        c.lane   = b.lane - sel.lane0;
         c.offset = (b.offset + (a - d)) % len;
         c.largo  = z - a;
-        const int rel = a - songSel.paso0;
+        const int rel = a - sel.paso0;
         c.compas = rel / pc;
         c.paso   = rel % pc;
-        songPortapapeles.bloques.push_back (c);
+        r.bloques.push_back (c);
     }
 
     for (const auto& c : clips)
     {
-        if (c.pista < songSel.lane0 || c.pista > songSel.lane1) continue;
+        if (c.pista < sel.lane0 || c.pista > sel.lane1) continue;
         const int d = c.compas * pc + c.paso;
         const int h = d + juce::jmax (1, (int) std::ceil ((double) c.largo / porPaso));
-        const int a = juce::jmax (d, songSel.paso0), z = juce::jmin (h, songSel.paso1);
+        const int a = juce::jmax (d, sel.paso0), z = juce::jmin (h, sel.paso1);
         if (z <= a) continue;
 
         ClipUI k = c;
-        k.pista = c.pista - songSel.lane0;
+        k.pista = c.pista - sel.lane0;
         k.desde = c.desde + (int) ((double) (a - d) * porPaso);
         k.largo = juce::jmax (1, (int) ((double) (z - a) * porPaso));
-        const int rel = a - songSel.paso0;
+        const int rel = a - sel.paso0;
         k.compas = rel / pc;
         k.paso   = rel % pc;
-        songPortapapeles.clips.push_back (k);
+        r.clips.push_back (k);
     }
+    return r;
+}
+
+//  LS2 A AUDIO. Los patrones del tramo se rinden a una toma en la pista del
+//  primer carril y los bloques de debajo quedan mudos, en un paso de deshacer.
+void MainComponent::songAudioSel()
+{
+    if (! songSel.activa() || rindeTramo != nullptr) return;
+    const auto trozo = recortaBanda (songSel);
+    if (trozo.bloques.empty())
+    {
+        status.setText (T ("No hay patrones en el tramo"), juce::dontSendNotification);
+        return;
+    }
+    if ((int) tomas.size() >= kMaxTomas || (int) clips.size() >= AudioEngine::kMaxClips)
+    {
+        status.setText (T ("No caben mas tomas en la cancion"), juce::dontSendNotification);
+        return;
+    }
+
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const double porPaso = juce::jmax (1.0, engine.muestrasPorCompas()) / (double) pc;
+    const double sr = engine.getSystemSampleRate();   // la toma suena tal cual en el motor
+    const int corre = songSel.paso0 % pc;        // el compas conserva su paridad
+    std::vector<AudioEngine::BloqueSong> tabla;
+    for (const auto& b : trozo.bloques)
+    {
+        AudioEngine::BloqueSong t;
+        const int rel = corre + b.compas * pc + b.paso;
+        t.lane = songSel.lane0 + b.lane; t.bank = b.bank;
+        t.compas = rel / pc; t.paso = rel % pc;
+        t.largo = b.largo; t.offset = b.offset; t.mudo = b.mudo;
+        tabla.push_back (t);
+    }
+    const int pasos = songSel.paso1 - songSel.paso0;
+    const double segundos = (double) pasos * porPaso / sr;
+    if (segundos > (double) engine.getRecordLimitSeconds())
+    {
+        status.setText (T ("El tramo pasa de %1 s: hazlo mas corto",
+                           juce::String ((int) engine.getRecordLimitSeconds())),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    rindeSel = songSel;
+    rindeTramo = std::make_unique<RindeTramo> (engine, uiSample, std::move (tabla),
+                                               (corre + pasos + pc - 1) / pc + 1,
+                                               (juce::int64) std::llround (corre * porPaso),
+                                               (juce::int64) std::llround (pasos * porPaso),
+                                               sr);
+    beginBusy (T ("A AUDIO"));
+    rindeTramo->startThread();
+}
+
+void MainComponent::acabaAudioSel()
+{
+    if (rindeTramo == nullptr || ! rindeTramo->hecho.load (std::memory_order_acquire)) return;
+    auto sb = rindeTramo->resultado;
+    rindeTramo.reset();
+    endBusy();
+    if (sb == nullptr) return;
+
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    const int paso = rindeSel.paso0;
+    pushUndo (T ("A AUDIO"));
+    const auto trozo = recortaBanda (rindeSel);
+    vaciaBanda (rindeSel.lane0, rindeSel.lane1, rindeSel.paso0, rindeSel.paso1, true);
+    for (auto b : trozo.bloques)
+    {
+        if ((int) bloques.size() >= AudioEngine::kMaxBloques) break;
+        const int d = rindeSel.paso0 + b.compas * pc + b.paso;
+        b.lane += rindeSel.lane0; b.compas = d / pc; b.paso = d % pc; b.mudo = true;
+        bloques.push_back (b);
+    }
+    tomas.push_back ({ sb, T ("A AUDIO") + " " + juce::String ((int) tomas.size() + 1) });
+    ClipUI c;
+    c.toma   = (int) tomas.size() - 1;
+    c.pista  = juce::jlimit (0, AudioEngine::kAudioTracks - 1, rindeSel.lane0);
+    c.compas = paso / pc;
+    c.paso   = paso % pc;
+    c.largo  = sb->buffer.getNumSamples();
+    for (auto& o : clips)
+        if (o.toma >= 0 && o.pista == c.pista && o.compas * pc + o.paso == paso) o.debajo = true;
+    clips.push_back (c);
+    publicaClips();
+    refreshSong();
+    status.setText (T ("Tramo pasado a audio en la pista %1", juce::String (c.pista + 1)),
+                    juce::dontSendNotification);
+}
+
+void MainComponent::songCopiaSel()
+{
+    if (! songSel.activa()) return;
+    songPortapapeles = recortaBanda (songSel);
 
     const int cuantos = (int) (songPortapapeles.bloques.size() + songPortapapeles.clips.size());
     status.setText (cuantos == 1 ? T ("1 bloque copiado")
@@ -16622,7 +16787,7 @@ void MainComponent::songCopiaSel()
 //  Un bloque que cruza el filo se PARTE por el en vez de irse entero: borrar
 //  dos compases de un bloque de ocho se llevaba los ocho, que es justo lo que
 //  una banda existe para no hacer. La usan BORRAR, CORTE y el carvado de PEGAR.
-void MainComponent::vaciaBanda (int lane0, int lane1, int paso0, int paso1)
+void MainComponent::vaciaBanda (int lane0, int lane1, int paso0, int paso1, bool soloBloques)
 {
     const int pc = juce::jmax (1, engine.pasosPorCompas());
     const double porPaso = juce::jmax (1.0, engine.muestrasPorCompas()) / (double) pc;
@@ -16666,6 +16831,8 @@ void MainComponent::vaciaBanda (int lane0, int lane1, int paso0, int paso1)
         }
         if (b.largo <= 0) bloques.erase (bloques.begin() + i);
     }
+
+    if (soloBloques) return;   // LS2
 
     for (int i = (int) clips.size() - 1; i >= 0; --i)
     {
@@ -17145,6 +17312,192 @@ void MainComponent::pianoBorraSel()
     resized();      // la tira se va con la seleccion
 }
 
+//  LS4 EL MARCADOR DEL FILO IZQUIERDO DE LA BANDA. Cada toque le cambia la accion:
+//  ninguno, MARCA, INICIO, BUCLE, SALTO, PAUSA y fuera. INICIO y BUCLE hay uno solo.
+int MainComponent::marcadorEn (int pasoAbs) const
+{
+    const int pc = juce::jmax (1, engine.pasosPorCompas());
+    for (size_t i = 0; i < marcadores.size(); ++i)
+        if (marcadores[i].compas * pc + marcadores[i].paso == pasoAbs) return (int) i;
+    return -1;
+}
+
+juce::String MainComponent::nombreMarcador (int tipo)
+{
+    switch (tipo)
+    {
+        case AudioEngine::kMarcaInicio: return T ("INICIO|marca");
+        case AudioEngine::kMarcaBucle:  return T ("BUCLE|marca");
+        case AudioEngine::kMarcaSalto:  return T ("SALTO|marca");
+        case AudioEngine::kMarcaPausa:  return T ("PAUSA|marca");
+        default:                        return T ("MARCA|cancion");
+    }
+}
+
+void MainComponent::ponTextoMarcador()
+{
+    const int i = songSel.activa() ? marcadorEn (songSel.paso0) : -1;
+    songMarcadorBtn.setButtonText (i >= 0 ? nombreMarcador (marcadores[(size_t) i].tipo) : T ("MARCA|cancion"));
+    songMarcadorBtn.setToggleState (i >= 0, juce::dontSendNotification);
+}
+
+void MainComponent::songMarcadorSel()
+{
+    if (! songSel.activa()) return;
+    const int pc  = juce::jmax (1, engine.pasosPorCompas());
+    const int pos = songSel.paso0;
+    int i = marcadorEn (pos);
+    if (i < 0 && (int) marcadores.size() >= AudioEngine::kMaxMarcadores)
+    {
+        status.setText (T ("Ya hay %1 marcas", juce::String (AudioEngine::kMaxMarcadores)),
+                        juce::dontSendNotification);
+        return;
+    }
+
+    pushUndo (T ("MARCA|cancion"));
+    juce::String dicho;
+    if (i < 0)
+    {
+        marcadores.push_back ({ pos / pc, pos % pc, AudioEngine::kMarcaSolo });
+        std::sort (marcadores.begin(), marcadores.end(),
+                   [pc] (const AudioEngine::MarcadorSong& a, const AudioEngine::MarcadorSong& b)
+                   { return a.compas * pc + a.paso < b.compas * pc + b.paso; });
+        i = marcadorEn (pos);
+    }
+    else if (marcadores[(size_t) i].tipo + 1 >= AudioEngine::kTiposMarcador)
+    {
+        marcadores.erase (marcadores.begin() + i);
+        i = -1;
+    }
+    else
+    {
+        auto& m = marcadores[(size_t) i];
+        ++m.tipo;
+        if (m.tipo == AudioEngine::kMarcaInicio || m.tipo == AudioEngine::kMarcaBucle)
+            for (size_t k = 0; k < marcadores.size(); ++k)
+                if ((int) k != i && marcadores[k].tipo == m.tipo) marcadores[k].tipo = AudioEngine::kMarcaSolo;
+    }
+
+    status.setText (i >= 0 ? T ("Marca en el compas %1: %2", juce::String (pos / pc + 1),
+                                nombreMarcador (marcadores[(size_t) i].tipo))
+                           : T ("Marca quitada"),
+                    juce::dontSendNotification);
+    refreshSong();
+    resized();
+}
+
+//  LS5 ARP: la tapa recorre los modos; con el puesto salen las notas por paso y las octavas.
+bool MainComponent::arpVisible() const
+{
+    return selectedPad >= 0 && engine.getPadArpModo (selectedPad) != AudioEngine::kArpNo;
+}
+
+void MainComponent::ponTextoArp()
+{
+    const int p = selectedPad;
+    const int modo = p >= 0 ? engine.getPadArpModo (p) : 0;
+    static const char* const nombres[] = { "ARP", "SUBE|arp", "BAJA|arp", "VAIVEN|arp", "AZAR|arp" };
+    pianoArpBtn.setButtonText (T (nombres[juce::jlimit (0, 4, modo)]));
+    pianoArpBtn.setToggleState (modo != AudioEngine::kArpNo, juce::dontSendNotification);
+    pianoArpDivBtn.setButtonText (Lang::ltr ("x" + juce::String (p >= 0 ? engine.getPadArpDiv (p) : 1)));
+    pianoArpOctBtn.setButtonText (T ("%1 OCT", Lang::ltr (juce::String (p >= 0 ? engine.getPadArpOct (p) : 1))));
+}
+
+void MainComponent::pianoArpCambia (int que)
+{
+    const int p = selectedPad;
+    if (p < 0) return;
+    int modo = engine.getPadArpModo (p), div = engine.getPadArpDiv (p), oct = engine.getPadArpOct (p);
+    pushUndo (T ("ARP"));
+    if (que == 0)
+    {
+        modo = (modo + 1) % AudioEngine::kModosArp;
+        if (modo == AudioEngine::kArpSube && div == 1) div = 2;
+    }
+    else if (que == 1) div = div % AudioEngine::kArpDivMax + 1;
+    else               oct = oct % AudioEngine::kArpOctMax + 1;
+    engine.setPadArp (p, modo, div, oct);
+    ponTextoArp();
+    status.setText (modo == AudioEngine::kArpNo ? T ("Arpegio quitado")
+                                                : T ("Arpegio %1, %2 por paso, %3 octavas", pianoArpBtn.getButtonText(),
+                                                     Lang::ltr (juce::String (div)), Lang::ltr (juce::String (oct))),
+                    juce::dontSendNotification);
+    resized();
+}
+
+//  LS3 LEGATO: cada paso elegido dura hasta la siguiente nota del pad, la ultima hasta la primera de la vuelta.
+void MainComponent::pianoLegatoSel()
+{
+    if (pianoSel.empty() || selectedPad < 0) return;
+    const int b = selectedPattern, p = selectedPad;
+    const int len = engine.getPatternLength (b);
+
+    std::vector<int> suenan, elegidos;
+    for (int st = 0; st < len; ++st)
+        if (pattern[(size_t) b][(size_t) st][(size_t) p]) suenan.push_back (st);
+    for (const auto& n : pianoSel)
+    {
+        const int st = pasoDeCelda (n.paso);
+        if (st >= 0 && st < len && std::find (elegidos.begin(), elegidos.end(), st) == elegidos.end())
+            elegidos.push_back (st);
+    }
+    if (suenan.empty() || elegidos.empty()) return;
+
+    pushUndo (T ("LEGATO"));
+    for (const int st : elegidos)
+    {
+        auto sig = std::upper_bound (suenan.begin(), suenan.end(), st);
+        const int hasta = sig != suenan.end() ? *sig : suenan.front() + len;
+        engine.setStepLen (b, st, p, juce::jmin (AudioEngine::kLenMax, (hasta - st) * 4));
+    }
+    status.setText (T ("Legato en %1 pasos", Lang::ltr (juce::String ((int) elegidos.size()))),
+                    juce::dontSendNotification);
+    refreshPiano (false);
+}
+
+//  LS3 FLAM: alterna; si todos los pasos elegidos ya lo llevan se quita, si no se pone a todos.
+void MainComponent::pianoFlamSel() { pianoMarcaSel (AudioEngine::kMarcaFlam); }
+
+//  LS6 GLIDE comparte el camino del flam: una bandera por paso que se pone a todos o se quita a todos.
+void MainComponent::pianoMarcaSel (int marca)
+{
+    if (pianoSel.empty() || selectedPad < 0) return;
+    const int b = selectedPattern, p = selectedPad;
+    const int len = engine.getPatternLength (b);
+
+    std::vector<int> elegidos;
+    for (const auto& n : pianoSel)
+    {
+        const int st = pasoDeCelda (n.paso);
+        if (st >= 0 && st < len && std::find (elegidos.begin(), elegidos.end(), st) == elegidos.end())
+            elegidos.push_back (st);
+    }
+    if (elegidos.empty()) return;
+
+    const bool glide = marca == AudioEngine::kMarcaGlide;
+    const bool todos = pianoSelConMarca (marca);
+    pushUndo (glide ? T ("GLIDE") : T ("FLAM"));
+    for (const int st : elegidos)
+        engine.setStepMarca (b, st, p, marca, ! todos);
+    const auto cuantos = Lang::ltr (juce::String ((int) elegidos.size()));
+    status.setText (glide ? (todos ? T ("Glide quitado") : T ("Glide en %1 pasos", cuantos))
+                          : (todos ? T ("Flam quitado")  : T ("Flam en %1 pasos", cuantos)),
+                    juce::dontSendNotification);
+    (glide ? pianoGlideBtn : pianoFlamBtn).setToggleState (! todos, juce::dontSendNotification);
+    refreshPiano (false);
+}
+
+bool MainComponent::pianoSelConFlam() const { return pianoSelConMarca (AudioEngine::kMarcaFlam); }
+
+bool MainComponent::pianoSelConMarca (int marca) const
+{
+    if (pianoSel.empty() || selectedPad < 0) return false;
+    for (const auto& n : pianoSel)
+        if (! engine.getStepMarca (selectedPattern, pasoDeCelda (n.paso), selectedPad, marca))
+            return false;
+    return true;
+}
+
 //  CORTAR, que es copiar y borrar seguidos y se escribe LLAMANDO A LAS DOS.
 //
 //  Repetir aqui el bucle de `pianoCopiaSel` seria la tercera vez que esta casa
@@ -17289,7 +17642,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
         }
         if (st < 0) st = juce::jmin (pasoDeColumna (c), AudioEngine::kNumSteps - 1);
 
-        pianoLargos[c] = (unsigned char) (engine.getStepLen (b, st, p) / ppc);
+        pianoLargos[c] = (unsigned char) juce::jmin (255, engine.getStepLen (b, st, p) / ppc);   // LS3 un legato largo daba la vuelta al byte
 
         int n = 0;
         if (pattern[(size_t) b][(size_t) st][(size_t) p])
@@ -17780,6 +18133,13 @@ void MainComponent::refreshSong (bool repintarTarjeta)
                         engine.getSongLoopFrom(), engine.getSongLoopTo());
     songGrid.setSel (songSel);
     songGrid.setMarca (songMarcaLane, songMarcaPaso);
+    {
+        const int pc = juce::jmax (1, engine.pasosPorCompas());   // LS4
+        std::vector<Playlist::MarcadorVista> mv;
+        for (const auto& m : marcadores) mv.push_back ({ m.compas * pc + m.paso, m.tipo });
+        songGrid.setMarcadores (mv.data(), (int) mv.size());
+        ponTextoMarcador();
+    }
 
     //  Y EL CABEZAL DE LA BARRA, que su propio comentario prometia y nadie
     //  ponia: se pintaba SIEMPRE sin marca, asi que con la cancion rodando
@@ -18136,6 +18496,18 @@ int MainComponent::publicaBloques()
         d.mudo   = b.mudo;
     }
     engine.publicaBloques (tabla.data(), n);
+
+    std::array<AudioEngine::MarcadorSong, AudioEngine::kMaxMarcadores> marcas {};   // LS4
+    int nm = 0;
+    for (const auto& m : marcadores)
+    {
+        if (nm >= AudioEngine::kMaxMarcadores) break;
+        auto& d = marcas[(size_t) nm++];
+        d.compas = juce::jlimit (0, AudioEngine::kSongBars - 1, m.compas);
+        d.paso   = juce::jlimit (0, pc - 1, m.paso);
+        d.tipo   = juce::jlimit (0, AudioEngine::kTiposMarcador - 1, m.tipo);
+    }
+    engine.publicaMarcadores (marcas.data(), nm);
     return n;
 }
 
@@ -23519,6 +23891,12 @@ void MainComponent::enVBlank (double timestampSec)
 void MainComponent::pintaCuadro (double dtMs)
 {
     ++UiAudit::cuadrosPintados;
+    acabaAudioSel();   // LS2
+    if (engine.tomaPausaMarcador())   // LS4 la PAUSA la para el motor; las tapas lo leen aqui
+    {
+        ponTransporte (false);
+        status.setText (T ("Pausa en la marca: PLAY sigue desde ahi"), juce::dontSendNotification);
+    }
 
     //  Mientras algo este cargando, la barra se repinta sola: es lo unico de
     //  la cara que tiene que moverse aunque no pase nada mas.

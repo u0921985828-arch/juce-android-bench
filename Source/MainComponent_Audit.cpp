@@ -4544,7 +4544,23 @@ void MainComponent::auditClips()
     const int carrilMudo = engine.isSongLaneMuted (2) ? 1 : 0;
     const int pistaMuda  = engine.isPistaMute (2) ? 1 : 0;
 
-    std::cout << "{\"clipsui\":1,\"puesto\":" << puesto
+    //  LS1 dos clips que se pisan pintan la X del fundido; separados, no.
+    auto fundidos = [&] (int segundoCompas)
+    {
+        pon (0, 1, 2);
+        ClipUI b = clips[0]; b.compas = segundoCompas;
+        clips.push_back (b);
+        publicaClips();
+        refreshSong (false);
+        (void) rej.createComponentSnapshot (rej.getLocalBounds());
+        return rej.fundidosPintados();
+    };
+    const int fundidoPisan = fundidos (2), fundidoSeparados = fundidos (3);
+    clips.clear(); publicaClips(); refreshSong (false);
+
+    std::cout << "{\"clipsui\":1,\"fundido_pisan\":" << fundidoPisan
+              << ",\"fundido_separados\":" << fundidoSeparados
+              << ",\"puesto\":" << puesto
               << ",\"movido\":" << movido
               << ",\"agarrado\":" << agarrado
               << ",\"agarre_compases\":" << agarreCompases
@@ -5118,6 +5134,124 @@ void MainComponent::auditPiano()
                   << ",\"undo\":" << undoTrasMover
                   << ",\"copiadas\":" << copiadas
                   << ",\"pegadas\":" << pegadas << "}" << std::endl;
+    }
+
+    //  LS3 LEGATO y FLAM por sus tapas: tres pasos (1, 5 con acorde, 12) en un patron de 16.
+    {
+        engine.clearPattern (0);
+        engine.setPatternLength (0, 16);
+        for (int st = 0; st < kNumSteps; ++st)
+            for (int q = 0; q < kNumPads; ++q) pattern[0][(size_t) st][(size_t) q] = false;
+        seqPrimerCelda = 0;
+        refreshPiano();
+        pianoSel.clear();
+        for (const int st : { 1, 5, 12 }) pianoEscribe (st, 0, true, 4);
+        pianoEscribe (5, 4, true, 4);
+        for (const int st : { 1, 5, 12 }) pianoSel.push_back ({ celdaDePaso (st), 0 });
+        pianoSel.push_back ({ celdaDePaso (5), 4 });
+        refreshPiano(); resized();
+
+        undoStack.clear(); redoStack.clear();
+        if (pianoLegatoBtn.onClick) pianoLegatoBtn.onClick();
+        const int p = selectedPad;
+        const int l1 = engine.getStepLen (0, 1, p), l5 = engine.getStepLen (0, 5, p), l12 = engine.getStepLen (0, 12, p);
+        const int undoLegato = (int) undoStack.size();
+
+        auto flams = [this, p]
+        {
+            int n = 0;
+            for (const int st : { 1, 5, 12 }) n += engine.getStepMarca (0, st, p, AudioEngine::kMarcaFlam) ? 1 : 0;
+            return n;
+        };
+        if (pianoFlamBtn.onClick) pianoFlamBtn.onClick();
+        const int flamPuesto = flams();
+        const bool tapaEncendida = pianoFlamBtn.getToggleState();
+        const bool visible = pianoFlamBtn.isVisible() && pianoLegatoBtn.isVisible()
+                          && ! pianoFlamBtn.getBounds().isEmpty() && ! pianoLegatoBtn.getBounds().isEmpty();
+
+        const auto arbol = captureState();
+        engine.clearPattern (0);
+        applyState (arbol);
+        const int flamGuardado = flams();
+
+        if (pianoFlamBtn.onClick) pianoFlamBtn.onClick();
+        const int flamQuitado = flams();
+        if (pianoFlamBtn.onClick) pianoFlamBtn.onClick();
+        performUndo();
+        const int flamDeshecho = flams();
+
+        auto glides = [this, p]   // LS6
+        {
+            int n = 0;
+            for (const int st : { 1, 5, 12 }) n += engine.getStepMarca (0, st, p, AudioEngine::kMarcaGlide) ? 1 : 0;
+            return n;
+        };
+        const int undoAntesGlide = (int) undoStack.size();
+        if (pianoGlideBtn.onClick) pianoGlideBtn.onClick();
+        const int glidePuesto = glides();
+        const int glideUndos = (int) undoStack.size() - undoAntesGlide;
+        const bool glideVisible = pianoGlideBtn.isVisible() && ! pianoGlideBtn.getBounds().isEmpty()
+                               && ! pianoGlideBtn.getBounds().intersects (pianoFlamBtn.getBounds());
+        const auto arbolG = captureState();
+        engine.clearPattern (0);
+        applyState (arbolG);
+        const int glideGuardado = glides();
+        performUndo();
+        const int glideDeshecho = glides();
+
+        std::cout << "{\"piano\":\"toque\",\"largos\":[" << l1 << "," << l5 << "," << l12 << "]"
+                  << ",\"undo_legato\":" << undoLegato
+                  << ",\"flam\":" << flamPuesto
+                  << ",\"tapa\":" << (tapaEncendida ? 1 : 0)
+                  << ",\"visible\":" << (visible ? 1 : 0)
+                  << ",\"guardado\":" << flamGuardado
+                  << ",\"quitado\":" << flamQuitado
+                  << ",\"deshecho\":" << flamDeshecho
+                  << ",\"glide\":" << glidePuesto
+                  << ",\"glide_undos\":" << glideUndos
+                  << ",\"glide_visible\":" << (glideVisible ? 1 : 0)
+                  << ",\"glide_guardado\":" << glideGuardado
+                  << ",\"glide_deshecho\":" << glideDeshecho << "}" << std::endl;
+        pianoSel.clear();
+        resized();
+    }
+
+    //  LS5 ARP por sus tapas: el modo recorre los cinco, con el puesto salen x y OCT, se guarda y se deshace.
+    {
+        const int p = selectedPad;
+        engine.setPadArp (p, AudioEngine::kArpNo, 1, 1);
+        ponTextoArp(); resized();
+        const bool sinTira = ! pianoArpDivBtn.isVisible();
+        undoStack.clear();
+        juce::String modos;
+        for (int i = 0; i < 5; ++i)
+        {
+            if (pianoArpBtn.onClick) pianoArpBtn.onClick();
+            modos << engine.getPadArpModo (p);
+        }
+        const int undos = (int) undoStack.size();
+        if (pianoArpBtn.onClick) pianoArpBtn.onClick();   // SUBE
+        if (pianoArpDivBtn.onClick) { pianoArpDivBtn.onClick(); pianoArpDivBtn.onClick(); }   // 2 -> 3 -> 4
+        if (pianoArpOctBtn.onClick) pianoArpOctBtn.onClick();   // 2
+        const bool tira = pianoArpBtn.isVisible() && pianoArpDivBtn.isVisible() && pianoArpOctBtn.isVisible()
+                       && ! pianoArpDivBtn.getBounds().isEmpty() && ! pianoArpOctBtn.getBounds().isEmpty()
+                       && ! pianoArpBtn.getBounds().isEmpty();
+        const auto texto = pianoArpBtn.getButtonText() + "/" + pianoArpDivBtn.getButtonText() + "/" + pianoArpOctBtn.getButtonText();
+        auto estado = [this, p] { return juce::String (engine.getPadArpModo (p)) + juce::String (engine.getPadArpDiv (p))
+                                         + juce::String (engine.getPadArpOct (p)); };
+        const auto puesto = estado();
+        const auto arbol = captureState();
+        engine.setPadArp (p, AudioEngine::kArpNo, 1, 1);
+        applyState (arbol);
+        const auto guardado = estado();
+        performUndo();
+        const auto deshecho = estado();
+        std::cout << "{\"piano\":\"arp\",\"modos\":\"" << modos << "\",\"undos\":" << undos
+                  << ",\"sin_tira\":" << (sinTira ? 1 : 0) << ",\"tira\":" << (tira ? 1 : 0)
+                  << ",\"texto\":\"" << texto << "\",\"puesto\":\"" << puesto << "\",\"guardado\":\"" << guardado
+                  << "\",\"deshecho\":\"" << deshecho << "\"}" << std::endl;
+        engine.setPadArp (p, AudioEngine::kArpNo, 1, 1);
+        ponTextoArp(); resized();
     }
 
     // ------------------------------------------------------------------
@@ -9869,6 +10003,116 @@ void MainComponent::auditTomas()
     if (recordingActive) toggleMicSampling();
     esperaAbridor (15000);
     std::cout << "{\"tomas\":6,\"compartida\":" << tomaCompartida << "}" << std::endl;
+
+    //  LS2 A AUDIO: un bloque con golpe en cada paso en el carril 1, compas 1;
+    //  la banda empieza a mitad de compas y la toma tiene que entrar en el acto.
+    {
+        engine.setPlaying (false);
+        bombeaAudioDePrueba();
+        clips.clear(); tomas.clear(); bloques.clear();
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        const int largoPat = juce::jmax (1, engine.getPatternLength (0));
+        for (int st = 0; st < largoPat; ++st) engine.setStep (0, st, 0, true);
+        engine.setSongLength (4);
+        BloqueUI b; b.lane = 1; b.bank = 0; b.compas = 1; b.paso = 0; b.largo = pc;
+        bloques.push_back (b);
+        refreshSong();
+        songBanda (1, pc + pc / 4, 1, 2 * pc);
+        songAudioSel();
+        if (rindeTramo != nullptr) rindeTramo->waitForThreadToExit (30000);
+        acabaAudioSel();
+
+        const double porPaso = juce::jmax (1.0, engine.muestrasPorCompas()) / (double) pc;
+        const double sr = engine.getSystemSampleRate();
+        int pista = -1, enPaso = -1, ataqueMs = -1; double largoPasos = 0.0; float pico = 0.0f;
+        for (const auto& c : clips)
+            if (c.toma >= 0)
+            {
+                pista = c.pista; enPaso = c.compas * pc + c.paso;
+                largoPasos = (double) c.largo / porPaso;
+                if (auto* f = fuenteClip (c))
+                {
+                    pico = f->buffer.getMagnitude (0, f->buffer.getNumSamples());
+                    for (int i = 0; i < f->buffer.getNumSamples(); ++i)
+                        if (std::abs (f->buffer.getSample (0, i)) > 0.02f) { ataqueMs = (int) (1000.0 * i / sr); break; }
+                }
+            }
+        int mudosDentro = 0, sonandoFuera = 0;
+        for (const auto& k : bloques)
+        {
+            const int d = k.compas * pc + k.paso;
+            if (k.mudo && d >= pc + pc / 4 && d + k.largo <= 2 * pc) ++mudosDentro;
+            if (! k.mudo && d == pc && k.largo == pc / 4) ++sonandoFuera;
+        }
+        const int tomasHechas = (int) tomas.size();
+        performUndo();
+        int mudosTrasDeshacer = 0;
+        for (const auto& k : bloques) if (k.mudo) ++mudosTrasDeshacer;
+        std::cout << "{\"tomas\":10,\"hechas\":" << tomasHechas << ",\"pista\":" << pista
+                  << ",\"en_paso\":" << enPaso << ",\"esperado_paso\":" << (pc + pc / 4)
+                  << ",\"largo_pasos\":" << juce::String (largoPasos, 2)
+                  << ",\"cuerpo_pasos\":" << (pc - pc / 4)
+                  << ",\"pico\":" << juce::String (pico, 3) << ",\"ataque_ms\":" << ataqueMs
+                  << ",\"mudos_dentro\":" << mudosDentro << ",\"sonando_fuera\":" << sonandoFuera
+                  << ",\"tomas_tras_deshacer\":" << (int) tomas.size()
+                  << ",\"mudos_tras_deshacer\":" << mudosTrasDeshacer << "}" << std::endl;
+    }
+
+    //  LS4 MARCAS: seis toques en el compas 2 recorren MARCA..PAUSA y la quitan;
+    //  INICIO en el 2 arranca alli, uno solo, se pinta, se guarda y se deshace.
+    {
+        engine.setPlaying (false);
+        bombeaAudioDePrueba();
+        clips.clear(); tomas.clear(); bloques.clear(); marcadores.clear();
+        engine.setSongLength (4);
+        const int pc = juce::jmax (1, engine.pasosPorCompas());
+        songBanda (0, 2 * pc, 0, 3 * pc - 1);
+        juce::String ciclo;
+        for (int i = 0; i < 6; ++i)
+        {
+            songMarcadorBtn.onClick();
+            const int k = marcadorEn (2 * pc);
+            ciclo << (k >= 0 ? juce::String (marcadores[(size_t) k].tipo) : juce::String ("x"));
+        }
+        const bool visible = songMarcadorBtn.isVisible() && ! songMarcadorBtn.getBounds().isEmpty();
+        songMarcadorBtn.onClick(); songMarcadorBtn.onClick();
+        const auto texto = songMarcadorBtn.getButtonText();
+        { juce::Image im (juce::Image::ARGB, juce::jmax (1, songGrid.getWidth()), juce::jmax (1, songGrid.getHeight()), true);
+          juce::Graphics g (im); songGrid.paintEntireComponent (g, false); }
+        const int pintados = songGrid.marcadoresPintados();
+
+        const bool eraModo = engine.isSongMode();
+        engine.setSongMode (true);
+        engine.setPlaying (true);
+        bombeaAudioDePrueba();
+        const int arranca = engine.getSongBar();
+        engine.setPlaying (false);
+        bombeaAudioDePrueba();
+
+        songBanda (0, 0, 0, pc - 1);
+        songMarcadorBtn.onClick(); songMarcadorBtn.onClick();
+        int inicios = 0;
+        for (const auto& m : marcadores) if (m.tipo == AudioEngine::kMarcaInicio) ++inicios;
+
+        const auto arbol = captureState();
+        marcadores.clear();
+        applyState (arbol);
+        juce::String vuelta;
+        for (const auto& m : marcadores) vuelta << m.compas << ":" << m.tipo << " ";
+
+        performUndo();
+        const int k2 = marcadorEn (0);
+        const int tipoDeshecho = k2 >= 0 ? marcadores[(size_t) k2].tipo : -1;
+
+        engine.setSongMode (eraModo);
+        std::cout << "{\"tomas\":11,\"ciclo\":\"" << ciclo << "\",\"visible\":" << (visible ? 1 : 0)
+                  << ",\"texto\":\"" << texto << "\",\"pintados\":" << pintados
+                  << ",\"arranca\":" << arranca << ",\"inicios\":" << inicios
+                  << ",\"vuelta\":\"" << vuelta.trim() << "\",\"deshecho\":" << tipoDeshecho << "}" << std::endl;
+        marcadores.clear();
+        songSel = {};
+        publicaBloques();
+    }
 }
 
 //  ==========================================================================
@@ -11953,7 +12197,7 @@ void MainComponent::auditPasos()
     AudioEngine::Paso movido;
     movido.on = true;  movido.nota = 5;  movido.empujon = 3;  movido.corte = 40;
     movido.vel = 90;   movido.roll = 3;  movido.largo = 8;
-    movido.acorde = 0x0000000000070403ull;  movido.bloqueos = 0x10203040u;
+    movido.acorde = 0x0000000000070403ull;  movido.bloqueos = 0x10203040u;  movido.marcas = 3;
     for (auto sp : { std::pair<int,int> { 2, A }, { 5, A }, { 5, B } })
     {
         pattern[(size_t) pat][(size_t) sp.first][(size_t) sp.second] = true;
@@ -11975,7 +12219,8 @@ void MainComponent::auditPasos()
     {
         return (! conOn || a.on == b.on) && a.nota == b.nota && a.empujon == b.empujon
             && a.corte == b.corte && a.vel == b.vel && a.roll == b.roll
-            && a.largo == b.largo && a.acorde == b.acorde && a.bloqueos == b.bloqueos;
+            && a.largo == b.largo && a.acorde == b.acorde && a.bloqueos == b.bloqueos
+            && a.marcas == b.marcas;
     };
     auto idx = [] (int b, int st, int pd)
     { return (size_t) ((b * AudioEngine::kNumSteps + st) * kNumPads + pd); };
@@ -12037,7 +12282,8 @@ void MainComponent::auditPasos()
     const int hereda = (r.nota != limpio.nota) + (r.empujon != limpio.empujon)
                      + (r.corte != limpio.corte) + (r.vel != limpio.vel)
                      + (r.roll != limpio.roll) + (r.largo != limpio.largo)
-                     + (r.acorde != limpio.acorde) + (r.bloqueos != limpio.bloqueos);
+                     + (r.acorde != limpio.acorde) + (r.bloqueos != limpio.bloqueos)
+                     + (r.marcas != limpio.marcas);
 
     //  5. LA REJILLA A 1/8 SOBRE UN PATRON DE 1/16: la casilla 6 es el paso 12.
     vistaRejilla = 0;

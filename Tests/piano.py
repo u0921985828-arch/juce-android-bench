@@ -530,6 +530,41 @@ else:
           d["pasos_tras"] == 0 and d["dedos_tras"] == 0,
           "pasos con nota %d, dedos %d" % (d["pasos_tras"], d["dedos_tras"]))
 
+#  LS3 LEGATO y FLAM. Roto a proposito -flam que no escribe la marca- medido: flam 0.
+d = una ("toque")
+if d is None:
+    mide ("legato y flam", False, "no salio")
+else:
+    mide ("legato: cada nota llega a la siguiente y la ultima a la primera de la vuelta",
+          d["largos"] == [16, 28, 20], "largos %s (esperados [16, 28, 20])" % (d["largos"],))
+    mide ("y es una sola entrada de deshacer", d["undo_legato"] == 1, "entradas %d" % d["undo_legato"])
+    mide ("las dos tapas salen en la tira de la seleccion", d["visible"] == 1, "visible %d" % d["visible"])
+    mide ("flam en los tres pasos y la tapa encendida",
+          d["flam"] == 3 and d["tapa"] == 1, "flam %d, tapa %d" % (d["flam"], d["tapa"]))
+    mide ("y vuelve del proyecto", d["guardado"] == 3, "tras guardar y abrir %d" % d["guardado"])
+    mide ("otra vez lo quita", d["quitado"] == 0, "quedan %d" % d["quitado"])
+    mide ("y deshacer devuelve el de antes", d["deshecho"] == 0, "tras deshacer %d" % d["deshecho"])
+    #  LS6 GLIDE. Roto a proposito -glide que no se guarda- medido: guardado 0.
+    mide ("GLIDE en la tira, sin pisar a FLAM", d["glide_visible"] == 1, "visible %d" % d["glide_visible"])
+    mide ("GLIDE marca los tres pasos en una entrada de deshacer",
+          d["glide"] == 3 and d["glide_undos"] == 1, "glide %d, entradas %d" % (d["glide"], d["glide_undos"]))
+    mide ("y el glide vuelve del proyecto", d["glide_guardado"] == 3, "tras guardar y abrir %d" % d["glide_guardado"])
+    mide ("y deshacer lo quita", d["glide_deshecho"] == 0, "tras deshacer %d" % d["glide_deshecho"])
+
+#  LS5 ARP. Roto a proposito -sin guardar el arp en el proyecto- medido: guardado 011.
+d = una ("arp")
+if d is None:
+    mide ("arpegiador", False, "no salio")
+else:
+    mide ("la tapa ARP recorre SUBE, BAJA, VAIVEN, AZAR y apagado", d["modos"] == "12340", "modos %s" % d["modos"])
+    mide ("y cada toque es una entrada de deshacer", d["undos"] == 5, "entradas %d" % d["undos"])
+    mide ("apagado no hay tira; puesto salen x y OCT con sitio", d["sin_tira"] == 1 and d["tira"] == 1,
+          "sin tira %d, tira %d" % (d["sin_tira"], d["tira"]))
+    mide ("los rotulos dicen modo, notas por paso y octavas", d["texto"] == "SUBE/x4/2 OCT", "texto %s" % d["texto"])
+    mide ("SUBE a cuatro por paso en dos octavas, y vuelve del proyecto",
+          d["puesto"] == "142" and d["guardado"] == "142", "puesto %s, guardado %s" % (d["puesto"], d["guardado"]))
+    mide ("deshacer quita la ultima octava", d["deshecho"] == "141", "tras deshacer %s" % d["deshecho"])
+
 print()
 print ("piano: %d comprobaciones, %d FALLA" % (len (hechas), len (fallos)))
 sys.exit (1 if fallos else 0)

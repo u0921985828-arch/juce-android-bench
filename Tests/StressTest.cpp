@@ -4227,6 +4227,203 @@ int main()
                      "empujon de un paso", recto, tarde, diff, ok ? "OK" : zatiFalla());
     }
 
+    //  LS3 FLAM: dos golpes, el de gracia en la rejilla y a media fuerza, el bueno ~22 ms despues.
+    {
+        const auto monton_f = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_f; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        enCanalCero (e);
+        e.setPadGain (0, 0.9f);
+        e.publishSample (0, makeSample (48000.0, 0.2, 440.0f));
+        juce::AudioBuffer<float> b (2, 64);
+        runBlocks (e, b, 64, 4);
+
+        struct Golpes { int n = 0, primero = -1, segundo = -1; float picoGracia = 0, picoBueno = 0; };
+        auto mide = [&] (bool flam) noexcept
+        {
+            Golpes g;
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 4, 0, true);
+            e.setStepMarca (0, 4, 0, AudioEngine::kMarcaFlam, flam);
+            e.setBpm (120.0);
+            e.setPlaying (true);
+            for (int i = 0; i < 800; ++i)
+            {
+                e.renderNextBlock (b, 0, 64);
+                const float pico = b.getMagnitude (0, 0, 64);
+                if (e.fetchTriggered() & 1u)
+                {
+                    ++g.n;
+                    if (g.primero < 0) g.primero = i; else if (g.segundo < 0) g.segundo = i;
+                }
+                if (g.primero >= 0 && g.segundo < 0 && i < g.primero + 12) g.picoGracia = juce::jmax (g.picoGracia, pico);
+                if (g.segundo >= 0 && i < g.segundo + 12) g.picoBueno = juce::jmax (g.picoBueno, pico);
+                if (g.primero >= 0 && i > g.primero + 60) break;
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 64);
+            e.fetchTriggered();
+            return g;
+        };
+
+        const auto sin = mide (false);
+        const auto con = mide (true);
+        const double ms = con.segundo >= 0 ? (con.segundo - con.primero) * 64.0 / 48.0 : -1.0;
+        const float rel = con.picoBueno > 0 ? con.picoGracia / con.picoBueno : 0.0f;
+        const bool ok = sin.n == 1 && con.n == 2 && ms >= 18.0 && ms <= 26.0 && rel > 0.3f && rel < 0.7f;
+        std::printf ("%-34s sin %d golpe   con %d golpes a %.1f ms   gracia/bueno %.2f   %s\n",
+                     "flam de un paso", sin.n, con.n, ms, (double) rel, ok ? "OK" : zatiFalla());
+    }
+
+    //  LS5 ARPEGIADOR: un acorde de tres en un paso de dos de largo sale nota a nota, a dos por paso.
+    {
+        const auto monton_a = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_a; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        enCanalCero (e);
+        e.setPadGain (0, 0.9f);
+        {
+            auto* sb = new SampleBuffer();   // seno limpio: la nota se lee por los cruces por cero
+            sb->buffer.setSize (2, 24000);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 24000; ++i)
+                    sb->buffer.setSample (c, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / 48000.0f));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+        }
+        juce::AudioBuffer<float> b (2, 64);
+        runBlocks (e, b, 64, 4);
+
+        auto mide = [&] (int modo, int div, int oct, int cuartos) noexcept
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 0, 0, true);
+            e.setStepExtra (0, 0, 0, 0, 4, true);
+            e.setStepExtra (0, 0, 0, 1, 7, true);
+            e.setStepLen (0, 0, 0, cuartos);
+            e.setPadArp (0, modo, div, oct);
+            e.setBpm (120.0);
+            e.setPlaying (true);
+            std::vector<float> sal; std::vector<int> golpes;
+            for (int i = 0; i < 700; ++i)
+            {
+                e.renderNextBlock (b, 0, 64);
+                if (e.fetchTriggered() & 1u) golpes.push_back (i * 64);
+                const float* d = b.getReadPointer (0);
+                sal.insert (sal.end(), d, d + 64);
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 64);
+            e.fetchTriggered();
+            e.setPadArp (0, AudioEngine::kArpNo, 1, 1);
+            juce::String notas;
+            for (const int g : golpes)
+            {
+                if (g >= 6000 * 16) break;
+                int cruces = 0; double primero = -1.0, ultimo = -1.0; const int desde = g + 256, n = 1536;
+                if (desde + n >= (int) sal.size()) break;
+                for (int k = desde + 1; k < desde + n; ++k)
+                {
+                    const float a = sal[(size_t) k - 1], c = sal[(size_t) k];
+                    if (a >= 0.0f || c < 0.0f) continue;
+                    const double x = k - 1 + a / (double) (a - c);   // LS5 cruce interpolado: contar cruces enteros baila un semitono
+                    if (primero < 0) primero = x;
+                    ultimo = x; ++cruces;
+                }
+                const double hz = cruces > 1 ? (cruces - 1) * 48000.0 / (ultimo - primero) : 0.0;
+                notas << (int) std::lround (12.0 * std::log2 (juce::jmax (1.0, hz) / 440.0)) << " ";
+            }
+            return notas.trim();
+        };
+
+        const auto sube   = mide (AudioEngine::kArpSube, 2, 1, 8);
+        const auto baja   = mide (AudioEngine::kArpBaja, 2, 1, 8);
+        const auto vaiven = mide (AudioEngine::kArpVaiven, 2, 2, 16);
+        const auto nada   = mide (AudioEngine::kArpNo, 2, 1, 8);
+        const bool ok = sube == "0 4 7 0" && baja == "7 4 0 7"
+                     && vaiven == "0 4 7 12 16 19 16 12" && nada.isNotEmpty() && ! nada.containsChar (' ');
+        std::printf ("%-34s sube [%s]  baja [%s]  vaiven [%s]  sin [%s]   %s\n", "arpegiador",
+                     sube.toRawUTF8(), baja.toRawUTF8(), vaiven.toRawUTF8(), nada.toRawUTF8(), ok ? "OK" : zatiFalla());
+    }
+
+    //  LS6 GLIDE: la nota marcada arranca en el tono de la anterior y llega al suyo en unos 70 ms.
+    {
+        const auto monton_g = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_g; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        enCanalCero (e);
+        e.setPadGain (0, 0.9f);
+        e.setPadSelfCut (0, true);
+        {
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (2, 24000);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 24000; ++i)
+                    sb->buffer.setSample (c, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / 48000.0f));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+        }
+        juce::AudioBuffer<float> b (2, 64);
+        runBlocks (e, b, 64, 4);
+
+        auto tono = [] (const std::vector<float>& sal, int desde, int n) noexcept
+        {
+            int cruces = 0; double primero = -1.0, ultimo = -1.0;
+            for (int k = desde + 1; k < desde + n && k < (int) sal.size(); ++k)
+            {
+                const float a = sal[(size_t) k - 1], c = sal[(size_t) k];
+                if (a >= 0.0f || c < 0.0f) continue;
+                const double x = k - 1 + a / (double) (a - c);
+                if (primero < 0) primero = x;
+                ultimo = x; ++cruces;
+            }
+            const double hz = cruces > 1 ? (cruces - 1) * 48000.0 / (ultimo - primero) : 1.0;
+            return 12.0 * std::log2 (juce::jmax (1.0, hz) / 440.0);
+        };
+        struct G { double alPrincipio = -99, aMitad = -99, alFinal = -99; };
+        auto mide = [&] (bool glide) noexcept
+        {
+            e.setSongMode (false);
+            e.clearPattern (0);
+            e.setPatternLength (0, 16);
+            e.setStep (0, 0, 0, true);
+            e.setStep (0, 4, 0, true);
+            e.setStepNote (0, 4, 0, 7);
+            e.setStepMarca (0, 4, 0, AudioEngine::kMarcaGlide, glide);
+            e.setBpm (120.0);
+            e.setPlaying (true);
+            std::vector<float> sal; std::vector<int> golpes;
+            for (int i = 0; i < 500; ++i)
+            {
+                e.renderNextBlock (b, 0, 64);
+                if (e.fetchTriggered() & 1u) golpes.push_back (i * 64);
+                const float* d = b.getReadPointer (0);
+                sal.insert (sal.end(), d, d + 64);
+            }
+            e.setPlaying (false);
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 64);
+            e.fetchTriggered();
+            G g;
+            if (golpes.size() < 2) return g;
+            const int s = golpes[1] + 64;   // el golpe cae dentro de su bloque: se empieza un bloque despues
+            g.alPrincipio = tono (sal, s, 480);
+            g.aMitad      = tono (sal, s + 1200, 480);
+            g.alFinal     = tono (sal, s + 4000, 1536);
+            return g;
+        };
+        const auto sin = mide (false);
+        const auto con = mide (true);
+        const bool ok = std::abs (sin.alPrincipio - 7.0) < 0.5 && std::abs (sin.alFinal - 7.0) < 0.3
+                     && con.alPrincipio < 3.0 && con.aMitad > con.alPrincipio + 0.5 && con.aMitad < 6.5
+                     && std::abs (con.alFinal - 7.0) < 0.3;
+        std::printf ("%-34s sin %.1f/%.1f   con %.1f > %.1f > %.1f   %s\n", "glide",
+                     sin.alPrincipio, sin.alFinal, con.alPrincipio, con.aMitad, con.alFinal, ok ? "OK" : zatiFalla());
+    }
+
     //  EL BLOQUEO DEL CORTE, paso a paso. Un filtro por pad es un ajuste; un
     //  filtro que cambia en cada paso es una linea de bajo que se abre y se
     //  cierra sola. Se mide por ENERGIA ALTA: el mismo golpe con el paso
@@ -5911,6 +6108,183 @@ int main()
         std::printf ("%-34s compas 0 %.5f   1 %.5f   2 %.5f   clips %d   %s\n",
                      "un clip suena donde se puso", pico[0], pico[1], pico[2],
                      e.numClips(), ok ? "OK" : zatiFalla());
+    }
+
+    //  LS1 DOS CLIPS QUE SE PISAN EN UNA PISTA SE FUNDEN, Y LO DEMAS NO SE TOCA.
+    //  Ruido distinto en cada clip: sin fundido el tramo pisado sube 3 dB.
+    {
+        auto ruido = [] (int n, int semilla)
+        {
+            auto* sb = new SampleBuffer();
+            sb->sourceSampleRate = 48000.0;
+            sb->buffer.setSize (1, n);
+            juce::Random r (semilla);
+            for (int i = 0; i < n; ++i)
+                sb->buffer.setSample (0, i, r.nextFloat() * 0.6f - 0.3f);
+            return SampleBuffer::Ptr (sb);
+        };
+
+        auto mide = [&] (bool misma, bool dentro, float* rms)
+        {
+            const auto monton_e = std::make_unique<AudioEngine>();
+            AudioEngine& e = *monton_e;
+            e.prepareToPlay (48000.0, 512);
+            e.setSafetyLimiter (false);
+            e.setBpm (120.0f);
+            e.setSongMode (true);
+            e.setSongLength (4);
+
+            auto fa = ruido (96000, 11), fb = ruido (96000, 23);
+            AudioEngine::ClipAudio c[2];
+            c[0].fuente = fa.get(); c[0].pista = 0; c[0].compas = 1; c[0].paso = 0;
+            c[0].largo = dentro ? 96000 : 96000;
+            c[1].fuente = fb.get(); c[1].pista = misma ? 0 : 1; c[1].compas = 1; c[1].paso = 12;
+            c[1].largo = dentro ? 12000 : 96000;
+            e.publicaClips (c, 2);
+            e.setPlaying (true);
+
+            //  Ventanas de 6000: A sola, pisado al 1/4, 1/2, 3/4, B sola.
+            const long long cortes[5] = { 96000 + 30000, 96000 + 75000, 96000 + 81000,
+                                          96000 + 87000, 192000 + 40000 };
+            double acc[5] = {}; long long muestras = 0;
+            juce::AudioBuffer<float> out (2, 512);
+            for (int b = 0; b < (96000 * 4) / 512; ++b)
+            {
+                out.clear();
+                e.renderNextBlock (out, 0, 512);
+                for (int i = 0; i < 512; ++i)
+                    for (int w = 0; w < 5; ++w)
+                        if (muestras + i >= cortes[w] && muestras + i < cortes[w] + 6000)
+                            acc[w] += (double) out.getSample (0, i) * out.getSample (0, i);
+                muestras += 512;
+            }
+            for (int w = 0; w < 5; ++w)
+                rms[w] = (float) juce::Decibels::gainToDecibels (std::sqrt (acc[w] / 6000.0), -120.0);
+        };
+
+        float r[5], otra[5], dentro[5];
+        mide (true, false, r);
+        mide (false, false, otra);
+        mide (true, true, dentro);
+
+        float peor = 0.0f;
+        for (int w = 1; w < 4; ++w) peor = juce::jmax (peor, std::abs (r[w] - r[0]));
+        //  Otra pista: suman sin tocarse (+3 dB al medio). Clip dentro de otro: sin fundido.
+        const bool sumaOtra   = otra[2] - otra[0] > 2.0f;
+        const bool sumaDentro = dentro[1] - dentro[0] > 2.0f;
+        const bool ok = peor < 1.0f && std::abs (r[4] - r[0]) < 1.0f && sumaOtra && sumaDentro;
+        std::printf ("%-34s A %.2f  1/4 %.2f  1/2 %.2f  3/4 %.2f  B %.2f dB  peor %.2f  otra pista +%.2f  dentro +%.2f  %s\n",
+                     "clips pisados se funden", r[0], r[1], r[2], r[3], r[4], peor,
+                     otra[2] - otra[0], dentro[1] - dentro[0], ok ? "OK" : zatiFalla());
+    }
+
+    //  LS2 EL MOTOR DEL REBOTE LLEVA LOS CLIPS DE AUDIO DEL VIVO.
+    {
+        auto* sb = new SampleBuffer();
+        sb->sourceSampleRate = 48000.0;
+        sb->buffer.setSize (1, 48000);
+        for (int i = 0; i < 48000; ++i) sb->buffer.setSample (0, i, 0.3f * std::sin (0.05f * (float) i));
+        SampleBuffer::Ptr fuente (sb);
+
+        const auto vivo_p = std::make_unique<AudioEngine>();
+        AudioEngine& vivo = *vivo_p;
+        vivo.prepareToPlay (48000.0, 512);
+        vivo.setBpm (120.0f);
+        vivo.setSongMode (true);
+        vivo.setSongLength (2);
+        AudioEngine::ClipAudio c;
+        c.fuente = fuente.get(); c.pista = 0; c.compas = 0; c.largo = 48000;
+        vivo.publicaClips (&c, 1);
+
+        const auto off_p = std::make_unique<AudioEngine>();
+        AudioEngine& off = *off_p;
+        off.setOffline (true);
+        off.prepareToPlay (48000.0, 512);
+        off.copyStateFrom (vivo);
+        off.setSafetyLimiter (false);
+        off.setPlaying (true);
+        juce::AudioBuffer<float> out (2, 512);
+        float pico = 0.0f;
+        for (int b = 0; b < 40; ++b)
+        {
+            out.clear();
+            off.renderNextBlock (out, 0, 512);
+            pico = juce::jmax (pico, out.getMagnitude (0, 512));
+        }
+        const bool ok = pico > 0.1f && off.numClips() == 1;
+        std::printf ("%-34s pico %.3f  clips %d  %s\n", "el rebote lleva los clips",
+                     pico, off.numClips(), ok ? "OK" : zatiFalla());
+    }
+
+    //  LS4 MARCADORES: por donde pasa el cabezal con INICIO, SALTO, BUCLE y PAUSA, y cuanto mide el rebote.
+    {
+        const auto monton_m = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_m; e.prepareToPlay (48000.0, 512);
+        juce::AudioBuffer<float> b (2, 512);
+        e.setBpm (240.0);
+        e.setSongMode (true);
+        e.setSongLength (4);
+        const int pc = e.pasosPorCompas();
+        AudioEngine::BloqueSong bl; bl.lane = 0; bl.bank = 0; bl.compas = 0; bl.largo = 4 * pc;
+        e.publicaBloques (&bl, 1);
+
+        using M = AudioEngine::MarcadorSong;
+        auto recorre = [&] (std::initializer_list<M> ms, int bloques, bool& paro)
+        {
+            std::vector<M> v (ms);
+            e.publicaMarcadores (v.data(), (int) v.size());
+            e.tomaPausaMarcador();
+            e.setPlaying (true);
+            std::vector<int> compases;
+            paro = false;
+            for (int i = 0; i < bloques; ++i)
+            {
+                e.renderNextBlock (b, 0, 512);
+                const int c = e.getSongBar();
+                if (c >= 0 && (compases.empty() || compases.back() != c)) compases.push_back (c);
+                if (! e.isPlaying()) { paro = true; break; }
+            }
+            e.setPlaying (false);
+            for (int i = 0; i < 4; ++i) e.renderNextBlock (b, 0, 512);
+            return compases;
+        };
+        auto texto = [] (const std::vector<int>& v)
+        {
+            juce::String t; for (int c : v) t << c; return t;
+        };
+        //  Un compas a 240 son 16 * 3000 muestras: 94 bloques de 512.
+        bool paro = false;
+        const auto ini = recorre ({ { 2, 0, AudioEngine::kMarcaInicio } }, 300, paro);
+        const auto sal = recorre ({ { 1, 0, AudioEngine::kMarcaSalto }, { 3, 0, AudioEngine::kMarcaSolo } }, 700, paro);
+        const auto buc = recorre ({ { 1, 0, AudioEngine::kMarcaBucle } }, 1300, paro);
+        const auto pau = recorre ({ { 2, 0, AudioEngine::kMarcaPausa } }, 1000, paro);
+        const bool paroEnPausa = paro && e.tomaPausaMarcador();
+        bool paro2 = false;
+        const auto sigue = recorre ({ { 2, 0, AudioEngine::kMarcaPausa } }, 100, paro2);
+
+        std::vector<M> mi { { 2, 0, AudioEngine::kMarcaInicio } };
+        e.publicaMarcadores (mi.data(), 1);
+        const int largoIni = e.lengthInSteps();
+        std::vector<M> ms { { 1, 0, AudioEngine::kMarcaSalto }, { 3, 0, AudioEngine::kMarcaSolo } };
+        e.publicaMarcadores (ms.data(), 2);
+        const int largoSal = e.lengthInSteps();
+        e.publicaMarcadores (nullptr, 0);
+        const int largo = e.lengthInSteps();
+
+        e.setMarcadoresEnVivo (false);
+        const auto bucOff = recorre ({ { 1, 0, AudioEngine::kMarcaBucle } }, 1300, paro);
+        e.setMarcadoresEnVivo (true);
+
+        const bool ok = texto (ini).startsWith ("2") && texto (sal).startsWith ("03")
+                     && texto (buc).startsWith ("012312") && paroEnPausa && texto (pau) == "01"
+                     && texto (sigue).startsWith ("2")
+                     && largo == 4 * pc && largoIni == 2 * pc && largoSal == 2 * pc
+                     && texto (bucOff).startsWith ("01230");
+        std::printf ("%-34s inicio %s  salto %s  bucle %s  pausa %s/%d sigue %s  largo %d/%d/%d  rebote %s  %s\n",
+                     "marcadores de la cancion", texto (ini).toRawUTF8(), texto (sal).toRawUTF8(),
+                     texto (buc).toRawUTF8(), texto (pau).toRawUTF8(), paroEnPausa ? 1 : 0,
+                     texto (sigue).toRawUTF8(), largo / pc, largoIni / pc, largoSal / pc,
+                     texto (bucOff).toRawUTF8(), ok ? "OK" : zatiFalla());
     }
 
     //  ------------------------------------------------------------------

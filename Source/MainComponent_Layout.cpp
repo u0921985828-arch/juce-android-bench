@@ -5567,8 +5567,8 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
         //  lo que esta pagina existe. Y PEGAR solo con portapapeles, por lo
         //  mismo. En el orden en que se usan, con el dedo entero cada una.
         {
-            juce::TextButton* ss[4] = { &songCopiaBtn, &songCorteSelBtn,
-                                        &songPegaBtn, &songBorraSelBtn };
+            juce::TextButton* ss[6] = { &songCopiaBtn, &songCorteSelBtn,
+                                        &songPegaBtn, &songBorraSelBtn, &songAudioSelBtn, &songMarcadorBtn };
             const bool hayBanda = songSel.activa();
             for (auto* b : ss) b->setVisible (hayBanda);
             songPegaBtn.setEnabled (! songPortapapeles.bloques.empty()
@@ -5580,7 +5580,14 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
             else
             {
                 const int gSel = abreSong();
-                layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 4);
+                if (moduleBarFits (panel.getWidth(), ss, 6))   // LS4
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 6);
+                else
+                {
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 4);
+                    panel.removeFromTop (Metrics::sm);
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss + 4, 0, 2);
+                }
                 cierraSong (gSel);
                 panel.removeFromTop (Metrics::sm);
             }
@@ -6574,11 +6581,11 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             //  las MISMAS tapas que se van a colocar: preguntar por nueve y
             //  poner once es pedir con una cuenta y colocar con otra, que es
             //  como la rejilla se queda sin sitio.
-            juce::TextButton* pb5[11] = { &seqModoBtn, &seqPlayBtn,
+            juce::TextButton* pb5[12] = { &seqModoBtn, &seqPlayBtn,
                                           &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                           &pianoZoomBtn,
                                           &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
-                                          &pianoCorteBtn, &pianoSelBtn };
+                                          &pianoCorteBtn, &pianoSelBtn, &pianoArpBtn };
             const int anchoDeLaTarjeta = anchoTarjetaInterior (safeArea().getWidth());
             //  Apaisado no hay fila de tapas que pedir: se van a la columna
             //  de al lado. Pedir una fila que luego no se coloca es pedir 48 px
@@ -6595,9 +6602,10 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             //  Solo de pie: apaisado las tapas van a su columna y no hay fila
             //  que pedir, que es la misma razon por la que `filasTapas` vale
             //  cero ahi.
-            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 11) ? 1 : 2);
+            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 12) ? 1 : 2);
             filasTapasPiano = filasTapas;
             const int filaAcciones = (! wideFace && ! pianoSel.empty()) ? 1 : 0;
+            const int filaArp = (! wideFace && arpVisible()) ? 1 : 0;   // LS5
 
             //  Y LA REJILLA PIDE LO QUE VA A CABER, NO SU DESEO ENTERO.
             //
@@ -6641,7 +6649,8 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                                 + (filasTapas + filaAcciones) * Metrics::hit
                                 + (filasTapas > 0 ? Metrics::sm : 0)
                                 + juce::jmax (0, filasTapas - 1) * Metrics::xs
-                                + filaAcciones * Metrics::sm;
+                                + filaAcciones * Metrics::sm
+                                + filaArp * (Metrics::hit + Metrics::sm);
             const int paraLienzo = juce::jmax (0, altoTarjeta (full) - sinLienzo);
 
             //  Y CUANTAS FILAS CABEN SE MIDE AQUI, que es el unico sitio que
@@ -6979,10 +6988,13 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             const bool haySel = ! pianoSel.empty();
             const bool hayPeg = ! pianoPortapapeles.empty();
             {
-                juce::TextButton* pbSel[4] = { &pianoCopiaBtn, &pianoCorteSelBtn,
-                                               &pianoPegaBtn,  &pianoBorraSelBtn };
-                const bool vive[4] = { haySel, haySel, hayPeg, haySel };
-                for (int i = 0; i < 4; ++i)
+                juce::TextButton* pbSel[7] = { &pianoCopiaBtn, &pianoCorteSelBtn,
+                                               &pianoPegaBtn,  &pianoBorraSelBtn,
+                                               &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn };
+                const bool vive[7] = { haySel, haySel, hayPeg, haySel, haySel, haySel, haySel };
+                pianoFlamBtn.setToggleState (pianoSelConFlam(), juce::dontSendNotification);
+                pianoGlideBtn.setToggleState (pianoSelConMarca (AudioEngine::kMarcaGlide), juce::dontSendNotification);
+                for (int i = 0; i < 7; ++i)
                 {
                     pbSel[i]->setVisible (vive[i]);
                     //  APAGAR Y VACIAR, LAS DOS COSAS: una tapa invisible con
@@ -6990,6 +7002,11 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                     //  colocada para el banco.
                     if (! vive[i]) pbSel[i]->setBounds ({});
                 }
+            }
+            for (juce::TextButton* b : { &pianoArpDivBtn, &pianoArpOctBtn })   // LS5
+            {
+                b->setVisible (arpVisible());
+                if (! b->isVisible()) b->setBounds ({});
             }
 
             //  APAISADO LAS CINCO TAPAS SE VAN A SU COLUMNA, que es la misma
@@ -7116,13 +7133,15 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             //  justo la razon por la que existe esta columna— asi que se
             //  agrupan al final de ella, que es lo mas parecido a una tira que
             //  este reparto admite sin robarle alto a la rejilla.
-            juce::TextButton* pbCol[15] = { &seqModoBtn, &seqPlayBtn,
+            juce::TextButton* pbCol[21] = { &seqModoBtn, &seqPlayBtn,
                                             &pianoOctDownBtn, &pianoOctUpBtn, &pianoVerBtn,
                                             &pianoZoomBtn,
                                             &pianoClearBtn, &pianoLapizBtn, &pianoGomaBtn,
                                             &pianoCorteBtn, &pianoSelBtn,
                                             &pianoCopiaBtn, &pianoCorteSelBtn,
-                                            &pianoPegaBtn, &pianoBorraSelBtn };
+                                            &pianoPegaBtn, &pianoBorraSelBtn,
+                                            &pianoLegatoBtn, &pianoFlamBtn, &pianoGlideBtn,
+                                            &pianoArpBtn, &pianoArpDivBtn, &pianoArpOctBtn };
             const auto altoDe = [] (int n) { return n * Metrics::hit + (n - 1) * Metrics::halfGap; };
             int nVisibles = 0;
             for (auto* b2 : pbCol) if (b2->isVisible()) ++nVisibles;
@@ -7178,7 +7197,7 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                 //  el par MONITOR/CUENTA de AJUSTES. Uno, deducido de lo que se
                 //  acaba de colocar, asi que no cuesta un pixel.
                 juce::Rectangle<int> grupo;
-                for (int i = 0; i < 15; ++i)
+                for (int i = 0; i < 21; ++i)
                 {
                     if (! pbCol[i]->isVisible()) continue;
                     if (puestas == porColumna)
@@ -7247,7 +7266,7 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                 if (! conSel) pianoCopiaBtn.setBounds ({});
                 if (! conPeg) pianoPegaBtn .setBounds ({});
 
-                juce::TextButton* pbTodas[12];
+                juce::TextButton* pbTodas[13];
                 int nb = 0;
                 pbTodas[nb++] = &seqModoBtn;
                 pbTodas[nb++] = &seqPlayBtn;
@@ -7260,6 +7279,7 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                 pbTodas[nb++] = &pianoGomaBtn;
                 pbTodas[nb++] = &pianoCorteBtn;
                 pbTodas[nb++] = &pianoSelBtn;
+                pbTodas[nb++] = &pianoArpBtn;   // LS5
                 //  COPIAR y PEGAR YA NO ESTAN AQUI: se fueron a su tira, mas
                 //  abajo. Con eso esta fila se queda en NUEVE pase lo que pase
                 //  y deja de partirse en dos al seleccionar.
@@ -7320,14 +7340,38 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                     auto acc = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
                     inner.removeFromBottom (Metrics::sm);
 
-                    juce::TextButton* pbAcc[4];
+                    juce::TextButton* pbAcc[7];
                     int na = 0;
                     pbAcc[na++] = &pianoCopiaBtn;
                     pbAcc[na++] = &pianoCorteSelBtn;
                     if (hayPeg) pbAcc[na++] = &pianoPegaBtn;
                     pbAcc[na++] = &pianoBorraSelBtn;
-                    layoutModuleBar (acc, pbAcc, 0, na);
-                    pianoGrupos.add (acc);
+                    pbAcc[na++] = &pianoLegatoBtn;
+                    pbAcc[na++] = &pianoFlamBtn;
+                    pbAcc[na++] = &pianoGlideBtn;
+                    if (moduleBarFits (acc.getWidth(), pbAcc, na))
+                    {
+                        layoutModuleBar (acc, pbAcc, 0, na);
+                        pianoGrupos.add (acc);
+                    }
+                    else
+                    {
+                        //  LS6 siete no caben: lo que se lleva notas arriba, LEGATO, FLAM y GLIDE abajo.
+                        auto acc2 = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
+                        inner.removeFromBottom (Metrics::xs);
+                        layoutModuleBar (acc2, pbAcc, 0, na - 3);
+                        layoutModuleBar (acc, pbAcc + na - 3, 0, 3);
+                        pianoGrupos.add (acc.getUnion (acc2));
+                    }
+                }
+
+                if (arpVisible())   // LS5 la tira del arpegio, encima de todo lo demas
+                {
+                    auto fa = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
+                    inner.removeFromBottom (Metrics::sm);
+                    juce::TextButton* pbArp[2] = { &pianoArpDivBtn, &pianoArpOctBtn };
+                    layoutModuleBar (fa, pbArp, 0, 2);
+                    pianoGrupos.add (fa);
                 }
             }
 

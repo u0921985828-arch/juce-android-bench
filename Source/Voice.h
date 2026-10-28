@@ -100,6 +100,28 @@ struct Voice
     bool   pitchMode = false;   // false = tape (varispeed), true = pitch only
     double timeStep  = 0.0;     // source samples per output sample at unity pitch, signed
     double ratio     = 1.0;     // 2^(semitones/12)
+    //  LS6 GLIDE: la nota arranca en el tono de la anterior y llega al suyo en `glideQuedan` muestras.
+    double glideMul = 1.0, glidePaso = 1.0, deltaBase = 0.0, ratioBase = 1.0;
+    int    glideQuedan = 0;
+    void glide (double desdeSemis, int muestras) noexcept
+    {
+        if (muestras <= 0 || std::abs (desdeSemis) < 1.0e-3) { glideQuedan = 0; glideMul = 1.0; return; }
+        glideMul    = std::pow (2.0, desdeSemis / 12.0);
+        glidePaso   = std::pow (1.0 / glideMul, 1.0 / (double) muestras);
+        glideQuedan = muestras;
+        deltaBase   = delta;
+        ratioBase   = ratio;
+        if (pitchMode) ratio = ratioBase * glideMul; else delta = deltaBase * glideMul;
+    }
+    void avanzaGlide (int n) noexcept
+    {
+        if (glideQuedan <= 0) return;
+        n = juce::jmin (n, glideQuedan);
+        glideMul *= std::pow (glidePaso, (double) n);
+        glideQuedan -= n;
+        if (glideQuedan <= 0) glideMul = 1.0;
+        if (pitchMode) ratio = ratioBase * glideMul; else delta = deltaBase * glideMul;
+    }
     double gLen      = 2048.0;  // grain length, output samples
     double gPhase    = 0.0;
     double gOffA     = 0.0, gOffB = 0.0;
@@ -286,6 +308,7 @@ struct Voice
         reverse  = rev;
 
         ratio    = std::pow (2.0, (double) semitones / 12.0);
+        glideQuedan = 0; glideMul = 1.0;   // LS6
         //  En MAGNITUD: quien decide el sentido es rev, no el signo de una
         //  frecuencia que ha salido de una cabecera. Con fSrc negativa la
         //  posicion caminaba HACIA ATRAS desde el principio de la ventana, y
@@ -808,14 +831,15 @@ struct Voice
 
             panL = juce::jlimit (0.0f, 1.0f, panL);
             panR = juce::jlimit (0.0f, 1.0f, panR);
+            avanzaGlide (num);   // LS6 en TONO, por bloque
             return;
         }
 
-        const double step = reverse ? -delta : delta;   // always positive magnitude
         int i = 0;
 
         while (i < num && active)
         {
+            const double step = reverse ? -delta : delta;   // always positive magnitude
             // How far to the edge of the window, and therefore how many
             // samples can run before anything needs deciding again.
             const double dist = reverse ? (pos - (double) winStart)
@@ -888,7 +912,9 @@ struct Voice
             //  `pos < tope` siempre, y los cuatro puntos caen dentro.
             int run = (int) std::ceil (dist / step);
             if (run > num - i) run = num - i;
+            if (glideQuedan > 0) run = juce::jmin (run, 16);   // LS6 el tono se mueve cada 16 muestras
             if (run < 1)       run = 1;
+            const int i0 = i;
 
             for (int k = 0; k < run; ++k, ++i)
             {
@@ -920,6 +946,7 @@ struct Voice
 
                 pos += delta;
             }
+            avanzaGlide (i - i0);
         }
 
         panL = juce::jlimit (0.0f, 1.0f, panL);

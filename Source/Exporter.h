@@ -183,9 +183,17 @@ public:
         //  honesto - la barra la recorre igual que las demas.
         totalPasses = 2;
         if (stems)
+        {
             for (int i = 0; i < kNumPads; ++i)
                 if (pads[(size_t) i] != nullptr) ++totalPasses;
+            //  LS2 y una por pista de audio con clips.
+            for (int t = 0; t < AudioEngine::kAudioTracks; ++t)
+                if (pistaConClips (t)) ++totalPasses;
+        }
     }
+
+    //  LS2 soloPad >= kNumPads es la pista de audio (soloPad - kNumPads).
+    bool pistaConClips (int t) const { return live.clipsPublicados (t) > 0; }
 
     ~Exporter() override { stopThread (4000); }
 
@@ -335,6 +343,20 @@ public:
                 passDone.store (pasadas, std::memory_order_relaxed);
                 progress.store ((float) pasadas / (float) totalPasses, std::memory_order_relaxed);
             }
+
+            for (int t = 0; t < AudioEngine::kAudioTracks && ! threadShouldExit(); ++t)
+            {
+                if (! pistaConClips (t)) continue;
+                auto f = uniqueFile (base + "_" + T ("PISTA") + juce::String (t + 1) + extension());
+                const auto r = writeRender (f, kNumPads + t, totalLen, gain, pasadas);
+                if (r == Escrita)   ++written;
+                else if (r == Muda) ++mudas;
+                else if (threadShouldExit())
+                    return;
+                ++pasadas;
+                passDone.store (pasadas, std::memory_order_relaxed);
+                progress.store ((float) pasadas / (float) totalPasses, std::memory_order_relaxed);
+            }
         }
 
         if (threadShouldExit())
@@ -444,6 +466,7 @@ private:
                 off.publishSample (i, pads[(size_t) i]);
 
         off.copyStateFrom (live);
+        off.setMarcadoresEnVivo (false);   // LS4 el fichero llega al final: sin BUCLE ni PAUSA
         //  Sin el limitador de seguridad: es de la escucha. Impreso aqui, el
         //  bufferPeak de abajo medía un pico que el limitador acababa de
         //  aplastar, nunca lo encontraba por encima de 1.0 y anunciaba que no
@@ -458,6 +481,9 @@ private:
             off.clearSolo();
             for (int i = 0; i < kNumPads; ++i)
                 off.setPadMute (i, i != soloPad);
+            //  LS2 la pista de un pad no lleva clips; la de audio, solo los suyos.
+            if (soloPad >= kNumPads) off.copiaClipsDe (live, soloPad - kNumPads);
+            else                     off.publicaClips (nullptr, 0);
         }
 
         off.setPlaying (true);
@@ -568,6 +594,7 @@ private:
         const bool maestro = (soloPad < 0);
         const juce::String titulo = maestro
             ? base
+            : soloPad >= kNumPads ? T ("PISTA") + " " + juce::String (soloPad - kNumPads + 1)
             : (padNames[(size_t) soloPad].isNotEmpty() ? padNames[(size_t) soloPad]
                                                        : ("pad " + juce::String (soloPad + 1)));
 
@@ -759,4 +786,115 @@ private:
     std::atomic<bool>        roto { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RebotVivo)
+};
+
+
+// ============================================================================
+//  LS2 RindeTramo — A AUDIO: un tramo de patrones de la cancion, a un buffer.
+//
+//  El mismo motor clonado que `Exporter`, sin fichero: los bloques del tramo
+//  llegan ya recortados y corridos al compas 0, los clips se quitan (solo
+//  suenan patrones) y la cola de los efectos entra en la toma, recortada
+//  donde baja de -80 dB.
+// ============================================================================
+class RindeTramo : public juce::Thread
+{
+public:
+    RindeTramo (AudioEngine& motorVivo, Exporter::PadSamples muestras,
+                std::vector<AudioEngine::BloqueSong> tramo, int compases,
+                juce::int64 saltar, juce::int64 cuerpo, double sr)
+        : juce::Thread ("zati-tramo"),
+          vivo (motorVivo), pads (std::move (muestras)), bloques (std::move (tramo)),
+          nCompases (compases), salta (saltar), cuerpoN (cuerpo),
+          sampleRate (sr > 0.0 ? sr : 44100.0) {}
+
+    ~RindeTramo() override { stopThread (4000); }
+
+    std::atomic<bool>  hecho    { false };
+    std::atomic<float> progreso { 0.0f };
+    //  Escrito antes de soltar `hecho`.
+    SampleBuffer::Ptr  resultado;
+
+    void run() override
+    {
+        auto motor = std::make_unique<AudioEngine>();
+        auto& off = *motor;
+        off.setOffline (true);
+        off.prepareToPlay (sampleRate, kBloque);
+        for (int i = 0; i < Exporter::kNumPads; ++i)
+            if (pads[(size_t) i] != nullptr) off.publishSample (i, pads[(size_t) i]);
+        off.copyStateFrom (vivo);
+        off.setSafetyLimiter (false);
+        off.publicaClips (nullptr, 0);
+        off.clearSongLoop();
+        off.setSongMode (true);
+        off.setSongLength (nCompases);
+        off.publicaBloques (bloques.data(), (int) bloques.size());
+        off.publicaMarcadores (nullptr, 0);   // LS4 el tramo suena tal cual
+
+        const auto colaN = (juce::int64) std::llround (juce::jmax (Exporter::kColaMin,
+                                                                   off.getColaSeconds()) * sampleRate);
+        const auto largo = cuerpoN + colaN;
+        auto* sb = new SampleBuffer();
+        sb->sourceSampleRate = sampleRate;
+        sb->buffer.setSize (2, (int) largo);
+        sb->buffer.clear();
+        SampleBuffer::Ptr dueno (sb);
+
+        juce::AudioBuffer<float> trozo (2, kBloque);
+        const auto finCuerpo = salta + cuerpoN, total = salta + largo;
+        bool parado = false;
+        off.setPlaying (true);
+        for (juce::int64 pos = 0; pos < total; pos += kBloque)
+        {
+            if (threadShouldExit()) { hecho.store (true, std::memory_order_release); return; }
+            const int n = (int) juce::jmin ((juce::int64) kBloque, total - pos);
+            trozo.clear();
+            if (! parado && pos + n > finCuerpo)
+            {
+                const int n1 = (int) juce::jmax ((juce::int64) 0, finCuerpo - pos);
+                if (n1 > 0) off.renderNextBlock (trozo, 0, n1);
+                off.setPlaying (false);
+                parado = true;
+                if (n > n1) off.renderNextBlock (trozo, n1, n - n1);
+            }
+            else
+                off.renderNextBlock (trozo, 0, n);
+
+            const auto desde = juce::jmax (pos, salta);
+            if (desde < pos + n)
+                for (int ch = 0; ch < 2; ++ch)
+                    sb->buffer.copyFrom (ch, (int) (desde - salta), trozo, ch,
+                                         (int) (desde - pos), (int) (pos + n - desde));
+            off.collectRetiredSamples();
+            progreso.store ((float) pos / (float) juce::jmax ((juce::int64) 1, total),
+                            std::memory_order_relaxed);
+        }
+
+        //  La cola se queda hasta donde suena, con 20 ms de bajada.
+        int fin = (int) cuerpoN;
+        for (int i = (int) largo - 1; i >= (int) cuerpoN; --i)
+            if (std::abs (sb->buffer.getSample (0, i)) > 1.0e-4f
+                || std::abs (sb->buffer.getSample (1, i)) > 1.0e-4f) { fin = i + 1; break; }
+        const int baja = juce::jmin ((int) (Exporter::kFundido * sampleRate), (int) largo - fin);
+        fin += baja;
+        if (fin > (int) cuerpoN)
+            for (int ch = 0; ch < 2; ++ch)
+                sb->buffer.applyGainRamp (ch, fin - baja, baja, 1.0f, 0.0f);
+        sb->buffer.setSize (2, juce::jmax (1, fin), true);
+
+        resultado = dueno;
+        hecho.store (true, std::memory_order_release);
+    }
+
+private:
+    static constexpr int kBloque = 512;
+    AudioEngine&                         vivo;
+    Exporter::PadSamples                 pads;
+    std::vector<AudioEngine::BloqueSong> bloques;
+    int                                  nCompases;
+    juce::int64                          salta, cuerpoN;
+    double                               sampleRate;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RindeTramo)
 };

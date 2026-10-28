@@ -183,6 +183,46 @@ def main():
     if e.get ("compartida") != 0:
         malas.append ("la toma del micro se recorta despues de publicarla al hilo de audio (%s)" % e.get ("compartida"))
 
+    #  7. LS2 A AUDIO: el tramo de patrones es una toma en su pista, que entra
+    #     en el acto, mide el tramo mas su cola, y los bloques de debajo callan;
+    #     lo que asoma fuera de la banda sigue sonando. Un deshacer lo devuelve.
+    h = f.get (10, {})
+    print ("a audio  tomas %s  pista %s  paso %s/%s  largo %s pasos (cuerpo %s)  pico %s  ataque %s ms  mudos %s  fuera %s  deshacer %s/%s"
+           % (h.get ("hechas"), h.get ("pista"), h.get ("en_paso"), h.get ("esperado_paso"),
+              h.get ("largo_pasos"), h.get ("cuerpo_pasos"), h.get ("pico"), h.get ("ataque_ms"),
+              h.get ("mudos_dentro"), h.get ("sonando_fuera"),
+              h.get ("tomas_tras_deshacer"), h.get ("mudos_tras_deshacer")))
+    if h.get ("hechas") != 1 or h.get ("pista") != 1 or h.get ("en_paso") != h.get ("esperado_paso"):
+        malas.append ("A AUDIO no deja una toma en la pista y el paso de la banda")
+    lp, cp = float (h.get ("largo_pasos", 0)), h.get ("cuerpo_pasos", 99)
+    if not (cp <= lp <= cp + 8):
+        malas.append ("la toma de A AUDIO mide %.2f pasos y el tramo %s" % (lp, cp))
+    if float (h.get ("pico", 0)) < 0.05 or not (0 <= h.get ("ataque_ms", -1) <= 10):
+        malas.append ("la toma de A AUDIO no suena desde su primer paso (pico %s, ataque %s ms)"
+                      % (h.get ("pico"), h.get ("ataque_ms")))
+    if h.get ("mudos_dentro") != 1 or h.get ("sonando_fuera") != 1:
+        malas.append ("A AUDIO no calla lo de la banda o calla lo de fuera (%s, %s)"
+                      % (h.get ("mudos_dentro"), h.get ("sonando_fuera")))
+    if h.get ("tomas_tras_deshacer") != 0 or h.get ("mudos_tras_deshacer") != 0:
+        malas.append ("deshacer A AUDIO no lo devuelve todo")
+
+    #  8. LS4 MARCAS: el toque recorre MARCA..PAUSA y la quita, INICIO arranca
+    #     la cancion en su compas, hay uno solo, se pinta, se guarda y se deshace.
+    m = f.get (11, {})
+    print ("marcas   ciclo %s  visible %s  texto %s  pintadas %s  arranca %s  inicios %s  vuelta [%s]  deshecho %s"
+           % (m.get ("ciclo"), m.get ("visible"), m.get ("texto"), m.get ("pintados"), m.get ("arranca"),
+              m.get ("inicios"), m.get ("vuelta"), m.get ("deshecho")))
+    if m.get ("ciclo") != "01234x" or m.get ("texto") != "INICIO":
+        malas.append ("el toque de MARCA no recorre MARCA, INICIO, BUCLE, SALTO, PAUSA y fuera (%s)" % m.get ("ciclo"))
+    if m.get ("visible") != 1 or m.get ("pintados") != 1:
+        malas.append ("la marca no se ve: tapa %s, banderas pintadas %s" % (m.get ("visible"), m.get ("pintados")))
+    if m.get ("arranca") != 2:
+        malas.append ("la cancion no arranca en el INICIO del compas 2 (arranca en %s)" % m.get ("arranca"))
+    if m.get ("inicios") != 1 or m.get ("vuelta") != "0:1 2:0":
+        malas.append ("INICIO no es unico o no vuelve del guardado (%s, [%s])" % (m.get ("inicios"), m.get ("vuelta")))
+    if m.get ("deshecho") != 0:
+        malas.append ("deshacer la marca no la devuelve a MARCA (%s)" % m.get ("deshecho"))
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)

@@ -623,6 +623,14 @@ private:
     //  se separan, que es lo que ya costo sacar `repartePorBanco` de dentro.
     void pianoCortaSel();
     void pianoBorraSel();
+    void pianoLegatoSel();
+    void pianoFlamSel();
+    bool pianoSelConFlam() const;
+    void pianoMarcaSel (int marca);
+    bool pianoSelConMarca (int marca) const;
+    void pianoArpCambia (int que);   // LS5 0 modo, 1 div, 2 octavas
+    void ponTextoArp();
+    bool arpVisible() const;
 
     //  EL PORTAPAPELES DE NOTAS, RELATIVO a la esquina de arriba a la
     //  izquierda de lo copiado: pegar tiene que caer donde toques y no donde se
@@ -634,7 +642,10 @@ private:
     //  LA TIRA DE ACCIONES DE LA SELECCION. Ver el reparto en
     //  MainComponent_Layout.cpp: solo existe con notas seleccionadas.
     Boton pianoSelBtn { "SEL" }, pianoCopiaBtn { "COPIAR" }, pianoPegaBtn { "PEGAR" },
-                     pianoCorteSelBtn { "CORTE" }, pianoBorraSelBtn { "BORRAR" };
+                     pianoCorteSelBtn { "CORTE" }, pianoBorraSelBtn { "BORRAR" },
+                     pianoLegatoBtn { "LEGATO" }, pianoFlamBtn { "FLAM" };   // LS3
+    Boton pianoGlideBtn { "GLIDE" };   // LS6
+    Boton pianoArpBtn { "ARP" }, pianoArpDivBtn { "x1" }, pianoArpOctBtn { "1 OCT" };   // LS5
 
     //  CUANTAS COLUMNAS SE VEN. Ocho es medio compas con celdas del doble de
     //  ancho -para escribir en 1/32-, dieciseis es el compas de siempre y
@@ -5152,13 +5163,25 @@ private:
     //  el filo en vez de irse entero. Sin esto, borrar dos compases de un
     //  bloque de ocho se lleva los ocho, que es justo lo que una banda existe
     //  para no hacer. La usan BORRAR, CORTE y el carvado de PEGAR.
-    void vaciaBanda (int lane0, int lane1, int paso0, int paso1);
+    void vaciaBanda (int lane0, int lane1, int paso0, int paso1, bool soloBloques = false);
+    PortaCancion recortaBanda (const Playlist::Sel& sel) const;
+    //  LS2 A AUDIO: el tramo de patrones a una toma, y los bloques mudos.
+    void songAudioSel();
+    void songMarcadorSel();   // LS4
+    int  marcadorEn (int pasoAbs) const;
+    static juce::String nombreMarcador (int tipo);
+    void ponTextoMarcador();
+    std::vector<AudioEngine::MarcadorSong> marcadores;
+    void acabaAudioSel();
+    std::unique_ptr<RindeTramo> rindeTramo;
+    Playlist::Sel               rindeSel;
 
     //  LA TIRA DE ACCIONES DE LA BANDA. Ver el reparto en
     //  MainComponent_Layout.cpp: solo existe con seleccion, y PEGAR solo con
     //  portapapeles. Calco de la tira del piano.
     Boton songCopiaBtn { "COPIAR" }, songPegaBtn { "PEGAR" },
-                     songCorteSelBtn { "CORTE" }, songBorraSelBtn { "BORRAR" };
+                     songCorteSelBtn { "CORTE" }, songBorraSelBtn { "BORRAR" },
+                     songAudioSelBtn { "A AUDIO" }, songMarcadorBtn { "MARCA" };
 
     //  LA VISTA DE ANTES DE LA LUPA. Un toque sin arrastre vuelve a donde
     //  estabas: sin eso, acercar un tramo es un viaje de ida y volver pide
