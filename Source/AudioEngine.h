@@ -1444,7 +1444,7 @@ public:
     void setStepNudge (int patternIdx, int step, int pad, int centesimas) noexcept;
     int  getStepNudge (int patternIdx, int step, int pad) const noexcept;
 
-    //  LS3 banderas por paso: flam (golpe de gracia en la rejilla, el bueno kFlamMs despues, como la 909).
+    //  LS3 banderas por paso: flam (golpe de gracia en la rejilla, el bueno kFlamMs despues).
     static constexpr int kMarcaFlam = 1, kMarcaGlide = 2;
     static constexpr double kFlamMs = 22.0;
     static constexpr double kGlideMs = 70.0;   // LS6 lo que tarda en llegar, o el largo de la nota si es menos
