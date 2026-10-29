@@ -3046,15 +3046,14 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
             //  Y se gobierna lo que se PUBLICA, no el reloj: el reloj tiene que
             //  correr siempre o los canales dejan de ir sincronizados, que es
             //  justo lo que esta tanda vino a arreglar.
+            //  efectos#fasemod: cada uno se mira al llegarle su turno; la foto de antes no veia lo que el de delante le pasaba y su punto se quedaba en cero.
+            auto entra = [&] (int f) noexcept
+            {
+                return live (f) && fxBus[busIdx (f)].getMagnitude (startSample, numSamples) > 1.0e-5f;
+            };
             bool modEntra[kNumModEnvio] = {};
             for (int m = 0; m < kNumModEnvio; ++m)
-                modEntra[(size_t) m] = live (modIdx (m))
-                    && fxBus[busIdx (modIdx (m))].getMagnitude (startSample, numSamples) > 1.0e-5f;
-            const bool trmEntra = live (kFxTrm)
-                    && fxBus[busIdx (kFxTrm)].getMagnitude (startSample, numSamples) > 1.0e-5f;
-
-            for (int m = 0; m < kNumModEnvio; ++m)
-                if (! modEntra[(size_t) m])
+                if (! live (modIdx (m)))
                     modFase[(size_t) canal][(size_t) m].store (0.0f, std::memory_order_relaxed);
             // --- CHO: retardo corto barrido, sin realimentacion. -----------
             {
@@ -3072,6 +3071,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
 
                 if (ahora)
                 {
+                    modEntra[(size_t) m] = entra (kFxCho);
                     auto fm = pasoMod (canal, kFxCho);
                     //  Centro y recorrido en MILISEGUNDOS y convertidos aqui:
                     //  doce milisegundos es un coro en cualquier aparato, y en
@@ -3131,6 +3131,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
 
                 if (ahora)
                 {
+                    modEntra[(size_t) m] = entra (kFxFla);
                     auto fm = pasoMod (canal, kFxFla);
                     //  De 0.5 a 6 ms: por debajo de un milisegundo la primera
                     //  muesca se va por encima de la banda y el peine deja de
@@ -3188,6 +3189,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
 
                 if (ahora)
                 {
+                    modEntra[(size_t) m] = entra (kFxPha);
                     auto fm = pasoMod (canal, kFxPha);
                     //  p4 BASE y p5 RANGO (tanda 32): eran 300 Hz y x8.
                     const float phaBase  = juce::jlimit (50.0f, 2000.0f, P (kFxPha, 4));
@@ -3232,6 +3234,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  Y AL CALLARSE, LA FASE VUELVE A CERO, igual que los tres de
                 //  arriba: sin esto el punto del visor se queda parado DONDE LA
                 //  MUSICA LO DEJO, que es a media curva sin nada pasando.
+                const bool trmEntra = entra (kFxTrm);
                 if (! trmEntra)
                     I.trmFase.store (0.0f, std::memory_order_relaxed);
                 {

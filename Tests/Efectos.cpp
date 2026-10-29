@@ -985,6 +985,42 @@ int main (int argc, char** argv)
         if (orden > kApagadoMax) falla ("el canal 21 manda distinto que el 2 a la misma sala: resto %.1f dB", orden);
         if (compartida > kApagadoMax) falla ("dos canales en RETORNO A no son una sala compartida: resto %.1f dB", compartida);
     }
+    {
+        //  efectos#fasemod: dos de CHO, FLA, PHA y TRM en la misma cadena; el punto del visor de cada uno tiene que moverse con señal.
+        constexpr int kMod[] = { AudioEngine::kFxCho, AudioEngine::kFxFla, AudioEngine::kFxPha, AudioEngine::kFxTrm };
+        int quietos = 0, parejas = 0;
+        for (int a : kMod)
+            for (int b : kMod)
+            {
+                if (a == b) continue;
+                auto e = monta (-1, ruido (0.25f), 0.0f);
+                for (int f : { a, b }) { e->setCanalSend (kCanal, f, 1.0f); e->setFxParam (kCanal, f, 2, 1.0f); }
+                e->postNoteOn (0, 1.0f);
+                juce::AudioBuffer<float> blk (2, kBs);
+                int vistos[2] = {};
+                float antes[2] = { -2.0f, -2.0f };
+                for (int k = 0; k < 375; ++k)
+                {
+                    blk.clear(); e->renderNextBlock (blk, 0, kBs);
+                    if (k < 40) continue;
+                    for (int j = 0; j < 2; ++j)
+                    {
+                        const float ph = e->getLfoFase (kCanal, j == 0 ? a : b);
+                        if (ph > 0.0f && ph != antes[j]) ++vistos[j];
+                        antes[j] = ph;
+                    }
+                }
+                ++parejas;
+                for (int j = 0; j < 2; ++j)
+                    if (vistos[j] < 100)
+                    {
+                        ++quietos;
+                        falla ("%s con %s en la cadena: el punto de %s se movio %d de 335 bloques con señal",
+                               kMandos[a].nombre, kMandos[b].nombre, kMandos[j == 0 ? a : b].nombre, vistos[j]);
+                    }
+            }
+        std::printf ("FASEMOD  parejas %d  puntos quietos con señal %d\n", parejas, quietos);
+    }
     if (std::getenv ("ZATI_FX_APAGADO")) return fallos == 0 ? 0 : 1;
     std::printf ("%-4s %9s %8s %8s %8s %9s %7s %9s %7s %7s\n",
                  "fx", "pliegue", "en Hz", "mover1", "mover2", "encender", "nivel", "cola", "trino", "preset");
