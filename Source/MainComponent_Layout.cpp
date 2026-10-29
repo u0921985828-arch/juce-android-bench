@@ -2085,10 +2085,17 @@ void MainComponent::maquetaMandos()
         const int filas = juce::jmax (1, (n + porFila - 1) / porFila);
         const bool sync = ! mandosSyncBtns.isEmpty() && mandosSyncBtns[0]->isVisible();
         const bool pres = mandosPresetsBtn.isVisible();
+        juce::TextButton* chips[(int) std::size (AudioEngine::kFigurasSync)];
+        const int nc = juce::jmin ((int) std::size (chips), mandosSyncBtns.size());
+        for (int i = 0; i < nc; ++i) chips[i] = mandosSyncBtns[i];
+        //  SQUEEZE: las siete figuras no caben en una fila a 280 px; entonces dos, 4 + 3.
+        const auto cabeSync = [&] (int w) { return filaSinApretar (w, chips, nc); };
+        const bool syncDos = sync && ! cabeSync (mandosSheet.getWidth() - 2 * Metrics::margenFichaX);
         const int quiere = Ficha::cromo
                            + Metrics::btn + Metrics::xs + Metrics::bandaSubtitulo + Metrics::sm
                            + filas * ZatiLookAndFeel::kKnobRow + (filas - 1) * Metrics::xs
                            + (sync ? Metrics::sm + Metrics::btn : 0)
+                           + (syncDos ? Metrics::xs + Metrics::btn : 0)
                            + (pres ? Metrics::sm + Metrics::btn : 0);
         auto inner = sheetFromBottom (mandosSheet, quiere);
 
@@ -2117,10 +2124,16 @@ void MainComponent::maquetaMandos()
         else mandosPresetsBtn.setBounds ({});
         if (sync)
         {
-            juce::TextButton* chips[(int) std::size (AudioEngine::kFigurasSync)];
-            const int nc = juce::jmin ((int) std::size (chips), mandosSyncBtns.size());
-            for (int i = 0; i < nc; ++i) chips[i] = mandosSyncBtns[i];
-            layoutModuleBar (inner.removeFromBottom (Metrics::btn), chips, 0, nc);
+            if (cabeSync (inner.getWidth()))
+                layoutModuleBar (inner.removeFromBottom (Metrics::btn), chips, 0, nc);
+            else
+            {
+                const int arriba = (nc + 1) / 2;
+                auto f2 = inner.removeFromBottom (Metrics::btn);
+                inner.removeFromBottom (Metrics::xs);
+                layoutModuleBar (inner.removeFromBottom (Metrics::btn), chips, 0, arriba);
+                layoutModuleBar (f2, chips + arriba, 0, nc - arriba);
+            }
             inner.removeFromBottom (Metrics::sm);
         }
         else for (auto* b : mandosSyncBtns) b->setBounds ({});
@@ -4928,7 +4941,7 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
         //  cuenta aqui porque de ella depende la altura que se pide, y pedir
         //  sin ella y colocarla abajo es como un control se queda con altura
         //  cero -el fallo que esta misma ficha ya pago con la fila de paginas-.
-        const int filasSel = songSel.activa() ? Metrics::hit + Metrics::halfGap : 0;
+        int filasSel = songSel.activa() ? Metrics::hit + Metrics::halfGap : 0;
         int filasModo = Metrics::hit;
         //  Y la de herramientas puede ser dos por lo mismo: son cinco tapas y
         //  en arabe INSERTAR y QUITAR piden bastante mas ancho que en ingles.
@@ -5066,6 +5079,16 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
         //  herramientas de esta misma ficha, contado por tercera vez.
         const int anchoPaleta = songDosCol ? colUtil - 2 * Metrics::margenFichaX
                                          : anchoTarjetaInterior (safeArea().getWidth());
+        //  CELDA: la tira de la banda se cuenta con las filas que de verdad pone (1, 4+4 o 3+3+2), no con una.
+        if (songSel.activa())
+        {
+            juce::TextButton* ssW[8] = { &songCopiaBtn, &songCorteSelBtn, &songPegaBtn, &songBorraSelBtn,
+                                         &songAudioSelBtn, &songMarcadorBtn, &songAutoSelBtn, &songAutoLapizBtn };
+            const int w = anchoPaleta - 2 * Metrics::panelSangria;
+            const int n = moduleBarFits (w, ssW, 8) ? 1
+                        : (w >= 260 || (moduleBarFits (w, ssW, 4) && moduleBarFits (w, ssW + 4, 4))) ? 2 : 3;
+            filasSel = n * Metrics::hit + (n - 1) * Metrics::sm + Metrics::halfGap;
+        }
 
         //  LA FILA DE PAGINAS -1, 9, 17...- PASA A SER UNA BARRA QUE SE ARRASTRA.
         //
@@ -5191,6 +5214,14 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
         //  herramientas. Cuarenta px, y la pagina queda en 350.
         songModosAqui = songUtilAqui
                      || (pideSong (0, filasModo, laneMin) <= topeCancion);
+        //  TARJETA: si ni asi cabe la tira de la banda en varias filas, va en una (apretada) antes que pasarse del tope.
+        songSelUnaFila = false;
+        if (filasSel > Metrics::hit + Metrics::halfGap
+            && pideSong (songUtilAqui ? filasUtil : 0, songModosAqui ? filasModo : 0, laneMin) > topeCancion)
+        {
+            filasSel = Metrics::hit + Metrics::halfGap;
+            songSelUnaFila = true;
+        }
         //  Y AQUI SE REPARTE LO QUE SOBRA. Se pide la ficha con el carril en
         //  su SUELO -que es lo que el resto de la maqueta necesita para caber-
         //  y lo que quede hasta el tope de la tarjeta se lo llevan los cuatro
@@ -5583,7 +5614,9 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
             else
             {
                 const int gSel = abreSong();
-                if (moduleBarFits (panel.getWidth(), ss, 8))   // LS8 PP3
+                //  CERO: apaisado bajo la columna no tiene alto para dos filas; una apretada antes que tapas de alto cero.
+                if (moduleBarFits (panel.getWidth(), ss, 8) || songSelUnaFila
+                    || panel.getHeight() < 2 * Metrics::hit + Metrics::sm)   // LS8 PP3
                     layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 8);
                 else if (panel.getWidth() >= 260
                          || (moduleBarFits (panel.getWidth(), ss, 4) && moduleBarFits (panel.getWidth(), ss + 4, 4)))
@@ -6614,7 +6647,8 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             //  Solo de pie: apaisado las tapas van a su columna y no hay fila
             //  que pedir, que es la misma razon por la que `filasTapas` vale
             //  cero ahi.
-            const int filasTapas = wideFace ? 0 : (moduleBarFits (anchoDeLaTarjeta, pb5, 12) ? 1 : 2);
+            int c1 = 0, c2 = 0;   // SQUEEZE
+            const int filasTapas = wideFace ? 0 : reparteEnFilas (anchoDeLaTarjeta, pb5, 12, c1, c2);
             filasTapasPiano = filasTapas;
             int filaAcciones = (! wideFace && ! pianoSel.empty()) ? 1 : 0;
             if (filaAcciones > 0)   // LS7 la tira partida en dos son dos filas, y se piden
@@ -7107,8 +7141,7 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                 //  con eso la columna se queda estrecha, quien se cae es una
                 //  COLUMNA de paso, que la ventana horizontal ya sabe
                 //  recorrer.
-                if (pianoGrid.getFilas() < pianoGrid.getFilasPedidas())
-                    pianoHayBarraVert = true;
+                //  CELDA: ya no se fuerza; OCTAVA salta las filas que se ven y alcanza todos los tonos, y forzarla dejaba la columna en 10 px a 280.
             }
             pianoOctDownBtn.setVisible (! pianoHayBarraVert);
             pianoOctUpBtn  .setVisible (! pianoHayBarraVert);
@@ -7193,10 +7226,20 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             //  Con dos, una tapa queda en 110 px y "OCTAVA -" pide 90 con su
             //  aire; con tres, en 72, y por eso el bucle de arriba se para en
             //  cuanto la columna baja del dedo.
-            const int anchoCol   = columnas > 1
-                                     ? (sideCol - (columnas - 1) * Metrics::gap) / columnas
-                                     : sideCol;
-            const int anchoLado  = anchoCol * columnas + (columnas - 1) * Metrics::gap;
+            //  TRUNC: y nunca mas estrecha que el rotulo mas largo; ese ancho lo paga la rejilla, que girada sobra.
+            int pideCol = 0;
+            {
+                const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
+                for (auto* b2 : pbCol)
+                    if (b2->isVisible())
+                        pideCol = juce::jmax (pideCol, (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, b2->getButtonText()))
+                                                       + 2 * Metrics::aireTapa + 2 * Metrics::margenTapa + 2);
+            }
+            const int anchoCol   = juce::jmax (pideCol, columnas > 1
+                                                          ? (sideCol - (columnas - 1) * Metrics::gap) / columnas
+                                                          : sideCol);
+            //  TRUNC: mas la sangria del panel, que se la quita `side` y la pagaba la ultima columna.
+            const int anchoLado  = anchoCol * columnas + (columnas - 1) * Metrics::gap + 2 * Metrics::panelSangria;
 
             if (wideFace && inner.getHeight() >= altoDe (porColumna)
                          && inner.getWidth() > anchoLado + Metrics::hit * 4)
@@ -7321,15 +7364,19 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
                     //  desde el reparto equilibrado hacia abajo y se coge el
                     //  primero en el que caben LAS DOS filas: preguntar por una
                     //  sola es como una fila corta empuja a la otra.
-                    int arriba = (nb + 1) / 2;
-                    for (int k = arriba; k >= 2; --k)
-                        if (moduleBarFits (tapas.getWidth(), pb, k)
-                            && moduleBarFits (tapas.getWidth(), pb + k, nb - k))
-                        { arriba = k; break; }
+                    int arriba = 0, medio = 0;
+                    const int nFilas = reparteEnFilas (tapas.getWidth(), pb, nb, arriba, medio);   // SQUEEZE
                     layoutModuleBar (tapas, pb, 0, arriba);
                     auto fila2 = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
                     inner.removeFromBottom (Metrics::xs);
-                    layoutModuleBar (fila2, pb + arriba, 0, nb - arriba);
+                    layoutModuleBar (fila2, pb + arriba, 0, (nFilas == 3 ? medio : nb) - arriba);
+                    if (nFilas == 3)
+                    {
+                        auto fila3 = inner.removeFromBottom (Metrics::hit).reduced (Metrics::panelSangria, 0);
+                        inner.removeFromBottom (Metrics::xs);
+                        layoutModuleBar (fila3, pb + medio, 0, nb - medio);
+                        fila2 = fila2.getUnion (fila3);
+                    }
                     //  DOS FILAS Y UN SOLO PANEL. Son dos preguntas -arriba lo
                     //  que mueve la VISTA, abajo lo que toca las NOTAS- y aun
                     //  asi no pueden ser dos paneles: entre las dos filas hay
@@ -7431,6 +7478,13 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             }
 
             pianoGrid.setBounds (inner);
+            //  CELDA: si la maqueta dio un par de px menos de lo que conto `wanted`, manda lo colocado.
+            const int cabenFilas = (inner.getHeight() - PianoRoll::kRegla) / PianoRoll::kAltoMin;
+            if (cabenFilas >= 1 && cabenFilas < pianoGrid.getFilas())
+            {
+                pianoGrid.acota (cabenFilas);
+                pianoBase = juce::jlimit (-24, pianoGrid.baseMax(), pianoBase);
+            }
         }
         else if (onGrid)
         {
@@ -8443,9 +8497,19 @@ void MainComponent::maquetaTour()
         //  Y si aun asi se solapan -un objetivo que ocupa media pantalla-, manda
         //  el texto: sin leerlo el foco no explica nada.
         {
-            auto row = tourBotonera.reduced (Metrics::margenFichaX, Metrics::sm);
+            //  MARCO: abajo el marco de ficha; el alto no crece para no tapar lo que se senala (paso 15, RACK).
+            auto row = tourBotonera.reduced (Metrics::margenFichaX, 0)
+                                   .withTrimmedTop (2 * Metrics::sm - Metrics::margenFichaY)
+                                   .withTrimmedBottom (Metrics::margenFichaY);
             juce::TextButton* tb[3] = { &tourSkipBtn, &tourBackBtn, &tourNextBtn };
             layoutModuleBar (row, tb, 0, 3);
+            //  FILA: sin SALTAR su hueco queda a proposito (showTour); la fila de las dos que quedan empieza tras el.
+            if (! tourSkipBtn.isVisible() && ! UiAudit::filas.empty())
+            {
+                UiAudit::filas.pop_back();
+                UiAudit::fila (row.withLeft (tourBackBtn.getX()),
+                               tourBackBtn.getBounds().getUnion (tourNextBtn.getBounds()));
+            }
         }
         auto inner = tourDock.reduced (Metrics::margenFichaX, Metrics::margenFichaY);
         inner.removeFromTop (Metrics::bandaTitulo + Metrics::sm);      // pintado: titulo y puntos

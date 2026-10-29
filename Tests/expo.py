@@ -1208,6 +1208,11 @@ def judge_marco(rows, size, lang, sheet):
             #  no significa nada.
             if r["w"] >= t["w"] or r["h"] >= t["h"]:
                 continue
+            #  Lo que cae entero fuera de ESTA tarjeta no es suyo: la guia lleva
+            #  dos -muelle y botonera- de la misma capa, y cada una se juzga sola.
+            if (r["x"] + r["w"] <= t["x"] or r["x"] >= t["x"] + t["w"]
+                    or r["y"] + r["h"] <= t["y"] or r["y"] >= t["y"] + t["h"]):
+                continue
             for lado, v, marco in (("izq", r["x"] - x0, t["marcoX"]),
                                    ("der", x1 - (r["x"] + r["w"]), t["marcoX"]),
                                    ("arr", r["y"] - y0, t["marcoY"]),

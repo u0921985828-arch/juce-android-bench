@@ -5119,8 +5119,9 @@ void MainComponent::cableaPiano()
         //  de +12 dibujaria hasta +36 y las doce de arriba escribirian notas que
         //  setStepNote recorta a +24. Doce filas que mienten, que es el fallo
         //  que ya tuvo esta pagina cuando ensenaba veinticinco siempre.
-        pianoOctDownBtn.onClick = [this] { pianoBase = juce::jmax (-24, pianoBase - 12); refreshPiano(); };
-        pianoOctUpBtn.onClick   = [this] { pianoBase = juce::jmin (pianoGrid.baseMax(), pianoBase + 12); refreshPiano(); };
+        //  CELDA: con menos de doce filas el salto es de las que se ven, y asi ningun semitono queda fuera.
+        pianoOctDownBtn.onClick = [this] { pianoBase = juce::jmax (-24, pianoBase - juce::jmin (12, pianoGrid.getFilas())); refreshPiano(); };
+        pianoOctUpBtn.onClick   = [this] { pianoBase = juce::jmin (pianoGrid.baseMax(), pianoBase + juce::jmin (12, pianoGrid.getFilas())); refreshPiano(); };
         pianoClearBtn.onClick   = [this]
         {
             if (selectedPad < 0) return;
@@ -9772,6 +9773,52 @@ bool MainComponent::moduleBarFits (int rowWidth, juce::TextButton** mb, int coun
         total += (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()))
                + kChrome;
     return total <= rowWidth;
+}
+
+//  SQUEEZE: ninguna tapa queda con menos letra de la que pide, con el reparto de layoutModuleBar (rotulo + 2 sm).
+//  Con holgura: la tapa dibuja en `capaDe` (2 px por lado menos) y con letra de 11.4, no 11 (+4 %).
+bool MainComponent::filaSinApretar (int rowWidth, juce::TextButton** mb, int count) const
+{
+    const auto capFont = ZatiColours::monoFont (11.0f, true).withExtraKerningFactor (0.06f);
+    const int n = juce::jlimit (1, 12, count);
+    int t[12] {}, total = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        t[i] = (int) std::ceil (juce::GlyphArrangement::getStringWidth (capFont, mb[i]->getButtonText()));
+        total += t[i] + 2 * Metrics::sm;
+    }
+    for (int i = 0; i < n; ++i)
+        if ((juce::int64) (rowWidth + 2 * Metrics::aireTapa) * (t[i] + 2 * Metrics::sm) / juce::jmax (1, total)
+              - 2 * Metrics::aireTapa - 2 * Metrics::margenTapa - 4 < t[i] + t[i] / 25)
+            return false;
+    return true;
+}
+
+//  SQUEEZE: una, dos o tres filas; devuelve cuantas y donde se corta (k1, k2). Dos con el aire completo si
+//  se puede, si no dos sin apretar, si no tres sin apretar; si nada sirve, dos a mitades como antes.
+int MainComponent::reparteEnFilas (int rowWidth, juce::TextButton** mb, int count, int& k1, int& k2) const
+{
+    k1 = k2 = count;
+    if (moduleBarFits (rowWidth, mb, count)) return 1;
+    const int mitad = (count + 1) / 2;
+    for (int k = mitad; k >= 2; --k)
+        if (moduleBarFits (rowWidth, mb, k) && moduleBarFits (rowWidth, mb + k, count - k)) { k1 = k; return 2; }
+    for (int d = 0; d < count; ++d)
+        for (int k : { mitad - d, mitad + d })
+            if (k >= 1 && k < count
+                && filaSinApretar (rowWidth, mb, k) && filaSinApretar (rowWidth, mb + k, count - k)) { k1 = k; return 2; }
+    int mejor = count + 1;
+    for (int a = 1; a < count - 1; ++a)
+        for (int b = a + 1; b < count; ++b)
+        {
+            const int peor = juce::jmax (a, b - a, count - b);
+            if (peor < mejor && filaSinApretar (rowWidth, mb, a) && filaSinApretar (rowWidth, mb + a, b - a)
+                             && filaSinApretar (rowWidth, mb + b, count - b))
+            { mejor = peor; k1 = a; k2 = b; }
+        }
+    if (mejor <= count) return 3;
+    k1 = mitad; k2 = count;
+    return 2;
 }
 
 //  UNA FILA, UN TRATO: los iconos de una fila salen todos o no sale ninguno.

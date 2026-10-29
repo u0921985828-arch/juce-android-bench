@@ -566,6 +566,7 @@ private:
     //  no con uno inventado en el sitio - que es el fallo que ya costo la altura
     //  de la fila de herramientas de CANCION.
     int   filasTapasPiano = 1;
+    bool  songSelUnaFila = false;   // TARJETA
     //  El suelo de la fila de una nota. Ver Tests/expo.py: MIN_NOTE.
     static constexpr int kSueloNota = 16;
     void pianoStepPad (int dir);
@@ -2877,6 +2878,8 @@ private:
     void refreshXyPad();
     void paintXySheetContent (juce::Graphics& g);
     bool moduleBarFits (int rowWidth, juce::TextButton** mb, int count) const;
+    bool filaSinApretar (int rowWidth, juce::TextButton** mb, int count) const;   // SQUEEZE
+    int  reparteEnFilas (int rowWidth, juce::TextButton** mb, int count, int& k1, int& k2) const;   // SQUEEZE
     //  Una fila, un trato: los iconos de una fila salen todos o ninguno.
     void filaDeIconos (juce::TextButton** fila, int n);
     void layoutModuleBar (juce::Rectangle<int> row, juce::TextButton** mb, int vInset, int count = 6);
