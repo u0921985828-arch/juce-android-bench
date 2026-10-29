@@ -430,10 +430,10 @@ public:
     //  mando y el motor no lo lee.
     static constexpr float kFxDefExtra[kNumFx][2] =
     {
-        { kSinMando, kSinMando },   // FLT
+        {     0.0f, kSinMando },    // FLT  pendiente (0 = 12 dB, 1 = 24 dB)
         { kSinMando, kSinMando },   // HPF
-        { kSinMando, kSinMando },   // DRV
-        {  20000.0f, kSinMando },   // DLY  tono de la realimentacion (Hz, 20000 apagado)
+        {     0.0f, kSinMando },    // DRV  tipo (kDrvSuave..)
+        {  20000.0f,      0.0f  },   // DLY  tono de la realimentacion (Hz, 20000 apagado), tipo (kDlyDigital..)
         { kSinMando, kSinMando },   // BIT
         {     0.0f,      0.0f  },   // REV  tipo (Fdn::Tipo), previo ms
         { kSinMando, kSinMando },   // EQ
@@ -444,7 +444,7 @@ public:
         {    12.0f,      5.0f  },   // CHO  centro ms, recorrido ms
         {    3.25f,     2.75f  },   // FLA  centro ms, recorrido ms
         {   300.0f,      8.0f  },   // PHA  base Hz, rango (veces)
-        { kSinMando, kSinMando },   // TRM
+        {     0.0f, kSinMando },    // TRM  forma (Lfo::kSeno..)
         { kSinMando, kSinMando },   // RNG
         { kSinMando, kSinMando },   // PIT
         { kSinMando, kSinMando },   // WID
@@ -1817,16 +1817,43 @@ public:
     //  ganancia que ENTRA y no por el techo del tanh: `tanh(k)` vale ~1 para
     //  cualquier k util, asi que aquel «makeup» no hacia nada y DRIVE al 70 %
     //  salia tres veces mas alto que el seco.
-    struct Drive { float k, mk; };
+    struct Drive { float k, mk; int tipo; };
     static constexpr float kDrvRef = 0.1f;
-    static Drive driveDe (float drive) noexcept
+    //  efectos#tipos: los cuatro tipos de DRV (p4): SUAVE tanh, VALVULA asimetrica, FUZZ de rodilla dura, ROTO rectificado (octava arriba).
+    enum { kDrvSuave, kDrvValvula, kDrvFuzz, kDrvRoto, kDrvTipos };
+    enum { kDlyDigital, kDlyCinta, kDlyAnalogico, kDlyTipos };   // efectos#tipos: los tres de DLY (p5)
+    static int drvTipoDe (float v) noexcept { return std::isfinite (v) ? juce::jlimit (0, kDrvTipos - 1, (int) std::lround (v)) : 0; }
+    static float curvaDrv (float v, int tipo) noexcept
+    {
+        switch (tipo)
+        {
+            case kDrvValvula: return fastTanh (v + 1.5f) - 0.90514825f;                                  // tanh(1.5): cero en cero
+            case kDrvFuzz:    { const float u = juce::jlimit (-1.0f, 1.0f, 5.0f * v); return u * (1.5f - 0.5f * u * u); }
+            case kDrvRoto:    { const float t = fastTanh (v); return 0.45f * t + 0.9f * std::abs (t); }
+            default:          return fastTanh (v);
+        }
+    }
+    //  efectos#tipos: el valor eficaz sin la continua de un seno de -20 dBFS por la curva; cada tipo sale al nivel de SUAVE.
+    static float rmsDrv (float k, int tipo) noexcept
+    {
+        constexpr int n = 32;
+        float s = 0.0f, s2 = 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            const float y = curvaDrv (k * kDrvRef * 1.41421356f * std::sin (juce::MathConstants<float>::twoPi * ((float) i + 0.5f) / (float) n), tipo);
+            s += y; s2 += y * y;
+        }
+        return std::sqrt (juce::jmax (1.0e-12f, s2 / n - (s / n) * (s / n)));
+    }
+    static Drive driveDe (float drive, int tipo = kDrvSuave) noexcept
     {
         const float d = juce::jlimit (0.0f, 1.0f, drive);
         //  efectos#nivel: `mk` deja a nivel una señal de -20 dBFS RMS (kDrvRef); compensando solo la entrada salia +13 dB.
         const float k = 1.0f + d * 24.0f;
-        return { k, std::sqrt (1.0f + k * k * kDrvRef * kDrvRef) / k };
+        const float mk = std::sqrt (1.0f + k * k * kDrvRef * kDrvRef) / k;
+        return { k, tipo == kDrvSuave ? mk : mk * rmsDrv (k, kDrvSuave) / rmsDrv (k, tipo), tipo };
     }
-    static float saturaDe (float x, Drive dr) noexcept { return fastTanh (dr.k * x) * dr.mk; }
+    static float saturaDe (float x, Drive dr) noexcept { return curvaDrv (dr.k * x, dr.tipo) * dr.mk; }
 
     //  EL PLIEGUE DE FLD, compartido con el VISOR y por la misma razon que
     //  `saturaDe`: el dibujo de una transferencia tiene que ser LA MISMA
@@ -4010,6 +4037,8 @@ private:
     {
         //  FLT: el filtro del barrido bidireccional, paso bajo y paso alto en serie.
         SvfSuave fltLp, fltHp;
+        SvfSuave fltLp2, fltHp2;      // efectos#tipos: la segunda etapa de 24 dB (p4)
+        float fltW24 = -1.0f;
         float smSweep = 0.0f;        // el barrido, suavizado como el resto
         float smReso  = 0.707f;
         float fltA    = 0.0f;        // efectos#flt: cuanto filtro y cuanto seco
@@ -4027,6 +4056,8 @@ private:
         float drvLp[2] { 0.0f, 0.0f };
         float wahG = -1.0f, frmG = -1.0f;   // efectos#nivel
         bool  drvWasActive = false;   // flanco de reactivacion: ver seccion 5b/3
+        int   drvTipo = 0, drvTipoViejo = 0;   // efectos#tipos: el tipo puesto y el que se va fundiendo
+        float drvFunde = 1.0f, drvDc[2] {}, drvDcX[2] {};
 
         //  Y EL SOBREMUESTREO DE LA SATURACION, uno por canal. Ver `Sobre2x.h`:
         //  la sonda de pliegue midio DRV a tope en **-19.8 dB** de contenido no
@@ -4067,6 +4098,8 @@ private:
         //  fase por canal serian ciento veintiocho fases separandose.
         float smTrmProf = 0.0f;
         bool  trmWasActive = false;
+        int   trmForma = 0, trmFormaVieja = 0;   // efectos#tipos: la forma puesta y la que se va fundiendo
+        float trmFunde = 1.0f;
         std::atomic<float> trmFase { 0.0f };
 
         //  CHO y FLA: sus lineas de retardo, del MISMO tipo que la de DLY
@@ -4128,6 +4161,7 @@ private:
         Dinamica::Svf retGrave[kNumFx][2], retAgudo[kNumFx][2];
         float retGrMix[kNumFx] {}, retAgMix[kNumFx] {}, retGrHz[kNumFx] {}, retAgHz[kNumFx] {};   //  efectos#corte: fundido de entrada y salida de cada corte
         float dlyTonoZ[2] = { 0.0f, 0.0f }, pngTonoZ[2] = { 0.0f, 0.0f };
+        float dlyCinta = 0.0f, dlyAnal = 0.0f, dlyWow = 0.0f, dlyColC[2] {}, dlyColA[2] {}, dlyColH[2] {};   // efectos#tipos: pesos de CINTA y ANALOGICO, fase del vaiven
         float wahEnv = 0.0f;
         float smWahSens = 0.0f, smWahBase = 400.0f, smWahQ = -1.0f;   //  efectos#corte: la Q de golpe chasqueaba al cambiar de preset
         bool  wahWasActive = false;

@@ -270,10 +270,16 @@ struct PresetExtra { int f, k; float p[4]; };
 inline constexpr float kD = AudioEngine::kSinMando;
 inline constexpr PresetExtra kExtra[] =
 {
-    //  tipo, preset, { p4, p5, GRAVES, AGUDOS } (REV: p4 tipo Fdn::Tipo, p5 previo ms)
+    //  tipo, preset, { p4, p5, GRAVES, AGUDOS } (REV: p4 tipo Fdn::Tipo, p5 previo ms; DRV p4 tipo; DLY p5 tipo; TRM p4 forma; FLT p4 pendiente)
+    { 0, 1, { 1.0f, kD, kD, kD } },
+    { 0, 4, { 1.0f, kD, kD, kD } },
+    { 2, 1, { 1.0f, kD, kD, kD } },
     { 2, 2, { kD, kD, kD, 12000.0f } },
-    { 2, 3, { kD, kD, 120.0f, kD } },
-    { 2, 4, { kD, kD, 300.0f, kD } },
+    { 2, 3, { 2.0f, kD, 120.0f, kD } },
+    { 2, 4, { 3.0f, kD, 300.0f, kD } },
+    { 3, 2, { kD, 1.0f, kD, kD } },
+    { 3, 3, { kD, 2.0f, kD, kD } },
+    { 3, 4, { kD, 1.0f, kD, kD } },
     { 2, 5, { kD, kD, 500.0f, kD } },
     { 4, 3, { kD, kD, 300.0f, 3400.0f } },
     { 4, 5, { kD, kD, 150.0f, kD } },
@@ -302,6 +308,10 @@ inline constexpr PresetExtra kExtra[] =
     { 13, 1, { 250.0f, 4.00f, kD, kD } },
     { 13, 2, { 150.0f, 16.00f, kD, kD } },
     { 13, 4, { 1400.0f, 3.00f, kD, kD } },
+    { 14, 2, { 1.0f, kD, kD, kD } },
+    { 14, 3, { 2.0f, kD, kD, kD } },
+    { 14, 4, { 3.0f, kD, kD, kD } },
+    { 14, 5, { 1.0f, kD, kD, kD } },
     { 18, 2, { kD, kD, 250.0f, kD } },
     { 18, 3, { kD, kD, 90.00f, 9000.0f } },
     { 18, 4, { kD, kD, kD, 7000.0f } },

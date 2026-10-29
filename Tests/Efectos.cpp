@@ -619,6 +619,9 @@ static const std::map<std::tuple<int, int, int>, float>& ajustes (std::map<int, 
     return m;
 }
 
+//  efectos#tipos: el banco de TIPOS fuerza un parametro encima del preset.
+static int gFuerzaPi = -1; static float gFuerzaV = 0.0f;
+
 static void ponPreset (AudioEngine& e, int f, int k)
 {
     std::map<int, juce::String>* eqAj = nullptr;
@@ -626,7 +629,7 @@ static void ponPreset (AudioEngine& e, int f, int k)
     for (int pi = 0; pi < AudioEngine::kNumParFx; ++pi)
     {
         const auto it = aj.find ({ f, k, pi });
-        e.setFxParam (kCanal, f, pi, it != aj.end() ? it->second : FxPresets::valor (f, k, pi));
+        e.setFxParam (kCanal, f, pi, pi == gFuerzaPi ? gFuerzaV : it != aj.end() ? it->second : FxPresets::valor (f, k, pi));
     }
     juce::String bAj = f == AudioEngine::kFxEq && eqAj->count (k) ? (*eqAj)[k] : juce::String();
     if (const char* b = bAj.isNotEmpty() ? bAj.toRawUTF8() : FxPresets::bandas (f, k))
@@ -803,6 +806,33 @@ int main (int argc, char** argv)
     midoReferencia();
     const int solo = argc > 1 ? juce::String (argv[1]).getIntValue() : -1;
     std::printf ("ZATI  banco de calidad de efectos   %.0f Hz  rafaga %d\n", kSr, kBs);
+    //  efectos#tipos: cada tipo de un efecto, sobre el mismo preset, tiene que sonar a otra cosa que los demas.
+    if (std::getenv ("ZATI_FX_TIPOS"))
+    {
+        struct Caso { int f, pi, n, k; };
+        const Caso casos[] = { { AudioEngine::kFxRev, 4, 5, 2 }, { AudioEngine::kFxDrv, 4, 4, 3 }, { AudioEngine::kFxDly, 5, 3, 4 },
+                               { AudioEngine::kFxTrm, 4, 4, 2 }, { AudioEngine::kFxFlt, 4, 2, 1 } };
+        std::printf ("\nTIPOS  la pareja de tipos mas parecida sobre un preset, en dB (minimo %.0f)\n", kDistintoMin);
+        for (const auto& c : casos)
+        {
+            if (solo >= 0 && c.f != solo) continue;
+            std::vector<Huella> hs;
+            for (int t = 0; t < c.n; ++t) { gFuerzaPi = c.pi; gFuerzaV = (float) t; hs.push_back (huella (c.f, c.k)); }
+            gFuerzaPi = -1;
+            double peor = 1e9; int pa = 0, pb = 0;
+            for (int a = 0; a < c.n; ++a)
+                for (int b = a + 1; b < c.n; ++b)
+                {
+                    const double d = distancia (hs[(size_t) a], hs[(size_t) b]);
+                    if (solo >= 0) std::printf ("    tipo %d ~ tipo %d %5.1f\n", a, b, d);
+                    if (d < peor) { peor = d; pa = a; pb = b; }
+                }
+            std::printf ("%-4s p%d sobre %-10s %6.1f  tipo %d ~ tipo %d\n", kMandos[c.f].nombre, c.pi, FxPresets::nombre (c.f, c.k), peor, pa, pb);
+            if (peor < kDistintoMin) falla ("%s: los tipos %d y %d suenan casi igual (%.1f dB)", kMandos[c.f].nombre, pa, pb, peor);
+            std::fflush (stdout);
+        }
+        return fallos == 0 ? 0 : 1;
+    }
     if (std::getenv ("ZATI_FX_PRESETS"))
     {
         std::printf ("\nDISTINCION  la pareja mas parecida de los %d presets, en dB (minimo %.0f)\n",

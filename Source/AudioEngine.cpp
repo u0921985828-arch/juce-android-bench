@@ -2631,10 +2631,16 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     const float wlObj = barr.alto ? 0.0f : 1.0f;
                     if (I.fltWl < 0.0f) I.fltWl = wlObj;
                     float wl = I.fltWl;
+                    //  efectos#tipos: PENDIENTE 24 dB pone otra etapa igual detras (Butterworth, sin resonancia doble); se funde en 20 ms.
+                    const float w24Obj = P (kFxFlt, 4) >= 0.5f ? 1.0f : 0.0f;
+                    if (I.fltW24 < 0.0f) I.fltW24 = w24Obj;
+                    if (I.fltW24 <= 0.0f && w24Obj <= 0.0f) { I.fltLp2.reset(); I.fltHp2.reset(); }
+                    float w24 = I.fltW24;
                     for (int ch = 0; ch < chans; ++ch)
                     {
                         float* d = fxBus[busIdx (0)].getWritePointer (ch, startSample);
                         wl = I.fltWl;
+                        w24 = I.fltW24;
                         for (int i = 0; i < numSamples; ++i)
                         {
                             const float t = (float) (i + 1) * inv;
@@ -2643,18 +2649,28 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                             const float lv = I.fltLp.tick (ch, x, gl0 + t * (gLp - gl0), kl0 + t * (kLp - kl0), 0);
                             const float l  = x + wl * (lv - x);
                             const float hv = I.fltHp.tick (ch, l, gh0 + t * (gHp - gh0), kh0 + t * (kHp - kh0), 1);
-                            const float y  = l + (1.0f - wl) * (hv - l);
+                            float y  = l + (1.0f - wl) * (hv - l);
+                            w24 += kSamp * (w24Obj - w24);
+                            if (w24 > 1.0e-4f)
+                            {
+                                const float lv2 = I.fltLp2.tick (ch, y, gl0 + t * (gLp - gl0), kNeu, 0);
+                                const float l2  = y + wl * (lv2 - y);
+                                const float hv2 = I.fltHp2.tick (ch, l2, gh0 + t * (gHp - gh0), kNeu, 1);
+                                y += w24 * (l2 + (1.0f - wl) * (hv2 - l2) - y);
+                            }
                             const float w = a0 + t * (aObj - a0);
                             d[i] = x + w * (y - x);
                         }
                     }
                     I.fltWl = wl;
+                    I.fltW24 = w24;
                     returnBus (0);
                 }
                 else
                 {
                     I.fltLp.reset();
                     I.fltHp.reset();
+                    I.fltLp2.reset(); I.fltHp2.reset(); I.fltW24 = -1.0f;
                 }
                 I.fltLp.g = gLp; I.fltLp.k = kLp;
                 I.fltHp.g = gHp; I.fltHp.k = kHp;
@@ -2717,7 +2733,16 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  hace diez segundos son veintitres muestras de continua colandose
                 //  por el filtro de bajar en cuanto el bus revive.
                 if (drvNow && ! I.drvWasActive)
-                    { I.drvLp[0] = I.drvLp[1] = 0.0f; I.drvOs[0].limpia(); I.drvOs[1].limpia(); }
+                    { I.drvLp[0] = I.drvLp[1] = 0.0f; I.drvOs[0].limpia(); I.drvOs[1].limpia();
+                      I.drvDc[0] = I.drvDc[1] = I.drvDcX[0] = I.drvDcX[1] = 0.0f; }
+                //  efectos#tipos: un tipo nuevo se funde en 20 ms con el que estaba; el salto de curva chasquea.
+                const int drvTipoT = drvTipoDe (P (kFxDrv, 4));
+                if (drvTipoT != I.drvTipo)
+                {
+                    I.drvTipoViejo = drvNow && I.drvWasActive ? I.drvTipo : drvTipoT;
+                    I.drvTipo = drvTipoT;
+                    I.drvFunde = I.drvTipoViejo == drvTipoT ? 1.0f : 0.0f;
+                }
                 I.drvWasActive = drvNow;
 
                 if (drvNow)
@@ -2726,15 +2751,22 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     //  que el visor del plato dibuja esta misma curva. `mk`
                     //  compensa por la ganancia que ENTRA y no por el techo del
                     //  tanh, que para cualquier k util vale ~1.
-                    const auto  dr = driveDe (I.smDrive);
+                    const auto  dr = driveDe (I.smDrive, I.drvTipo);
+                    const bool  drvCruza = I.drvFunde < 1.0f;
+                    const auto  drV = driveDe (I.smDrive, I.drvTipoViejo);
+                    const float drvPaso = 1.0f / (0.02f * (float) systemSampleRate);
+                    const float drvF0 = I.drvFunde;
                     const float a  = juce::jlimit (0.0f, 1.0f,
                                         1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi
                                                          * I.smDrvTone / (float) systemSampleRate));
+                    //  efectos#tipos: VALVULA es asimetrica y deja continua; un polo a 10 Hz la quita en todos los tipos.
+                    const float rDc = 1.0f - juce::MathConstants<float>::twoPi * 10.0f / (float) systemSampleRate;
                     for (int ch = 0; ch < chans; ++ch)
                     {
                         float* w = fxBus[busIdx (kFxDrv)].getWritePointer (ch, startSample);
-                        float lp = I.drvLp[ch];
+                        float lp = I.drvLp[ch], dc = I.drvDc[ch], dcX = I.drvDcX[ch];
                         auto& os = I.drvOs[ch];
+                        float fu = drvF0;
                         for (int i = 0; i < numSamples; ++i)
                         {
                             //  EL `tanh` SE EVALUA A 2x Y EL TONO SIGUE A 1x, y
@@ -2742,13 +2774,22 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                             //  la no linealidad, no el polo. Bajar tambien el paso
                             //  bajo al doble no quitaria un solo decibelio de alias
                             //  y costaria el doble de multiplicaciones.
-                            const float sat = Sobre2x::paso (os, w[i],
-                                                  [dr] (float v) noexcept
-                                                  { return saturaDe (v, dr); });
+                            float sat;
+                            if (! drvCruza)
+                                sat = Sobre2x::paso (os, w[i], [dr] (float v) noexcept { return saturaDe (v, dr); });
+                            else
+                            {
+                                fu = juce::jmin (1.0f, fu + drvPaso);
+                                sat = Sobre2x::paso (os, w[i], [dr, drV, fu] (float v) noexcept
+                                                     { return saturaDe (v, drV) + fu * (saturaDe (v, dr) - saturaDe (v, drV)); });
+                            }
                             lp += a * (sat - lp);
-                            w[i] = lp;
+                            dc = lp - dcX + rDc * dc;
+                            dcX = lp;
+                            w[i] = dc;
                         }
-                        I.drvLp[ch] = lp;
+                        I.drvLp[ch] = lp; I.drvDc[ch] = dc; I.drvDcX[ch] = dcX;
+                        if (ch == chans - 1) I.drvFunde = fu;
                     }
                     returnBus (2);
                 }
@@ -3114,7 +3155,16 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     I.smTrmProf += (live (kFxTrm) ? 0.0f : kBlock) * (prof - I.smTrmProf);   // efectos#preset: vivo se alisa por muestra; por bloque el escalon chasquea.
 
                     const bool ahora = live (kFxTrm);
+                    //  efectos#tipos: una forma nueva se funde en 30 ms con la que estaba.
+                    const int formaT = Lfo::formaDe (P (kFxTrm, 4));
+                    if (formaT != I.trmForma)
+                    {
+                        I.trmFormaVieja = ahora && I.trmWasActive ? I.trmForma : formaT;
+                        I.trmForma = formaT;
+                        I.trmFunde = I.trmFormaVieja == formaT ? 1.0f : 0.0f;
+                    }
                     I.trmWasActive = ahora;
+                    const float trmPaso = 1.0f / (0.03f * (float) systemSampleRate);
 
                     if (ahora)
                     {
@@ -3127,7 +3177,14 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                             //  master no es nuestro para gastarlo -es la misma
                             //  regla que ya tiene HUMANIZAR con la fuerza-.
                             I.smTrmProf += kSamp * (prof - I.smTrmProf);
-                            const float g = 1.0f - I.smTrmProf * 0.5f * (1.0f - Lfo::valorEn (fm.fase));
+                            float forma = Lfo::formaEn (fm.fase, I.trmForma);
+                            if (I.trmFunde < 1.0f)
+                            {
+                                I.trmFunde = juce::jmin (1.0f, I.trmFunde + trmPaso);
+                                const float vieja = Lfo::formaEn (fm.fase, I.trmFormaVieja);
+                                forma = vieja + I.trmFunde * (forma - vieja);
+                            }
+                            const float g = 1.0f - I.smTrmProf * 0.5f * (1.0f - forma);
                             fm.fase += fm.paso;
                             for (int ch = 0; ch < chans; ++ch)
                             {
@@ -4284,8 +4341,24 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                                                    * juce::jlimit (200.0f, 20000.0f, dlyTono) / (float) systemSampleRate)
                                                      : 1.0f;
                         if (! dlyOsc) I.dlyTonoZ[0] = I.dlyTonoZ[1] = 0.0f;
+                        //  efectos#tipos: CINTA vaiven de 0.7 Hz y 2.8 kHz en el lazo; ANALOGICO banda de 150 Hz a 1.6 kHz; los dos saturan cada vuelta.
+                        const float dlyTipoV = P (kFxDly, 5);
+                        const int   dlyTipo  = std::isfinite (dlyTipoV) ? juce::jlimit (0, kDlyTipos - 1, (int) std::lround (dlyTipoV)) : 0;
+                        const float cObj = dlyTipo == kDlyCinta ? 1.0f : 0.0f, aObjD = dlyTipo == kDlyAnalogico ? 1.0f : 0.0f;
+                        const float fsD = (float) systemSampleRate;
+                        const float aCol = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 2800.0f / fsD);
+                        const float aAna = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 1600.0f / fsD);
+                        const float aAnH = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 150.0f / fsD);
+                        const float wowPaso = 0.7f / fsD, wowAmp = 0.004f * fsD;
+                        if (I.dlyCinta + I.dlyAnal <= 0.0f && cObj + aObjD <= 0.0f)
+                            I.dlyColC[0] = I.dlyColC[1] = I.dlyColA[0] = I.dlyColA[1] = I.dlyColH[0] = I.dlyColH[1] = 0.0f;
                         for (int i = 0; i < numSamples; ++i)
                         {
+                            I.dlyCinta += kSamp * (cObj - I.dlyCinta);
+                            I.dlyAnal  += kSamp * (aObjD - I.dlyAnal);
+                            const float colorea = I.dlyCinta + I.dlyAnal;
+                            const float wow = I.dlyCinta * wowAmp * (1.0f + std::sin (juce::MathConstants<float>::twoPi * I.dlyWow));
+                            I.dlyWow += wowPaso; I.dlyWow -= std::floor (I.dlyWow);
                             if (I.dlyPend && I.dlyXf <= 0.0f) { I.dlyViejo = I.smDlySamp; I.smDlySamp = dsT; I.dlyXf = 1.0f; I.dlyPend = false; }
                             I.smDlyFb += kSamp * (fbT - I.smDlyFb);
                             const bool  dlyCruza = I.dlyXf > 0.0f;
@@ -4295,15 +4368,24 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                             else          I.smDlySamp += kSamp * (dsT - I.smDlySamp);
                             auto dlyLee = [&] (int ch) noexcept
                             {
-                                if (! dlyCruza) return I.dlyLine.popSample (ch, I.smDlySamp);
-                                const float n = I.dlyLine.popSample (ch, I.smDlySamp, false);
-                                return n * dlyGn + I.dlyLine.popSample (ch, I.dlyViejo) * dlyGv;
+                                const float lim = (float) systemSampleRate - 2.0f;
+                                if (! dlyCruza) return I.dlyLine.popSample (ch, juce::jmin (lim, I.smDlySamp + wow));
+                                const float n = I.dlyLine.popSample (ch, juce::jmin (lim, I.smDlySamp + wow), false);
+                                return n * dlyGn + I.dlyLine.popSample (ch, juce::jmin (lim, I.dlyViejo + wow)) * dlyGv;
                             };
                             for (int ch = 0; ch < chans; ++ch)
                             {
                                 float* w = (ch == 0) ? w0 : w1;
                                 const float in = w[i];
-                                const float d  = dlyLee (ch);
+                                float d  = dlyLee (ch);
+                                if (colorea > 1.0e-6f && std::isfinite (d))
+                                {
+                                    I.dlyColC[ch] += aCol * (d - I.dlyColC[ch]);
+                                    I.dlyColA[ch] += aAna * (d - I.dlyColA[ch]);
+                                    I.dlyColH[ch] += aAnH * (I.dlyColA[ch] - I.dlyColH[ch]);
+                                    const float col = d + I.dlyCinta * (I.dlyColC[ch] - d) + I.dlyAnal * (I.dlyColA[ch] - I.dlyColH[ch] - d);
+                                    d = col + colorea * (fastTanh (1.6f * col) * 0.625f - col);
+                                }
                                 //  LA CUARTA BARRERA: esta linea se realimenta,
                                 //  asi que un NaN que entre una vez da vueltas
                                 //  para siempre y el delay se queda mudo hasta

@@ -590,9 +590,11 @@ namespace FxVisor
                     //  Ver AudioEngine::barridoDe y svfDb: el reparto y la
                     //  forma son los dos suyos.
                     const auto b = AudioEngine::barridoDe (p0);
+                    //  efectos#tipos: a 24 dB la segunda etapa es Butterworth (Q 0.707) sobre la primera.
                     pon (i, ! b.activo
                               ? dbAAlto (0.0f)
-                              : dbAAlto (AudioEngine::svfDb (hzDe (t), b.hz, p1, b.alto)));
+                              : dbAAlto (AudioEngine::svfDb (hzDe (t), b.hz, p1, b.alto)
+                                         + (p4 >= 0.5f ? AudioEngine::svfDb (hzDe (t), b.hz, 0.70710678f, b.alto) : 0.0f)));
                     break;
                 }
 
@@ -645,10 +647,11 @@ namespace FxVisor
                 case AudioEngine::kFxDrv:
                 {
                     //  La transferencia, con el MISMO tanh que suena.
-                    const auto  dr = AudioEngine::driveDe (p0);
+                    const auto  dr = AudioEngine::driveDe (p0, AudioEngine::drvTipoDe (p4));   // efectos#tipos: la curva del tipo puesto
                     const float x  = -1.0f + 2.0f * t;
                     //  efectos#nivel: el motor sale a nivel (pico 0.11 a tope); se dibuja la forma escalada a su pico.
-                    pon (i, 0.5f + 0.5f * AudioEngine::saturaDe (x, dr) / AudioEngine::saturaDe (1.0f, dr));
+                    const float pk = juce::jmax (std::abs (AudioEngine::saturaDe (1.0f, dr)), std::abs (AudioEngine::saturaDe (-1.0f, dr)));
+                    pon (i, 0.5f + 0.5f * AudioEngine::saturaDe (x, dr) / juce::jmax (1.0e-6f, pk));
                     break;
                 }
 
@@ -723,10 +726,11 @@ namespace FxVisor
             case AudioEngine::kFxTrm:
             {
                 const float amp = juce::jlimit (0.0f, 1.0f, p1);
+                const int forma = fx == AudioEngine::kFxTrm ? Lfo::formaDe (p4) : Lfo::kSeno;   // efectos#tipos: la forma de TRM
                 for (int j = 0; j < kPuntos; ++j)
                 {
                     const float tj = (float) j / (float) (kPuntos - 1);
-                    pon (j, 0.5f + 0.45f * amp * Lfo::valorEn (tj * kPeriodosMod));
+                    pon (j, 0.5f + 0.45f * amp * Lfo::formaEn (tj * kPeriodosMod, forma));
                 }
                 break;
             }

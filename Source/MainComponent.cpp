@@ -6214,6 +6214,10 @@ namespace
         { 21, 5, "CAIDA|x",       10.0,  1000.0, 1.0,   120.0,  3 },
         { 27, 4, "TONO|fb",      200.0, 20000.0, 1.0,  2000.0, 15 },   // PNG
         {  5, 4, "TIPO|rev",       0.0,     4.0, 1.0,     0.0, 16 },   // REV  efectos#tipos: Fdn::Tipo
+        {  2, 4, "TIPO|rev",       0.0,     3.0, 1.0,     0.0, 17 },   // DRV  efectos#tipos: kDrvSuave..
+        {  3, 5, "TIPO|rev",       0.0,     2.0, 1.0,     0.0, 18 },   // DLY  kDlyDigital..
+        { 14, 4, "FORMA|x",        0.0,     3.0, 1.0,     0.0, 19 },   // TRM  Lfo::kSeno..
+        {  0, 4, "PENDIENTE|x",    0.0,     1.0, 1.0,     0.0, 20 },   // FLT  12 / 24 dB
         {  5, 5, "PREVIO|x",       0.0,   200.0, 1.0,     0.0,  3 },
     };
 }
@@ -6316,6 +6320,23 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
             static constexpr const char* kTipos[] = { "SALA|preset", "CUARTO|preset", "PLACA|preset", "MUELLE|preset", "CATEDRAL|preset" };
             return T (kTipos[Fdn::tipoDe ((float) v)]);
         }
+        //  efectos#tipos: los de DRV, DLY y TRM por su nombre, y la pendiente de FLT en dB.
+        case 17:
+        {
+            static constexpr const char* kTipos[] = { "SUAVE|preset", "VALVULA|tipo", "FUZZ|tipo", "ROTO|preset" };
+            return T (kTipos[AudioEngine::drvTipoDe ((float) v)]);
+        }
+        case 18:
+        {
+            static constexpr const char* kTipos[] = { "DIGITAL|tipo", "CINTA|preset", "ANALOGICO|tipo" };
+            return T (kTipos[juce::jlimit (0, 2, (int) std::lround (v))]);
+        }
+        case 19:
+        {
+            static constexpr const char* kTipos[] = { "SENO|tipo", "CUADRADA|tipo", "TRIANGULO|tipo", "RAMPA|tipo" };
+            return T (kTipos[Lfo::formaDe ((float) v)]);
+        }
+        case 20: return v >= 0.5 ? "24 dB" : "12 dB";
         case 5:  return juce::String ((int) v) + "x";
         //  Un LFO se dice con DECIMAL. Con el formato de frecuencia de los
         //  filtros -entero- los cuatro de modulacion arrancarian diciendo

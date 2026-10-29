@@ -10447,6 +10447,7 @@ int main()
             e.prepareToPlay (kSr, kBlk); e.setPolyphony (8, 2);
             enCanalCero (e); e.setPadGain (0, 1.0f);
             e.setFxParam (0, fx, 2, 1.0f);
+            if (fx == AudioEngine::kFxFlt) e.setFxParam (0, fx, 0, -0.5f);   //  efectos#tipos: FLT en el centro no filtra; la pendiente necesita un corte
             if (par >= 0) e.setFxParam (0, fx, par, v);
             e.setCanalSend (0, fx, 1.0f);
             e.publishSample (0, muestra);
@@ -10477,6 +10478,8 @@ int main()
             if (par == AudioEngine::kParGraves) return 400.0f;
             if (par == AudioEngine::kParAgudos) return 1500.0f;
             if (fx == AudioEngine::kFxRev) return par == 4 ? 2.0f : 30.0f;   //  efectos#tipos: tipo y previo nacen en cero; por tres seguirian en cero
+            if ((fx == AudioEngine::kFxDrv || fx == AudioEngine::kFxTrm || fx == AudioEngine::kFxFlt) && par == 4) return 1.0f;   //  efectos#tipos: el tipo nace en cero
+            if (fx == AudioEngine::kFxDly && par == 5) return 2.0f;
             const float d = AudioEngine::defectoFx (fx, par);
             return d >= 19999.0f ? 1500.0f : d * 3.0f;
         };
