@@ -5567,10 +5567,12 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
         //  lo que esta pagina existe. Y PEGAR solo con portapapeles, por lo
         //  mismo. En el orden en que se usan, con el dedo entero cada una.
         {
-            juce::TextButton* ss[7] = { &songCopiaBtn, &songCorteSelBtn,
+            juce::TextButton* ss[8] = { &songCopiaBtn, &songCorteSelBtn,
                                         &songPegaBtn, &songBorraSelBtn, &songAudioSelBtn, &songMarcadorBtn,
-                                        &songAutoSelBtn };
+                                        &songAutoSelBtn, &songAutoLapizBtn };
             const bool hayBanda = songSel.activa();
+            if (! hayBanda) songAutoLapizBtn.setToggleState (false, juce::dontSendNotification);   // PP3
+            songGrid.lapizAuto = hayBanda && songAutoLapizBtn.getToggleState();
             for (auto* b : ss) b->setVisible (hayBanda);
             songPegaBtn.setEnabled (! songPortapapeles.bloques.empty()
                                     || ! songPortapapeles.clips.empty());
@@ -5581,13 +5583,13 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
             else
             {
                 const int gSel = abreSong();
-                if (moduleBarFits (panel.getWidth(), ss, 7))   // LS8
-                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 7);
+                if (moduleBarFits (panel.getWidth(), ss, 8))   // LS8 PP3
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 8);
                 else
                 {
                     layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 4);
                     panel.removeFromTop (Metrics::sm);
-                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss + 4, 0, 3);
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss + 4, 0, 4);
                 }
                 cierraSong (gSel);
                 panel.removeFromTop (Metrics::sm);

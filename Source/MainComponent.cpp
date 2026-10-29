@@ -4603,12 +4603,26 @@ void MainComponent::cableaCancion()
     //  y PEGAR solo con portapapeles, que es la misma regla que la tira del
     //  piano: una tapa que no puede hacer nada no es informacion.
     for (auto* b : { &songCopiaBtn, &songCorteSelBtn, &songPegaBtn, &songBorraSelBtn, &songAudioSelBtn,
-                     &songMarcadorBtn, &songAutoSelBtn })
+                     &songMarcadorBtn, &songAutoSelBtn, &songAutoLapizBtn })
     {
         styleButton (*b, kKey);
         songSheet.addAndMakeVisible (*b);
     }
     litAccent (songMarcadorBtn);
+    litAccent (songAutoLapizBtn);
+    songAutoLapizBtn.setClickingTogglesState (true);
+    songAutoLapizBtn.onClick = [this]   // PP3
+    {
+        double lo = 0.0, hi = 1.0;
+        if (songAutoLapizBtn.getToggleState()
+            && (autoUltimo.fx < 0 || ! rangoFx (autoUltimo.fx, autoUltimo.par, lo, hi)))
+        {
+            songAutoLapizBtn.setToggleState (false, juce::dontSendNotification);
+            status.setText (T ("Mueve antes un mando de efecto"), juce::dontSendNotification);
+        }
+        songGrid.lapizAuto = songAutoLapizBtn.getToggleState() && songSel.activa();
+    };
+    songGrid.onLapizAuto = [this] (int paso, float v01, bool primero) { songLapizAuto (paso, v01, primero); };
     songAudioSelBtn.onClick = [this] { songAudioSel(); };
     songMarcadorBtn.onClick = [this] { songMarcadorSel(); };
     songAutoSelBtn.onClick  = [this] { songAutoSel(); };
@@ -6347,7 +6361,11 @@ void MainComponent::escribeFxParam (int f, int pi, float v)
     //  el hilo de audio, asi que copiarlo habria sido la misma regla escrita
     //  dos veces. Ver AudioEngine::setFxParam.
     engine.setFxParam (canalActual, f, pi, v);
-    autoUltimo = { canalActual, f, pi };   // LS8
+    if (autoUltimo.canal != canalActual || autoUltimo.fx != f || autoUltimo.par != pi)   // LS8 PP3
+    {
+        autoUltimo = { canalActual, f, pi };
+        publicaAutosVista();
+    }
 
     //  Y SI ESTA ARMADO, SE ESCRIBE. Aqui y no en `onValueChange` del mando:
     //  por esta funcion pasan TODOS los caminos que mueven un parametro -el
@@ -6833,6 +6851,47 @@ void MainComponent::publicaAutosVista()
     std::sort (v.begin(), v.end(), [] (const Playlist::AutoVista& a, const Playlist::AutoVista& b)
                { return a.serie != b.serie ? a.serie < b.serie : a.paso < b.paso; });
     songGrid.setAutos (std::move (v));
+    int viva = -1;   // PP3 la del ultimo mando tocado manda; sin ninguno, todas fuertes
+    if (autoUltimo.fx >= 0)
+    {
+        const int cc = AudioEngine::canalDeParam (autoUltimo.canal, autoUltimo.fx);
+        const auto it = std::find (claves.begin(), claves.end(), (cc << 16) | (autoUltimo.fx << 8) | autoUltimo.par);
+        if (it != claves.end()) viva = (int) (it - claves.begin());
+    }
+    songGrid.setSerieViva (viva);
+}
+
+//  PP3 LAPIZ: el dedo escribe el ultimo mando tocado dentro de la banda; entre dos
+//  toques se rellena en linea para que un arrastre rapido no deje huecos.
+void MainComponent::songLapizAuto (int paso, float v01, bool primero)
+{
+    double lo = 0.0, hi = 1.0;
+    if (! songSel.activa() || autoUltimo.fx < 0 || ! rangoFx (autoUltimo.fx, autoUltimo.par, lo, hi)) return;
+    paso = juce::jlimit (songSel.paso0, songSel.paso1 - 1, paso);
+    if (primero)
+    {
+        pushUndo (T ("AUTO"));
+        lapizPaso = -1;
+        status.setText (T ("AUTO %1 a mano", juce::String (fxDefs[autoUltimo.fx].name)), juce::dontSendNotification);
+    }
+    const auto cc = (juce::uint8) AudioEngine::canalDeParam (autoUltimo.canal, autoUltimo.fx);
+    const auto fx = (juce::uint8) autoUltimo.fx, par = (juce::uint8) autoUltimo.par;
+    const int desde = lapizPaso < 0 ? paso : lapizPaso;
+    const float v0 = lapizPaso < 0 ? v01 : lapizV;
+    const int a = juce::jmin (desde, paso), b = juce::jmax (desde, paso);
+    autoEventos.erase (std::remove_if (autoEventos.begin(), autoEventos.end(),
+                                       [&] (const AudioEngine::EventoAuto& e)
+                                       { return e.fx == fx && e.par == par && e.canal == cc
+                                             && e.paso >= a && e.paso <= b; }),
+                       autoEventos.end());
+    for (int st = a; st <= b && (int) autoEventos.size() < AudioEngine::kMaxAuto; ++st)
+    {
+        const float t = b > a ? (float) (st - desde) / (float) (paso - desde) : 1.0f;
+        const float v = v0 + (v01 - v0) * t;
+        autoEventos.push_back ({ st, fx, par, cc, (float) (lo + (hi - lo) * (double) v) });
+    }
+    lapizPaso = paso; lapizV = v01;
+    publicaAutomacion();
 }
 
 //  LS8 AUTO en la banda: una rampa del ultimo mando de efecto tocado, de punta a punta del tramo.
@@ -17795,6 +17854,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
             pianoCells[c * PianoRoll::kMaxNotas + k] = -128;
         pianoLargos[c] = 0;
         pianoFuerzas[c] = 0;
+        pianoMarcas[c] = 0;
     }
 
     //  UNA COLUMNA SON `ppc` PASOS GUARDADOS, y la columna ensena el primero
@@ -17820,7 +17880,11 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
 
         int n = 0;
         if (pattern[(size_t) b][(size_t) st][(size_t) p])
+        {
             pianoFuerzas[c] = (unsigned char) juce::jlimit (1, 127, engine.getStepVel (b, st, p));
+            pianoMarcas[c] = (unsigned char) (engine.getStepMarcas (b, st, p)
+                                              & (AudioEngine::kMarcaFlam | AudioEngine::kMarcaGlide));
+        }
         if (pattern[(size_t) b][(size_t) st][(size_t) p])
             pianoCells[c * PianoRoll::kMaxNotas + n++] = (signed char) engine.getStepNote (b, st, p);
         for (int e = 0; e < AudioEngine::kExtraNotes && n < PianoRoll::kMaxNotas; ++e)
@@ -17853,7 +17917,7 @@ void MainComponent::refreshPiano (bool repintarTarjeta)
                          (ps >= 0 && ps < cols) ? ps : -1,
                          padZati[(size_t) p],
                          ps >= 0 ? engine.getStepPhase() : 0.0f,
-                         pianoLargos, seqPrimerCelda, pianoFuerzas);
+                         pianoLargos, seqPrimerCelda, pianoFuerzas, pianoMarcas);
     //  La regla, en columnas de ESTA ventana: lo que caiga fuera se recorta
     //  al pintar. El cursor se acota al patron, que un cursor en una casilla
     //  que ya no existe pegaria en el vacio.

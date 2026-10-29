@@ -4991,6 +4991,33 @@ int main()
                      ok ? "OK" : zatiFalla());
     }
 
+    //  PP2 LA ONDA DE UNA TOMA LARGA NO SE PARA A LOS 175 S. 200 s callados y
+    //  40 s fuertes: los fuertes tienen que ocupar la sexta parte final de los
+    //  picos. Antes el tope de 16384 picos cortaba en 174.8 s y no salia ninguno.
+    {
+        const auto monton_e = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_e;
+        e.setRecordLimit (300.0, false);
+        e.prepareToPlay (48000.0, 512, 1); e.setPolyphony (8, 2);
+        juce::AudioBuffer<float> b (2, 512);
+        e.startRecording (0);
+        const int bloques = 240 * 48000 / 512, callados = 200 * 48000 / 512;
+        for (int blk = 0; blk < bloques; ++blk)
+        {
+            const float v = blk < callados ? 0.0f : 0.5f;
+            for (int i = 0; i < 512; ++i) b.setSample (0, i, v), b.setSample (1, i, v);
+            e.renderNextBlock (b, 0, 512);
+        }
+        const int n = e.picosToma();
+        int fuertes = 0;
+        for (int k = 0; k < n; ++k) if (e.picosDatos()[k] > 0.25f) ++fuertes;
+        const double parte = n > 0 ? (double) fuertes / (double) n : 0.0;
+        const bool ok = n > 0 && n <= AudioEngine::kPicosMax && std::abs (parte - 40.0 / 240.0) < 0.02;
+        std::printf ("%-34s picos %d, fuertes %.3f (0.167)   %s\n",
+                     "la onda de 240 s entra entera", n, parte, ok ? "OK" : zatiFalla());
+        e.finishRecording (false);
+    }
+
     //  EXPORTAR CON AUTO MIENTRAS SE MUEVE UN MANDO (Tribunal 2026-09, 1.4).
     //
     //  Tres hilos como en la app: el de audio renderiza y adopta, el de

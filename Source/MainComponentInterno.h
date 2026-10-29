@@ -821,7 +821,7 @@ namespace
     //
     //  `gestos` pinta la tabla de GESTOS en vez de las lineas: es la misma que
     //  la pagina AYUDA, y no una copia.
-    struct ManualChapter { const char* title; const char* lines[7]; int desde, hasta; bool gestos = false; };
+    struct ManualChapter { const char* title; const char* lines[9]; int desde, hasta; bool gestos = false; };
 
     constexpr int kManualChapterCount = 18;
     const ManualChapter kManual[kManualChapterCount] =
@@ -867,7 +867,9 @@ namespace
             "REJILLA es lo que dura un paso, tresillos incluidos",
             "Ocho patrones; la cadena decide en que orden suenan y QUITAR CADENA la vacia",
             "ATRAS y ADELANTE corren el patron un paso; COPIAR FILA y PEGAR FILA llevan un pad a otro",
-            "SEL marca un tramo; en el PIANO, LAPIZ escribe, GOMA borra y PAD - y PAD + cambian de pad" }, 7, 10 },
+            "SEL marca un tramo; en el PIANO, LAPIZ escribe, GOMA borra y PAD - y PAD + cambian de pad",
+            "Con notas marcadas en el PIANO: LEGATO las une, FLAM y GLIDE las marcan y VEL da forma a su fuerza",   // PP4
+            "ARP, en el PIANO, arpegia el acorde de cada paso: SUBE, BAJA, VAIVEN o AZAR" }, 7, 10 },
         { "TEMPO", {
             "TAP: toca al ritmo y el tempo lo sigue",
             "CLIC, en la vista de audio de la CANCION, es el metronomo",
@@ -908,12 +910,18 @@ namespace
             "La tijera parte un bloque y la lupa acerca un tramo",
             "CICLO, en la cara, repite el patron; tocala y pasa a ARREGLO, que toca la cancion",
             "GRABAR, en la vista de audio, graba lo que suena encima del arreglo",
+            "Con un tramo marcado, A AUDIO convierte sus patrones en un clip de audio",   // PP4
+            "MARCA pone una marca; tocandola pasa por INICIO, BUCLE, SALTO y PAUSA",
+            "Dos clips de audio que se pisan se funden sin hacer nada",
             nullptr }, 16, 16 },
         { "AUTOMATIZACION", {
             "Arma AUTO y pon la cancion en marcha: lo que muevas se escribe en su paso",
             "Un evento por paso y por mando, y el ultimo gana",
             "Parar desarma, para no borrar una buena pasada sin querer",
             "Manten AUTO para vaciar la automatizacion",
+            "Con un tramo marcado, AUTO SUBE o AUTO BAJA escribe una rampa del ultimo mando tocado",   // PP4
+            "LAPIZ AUTO la dibuja con el dedo dentro del tramo",
+            "La linea fuerte es la del ultimo mando tocado",
             nullptr }, 17, 17 },
         { "GUARDAR Y EXPORTAR", {
             "Un proyecto lleva sus muestras dentro y se puede mover entero",

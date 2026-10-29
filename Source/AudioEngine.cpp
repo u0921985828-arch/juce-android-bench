@@ -6209,17 +6209,28 @@ void AudioEngine::startRecording (int slot, bool fromMaster) noexcept
 
 void AudioEngine::apuntaPicos (int desde, int hasta) noexcept
 {
-    if (desde == 0) { picoParcial = 0.0f; picosN.store (0, std::memory_order_relaxed); }
+    if (desde == 0)
+    {
+        picoParcial = 0.0f; picoCuenta = 0; picoSalto = kPicoHop;
+        picosN.store (0, std::memory_order_relaxed);
+    }
     const float* d = recordBuffer.getReadPointer (0);
     int k = picosN.load (std::memory_order_relaxed);
     for (int i = desde; i < hasta; ++i)
     {
         picoParcial = juce::jmax (picoParcial, std::abs (d[i]));
-        if ((i + 1) % kPicoHop == 0 && k < kPicosMax)
+        if (++picoCuenta < picoSalto) continue;
+        if (k == kPicosMax)   // PP2 lleno a los 175 s: se juntan de dos en dos y el salto dobla
         {
-            picos[(size_t) k++] = picoParcial;
-            picoParcial = 0.0f;
+            for (int j = 0; j < kPicosMax / 2; ++j)
+                picos[(size_t) j] = juce::jmax (picos[(size_t) (2 * j)], picos[(size_t) (2 * j + 1)]);
+            k = kPicosMax / 2;
+            picoSalto *= 2;
+            if (picoCuenta < picoSalto) continue;
         }
+        picos[(size_t) k++] = picoParcial;
+        picoParcial = 0.0f;
+        picoCuenta = 0;
     }
     picosN.store (k, std::memory_order_release);
 }

@@ -1803,6 +1803,16 @@ namespace
         { "Mueve antes un mando de efecto", "", "Move an effect knob first", "请先转动一个效果旋钮", "حرك مقبض مؤثر أولاً" },
         { "AUTO %1 sube en %2 pasos", "", "AUTO %1 rises over %2 steps", "自动化 %1 在 %2 个步进上升", "أتمتة %1 تصعد في %2 خطوات" },
         { "AUTO %1 baja en %2 pasos", "", "AUTO %1 falls over %2 steps", "自动化 %1 在 %2 个步进下降", "أتمتة %1 تهبط في %2 خطوات" },
+        { "LAPIZ AUTO", "LÁPIZ AUTO", "AUTO PEN", "自动化画笔", "قلم الأتمتة" },   // PP3
+        { "AUTO %1 a mano", "", "AUTO %1 by hand", "手绘自动化 %1", "أتمتة %1 باليد" },
+        { "Con notas marcadas en el PIANO: LEGATO las une, FLAM y GLIDE las marcan y VEL da forma a su fuerza", "", "With notes selected in PIANO: LEGATO joins them, FLAM and GLIDE mark them and VEL shapes their velocity", "在钢琴卷帘中选中音符：LEGATO 连接，FLAM 和 GLIDE 加标记，VEL 塑造力度", "مع نوتات محددة في PIANO: LEGATO يصلها، FLAM وGLIDE يعلّمانها وVEL يشكّل سرعتها" },   // PP4
+        { "ARP, en el PIANO, arpegia el acorde de cada paso: SUBE, BAJA, VAIVEN o AZAR", "ARP, en el PIANO, arpegia el acorde de cada paso: SUBE, BAJA, VAIVÉN o AZAR", "ARP, in PIANO, arpeggiates each step's chord: UP, DOWN, UP-DOWN or RANDOM", "钢琴卷帘中的 ARP 把每个步进的和弦变成琶音：上行、下行、往返或随机", "في PIANO يحوّل ARP وتر كل خطوة إلى أربيجيو: صاعد، هابط، ذهاباً وإياباً أو عشوائي" },
+        { "Con un tramo marcado, A AUDIO convierte sus patrones en un clip de audio", "", "With a range selected, TO AUDIO turns its patterns into an audio clip", "选中一段后，转音频会把其中的乐句变成音频片段", "مع مقطع محدد، يحوّل إلى صوت أنماطه إلى مقطع صوتي" },
+        { "MARCA pone una marca; tocandola pasa por INICIO, BUCLE, SALTO y PAUSA", "MARCA pone una marca; tocándola pasa por INICIO, BUCLE, SALTO y PAUSA", "MARKER drops a marker; tapping it cycles START, LOOP, SKIP and PAUSE", "标记放置一个标记；点击它会在起点、循环、跳过和暂停间切换", "علامة تضع علامة؛ لمسها يتنقل بين البداية والتكرار والتخطي والإيقاف المؤقت" },
+        { "Dos clips de audio que se pisan se funden sin hacer nada", "", "Two overlapping audio clips crossfade on their own", "两个重叠的音频片段会自动交叉淡化", "مقطعان صوتيان متداخلان يتلاشيان تلقائياً أحدهما في الآخر" },
+        { "Con un tramo marcado, AUTO SUBE o AUTO BAJA escribe una rampa del ultimo mando tocado", "Con un tramo marcado, AUTO SUBE o AUTO BAJA escribe una rampa del último mando tocado", "With a range selected, AUTO UP or AUTO DOWN writes a ramp of the last knob you touched", "选中一段后，自动化上升或下降会为最后触碰的旋钮写入渐变", "مع مقطع محدد، تكتب أتمتة صاعدة أو هابطة منحدراً لآخر مقبض لمسته" },
+        { "LAPIZ AUTO la dibuja con el dedo dentro del tramo", "LÁPIZ AUTO la dibuja con el dedo dentro del tramo", "AUTO PEN draws it with your finger inside the range", "自动化画笔让你用手指在该段内绘制", "قلم الأتمتة يرسمها بإصبعك داخل المقطع" },
+        { "La linea fuerte es la del ultimo mando tocado", "La línea fuerte es la del último mando tocado", "The bold line belongs to the last knob you touched", "粗线属于最后触碰的旋钮", "الخط العريض هو خط آخر مقبض لمسته" },
         { "VEL SUBE", "", "VEL UP", "力度渐强", "سرعة صاعدة" },
         { "VEL BAJA", "", "VEL DOWN", "力度渐弱", "سرعة هابطة" },
         { "VEL ONDA", "", "VEL WAVE", "力度波形", "سرعة موجة" },

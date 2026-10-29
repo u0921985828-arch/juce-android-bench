@@ -551,6 +551,17 @@ else:
     mide ("y el glide vuelve del proyecto", d["glide_guardado"] == 3, "tras guardar y abrir %d" % d["glide_guardado"])
     mide ("y deshacer lo quita", d["glide_deshecho"] == 0, "tras deshacer %d" % d["glide_deshecho"])
 
+#  PP1 MARCAS: la nota con glide o flam lo dice en la rejilla.
+d = una ("marcas")
+if d is None:
+    mide ("marcas de flam y glide", False, "no salio")
+else:
+    #  Una marca por paso: los tres pasos con glide (el 5 es un acorde y se marca una vez).
+    mide ("cada paso con glide lleva su marca", d["con"] == 3, "marcadas %d" % d["con"])
+    mide ("sin glide solo quedan las del flam", d["sin"] == d["flam"],
+          "marcadas %d con flam en %d" % (d["sin"], d["flam"]))
+    mide ("la marca se ve: con y sin glide pintan distinto", d["pixeles"] > 10, "pixeles distintos %d" % d["pixeles"])
+
 #  LS7 VEL. Roto a proposito -sin raya de fuerza en el piano- medido: pixeles 0.
 d = una ("vel")
 if d is None:

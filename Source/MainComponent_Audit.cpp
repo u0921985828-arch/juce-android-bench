@@ -5189,6 +5189,15 @@ void MainComponent::auditPiano()
         const int undoAntesGlide = (int) undoStack.size();
         if (pianoGlideBtn.onClick) pianoGlideBtn.onClick();
         const int glidePuesto = glides();
+        auto fotoMarcas = [this] (int& vistas)   // PP1
+        {
+            refreshPiano (false);
+            auto im = pianoGrid.createComponentSnapshot (pianoGrid.getLocalBounds(), true, 1.0f);
+            vistas = pianoGrid.marcasVistas;
+            return im;
+        };
+        int marcasCon = 0, marcasSin = 0;
+        const auto fotoCon = fotoMarcas (marcasCon);
         const int glideUndos = (int) undoStack.size() - undoAntesGlide;
         const bool glideVisible = pianoGlideBtn.isVisible() && ! pianoGlideBtn.getBounds().isEmpty()
                                && ! pianoGlideBtn.getBounds().intersects (pianoFlamBtn.getBounds());
@@ -5198,6 +5207,14 @@ void MainComponent::auditPiano()
         const int glideGuardado = glides();
         performUndo();
         const int glideDeshecho = glides();
+        const auto fotoSin = fotoMarcas (marcasSin);
+        int marcasPixeles = 0;
+        if (fotoCon.getBounds() == fotoSin.getBounds())
+            for (int y = 0; y < fotoCon.getHeight(); ++y)
+                for (int x = 0; x < fotoCon.getWidth(); ++x)
+                    if (fotoCon.getPixelAt (x, y) != fotoSin.getPixelAt (x, y)) ++marcasPixeles;
+        std::cout << "{\"piano\":\"marcas\",\"con\":" << marcasCon << ",\"sin\":" << marcasSin
+                  << ",\"flam\":" << flams() << ",\"pixeles\":" << marcasPixeles << "}" << std::endl;
 
         //  LS7 VEL: tres toques dan rampa que sube, que baja y onda; la raya de fuerza se pinta distinta.
         auto fuerzas = [this, p]
@@ -10930,12 +10947,47 @@ void MainComponent::auditSelecciones()
         autoEventos.clear();
         applyState (foto);
         const int guardados = (int) autoEventos.size();
+
+        //  PP3 LAPIZ por el dedo entero: abajo en el paso 0, arrastre hasta arriba en el 15.
+        const auto cuando = juce::Time::getCurrentTime();
+        auto evento = [&] (juce::Point<float> pt)
+        {
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                     pt, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                     &songGrid, &songGrid, cuando, pt, cuando, 1, false);
+        };
+        songBanda (0, 0, 0, 16);
+        resized();
+        songAutoLapizBtn.setToggleState (true, juce::dontSendNotification);
+        if (songAutoLapizBtn.onClick) songAutoLapizBtn.onClick();
+        const bool lapizPuesto = songGrid.lapizAuto;
+        const int undoLapiz = (int) undoStack.size();
+        songGrid.mouseDown (evento (songGrid.puntoAuto (0, 0.0f)));
+        songGrid.mouseDrag (evento (songGrid.puntoAuto (7, 0.5f)));
+        songGrid.mouseDrag (evento (songGrid.puntoAuto (15, 1.0f)));
+        songGrid.mouseUp   (evento (songGrid.puntoAuto (15, 1.0f)));
+        const int lapizUndos = (int) undoStack.size() - undoLapiz;
+        std::vector<float> trazo;
+        for (int st = 0; st < 16; ++st)
+            for (const auto& e : autoEventos)
+                if (e.paso == st && e.fx == 0 && e.par == 0) { trazo.push_back ((float) ((e.valor - lo) / (hi - lo))); break; }
+        bool subeTrazo = trazo.size() == 16 && trazo.front() < 0.1f && trazo.back() > 0.9f;
+        for (size_t k = 1; k < trazo.size(); ++k) subeTrazo = subeTrazo && trazo[k] >= trazo[k - 1] - 0.02f;
+        const int vivaUno = songGrid.serieVivaVista();
+        escribeFxParam (0, 1, (float) fxDefs[0].spec[1].lo);
+        const int vivaDos = songGrid.serieVivaVista();
+        songSel = {};
+        resized();
+        const bool lapizFuera = ! songGrid.lapizAuto && ! songAutoLapizBtn.getToggleState();
         std::cout << "{\"sel\":\"cancion auto\",\"puestos\":" << n1
                   << ",\"sube\":" << (sube ? 1 : 0) << ",\"baja\":" << (baja ? 1 : 0)
                   << ",\"publicada\":" << publicada << ",\"pintados\":" << pintados
                   << ",\"undos\":" << undos << ",\"copiados\":" << copiados
                   << ",\"pegados\":" << pegados << ",\"borrados\":" << trasBorrar
                   << ",\"deshecho\":" << trasDeshacer << ",\"guardados\":" << guardados
+                  << ",\"lapiz\":" << (lapizPuesto ? 1 : 0) << ",\"lapiz_pasos\":" << (int) trazo.size()
+                  << ",\"lapiz_sube\":" << (subeTrazo ? 1 : 0) << ",\"lapiz_undos\":" << lapizUndos
+                  << ",\"viva\":\"" << vivaUno << "/" << vivaDos << "\",\"lapiz_fuera\":" << (lapizFuera ? 1 : 0)
                   << ",\"texto\":\"" << texto0 << "/" << texto1 << "\"}" << std::endl;
     }
 }

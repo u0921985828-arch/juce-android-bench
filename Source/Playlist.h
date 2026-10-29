@@ -845,8 +845,18 @@ public:
         return (i >= 0 && clips[i].toma >= 0 && clips[i].capas > 1) ? i : -1;
     }
 
+    void lapiz (const juce::MouseEvent& e, bool primero)   // PP3
+    {
+        const auto r = getLocalBounds().toFloat().reduced (0.0f, 3.0f);
+        if (e.x < kGutter || r.getHeight() <= 0.0f) return;
+        const float v = juce::jlimit (0.0f, 1.0f, (r.getBottom() - (float) e.y) / r.getHeight());
+        onLapizAuto (pasoDeX (e.x), v, primero);
+    }
+
     void mouseDown (const juce::MouseEvent& e) override
     {
+        lapizVivo = lapizAuto && onLapizAuto != nullptr;
+        if (lapizVivo) { lapiz (e, true); return; }
         asaBloque = 0; bloqueIdx = -1; arrastrado = -1; asa = 0;
         ultima = { -1, -1 };
         enClip = tocaAlClip (e);
@@ -855,11 +865,13 @@ public:
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (lapizVivo) { lapiz (e, false); return; }
         if (enClip) { tocaAudio (e, true); return; }
         toca (e, true);
     }
     void mouseUp   (const juce::MouseEvent& e)   override
     {
+        if (lapizVivo) { lapizVivo = false; if (onSuelta) onSuelta(); return; }
         asaBloque = 0;
         bloqueIdx = -1;
         ultima = { -1, -1 };
@@ -1273,6 +1285,18 @@ public:
         repaint();
     }
     int autosPintados() const noexcept { return autosVistos; }
+    //  PP3 la serie del ultimo mando tocado se pinta fuerte y las demas tenues.
+    void setSerieViva (int s) { if (s != serieViva) { serieViva = s; repaint(); } }
+    int  serieVivaVista() const noexcept { return serieViva; }
+    //  PP3 para la sonda: donde cae (paso, valor) en pantalla, con la cuenta inversa de `lapiz`.
+    juce::Point<float> puntoAuto (int paso, float v01) const
+    {
+        const auto r = getLocalBounds().toFloat().reduced (0.0f, 3.0f);
+        return { cajaPaso (0, paso, paso + 1).getCentreX(), r.getBottom() - r.getHeight() * v01 };
+    }
+    //  PP3 LAPIZ: con el puesto, el dedo escribe la automatizacion en vez de tocar la rejilla.
+    bool lapizAuto = false;
+    std::function<void (int paso, float v01, bool primero)> onLapizAuto;
 
     void pintaAutos (juce::Graphics& g)
     {
@@ -1282,15 +1306,19 @@ public:
         const int base = primerCompas * pc, tope = base + barsView * pc;
         const auto r = getLocalBounds().toFloat().reduced (0.0f, 3.0f);
         int serie = -1; juce::Path p; bool abierto = false;
+        auto viva = [this] (int s) { return serieViva < 0 || s == serieViva; };
         auto cierra = [&]
         {
-            if (abierto) g.strokePath (p, juce::PathStrokeType (2.0f));
+            if (abierto) g.strokePath (p, juce::PathStrokeType (viva (serie) ? 2.0f : 1.0f));
             p.clear(); abierto = false;
         };
-        g.setColour (ZatiColours::playhead.withAlpha (0.9f));
         for (const auto& a : autos)   // vienen por serie y por paso
         {
-            if (a.serie != serie) { cierra(); serie = a.serie; }
+            if (a.serie != serie)
+            {
+                cierra(); serie = a.serie;
+                g.setColour (ZatiColours::playhead.withAlpha (viva (serie) ? 0.9f : 0.35f));
+            }
             if (a.paso < base || a.paso >= tope) continue;
             const auto caja = cajaPaso (0, a.paso, a.paso + 1);
             const float x = caja.getCentreX();
@@ -1704,6 +1732,8 @@ private:
     std::vector<MarcadorVista> marcadores;   // LS4
     std::vector<AutoVista> autos;   // LS8
     int autosVistos = 0;
+    int serieViva = -1;   // PP3
+    bool lapizVivo = false;
     int          marcadoresVistos = 0;
     int              clipSel  = -1;   // el que se esta moviendo, para que se vea
     int              arrastrado = -1; // el que este dedo agarro

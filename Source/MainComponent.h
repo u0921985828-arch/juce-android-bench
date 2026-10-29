@@ -574,6 +574,9 @@ private:
     //  Un largo por paso, en cuartos. Ver AudioEngine::setStepLen.
     unsigned char pianoLargos[AudioEngine::kNumSteps] {};
     unsigned char pianoFuerzas[AudioEngine::kNumSteps] {};   // LS7
+    unsigned char pianoMarcas[AudioEngine::kNumSteps] {};    // PP1
+    static_assert (PianoRoll::kMarcaFlamVista == AudioEngine::kMarcaFlam
+                   && PianoRoll::kMarcaGlideVista == AudioEngine::kMarcaGlide, "PP1 los bits del piano son los del motor");
     void refreshPiano (bool repintarTarjeta = true);
     void seguirCompas (int pasoAbsoluto);
 
@@ -5189,7 +5192,11 @@ private:
     Boton songCopiaBtn { "COPIAR" }, songPegaBtn { "PEGAR" },
                      songCorteSelBtn { "CORTE" }, songBorraSelBtn { "BORRAR" },
                      songAudioSelBtn { "A AUDIO" }, songMarcadorBtn { "MARCA" },
-                     songAutoSelBtn { "AUTO SUBE" };   // LS8
+                     songAutoSelBtn { "AUTO SUBE" },   // LS8
+                     songAutoLapizBtn { "LAPIZ AUTO" };   // PP3
+    int  lapizPaso = -1;   // PP3 el ultimo paso que escribio el dedo
+    float lapizV = 0.0f;
+    void songLapizAuto (int paso, float v01, bool primero);
     struct { int canal = -1, fx = -1, par = -1; } autoUltimo;   // LS8 el ultimo mando de efecto tocado
     int  songAutoForma = 0;   // LS8 0 sube, 1 baja
     void songAutoSel();

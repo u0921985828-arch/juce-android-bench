@@ -365,10 +365,12 @@ public:
     void setSource (const signed char* notas, int pasos, int base,
                     int pasoTocando, int zati, float fase = 0.0f,
                     const unsigned char* largos = nullptr, int desdePaso = 0,
-                    const unsigned char* fuerzasPaso = nullptr)
+                    const unsigned char* fuerzasPaso = nullptr,
+                    const unsigned char* marcasPaso = nullptr)
     {
         datos = notas; nPasos = juce::jmax (1, pasos); semiBase = base;
         fuerzas = fuerzasPaso;
+        marcas = marcasPaso;
         primerPaso = juce::jmax (0, desdePaso);
         cuartos = largos;
         tocando = pasoTocando; color = zati;
@@ -396,10 +398,12 @@ public:
                   && sombra.size() == n
                   && std::memcmp (sombra.data(), datos, n * sizeof (signed char)) == 0
                   && largosIguales;
-        const bool fuerzasIguales = fuerzas == nullptr
-                                      ? sombraFuerzas.empty()
-                                      : sombraFuerzas.size() == (size_t) nPasos
-                                          && std::memcmp (sombraFuerzas.data(), fuerzas, (size_t) nPasos) == 0;   // LS7
+        auto iguales = [this] (const unsigned char* v, const std::vector<unsigned char>& sv)
+        {
+            return v == nullptr ? sv.empty()
+                                : sv.size() == (size_t) nPasos && std::memcmp (sv.data(), v, (size_t) nPasos) == 0;
+        };
+        const bool fuerzasIguales = iguales (fuerzas, sombraFuerzas) && iguales (marcas, sombraMarcas);   // LS7 PP1
         igual = igual && fuerzasIguales;
         if (igual) return;
 
@@ -414,6 +418,7 @@ public:
 
         sombra.resize (n);
         if (fuerzas != nullptr) sombraFuerzas.assign (fuerzas, fuerzas + nPasos); else sombraFuerzas.clear();
+        if (marcas != nullptr) sombraMarcas.assign (marcas, marcas + nPasos); else sombraMarcas.clear();
         if (datos != nullptr) std::memcpy (sombra.data(), datos, n * sizeof (signed char));
         sombraLargos.assign ((size_t) nPasos, 0);
         if (cuartos != nullptr)
@@ -468,6 +473,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
+        marcasVistas = 0;
         if (datos == nullptr) return;
 
         auto r = getLocalBounds();
@@ -577,6 +583,22 @@ public:
                         g.setColour (ZatiColours::ink.withAlpha (0.85f));
                         g.fillRect (barra.withTop (barra.getBottom() - kRayaFuerza)
                                          .withWidth (barra.getWidth() * (float) fuerzas[c] / 127.0f));
+                    }
+                    if (marcas != nullptr && marcas[c] != 0)   // PP1 flam: dos golpes arriba; glide: rampa al arranque
+                    {
+                        g.setColour (ZatiColours::ink.withAlpha (0.85f));
+                        const float x0 = barra.getX() + 1.5f, alto = barra.getHeight();
+                        if ((marcas[c] & kMarcaFlamVista) != 0)
+                        {
+                            g.fillRect (x0, barra.getY() + 1.0f, 1.5f, alto * 0.5f);
+                            g.fillRect (x0 + 3.0f, barra.getY() + 1.0f, 1.5f, alto * 0.5f);
+                        }
+                        if ((marcas[c] & kMarcaGlideVista) != 0)
+                        {
+                            const float w = juce::jmin (barra.getWidth() - 2.0f, 10.0f);
+                            g.drawLine (x0, barra.getBottom() - 1.5f, x0 + w, barra.getY() + 1.5f, 1.5f);
+                        }
+                        ++marcasVistas;
                     }
                     //  Y el ARRANQUE marcado, que en una barra de cuatro
                     //  casillas es lo unico que dice donde empieza la nota.
@@ -1053,8 +1075,12 @@ private:
     std::vector<unsigned char> sombraLargos;
     const unsigned char* fuerzas = nullptr;   // LS7
     std::vector<unsigned char> sombraFuerzas;
+    const unsigned char* marcas = nullptr;   // PP1 los mismos bits que AudioEngine::kMarca*
+    std::vector<unsigned char> sombraMarcas;
 public:
     static constexpr float kRayaFuerza = 3.0f;
+    static constexpr unsigned char kMarcaFlamVista = 1, kMarcaGlideVista = 2;
+    int marcasVistas = 0;
 private:
     int filas = kFilasMin;              // ver setFilas
     //  La eleccion y el tope que el maquetado midio. Ver setFilas / acota.

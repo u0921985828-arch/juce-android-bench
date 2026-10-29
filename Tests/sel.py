@@ -193,10 +193,16 @@ def main():
     juzga ("auto, borra y deshace",     [au["borrados"], au["deshecho"]], [0, 32])
     juzga ("auto, se guarda",           au["guardados"], 64)
     juzga ("auto, el boton cambia",     au["texto"], "AUTO SUBE/AUTO BAJA")
+    #  PP3 LAPIZ: el dedo escribe los 16 pasos de la banda de abajo a arriba, en
+    #  una entrada de deshacer; la serie del mando tocado es la fuerte; sin banda se apaga.
+    juzga ("auto, lapiz escribe la banda", [au["lapiz"], au["lapiz_pasos"], au["lapiz_sube"], au["lapiz_undos"]],
+                                           [1, 16, 1, 1])
+    juzga ("auto, manda el ultimo mando", au["viva"], "0/-1")
+    juzga ("auto, sin banda no hay lapiz", au["lapiz_fuera"], 1)
 
     print ()
     if fallos:
-        print ("FALLA  %d de %d: %s" % (len (fallos), 22, ", ".join (fallos)))
+        print ("FALLA  %d de %d: %s" % (len (fallos), 25, ", ".join (fallos)))
         return 1
     print ("las dos bandas recortan por sus filos, y lo que copian viaja entero")
     return 0

@@ -2627,7 +2627,7 @@ public:
     //  tomas#cuenta: armada y esperando a que acabe la cuenta atras
     bool  tomaEnCuenta() const noexcept { return grabarTrasCuenta.load (std::memory_order_acquire); }
 
-    //  tomas#onda: un pico cada kPicoHop muestras de la toma en curso, para dibujarla mientras entra
+    //  tomas#onda: un pico cada kPicoHop muestras de la toma en curso, para dibujarla mientras entra; lleno, el salto dobla (PP2)
     static constexpr int kPicoHop  = 512;
     static constexpr int kPicosMax = 16384;
     int   picosToma() const noexcept { return picosN.load (std::memory_order_acquire); }
@@ -3256,6 +3256,7 @@ private:
     std::array<float, kPicosMax> picos {};   // tomas#onda: los escribe solo el hilo de audio
     std::atomic<int> picosN { 0 };
     float picoParcial = 0.0f;                // audio-thread only
+    int picoCuenta = 0, picoSalto = kPicoHop; // PP2 audio-thread only
     void apuntaPicos (int desde, int hasta) noexcept;
     int    recordChannels = 1;               // how many of the input channels we keep
     double recordSeconds  = 60.0;
