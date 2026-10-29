@@ -5585,11 +5585,20 @@ void MainComponent::maquetaSong (juce::Rectangle<int> full)
                 const int gSel = abreSong();
                 if (moduleBarFits (panel.getWidth(), ss, 8))   // LS8 PP3
                     layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 8);
-                else
+                else if (panel.getWidth() >= 260
+                         || (moduleBarFits (panel.getWidth(), ss, 4) && moduleBarFits (panel.getWidth(), ss + 4, 4)))
                 {
                     layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 4);
                     panel.removeFromTop (Metrics::sm);
                     layoutModuleBar (panel.removeFromTop (Metrics::hit), ss + 4, 0, 4);
+                }
+                else   // PP3 en el telefono mas estrecho cuatro no caben: 3+3+2
+                {
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss, 0, 3);
+                    panel.removeFromTop (Metrics::sm);
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss + 3, 0, 3);
+                    panel.removeFromTop (Metrics::sm);
+                    layoutModuleBar (panel.removeFromTop (Metrics::hit), ss + 6, 0, 2);
                 }
                 cierraSong (gSel);
                 panel.removeFromTop (Metrics::sm);

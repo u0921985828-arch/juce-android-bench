@@ -11971,6 +11971,7 @@ void MainComponent::retranslateUi()
     songPegaBtn    .setButtonText (T ("PEGAR"));
     songBorraSelBtn.setButtonText (T ("BORRAR"));
     songAudioSelBtn.setButtonText (T ("A AUDIO"));
+    songAutoLapizBtn.setButtonText (T ("LAPIZ AUTO"));   // PP3
     ponTextoAutoSel();
     ponTextoMarcador();
     seqFollowBtn.setButtonText (T ("SEGUIR"));

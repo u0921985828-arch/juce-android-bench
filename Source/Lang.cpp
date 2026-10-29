@@ -1803,7 +1803,7 @@ namespace
         { "Mueve antes un mando de efecto", "", "Move an effect knob first", "请先转动一个效果旋钮", "حرك مقبض مؤثر أولاً" },
         { "AUTO %1 sube en %2 pasos", "", "AUTO %1 rises over %2 steps", "自动化 %1 在 %2 个步进上升", "أتمتة %1 تصعد في %2 خطوات" },
         { "AUTO %1 baja en %2 pasos", "", "AUTO %1 falls over %2 steps", "自动化 %1 在 %2 个步进下降", "أتمتة %1 تهبط في %2 خطوات" },
-        { "LAPIZ AUTO", "LÁPIZ AUTO", "AUTO PEN", "自动化画笔", "قلم الأتمتة" },   // PP3
+        { "LAPIZ AUTO", "LÁPIZ AUTO", "AUTO PEN", "画笔", "قلم آلي" },   // PP3
         { "AUTO %1 a mano", "", "AUTO %1 by hand", "手绘自动化 %1", "أتمتة %1 باليد" },
         { "Con notas marcadas en el PIANO: LEGATO las une, FLAM y GLIDE las marcan y VEL da forma a su fuerza", "", "With notes selected in PIANO: LEGATO joins them, FLAM and GLIDE mark them and VEL shapes their velocity", "在钢琴卷帘中选中音符：LEGATO 连接，FLAM 和 GLIDE 加标记，VEL 塑造力度", "مع نوتات محددة في PIANO: LEGATO يصلها، FLAM وGLIDE يعلّمانها وVEL يشكّل سرعتها" },   // PP4
         { "ARP, en el PIANO, arpegia el acorde de cada paso: SUBE, BAJA, VAIVEN o AZAR", "ARP, en el PIANO, arpegia el acorde de cada paso: SUBE, BAJA, VAIVÉN o AZAR", "ARP, in PIANO, arpeggiates each step's chord: UP, DOWN, UP-DOWN or RANDOM", "钢琴卷帘中的 ARP 把每个步进的和弦变成琶音：上行、下行、往返或随机", "في PIANO يحوّل ARP وتر كل خطوة إلى أربيجيو: صاعد، هابط، ذهاباً وإياباً أو عشوائي" },
