@@ -313,6 +313,7 @@ static double preset (int f)
         e->postNoteOn (0, 1.0f);
         corre (*e, 24000 + 24000, y, [&] (int b) { if (b == 24000 / kBs + 20) pon (*e, k); });
         peor = juce::jmax (peor, dB (agudoPeor (y, 24000)));
+        if (std::getenv ("ZATI_FX_DEPURA")) std::printf ("    preset %d -> %d  %.1f dB\n", k - 1, k, dB (agudoPeor (y, 24000)) - juce::jmax (dB (quieto), kSuelo));
     }
     return peor - juce::jmax (dB (quieto), kSuelo);
 }
@@ -544,12 +545,293 @@ static double primerEco (int f, double bpm, float div)
     return (pico (f, seco + (int) (0.002 * kSr)) - seco) * 1000.0 / kSr;
 }
 
+
+//  ---------------------------------------------------------------------------
+//  DISTINCION: cada preset de un tipo tiene que sonar a otra cosa que los otros cinco.
+//  Un golpe de ruido y un grave, cuatro por segundo durante 1.5 s y despues silencio:
+//  asi se ve lo que el efecto hace con el ataque, con el tono y con la cola.
+static SampleBuffer::Ptr golpes()
+{
+    auto* sb = new SampleBuffer();
+    const int n = (int) (1.5 * kSr);
+    sb->buffer.setSize (2, n);
+    juce::Random r (11);
+    for (int i = 0; i < n; ++i)
+    {
+        const int k = i % (int) (kSr / 4);
+        const double t = k / kSr;
+        const float v = (float) (0.55 * std::exp (-t * 40.0) * (r.nextFloat() * 2.0 - 1.0)
+                               + 0.40 * std::exp (-t * 12.0) * std::sin (2.0 * juce::MathConstants<double>::pi * 110.0 * t));
+        sb->buffer.setSample (0, i, v); sb->buffer.setSample (1, i, v);
+    }
+    sb->sourceSampleRate = kSr;
+    return SampleBuffer::Ptr (sb);
+}
+
+//  efectos#presets: una nota sostenida con ruido debajo, para lo que mueve el sonido en el tiempo (modulacion, barrido).
+static SampleBuffer::Ptr sostenido()
+{
+    auto* sb = new SampleBuffer();
+    const int n = (int) (1.5 * kSr);
+    sb->buffer.setSize (2, n);
+    juce::Random r (23), r2 (29);
+    for (int i = 0; i < n; ++i)
+    {
+        const double t = i / kSr;
+        double v = 0.0;
+        //  efectos#presets: ZATI_FX_ACORDE=1 cambia la nota por un acorde de tres (caso reservado: estimulo no visto al afinar).
+        static const bool acorde = std::getenv ("ZATI_FX_ACORDE") != nullptr;
+        if (acorde)
+            for (double f0 : { 196.0, 246.9, 293.7 })
+                for (int h = 1; h <= 5; ++h) v += 0.6 * std::sin (2.0 * juce::MathConstants<double>::pi * f0 * h * t) / h;
+        else
+            for (int h = 1; h <= 8; ++h) v += std::sin (2.0 * juce::MathConstants<double>::pi * 110.0 * h * t) / h;
+        const double fade = juce::jmin (1.0, juce::jmin (t, 1.5 - t) / 0.005);
+        //  efectos#presets: el ruido distinto en cada lado, que un ensanchador sobre una entrada mono no tiene que hacer.
+        sb->buffer.setSample (0, i, (float) (fade * (0.18 * v + 0.06 * (r.nextFloat() * 2.0 - 1.0))));
+        sb->buffer.setSample (1, i, (float) (fade * (0.18 * v + 0.06 * (r2.nextFloat() * 2.0 - 1.0))));
+    }
+    sb->sourceSampleRate = kSr;
+    return SampleBuffer::Ptr (sb);
+}
+
+struct Huella { double banda[10]; double env[30]; double lado; double banda2[10]; double mod[6]; double barre[8]; double forma[50]; double lado2; };
+
+//  efectos#presets: ZATI_FX_AJUSTE=fichero con lineas «f k pi valor» o «f k eq bandas» prueba presets sin compilar.
+static const std::map<std::tuple<int, int, int>, float>& ajustes (std::map<int, juce::String>** eq = nullptr)
+{
+    static std::map<std::tuple<int, int, int>, float> m;
+    static std::map<int, juce::String> bandas;
+    static bool leido = false;
+    if (! leido)
+    {
+        leido = true;
+        if (const char* r = std::getenv ("ZATI_FX_AJUSTE"))
+            for (auto& l : juce::StringArray::fromLines (juce::File (r).loadFileAsString()))
+            {
+                auto t = juce::StringArray::fromTokens (l.trim(), " ", "");
+                if (t.size() < 4 || t[0].startsWith ("#")) continue;
+                if (t[2] == "eq") bandas[t[1].getIntValue()] = t[3];
+                else m[{ t[0].getIntValue(), t[1].getIntValue(), t[2].getIntValue() }] = t[3].getFloatValue();
+            }
+    }
+    if (eq != nullptr) *eq = &bandas;
+    return m;
+}
+
+static void ponPreset (AudioEngine& e, int f, int k)
+{
+    std::map<int, juce::String>* eqAj = nullptr;
+    const auto& aj = ajustes (&eqAj);
+    for (int pi = 0; pi < AudioEngine::kNumParFx; ++pi)
+    {
+        const auto it = aj.find ({ f, k, pi });
+        e.setFxParam (kCanal, f, pi, it != aj.end() ? it->second : FxPresets::valor (f, k, pi));
+    }
+    juce::String bAj = f == AudioEngine::kFxEq && eqAj->count (k) ? (*eqAj)[k] : juce::String();
+    if (const char* b = bAj.isNotEmpty() ? bAj.toRawUTF8() : FxPresets::bandas (f, k))
+    {
+        auto filas = juce::StringArray::fromTokens (b, ";", "");
+        for (int i = 0; i < filas.size(); ++i)
+        {
+            auto t = juce::StringArray::fromTokens (filas[i], ":", "");
+            if (t.size() < 4) continue;
+            e.setEqBand (kCanal, i, t[0].getFloatValue(), t[1].getFloatValue());
+            e.setEqTipo (kCanal, i, t[2].getIntValue());
+            e.setEqQ    (kCanal, i, t[3].getFloatValue());
+        }
+    }
+}
+
+static Huella huella (int f, int k)
+{
+    const int n = 3 * (int) kSr;
+    auto suena = [f, k, n] (SampleBuffer::Ptr st, std::vector<float>& L, std::vector<float>& R)
+    {
+        auto e = monta (f, st, 1.0f);
+        e->setPadLoop (0, false);
+        ponPreset (*e, f, k);
+        e->postNoteOn (0, 1.0f);
+        juce::AudioBuffer<float> buf (2, kBs);
+        L.assign ((size_t) n, 0.0f); R.assign ((size_t) n, 0.0f);
+        for (int b = 0; b * kBs < n; ++b)
+        {
+            e->renderNextBlock (buf, 0, kBs);
+            for (int i = 0; i < kBs && b * kBs + i < n; ++i)
+            { L[(size_t) (b * kBs + i)] = buf.getSample (0, i); R[(size_t) (b * kBs + i)] = buf.getSample (1, i); }
+        }
+    };
+    std::vector<float> L, R;
+    suena (golpes(), L, R);
+    Huella h {};
+    std::vector<float> m ((size_t) n);
+    double em = 0.0, es = 0.0;
+    for (int i = 0; i < n; ++i)
+    {
+        m[(size_t) i] = 0.5f * (L[(size_t) i] + R[(size_t) i]);
+        const double sd = 0.5 * (L[(size_t) i] - R[(size_t) i]);
+        em += m[(size_t) i] * m[(size_t) i]; es += sd * sd;
+    }
+    if (std::getenv ("ZATI_FX_DEPURA")) { float mx = 0; int nan = 0; for (float v : m) { if (! std::isfinite (v)) ++nan; else mx = juce::jmax (mx, std::abs (v)); }
+        std::printf ("  [%d/%d] rms %.4f pico %.4f nan %d\n", f, k, std::sqrt (em / n), mx, nan); }
+    h.lado = juce::jmax (-60.0, 10.0 * std::log10 (juce::jmax (es, 1e-30) / juce::jmax (em, 1e-30)));
+    for (int w = 0; w < 30; ++w)
+    {
+        double e2 = 0.0;
+        for (int i = w * n / 30; i < (w + 1) * n / 30; ++i) e2 += m[(size_t) i] * m[(size_t) i];
+        h.env[w] = juce::jmax (-80.0, 10.0 * std::log10 (juce::jmax (e2 / (n / 30), 1e-30)));
+    }
+    //  efectos#presets: la forma de un golpe, 5 ms por marco y la media de los seis; lo que oye un compresor o una puerta.
+    for (int j = 0; j < 50; ++j)
+    {
+        double e2 = 0.0;
+        for (int g = 0; g < 6; ++g)
+            for (int i = 0; i < 240; ++i) { const double v = m[(size_t) (g * 12000 + j * 240 + i)]; e2 += v * v; }
+        h.forma[j] = juce::jmax (-80.0, 10.0 * std::log10 (juce::jmax (e2 / (6 * 240), 1e-30)));
+    }
+    const int orden = 17, N = 1 << orden;
+    std::vector<float> x ((size_t) N, 0.0f);
+    std::copy (m.begin(), m.begin() + juce::jmin (n, N), x.begin());
+    const auto p = espectro (x.data(), orden);
+    for (int b = 0; b < 10; ++b)
+    {
+        const double lo = 31.25 * std::pow (2.0, b), hi = lo * 2.0;
+        double e2 = 0.0;
+        for (int i = (int) (lo * N / kSr); i < (int) (hi * N / kSr) && i < N / 2; ++i) e2 += p[(size_t) i];
+        h.banda[b] = juce::jmax (-80.0, dB (e2 / N));
+    }
+
+    //  La nota sostenida: su tono, cuanto late la envolvente por octavas de 0.8 a 50 Hz y cuanto se mueve cada banda.
+    std::vector<float> L2, R2;
+    suena (sostenido(), L2, R2);
+    std::vector<float> m2 ((size_t) n);
+    double em2 = 0.0, es2 = 0.0;
+    for (int i = 0; i < n; ++i)
+    {
+        m2[(size_t) i] = 0.5f * (L2[(size_t) i] + R2[(size_t) i]);
+        const double sd = 0.5 * (L2[(size_t) i] - R2[(size_t) i]);
+        em2 += m2[(size_t) i] * m2[(size_t) i]; es2 += sd * sd;
+    }
+    h.lado2 = juce::jmax (-60.0, 10.0 * std::log10 (juce::jmax (es2, 1e-30) / juce::jmax (em2, 1e-30)));
+    {
+        std::vector<float> x2 ((size_t) N, 0.0f);
+        std::copy (m2.begin(), m2.begin() + juce::jmin (n, N), x2.begin());
+        const auto p2 = espectro (x2.data(), orden);
+        for (int b = 0; b < 10; ++b)
+        {
+            const double lo = 31.25 * std::pow (2.0, b), hi = lo * 2.0;
+            double e2 = 0.0;
+            for (int i = (int) (lo * N / kSr); i < (int) (hi * N / kSr) && i < N / 2; ++i) e2 += p2[(size_t) i];
+            h.banda2[b] = juce::jmax (-80.0, dB (e2 / N));
+        }
+    }
+    {
+        const int marco = 480, i0 = (int) (0.2 * kSr), nm = 128;
+        std::vector<float> env ((size_t) (2 * nm), 0.0f);
+        double media = 0.0;
+        for (int j = 0; j < nm; ++j)
+        {
+            double e2 = 0.0;
+            for (int i = 0; i < marco; ++i) { const double v = L2[(size_t) (i0 + j * marco + i)]; e2 += v * v; }   // efectos#presets: un lado, que un rotativo mueve el sonido de lado a lado
+            env[(size_t) j] = (float) std::sqrt (e2 / marco); media += env[(size_t) j];
+        }
+        media = juce::jmax (1.0e-9, media / nm);
+        for (int j = 0; j < nm; ++j) env[(size_t) j] = (float) (env[(size_t) j] / media - 1.0);
+        juce::dsp::FFT fft (7);
+        fft.performFrequencyOnlyForwardTransform (env.data());
+        for (int b = 0; b < 6; ++b)
+        {
+            double e2 = 0.0;
+            for (int i = 1 << b; i < (2 << b) && i < nm / 2; ++i) e2 += (double) env[(size_t) i] * env[(size_t) i];
+            h.mod[b] = juce::jmax (-60.0, dB (e2 / nm));
+        }
+    }
+    {
+        const int orden3 = 11, N3 = 1 << orden3, i0 = (int) (0.2 * kSr), nf = 24;
+        double suma[8] {}, suma2[8] {};
+        for (int j = 0; j < nf; ++j)
+        {
+            const auto p3 = espectro (m2.data() + i0 + j * N3 / 2, orden3);
+            for (int b = 0; b < 8; ++b)
+            {
+                const double lo = 125.0 * std::pow (2.0, b), hi = lo * 2.0;
+                double e2 = 0.0;
+                for (int i = (int) (lo * N3 / kSr); i < (int) (hi * N3 / kSr) && i < N3 / 2; ++i) e2 += p3[(size_t) i];
+                const double d = juce::jmax (-80.0, dB (e2 / N3));
+                suma[b] += d; suma2[b] += d * d;
+            }
+        }
+        for (int b = 0; b < 8; ++b)
+            h.barre[b] = std::sqrt (juce::jmax (0.0, suma2[b] / nf - std::pow (suma[b] / nf, 2.0)));
+    }
+    return h;
+}
+
+//  Lo que separa dos huellas, en dB: el peor de tono, envolvente y anchura.
+static double distancia (const Huella& a, const Huella& b)
+{
+    //  El nivel global no cuenta: dos presets que solo suenan mas fuerte son el mismo con el fader movido.
+    double ma = 0.0, mb = 0.0;
+    for (int i = 0; i < 10; ++i) { ma += a.banda[i]; mb += b.banda[i]; }
+    const double off = (ma - mb) / 10.0;
+    double t = 0.0, v = 0.0;
+    for (int i = 0; i < 10; ++i) t += std::pow (a.banda[i] - b.banda[i] - off, 2.0);
+    for (int i = 0; i < 30; ++i) v += std::pow (a.env[i] - b.env[i] - off, 2.0);
+    double fa = 0.0, fb = 0.0, fo = 0.0;
+    for (int i = 0; i < 50; ++i) { fa += a.forma[i]; fb += b.forma[i]; }
+    for (int i = 0; i < 50; ++i) fo += std::pow (a.forma[i] - b.forma[i] - (fa - fb) / 50.0, 2.0);
+    double ma2 = 0.0, mb2 = 0.0;
+    for (int i = 0; i < 10; ++i) { ma2 += a.banda2[i]; mb2 += b.banda2[i]; }
+    const double off2 = (ma2 - mb2) / 10.0;
+    double t2 = 0.0, md = 0.0, br = 0.0;
+    for (int i = 0; i < 10; ++i) t2 += std::pow (a.banda2[i] - b.banda2[i] - off2, 2.0);
+    for (int i = 0; i < 6; ++i)  md += std::pow (a.mod[i] - b.mod[i], 2.0);
+    for (int i = 0; i < 8; ++i)  br += std::pow (a.barre[i] - b.barre[i], 2.0);
+    //  efectos#presets: la latida se cuenta a la mitad; es dB de una envolvente y no de un espectro.
+    if (std::getenv ("ZATI_FX_DEPURA"))
+        std::printf ("      lado2 %.1f tono %.1f env %.1f lado %.1f forma %.1f tono2 %.1f late %.1f barre %.1f\n", std::abs (a.lado2 - b.lado2),
+                     std::sqrt (t / 10.0), std::sqrt (v / 30.0),
+                     std::abs (a.lado - b.lado), std::sqrt (fo / 50.0), std::sqrt (t2 / 10.0), 0.5 * std::sqrt (md / 6.0), std::sqrt (br / 8.0));
+    return juce::jmax (juce::jmax (std::sqrt (t / 10.0), std::sqrt (v / 30.0), std::abs (a.lado - b.lado), std::sqrt (fo / 50.0)), std::abs (a.lado2 - b.lado2),
+                       juce::jmax (std::sqrt (t2 / 10.0), 0.5 * std::sqrt (md / 6.0), std::sqrt (br / 8.0)));
+}
+static constexpr double kDistintoMin = 3.0;
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     midoReferencia();
     const int solo = argc > 1 ? juce::String (argv[1]).getIntValue() : -1;
     std::printf ("ZATI  banco de calidad de efectos   %.0f Hz  rafaga %d\n", kSr, kBs);
+    if (std::getenv ("ZATI_FX_PRESETS"))
+    {
+        std::printf ("\nDISTINCION  la pareja mas parecida de los %d presets, en dB (minimo %.0f)\n",
+                     FxPresets::cuantos(), kDistintoMin);
+        int flojos = 0;
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+        {
+            if (solo >= 0 && f != solo) continue;
+            std::vector<Huella> hs;
+            for (int k = 0; k < FxPresets::cuantos(); ++k) hs.push_back (huella (f, k));
+            double peor = 1e9; int pa = 0, pb = 0, bajo = 0;
+            for (int a = 0; a < (int) hs.size(); ++a)
+                for (int b = a + 1; b < (int) hs.size(); ++b)
+                {
+                    const double d = distancia (hs[(size_t) a], hs[(size_t) b]);
+                    if (solo >= 0) std::printf ("    %-10s ~ %-10s %5.1f\n", FxPresets::nombre (f, a), FxPresets::nombre (f, b), d);
+                    if (d < kDistintoMin) ++bajo;
+                    if (d < peor) { peor = d; pa = a; pb = b; }
+                }
+            double nivel = 0.0; for (double v : hs[1].banda) nivel += v / 10.0;
+            std::printf ("%-4s  %6.1f  %s ~ %s   nivel %5.1f  parejas bajo el minimo %d de 15\n", kMandos[f].nombre, peor,
+                         FxPresets::nombre (f, pa), FxPresets::nombre (f, pb), nivel, bajo);
+            if (bajo > 0) { ++flojos; falla ("%s: %d parejas de presets suenan casi igual (%s ~ %s, %.1f dB)",
+                                             kMandos[f].nombre, bajo, FxPresets::nombre (f, pa), FxPresets::nombre (f, pb), peor); }
+            std::fflush (stdout);
+        }
+        std::printf ("tipos con presets que se confunden: %d\n", flojos);
+        return fallos == 0 ? 0 : 1;
+    }
     {
         //  efectos#apagado: apagado es MIX 0; la ranura sigue en la cadena y lo que entra tiene que salir igual.
         auto resto = [] (const std::vector<float>& a, const std::vector<float>& b)

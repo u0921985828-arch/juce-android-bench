@@ -2331,34 +2331,47 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 const float gr = P (f, kParGraves), ag = P (f, kParAgudos);
                 const bool conGrave = std::isfinite (gr) && gr > kGravesOff;
                 const bool conAgudo = std::isfinite (ag) && ag < juce::jmin (kAgudosOff, nyqC);
+                //  efectos#corte: el corte entra y sale fundido en 10 ms; encendido o apagado de golpe chasqueaba al cambiar de preset.
+                if (conGrave) Ic.retGrHz[f] = gr;
+                if (conAgudo) Ic.retAgHz[f] = ag;
+                const bool correG = conGrave || Ic.retGrMix[f] > 0.0f, correA = conAgudo || Ic.retAgMix[f] > 0.0f;
                 for (int ch = 0; ch < 2; ++ch)
                 {
-                    if (! conGrave) Ic.retGrave[f][ch] = {};
-                    if (! conAgudo) Ic.retAgudo[f][ch] = {};
+                    if (! correG) Ic.retGrave[f][ch] = {};
+                    if (! correA) Ic.retAgudo[f][ch] = {};
                 }
-                if (conGrave || conAgudo)
+                if (correG || correA)
                 {
-                    const auto cg = Dinamica::cruceEn (juce::jlimit (kGravesOff, nyqC, gr), systemSampleRate);
-                    const auto ca = Dinamica::cruceEn (juce::jlimit (kGravesOff, nyqC, ag), systemSampleRate);
+                    const auto cg = Dinamica::cruceEn (juce::jlimit (kGravesOff, nyqC, Ic.retGrHz[f]), systemSampleRate);
+                    const auto ca = Dinamica::cruceEn (juce::jlimit (kGravesOff, nyqC, Ic.retAgHz[f]), systemSampleRate);
+                    const float paso = 1.0f / (0.010f * (float) systemSampleRate);
+                    const float objG = conGrave ? 1.0f : 0.0f, objA = conAgudo ? 1.0f : 0.0f;
+                    const float g0 = Ic.retGrMix[f], a0 = Ic.retAgMix[f];
+                    float g = g0, a = a0;
                     for (int ch = 0; ch < chans; ++ch)
                     {
                         float* w = bus.getWritePointer (ch, startSample);
+                        g = g0; a = a0;
                         for (int i = 0; i < numSamples; ++i)
                         {
+                            g = objG > g ? juce::jmin (objG, g + paso) : juce::jmax (objG, g - paso);
+                            a = objA > a ? juce::jmin (objA, a + paso) : juce::jmax (objA, a - paso);
                             float x = w[i], lp = 0.0f, hp = 0.0f, bp = 0.0f;
-                            if (conGrave)
+                            if (correG)
                             {
                                 Dinamica::svf (x, Ic.retGrave[f][ch], cg.a1, cg.a2, cg.a3, cg.k, lp, hp, bp);
-                                x = hp;
+                                x += g * (hp - x);
                             }
-                            if (conAgudo)
+                            if (correA)
                             {
                                 Dinamica::svf (x, Ic.retAgudo[f][ch], ca.a1, ca.a2, ca.a3, ca.k, lp, hp, bp);
-                                x = lp;
+                                x += a * (lp - x);
                             }
                             w[i] = std::isfinite (x) ? x : 0.0f;
                         }
                     }
+                    Ic.retGrMix[f] = g;
+                    Ic.retAgMix[f] = a;
                 }
             }
 
@@ -3390,13 +3403,13 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     {
                         const auto cr = Dinamica::cruceEn (
                             P (kFxExc, 0), systemSampleRate);
-                        //  Cuanto se empuja la banda alta contra el saturador. Los
-                        //  armonicos que salen son lo que se anade; el nivel de la
+                        //  Los armonicos que salen son lo que se anade; el nivel de la
                         //  banda BAJA no se toca, que es lo que separa un
                         //  excitador de una distorsion.
-                        const float emp = 1.0f + 8.0f * I.smExcFuerza;
                         const float gHp = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * P (kFxExc, 0) / (float) systemSampleRate);
-                        const float rel = std::exp (-1.0f / (0.05f * (float) systemSampleRate));
+                        const float kEnv = 1.0f - std::exp (-1.0f / (0.02f * (float) systemSampleRate));
+                        //  efectos#exc: los armonicos a 0.1 de la banda alta no se oian; los presets salian iguales que el efecto apagado.
+                        constexpr float kExcArm = 1.5f;
 
                         for (int ch = 0; ch < chans; ++ch)
                         {
@@ -3406,14 +3419,14 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                                 float b = 0.0f, a = 0.0f;
                                 Dinamica::cruza (w[i], I.excAlta[ch], I.excBaja[ch],
                                                  cr.a1, cr.a2, cr.a3, cr.k, b, a);
-                                const float sat = AudioEngine::fastTanh (a * emp) / emp;
-                                I.excEnv[ch] = juce::jmax (std::abs (sat), I.excEnv[ch] * rel);   // pico: el cociente nunca pasa de |sat|
-                                const float env = I.excEnv[ch] + 1.0e-6f;
-                                const float x = juce::jlimit (-1.0f, 1.0f, sat / env);   // exc#armonicos: Chebyshev, la 2a y la 3a sin tocar la propia nota
+                                //  efectos#exc: Chebyshev sobre la banda sin saturar y con la amplitud eficaz; el pico rizaba y sus productos plegaban.
+                                I.excEnv[ch] += kEnv * (a * a - I.excEnv[ch]);
+                                const float env = std::sqrt (2.0f * I.excEnv[ch]) + 1.0e-6f;
+                                const float x = juce::jlimit (-1.0f, 1.0f, a / env);   // exc#armonicos: Chebyshev, la 2a y la 3a sin tocar la propia nota
                                 const float t2 = env * (2.0f * x * x - 1.0f);
                                 const float t3 = env * x * (4.0f * x * x - 3.0f);
                                 I.excGrave[ch] += gHp * (t2 - I.excGrave[ch]);
-                                const float y = b + a + I.smExcFuerza * (0.1f * (t2 - I.excGrave[ch]) - 0.1f * t3);   // suma armonicos, no resta el agudo (audio-dsp#17)
+                                const float y = b + a + I.smExcFuerza * (kExcArm * (t2 - I.excGrave[ch]) - kExcArm * t3);   // suma armonicos, no resta el agudo (audio-dsp#17)
                                 w[i] = std::isfinite (y) ? y : 0.0f;
                             }
                         }
@@ -3682,6 +3695,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                         float hz = I.smWahBase;
                         const float wahG = bandaCompensa (wahQ);
                         if (I.wahG < 0.0f) I.wahG = wahG;
+                        if (I.smWahQ < 0.0f) I.smWahQ = wahQ;
 
                         for (int i = 0; i < numSamples; ++i)
                         {
@@ -3694,8 +3708,9 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                                                          : rEnv * I.wahEnv + (1.0f - rEnv) * pico;
 
                             I.wahG += kSamp * (wahG - I.wahG);
+                            I.smWahQ += kSamp * (wahQ - I.smWahQ);
                             hz = wahCentro (I.smWahBase, I.smWahSens, I.wahEnv);
-                            const auto c = Dinamica::polosEn (hz, 1.0f / wahQ, systemSampleRate);
+                            const auto c = Dinamica::polosEn (hz, 1.0f / I.smWahQ, systemSampleRate);
 
                             for (int ch = 0; ch < chans; ++ch)
                             {
@@ -4321,6 +4336,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 if ((live (kFxRev) || (lista && I.reverb.ringing()))
                     && entra (kFxRev, I.reverb.ringing()))
                 {
+                    I.reverb.setTipo (P (kFxRev, 4), P (kFxRev, 5));
                     I.reverb.setParameters (P (kFxRev, 0), P (kFxRev, 1));
                     I.reverb.process (fxBus[busIdx (kFxRev)], startSample, numSamples);
                     returnBus (kFxRev);

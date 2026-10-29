@@ -6213,6 +6213,8 @@ namespace
         { 21, 4, "Q|wah",          0.7,    12.0, 0.1,     3.0,  1 },   // WAH
         { 21, 5, "CAIDA|x",       10.0,  1000.0, 1.0,   120.0,  3 },
         { 27, 4, "TONO|fb",      200.0, 20000.0, 1.0,  2000.0, 15 },   // PNG
+        {  5, 4, "TIPO|rev",       0.0,     4.0, 1.0,     0.0, 16 },   // REV  efectos#tipos: Fdn::Tipo
+        {  5, 5, "PREVIO|x",       0.0,   200.0, 1.0,     0.0,  3 },
     };
 }
 
@@ -6308,6 +6310,12 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
                      : (v >= 1000.0 ? juce::String (v / 1000.0, 1) + " kHz"
                                     : juce::String ((int) v) + " Hz");
         case 4:  return juce::String ((int) v) + " bit";
+        //  efectos#tipos: el tipo de reverb por su nombre, que son los de sus presets.
+        case 16:
+        {
+            static constexpr const char* kTipos[] = { "SALA|preset", "CUARTO|preset", "PLACA|preset", "MUELLE|preset", "CATEDRAL|preset" };
+            return T (kTipos[Fdn::tipoDe ((float) v)]);
+        }
         case 5:  return juce::String ((int) v) + "x";
         //  Un LFO se dice con DECIMAL. Con el formato de frecuencia de los
         //  filtros -entero- los cuatro de modulacion arrancarian diciendo
@@ -6362,6 +6370,7 @@ void MainComponent::escribeFxParam (int f, int pi, float v)
     //  el hilo de audio, asi que copiarlo habria sido la misma regla escrita
     //  dos veces. Ver AudioEngine::setFxParam.
     engine.setFxParam (canalActual, f, pi, v);
+    if (f == focusedFx && pi == 4) refrescaVisorPlato();   // efectos#tipos: el tipo de reverb cambia la cola dibujada
     if (autoUltimo.canal != canalActual || autoUltimo.fx != f || autoUltimo.par != pi)   // LS8 PP3
     {
         autoUltimo = { canalActual, f, pi };
@@ -7828,7 +7837,8 @@ void MainComponent::refrescaMenuPresets()
             if (deFabrica)
                 v->refresca (FxPresets::valor (f, i, 0),
                              FxPresets::valor (f, i, 1),
-                             FxPresets::valor (f, i, 2));
+                             FxPresets::valor (f, i, 2),
+                             FxPresets::valor (f, i, 4));
             else if ((size_t) t < presetTuyosP.size())
                 v->refresca (presetTuyosP[(size_t) t][0],
                              presetTuyosP[(size_t) t][1],
@@ -8089,7 +8099,8 @@ void MainComponent::refrescaVisorPlato()
     if (platoMini.tipo() >= 0)
         platoMini.refresca ((float) fxParam (focusedFx, 0).getValue(),
                             (float) fxParam (focusedFx, 1).getValue(),
-                            (float) fxParam (focusedFx, 2).getValue());
+                            (float) fxParam (focusedFx, 2).getValue(),
+                            AudioEngine::tieneMando (focusedFx, 4) ? engine.getFxParam (canalActual, focusedFx, 4) : 0.0f);
 
     //  Y SE LE DICE AL MOTOR DE CUAL SE CAPTURA. El plato enseña UN visor a la
     //  vez y la curva grande del EQ es ese mismo sitio con otro inquilino, asi

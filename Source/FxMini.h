@@ -87,12 +87,12 @@ public:
     //  del EQ: `fxTraeCara` manda -1 a este visor justo para el ecualizador,
     //  porque se lleva el plato entero con su curva, asi que aquel `case`
     //  estaba escrito y no se dibujaba nunca.
-    void refresca (float p0, float p1, float p2)
+    void refresca (float p0, float p1, float p2, float p4 = 0.0f)
     {
         //  MIX no entra: dice CUANTO de esto se oye, no que forma tiene. Lo
         //  que dibuja «cuanto» es el fader que hay justo debajo.
         juce::ignoreUnused (p2);
-        FxVisor::muestrea (fx, p0, p1, curva);
+        FxVisor::muestrea (fx, p0, p1, curva, p4);
 
         bool movio = false;
         for (int i = 0; i < kPuntos && ! movio; ++i)

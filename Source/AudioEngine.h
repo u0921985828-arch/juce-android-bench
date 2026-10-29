@@ -435,7 +435,7 @@ public:
         { kSinMando, kSinMando },   // DRV
         {  20000.0f, kSinMando },   // DLY  tono de la realimentacion (Hz, 20000 apagado)
         { kSinMando, kSinMando },   // BIT
-        { kSinMando, kSinMando },   // REV
+        {     0.0f,      0.0f  },   // REV  tipo (Fdn::Tipo), previo ms
         { kSinMando, kSinMando },   // EQ
         {     5.0f,     80.0f  },   // CMP  ataque ms, caida ms   (Dinamica::kAtaqueCmp, kCaidaCmp)
         {     0.5f, kSinMando },    // GTE  ataque ms             (Dinamica::kAtaquePta)
@@ -4126,9 +4126,10 @@ private:
         //  uno por tipo y por lado: 30 x 2 x 2 x 2 x 8 bytes = 1.9 KB por
         //  canal. Y el paso bajo de la realimentacion de DLY y PNG, un polo.
         Dinamica::Svf retGrave[kNumFx][2], retAgudo[kNumFx][2];
+        float retGrMix[kNumFx] {}, retAgMix[kNumFx] {}, retGrHz[kNumFx] {}, retAgHz[kNumFx] {};   //  efectos#corte: fundido de entrada y salida de cada corte
         float dlyTonoZ[2] = { 0.0f, 0.0f }, pngTonoZ[2] = { 0.0f, 0.0f };
         float wahEnv = 0.0f;
-        float smWahSens = 0.0f, smWahBase = 400.0f;
+        float smWahSens = 0.0f, smWahBase = 400.0f, smWahQ = -1.0f;   //  efectos#corte: la Q de golpe chasqueaba al cambiar de preset
         bool  wahWasActive = false;
         //  Donde esta la banda AHORA, para la capa viva del visor.
         std::atomic<float> wahHz { 400.0f };

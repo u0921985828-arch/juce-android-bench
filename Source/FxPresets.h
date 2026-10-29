@@ -91,7 +91,12 @@ namespace FxPresets
         //  cero, y un AGUDOS en cero es un corte en 20 Hz -el efecto mudo-.
         //  Un preset de fabrica los deja en su defecto; los tuyos si los
         //  guardan, porque los escribe `guardaFxPresetTuyo` con los ocho.
-        if (pi >= 4) return AudioEngine::defectoFx (f, pi);
+        if (pi >= 4)
+        {
+            for (const auto& e : kExtra)
+                if (e.f == f && e.k == k && ! juce::exactlyEqual (e.p[pi - 4], kD)) return e.p[pi - 4];
+            return AudioEngine::defectoFx (f, pi);
+        }
 
         return kTabla[f][k - 1].p[pi];
     }

@@ -247,7 +247,7 @@ namespace FxVisor
     //  gracia: en un filtro es la frecuencia, en una transferencia el nivel de
     //  entrada, y en un eco el tiempo.
     //  ------------------------------------------------------------------
-    inline void muestrea (int fx, float p0, float p1, Curva& out)
+    inline void muestrea (int fx, float p0, float p1, Curva& out, float p4 = 0.0f)
     {
         auto pon = [&out] (int i, float v)
         {
@@ -708,7 +708,7 @@ namespace FxVisor
                 {
                     //  Ver Fdn::tauSegundos: la cola sale de la reverb y no de
                     //  tres numeros ajustados a ojo aqui.
-                    const float tau = Fdn::tauSegundos (p0, p1, 48000.0);
+                    const float tau = Fdn::tauSegundos (p0, p1, 48000.0, Fdn::tipoDe (p4));   // efectos#tipos: la cola del tipo puesto
                     const float seg = t * kVentanaMs * 0.001f;
                     pon (i, std::exp (-seg / juce::jmax (0.02f, tau)));
                     break;

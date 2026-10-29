@@ -56,11 +56,11 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "SILBA",     2500.0f, 3.20f,  1.00f, 0.0f } },
 
     //  DRV  drive 0..1, tono 200..20000
-    { { "CALOR",     0.30f,  9000.0f, 0.60f, 0.0f },
-      { "CINTA",     0.45f,  6000.0f, 0.80f, 0.0f },
-      { "SUCIO",     0.75f,  4500.0f, 0.90f, 0.0f },
-      { "ROTO",      1.00f,  3000.0f, 1.00f, 0.0f },
-      { "BRILLO",    0.55f, 14000.0f, 0.70f, 0.0f } },
+    { { "CALOR",     0.30f,  3500.0f, 0.70f, 0.0f },
+      { "CINTA",     0.50f,  7000.0f, 0.90f, 0.0f },
+      { "SUCIO",     0.80f,  5000.0f, 0.90f, 0.0f },
+      { "ROTO",      1.00f,  2200.0f, 1.00f, 0.0f },
+      { "BRILLO",    0.55f, 18000.0f, 0.70f, 0.0f } },
 
     //  DLY  tiempo 20..1000 ms, realimentacion 0..0.95
     { { "GOLPE",      90.0f, 0.15f, 0.30f, 0.0f },
@@ -70,11 +70,11 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "DOBLA",      45.0f, 0.05f, 0.45f, 0.0f } },
 
     //  BIT  bits 1..16, diezmado 1..64
-    { { "OCHO BITS",  8.0f,  2.0f, 0.60f, 0.0f },
-      { "CONSOLA",    6.0f,  4.0f, 0.70f, 0.0f },
-      { "LÍNEA",      5.0f, 12.0f, 0.60f, 0.0f },
-      { "DESTROZA",   3.0f, 24.0f, 0.80f, 0.0f },
-      { "CRUJE",     12.0f,  8.0f, 0.50f, 0.0f } },
+    { { "OCHO BITS",  8.00f,  3.00f, 1.00f, 0.0f },
+      { "CONSOLA",    4.00f,  6.00f, 0.90f, 0.0f },
+      { "LÍNEA",      10.00f, 16.00f, 0.80f, 0.0f },
+      { "DESTROZA",   2.00f, 32.00f, 1.00f, 0.0f },
+      { "CRUJE",     12.00f,  8.00f, 0.60f, 0.0f } },
 
     //  REV  tamano 0..1, amortiguacion 0..1
     { { "CUARTO",    0.25f, 0.60f, 0.20f, 0.0f },
@@ -92,52 +92,52 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "LIMPIA",    1.00f,  0.00f, 1.00f, 0.0f } },
 
     //  CMP  umbral -60..0 dB, ratio 1..20
-    { { "SUAVE",    -12.0f,  2.0f, 1.00f, 0.0f },
-      { "PEGA",     -20.0f,  4.0f, 1.00f, 0.0f },
-      { "APRIETA",  -28.0f,  8.0f, 1.00f, 0.0f },
-      { "APLASTA",  -36.0f, 16.0f, 1.00f, 0.0f },
-      { "MESA",      -8.0f,  1.8f, 1.00f, 0.0f } },
+    { { "SUAVE",    -34.00f,  2.50f, 1.00f, 0.0f },
+      { "PEGA",     -32.00f,  4.00f, 1.00f, 0.0f },
+      { "APRIETA",  -36.00f,  6.00f, 1.00f, 0.0f },
+      { "APLASTA",  -50.00f, 20.00f, 1.00f, 0.0f },
+      { "MESA",      -34.00f,  2.00f, 1.00f, 0.0f } },
 
     //  GTE  umbral -80..0 dB, cierre 5..500 ms
-    { { "LIMPIA",   -45.0f, 150.0f, 1.00f, 0.0f },
-      { "SECA",     -30.0f,  60.0f, 1.00f, 0.0f },
-      { "CORTA",    -24.0f,  20.0f, 1.00f, 0.0f },
-      { "LENTA",    -55.0f, 300.0f, 1.00f, 0.0f },
-      { "TAJANTE",  -18.0f,  12.0f, 1.00f, 0.0f } },
+    { { "LIMPIA",   -27.00f, 30.00f, 1.00f, 0.0f },
+      { "SECA",     -24.00f,  15.00f, 1.00f, 0.0f },
+      { "CORTA",    -18.00f,  8.00f, 1.00f, 0.0f },
+      { "LENTA",    -22.00f, 60.00f, 1.00f, 0.0f },
+      { "TAJANTE",  -12.00f,  5.00f, 1.00f, 0.0f } },
 
     //  DSS  frecuencia 2000..12000 Hz, fuerza 0..1
-    { { "VOZ",      6500.0f, 0.55f, 1.00f, 0.0f },
-      { "SUAVE",    7500.0f, 0.30f, 1.00f, 0.0f },
-      { "FUERTE",   5500.0f, 0.80f, 1.00f, 0.0f },
-      { "PLATOS",   9000.0f, 0.60f, 1.00f, 0.0f },
-      { "AGUDOS",   4000.0f, 0.45f, 1.00f, 0.0f } },
+    { { "VOZ",      6000.0f, 0.80f, 1.00f, 0.0f },
+      { "SUAVE",    8000.0f, 0.75f, 1.00f, 0.0f },
+      { "FUERTE",   4000.0f, 1.00f, 1.00f, 0.0f },
+      { "PLATOS",   12000.0f, 1.00f, 1.00f, 0.0f },
+      { "AGUDOS",   2000.0f, 1.00f, 1.00f, 0.0f } },
 
     //  LIM  techo -24..0 dB, soltar 5..500 ms
-    { { "TECHO",     -1.0f, 120.0f, 1.00f, 0.0f },
-      { "SEGURO",    -3.0f, 200.0f, 1.00f, 0.0f },
-      { "RÁPIDO",    -2.0f,  30.0f, 1.00f, 0.0f },
-      { "MURO",      -0.3f,  10.0f, 1.00f, 0.0f },
-      { "SUELTA",    -6.0f, 400.0f, 1.00f, 0.0f } },
+    { { "TECHO",     -9.00f, 150.0f, 1.00f, 0.0f },
+      { "SEGURO",    -13.00f, 400.0f, 1.00f, 0.0f },
+      { "RÁPIDO",    -15.00f,  15.00f, 1.00f, 0.0f },
+      { "MURO",      -24.00f,  5.00f, 1.00f, 0.0f },
+      { "SUELTA",    -18.00f, 500.0f, 1.00f, 0.0f } },
 
     //  CHO  rate 0.05..8 Hz, profundidad 0..1. Los dos ultimos van al tempo.
     { { "LENTO",     0.25f, 0.45f, 0.45f,  0.0f },
       { "ESPESO",    1.20f, 0.85f, 0.60f,  0.0f },
       { "DOBLA",     0.55f, 0.30f, 0.40f,  0.0f },
       { "COMPÁS",    0.80f, 0.55f, 0.50f, 16.0f },
-      { "NEGRA",     0.80f, 0.70f, 0.55f,  4.0f } },
+      { "NEGRA",     0.80f, 0.30f, 0.90f,  4.0f } },
 
     //  FLA  rate 0.05..8 Hz, realimentacion 0..1
     { { "AVIÓN",     0.15f, 0.85f, 0.55f,  0.0f },
-      { "METAL",     0.35f, 0.20f, 0.50f,  0.0f },
+      { "METAL",     0.35f, 0.90f, 0.50f,  0.0f },
       { "LENTO",     0.08f, 0.60f, 0.45f,  0.0f },
       { "COMPÁS",    0.25f, 0.55f, 0.50f, 16.0f },
       { "NEGRA",     0.25f, 0.65f, 0.50f,  4.0f } },
 
     //  PHA  rate 0.05..8 Hz, profundidad 0..1
-    { { "SUAVE",     0.20f, 0.50f, 0.45f,  0.0f },
+    { { "SUAVE",     0.20f, 0.40f, 0.45f,  0.0f },
       { "HONDO",     0.45f, 0.95f, 0.60f,  0.0f },
       { "RÁPIDO",    2.50f, 0.65f, 0.50f,  0.0f },
-      { "COMPÁS",    0.35f, 0.70f, 0.50f, 16.0f },
+      { "COMPÁS",    0.35f, 0.70f, 0.80f, 16.0f },
       { "CORCHEA",   0.35f, 0.70f, 0.50f,  2.0f } },
 
     //  TRM  rate 0.2..20 Hz, profundidad 0..1
@@ -157,30 +157,30 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     //  PIT  semitonos -12..+12, grano 20..120 ms
     { { "OCTAVA",    12.0f,  50.0f, 1.00f, 0.0f },
       { "SUB",      -12.0f,  80.0f, 1.00f, 0.0f },
-      { "QUINTA",     7.0f,  60.0f, 1.00f, 0.0f },
-      { "TERCERA",    4.0f,  60.0f, 1.00f, 0.0f },
+      { "QUINTA",     7.0f,  40.00f, 0.60f, 0.0f },
+      { "TERCERA",    4.0f,  100.0f, 1.00f, 0.0f },
       { "METÁLICO",   3.0f,  20.0f, 1.00f, 0.0f } },
 
     //  WID  ancho 0..2 veces, mono por debajo de 20..400 Hz
-    { { "ABRE",      1.40f, 120.0f, 1.00f, 0.0f },
+    { { "ABRE",      1.40f, 60.00f, 1.00f, 0.0f },
       { "MUY ANCHO", 2.00f, 150.0f, 1.00f, 0.0f },
       { "CIERRA",    0.50f,  60.0f, 1.00f, 0.0f },
       { "MONO",      0.00f, 400.0f, 1.00f, 0.0f },
-      { "SUB CENTRO",1.70f, 300.0f, 1.00f, 0.0f } },
+      { "SUB CENTRO",0.80f, 400.0f, 1.00f, 0.0f } },
 
     //  EXC  cruce 1000..10000 Hz, fuerza 0..1
-    { { "AIRE",      6000.0f, 0.45f, 1.00f, 0.0f },
-      { "PRESENCIA", 3000.0f, 0.60f, 1.00f, 0.0f },
-      { "BRILLO",    8000.0f, 0.70f, 1.00f, 0.0f },
-      { "SUAVE",     5000.0f, 0.25f, 1.00f, 0.0f },
-      { "FUERTE",    2000.0f, 0.85f, 1.00f, 0.0f } },
+    { { "AIRE",      10000.0f, 1.00f, 1.00f, 0.0f },
+      { "PRESENCIA", 2500.0f, 0.80f, 1.00f, 0.0f },
+      { "BRILLO",    5000.0f, 1.00f, 1.00f, 0.0f },
+      { "SUAVE",     3500.0f, 0.35f, 1.00f, 0.0f },
+      { "FUERTE",    1000.0f, 1.00f, 1.00f, 0.0f } },
 
     //  TRN  ataque -1..+1, caida -1..+1 (el centro es no hacer nada)
     { { "MÁS GOLPE",  0.70f, -0.20f, 1.00f, 0.0f },
       { "SIN GOLPE", -0.60f,  0.20f, 1.00f, 0.0f },
       { "MÁS COLA",   0.10f,  0.70f, 1.00f, 0.0f },
-      { "SECO",       0.40f, -0.80f, 1.00f, 0.0f },
-      { "PLANO",     -0.30f, -0.30f, 1.00f, 0.0f } },
+      { "SECO",       0.00f, -1.00f, 1.00f, 0.0f },
+      { "PLANO",     -0.70f, -0.60f, 1.00f, 0.0f } },
 
     //  FRZ  ventana 20..500 ms, cruce de la costura 0..1
     { { "CORTO",      40.0f, 0.20f, 1.00f, 0.0f },
@@ -191,17 +191,17 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
 
     //  WAH  sensibilidad 0..1, base 200..1200 Hz
     { { "PEDAL",     0.60f, 400.0f, 1.00f, 0.0f },
-      { "SUAVE",     0.35f, 500.0f, 1.00f, 0.0f },
-      { "AGRESIVO",  0.95f, 300.0f, 1.00f, 0.0f },
+      { "SUAVE",     0.30f, 600.0f, 1.00f, 0.0f },
+      { "AGRESIVO",  1.00f, 300.0f, 1.00f, 0.0f },
       { "GRAVE",     0.70f, 220.0f, 1.00f, 0.0f },
-      { "AGUDO",     0.50f, 900.0f, 1.00f, 0.0f } },
+      { "AGUDO",     0.50f, 1000.0f, 1.00f, 0.0f } },
 
     //  OCT  nivel de la de arriba 0..1, nivel de la de abajo 0..1
     { { "ARRIBA",    1.00f, 0.00f, 1.00f, 0.0f },
       { "ABAJO",     0.00f, 1.00f, 1.00f, 0.0f },
       { "LAS DOS",   0.70f, 0.70f, 1.00f, 0.0f },
       { "SUB",       0.15f, 0.90f, 1.00f, 0.0f },
-      { "BRILLO",    0.90f, 0.25f, 1.00f, 0.0f } },
+      { "BRILLO",    0.90f, 0.25f, 0.50f, 0.0f } },
 
     //  AMB  tamano 0..1, previo 0..120 ms
     //
@@ -209,36 +209,36 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
     //  sonido en algun lado, asi que el nombre tiene que decir donde. CABINA es
     //  el previo a cero -pegado a la pared- y ESCENARIO el previo largo, que es
     //  lo que separa estar contra el fondo de estar delante.
-    { { "CABINA",     0.20f,   0.0f, 0.25f, 0.0f },
-      { "CUARTO",     0.40f,   8.0f, 0.30f, 0.0f },
-      { "ESTUDIO",    0.60f,  20.0f, 0.30f, 0.0f },
-      { "NAVE",       0.90f,  35.0f, 0.35f, 0.0f },
-      { "ESCENARIO",  0.75f,  90.0f, 0.30f, 0.0f } },
+    { { "CABINA",     0.10f,   0.00f, 0.30f, 0.0f },
+      { "CUARTO",     0.35f,   5.00f, 0.30f, 0.0f },
+      { "ESTUDIO",    0.55f,  60.00f, 0.25f, 0.0f },
+      { "NAVE",       1.00f,  40.00f, 0.45f, 0.0f },
+      { "ESCENARIO",  0.70f,  120.0f, 0.35f, 0.0f } },
 
     //  FRM  vocal 0..1 (A E I O U), reso 0.3..4
     //
     //  Los cinco son POSICIONES y no ajustes: lo que se elige es que vocal, y
     //  el nombre lo dice. HABLA barre entre dos y es el que se automatiza.
     { { "A",          0.00f, 1.20f, 1.00f, 0.0f },
-      { "E",          0.25f, 1.40f, 1.00f, 0.0f },
-      { "I",          0.50f, 1.80f, 1.00f, 0.0f },
-      { "O",          0.75f, 1.20f, 1.00f, 0.0f },
-      { "HABLA",      0.38f, 2.60f, 1.00f, 0.0f } },
+      { "E",          0.25f, 0.60f, 1.00f, 0.0f },
+      { "I",          0.50f, 3.60f, 1.00f, 0.0f },
+      { "O",          0.75f, 4.00f, 1.00f, 0.0f },
+      { "HABLA",      0.38f, 2.00f, 0.70f, 0.0f } },
 
     //  FLD  pliegue 0..1, tono 200..20000
-    { { "CALIENTE",   0.15f, 6000.0f, 1.00f, 0.0f },
-      { "CRISTAL",    0.35f, 12000.0f, 1.00f, 0.0f },
+    { { "CALIENTE",   0.20f, 3500.0f, 1.00f, 0.0f },
+      { "CRISTAL",    0.45f, 16000.0f, 1.00f, 0.0f },
       { "METAL",      0.60f, 9000.0f, 1.00f, 0.0f },
-      { "SINTE",      0.85f, 7000.0f, 1.00f, 0.0f },
-      { "ROTO",       1.00f, 3000.0f, 1.00f, 0.0f } },
+      { "SINTE",      0.95f, 7000.0f, 1.00f, 0.0f },
+      { "ROTO",       1.00f, 2000.0f, 1.00f, 0.0f } },
 
     //  ROT  rate 0.05..8 Hz, profundidad 0..1
     //
     //  LENTO y RAPIDO son las dos velocidades que una Leslie tiene de verdad
     //  -el conmutador del organo- y por eso son las dos primeras.
     { { "LENTO",      0.80f, 0.70f, 1.00f, 0.0f },
-      { "RÁPIDO",     6.50f, 0.70f, 1.00f, 0.0f },
-      { "SUAVE",      3.00f, 0.35f, 1.00f, 0.0f },
+      { "RÁPIDO",     6.50f, 0.55f, 1.00f, 0.0f },
+      { "SUAVE",      2.00f, 0.30f, 1.00f, 0.0f },
       { "ÓRGANO",     5.50f, 0.90f, 1.00f, 0.0f },
       { "VÉRTIGO",    8.00f, 1.00f, 1.00f, 0.0f } },
 
@@ -250,9 +250,9 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "INFINITO",  380.0f, 0.92f, 0.25f, 0.0f } },
 
     //  DUC  rate 0.05..8 Hz, profundidad 0..1
-    { { "SUAVE",       2.00f, 0.35f, 1.00f, 0.0f },
-      { "CLÁSICO",     2.00f, 0.70f, 1.00f, 0.0f },
-      { "BOMBEO",      2.00f, 0.90f, 1.00f, 0.0f },
+    { { "SUAVE",       2.00f, 0.15f, 1.00f, 0.0f },
+      { "CLÁSICO",     2.00f, 0.55f, 1.00f, 0.0f },
+      { "BOMBEO",      2.00f, 1.00f, 1.00f, 0.0f },
       { "CORCHEAS",    4.00f, 0.65f, 1.00f, 0.0f },
       { "LENTO",       1.00f, 0.80f, 1.00f, 0.0f } },
 
@@ -262,6 +262,58 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "TARTAMUDO",   4.00f, 0.75f, 1.00f, 0.0f },
       { "METRALLA",    8.00f, 0.85f, 1.00f, 0.0f },
       { "ENTERO",      1.00f, 0.95f, 1.00f, 0.0f } },
+};
+
+//  efectos#presets: los cuatro de mas (p4..p7) de los presets que los mueven; lo que no esta aqui queda en su defecto.
+//  { tipo, preset 1..5, p4, p5, GRAVES, AGUDOS }, con `kSinMando` = el defecto de ese parametro.
+struct PresetExtra { int f, k; float p[4]; };
+inline constexpr float kD = AudioEngine::kSinMando;
+inline constexpr PresetExtra kExtra[] =
+{
+    //  tipo, preset, { p4, p5, GRAVES, AGUDOS } (REV: p4 tipo Fdn::Tipo, p5 previo ms)
+    { 2, 2, { kD, kD, kD, 12000.0f } },
+    { 2, 3, { kD, kD, 120.0f, kD } },
+    { 2, 4, { kD, kD, 300.0f, kD } },
+    { 2, 5, { kD, kD, 500.0f, kD } },
+    { 4, 3, { kD, kD, 300.0f, 3400.0f } },
+    { 4, 5, { kD, kD, 150.0f, kD } },
+    { 5, 1, { 1.0f, 4.0f, kD, kD } },
+    { 5, 2, { 0.0f, 18.0f, kD, kD } },
+    { 5, 3, { 2.0f, 10.0f, kD, kD } },
+    { 5, 4, { 4.0f, 45.0f, kD, kD } },
+    { 5, 5, { 3.0f, 0.0f, kD, kD } },
+    { 7, 1, { 3.00f, 50.00f, kD, kD } },
+    { 7, 2, { 50.00f, 80.00f, kD, kD } },
+    { 7, 3, { 2.00f, 200.0f, kD, kD } },
+    { 7, 4, { 0.10f, 30.00f, kD, kD } },
+    { 7, 5, { 10.00f, 400.0f, kD, kD } },
+    { 8, 4, { 25.00f, kD, kD, kD } },
+    { 9, 1, { kD, kD, 100.0f, kD } },
+    { 9, 2, { 3.00f, 300.0f, kD, kD } },
+    { 9, 3, { 0.10f, kD, kD, kD } },
+    { 9, 4, { kD, kD, 250.0f, kD } },
+    { 11, 1, { 10.00f, 4.00f, kD, kD } },
+    { 11, 2, { 20.00f, 8.00f, kD, kD } },
+    { 11, 3, { 28.00f, 1.50f, kD, kD } },
+    { 11, 5, { 6.00f, kD, kD, kD } },
+    { 12, 1, { 3.25f, 2.75f, kD, kD } },
+    { 12, 2, { 0.80f, 0.40f, kD, kD } },
+    { 12, 5, { 5.00f, 4.00f, kD, kD } },
+    { 13, 1, { 250.0f, 4.00f, kD, kD } },
+    { 13, 2, { 150.0f, 16.00f, kD, kD } },
+    { 13, 4, { 1400.0f, 3.00f, kD, kD } },
+    { 18, 2, { kD, kD, 250.0f, kD } },
+    { 18, 3, { kD, kD, 90.00f, 9000.0f } },
+    { 18, 4, { kD, kD, kD, 7000.0f } },
+    { 18, 5, { kD, kD, 120.0f, kD } },
+    { 21, 1, { 4.00f, kD, kD, kD } },
+    { 21, 2, { 1.50f, 300.0f, kD, kD } },
+    { 21, 3, { 10.00f, 40.00f, kD, kD } },
+    { 21, 5, { 6.00f, kD, kD, kD } },
+    { 22, 5, { kD, kD, 150.0f, kD } },
+    { 25, 2, { kD, kD, 200.0f, kD } },
+    { 25, 4, { kD, kD, kD, 5000.0f } },
+    { 25, 5, { kD, kD, 150.0f, kD } },
 };
 
 //  LAS CINCO BANDAS DE CADA PRESET DE EQ, y solo del EQ.
@@ -281,13 +333,13 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
 inline constexpr const char* kBandasEq[kEscritos] =
 {
     //  SONRISA: los dos extremos arriba y el medio hundido.
-    "80:4.0:0:0.70;250:-2.0:1:0.90;1000:-1.5:1:0.90;3500:1.0:1:0.90;10000:4.0:2:0.70",
+    "80:6.0:0:0.70;250:-2.0:1:0.90;1000:-4.0:1:0.90;3500:1.0:1:0.90;10000:6.0:2:0.70",
     //  VOZ: fuera el retumbe, dentro la presencia.
-    "80:-3.0:0:0.70;250:-2.0:1:1.10;1000:1.5:1:0.90;3500:3.0:1:0.90;10000:2.0:2:0.70",
+    "80:-6.0:0:0.70;250:-2.0:1:1.10;1000:4.0:1:0.90;3500:6.0:1:0.90;10000:-2.0:2:0.70",
     //  BOMBO: el golpe abajo y el hueco donde vive la caja.
-    "60:5.0:0:0.70;250:-4.0:1:1.20;1000:-1.0:1:0.90;3500:2.0:1:0.90;10000:0.0:2:0.70",
+    "60:8.0:0:0.70;250:-6.0:1:1.20;1000:-2.0:1:0.90;3500:4.0:1:0.90;10000:-4.0:2:0.70",
     //  AIRE: no toca nada por debajo y abre arriba.
-    "80:0.0:0:0.70;250:0.0:1:0.90;1000:0.0:1:0.90;3500:1.0:1:0.90;12000:5.0:2:0.60",
+    "80:0.0:0:0.70;250:-2.0:1:0.90;1000:-1.0:1:0.90;3500:3.0:1:0.90;12000:10.0:2:0.60",
     //  LIMPIA: quita lo que sobra y no sube nada, que es lo que suele faltar.
-    "80:-4.0:0:0.70;250:-2.0:1:1.00;1000:0.0:1:0.90;3500:0.0:1:0.90;10000:1.0:2:0.70",
+    "80:-12.0:0:0.70;250:-6.0:1:1.00;1000:0.0:1:0.90;3500:-4.0:1:0.90;10000:3.0:2:0.70",
 };

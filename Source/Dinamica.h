@@ -114,6 +114,7 @@ struct Dinamica
     {
         env = 0.0f;
         gSuave = 1.0f;
+        umbralSm = -1000.0f;
         for (auto& c : ramaAlta) for (auto& e : c) e = {};
         for (auto& c : ramaBaja) for (auto& e : c) e = {};
         reduccion = 0.0f;
@@ -203,8 +204,12 @@ struct Dinamica
         //  Un solo mando mueve las dos cosas -el umbral y el ratio- porque eso
         //  es lo que «cuanto» significa en un de-esser: al 0 apenas toca las
         //  eses mas fuertes, y al 1 las persigue con 8:1.
-        const float umbralDb = umbralDeDb (modo, p0, p1);
-        const float umbral   = juce::Decibels::decibelsToGain (umbralDb, -100.0f);
+        const float umbralObj = umbralDeDb (modo, p0, p1);
+        //  efectos#corte: el umbral va en 10 ms; de golpe, el limitador saltaba 9 dB en una muestra al cambiar de preset.
+        if (! (umbralSm > -900.0f)) umbralSm = umbralObj;
+        const float aU = coef (10.0f);
+        float umbralDb = umbralSm;
+        float umbral   = juce::Decibels::decibelsToGain (umbralDb, -100.0f);
 
         float peorG = 1.0f;
 
@@ -223,6 +228,13 @@ struct Dinamica
             const float pico = juce::jmax (std::abs (dL), std::abs (dR));
             env = (pico > env) ? aA * env + (1.0f - aA) * pico
                                : aR * env + (1.0f - aR) * pico;
+
+            if (std::abs (umbralSm - umbralObj) > 0.0f)
+            {
+                umbralSm = std::abs (umbralSm - umbralObj) < 0.01f ? umbralObj : aU * umbralSm + (1.0f - aU) * umbralObj;
+                umbralDb = umbralSm;
+                umbral   = juce::Decibels::decibelsToGain (umbralDb, -100.0f);
+            }
 
             //  --- el calculador de ganancia -------------------------------
             float g = 1.0f;
@@ -388,6 +400,7 @@ private:
     double sr = 48000.0;
     float env = 0.0f;
     float gSuave = 1.0f;
+    float umbralSm = -1000.0f;
     //  Cuatro estados por canal: dos etapas para la rama alta y dos para la
     //  baja. Ver `svf` y el parrafo del cruce.
     Svf ramaAlta[2][2] {}, ramaBaja[2][2] {};

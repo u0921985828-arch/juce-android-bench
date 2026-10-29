@@ -10476,6 +10476,7 @@ int main()
             if (par == 3) return 16.0f;
             if (par == AudioEngine::kParGraves) return 400.0f;
             if (par == AudioEngine::kParAgudos) return 1500.0f;
+            if (fx == AudioEngine::kFxRev) return par == 4 ? 2.0f : 30.0f;   //  efectos#tipos: tipo y previo nacen en cero; por tres seguirian en cero
             const float d = AudioEngine::defectoFx (fx, par);
             return d >= 19999.0f ? 1500.0f : d * 3.0f;
         };
