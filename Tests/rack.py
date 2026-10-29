@@ -285,6 +285,24 @@ def main ():
         malo.append ("poner un efecto cambia %d px de %d: el cristal vacio no es "
                      "un cristal o es ya la curva" % (r["visor_dif"], r["visor_vacio"]))
 
+    #  8. efectos#retorno: ENVIO A, por su mando y su tapa. Que mida un dedo y quepa
+    #     en la ficha, que el mando escriba el motor, que guardar lo conserve y
+    #     que la tapa lleve a RETORNO A con el envio apagado alli.
+    rf = r.get ("ret_fader", [0, 0])
+    print ("retorno    fader %dx%d dentro %d   escrito %.2f guardado %.2f   la tapa lleva al canal %d (envio activo %d)"
+           % (rf[0], rf[1], r.get ("ret_dentro", 0), r.get ("ret_escrito", -1), r.get ("ret_guardado", -1),
+              r.get ("ret_lleva", -1) + 1, r.get ("ret_en_retorno", -1)))
+    if rf[1] < 36 or rf[0] < 100 or r.get ("ret_dentro", 0) != 1:
+        malo.append ("el fader de ENVIO A no esta en la ficha o no mide un dedo: %dx%d dentro %d"
+                     % (rf[0], rf[1], r.get ("ret_dentro", 0)))
+    if abs (r.get ("ret_escrito", -1) - 0.6) > 0.005:
+        malo.append ("mover ENVIO A no escribe el envio del canal: %.3f" % r.get ("ret_escrito", -1))
+    if abs (r.get ("ret_guardado", -1) - 0.6) > 0.005:
+        malo.append ("guardar y abrir pierde el envio a RETORNO A: %.3f" % r.get ("ret_guardado", -1))
+    if r.get ("ret_lleva", -1) != 14 or r.get ("ret_en_retorno", -1) != 0:
+        malo.append ("la tapa ENVIO A no lleva a RETORNO A (canal %d) o alli deja mandar a un retorno (%d)"
+                     % (r.get ("ret_lleva", -1) + 1, r.get ("ret_en_retorno", -1)))
+
     if malo:
         for m in malo: print ("FALLA  " + m)
         return 1

@@ -185,6 +185,14 @@ inline juce::String padsTexto (int n, bool continuidad = false)
               Lang::ltr (juce::String (n)));
 }
 
+//  efectos#retorno: los canales 15 y 16 se llaman RETORNO A y B; los demas, por su numero.
+inline juce::String nombreCanalMesa (int c)
+{
+    const int r = AudioEngine::retornoDeCanal (c);
+    if (r >= 0) return T (r == 0 ? "RETORNO A" : "RETORNO B");
+    return T ("CANAL %1", Lang::ltr (juce::String (c + 1)));
+}
+
 //  UNA FILA DE RADIO DICE COMO SE LLAMA.
 //
 //  El id de grupo era un numero pelado repetido en dieciseis sitios y sin nada
@@ -906,6 +914,8 @@ namespace
             "El XY deja los pads tocables debajo, para las dos manos",
             "Verde hasta -12 dB, amarillo hasta -3, y el rojo se queda puesto",
             "SIN CANAL saca el pad de la mesa: va derecho al maestro, sin fader ni efectos",
+            "Los canales 15 y 16 son RETORNO A y B: ponles una reverb o un eco",   // efectos#retorno
+            "ENVIO A y B, en el RACK, mandan el canal a su retorno; todos comparten la misma sala",
             nullptr }, 15, 15 },
         { "CANCION", {
             "Los patrones se colocan en el tiempo, en cuatro carriles",
@@ -1359,7 +1369,8 @@ namespace ZatiTour
 
           "La mesa tiene los PADS y %2 CANALES: cada pad entra en uno, y cada "
           "canal lleva sus %1 efectos, la reverb incluida. El RACK dice cuanto "
-          "de cada canal pasa por cada uno, y cuales sustituyen y cuales suman.",
+          "de cada canal pasa por cada uno; ENVIO A y ENVIO B lo mandan a los RETORNOS, "
+          "los canales 15 y 16, que comparten su sala.",
 
           "Los patrones colocados en el tiempo, en cuatro carriles. Un bloque "
           "dura los PASOS que ocupa: se parte con las tijeras y se copia medio.",

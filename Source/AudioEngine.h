@@ -247,6 +247,10 @@ public:
     //  regla de siempre -*lo que no esta en el fichero vale su defecto*- que
     //  aqui ya estaba generalizada sin que nadie lo hubiera necesitado.
     static constexpr int kNumCanales = 32;
+    //  efectos#retorno: los canales 15 y 16 son RETORNO A y B; cualquier otro les manda con su nivel y salen al master con sus efectos.
+    static constexpr int kNumRetornos = 2;
+    static constexpr int kCanalRetorno[kNumRetornos] = { 14, 15 };
+    static constexpr int retornoDeCanal (int c) noexcept { return c == 14 ? 0 : c == 15 ? 1 : -1; }
 
     //  QUE CANAL LLEVA DE VERDAD ESE PARAMETRO, escrito UNA vez y aqui.
     //
@@ -2150,6 +2154,17 @@ public:
         int n = 0;
         for (const auto& I : ins) if (I.mesaLista.load (std::memory_order_acquire)) ++n;
         return n;
+    }
+    //  efectos#retorno: cuanto manda un canal a RETORNO A (r 0) o B (r 1), despues de su fader y sus efectos; un retorno no manda.
+    void setCanalRetorno (int canal, int r, float v) noexcept
+    {
+        if (! tieneCanal (canal) || r < 0 || r >= kNumRetornos || retornoDeCanal (canal) >= 0) return;
+        canalRet[(size_t) canal][(size_t) r].store (juce::jlimit (0.0f, 1.0f, v), std::memory_order_relaxed);
+    }
+    float getCanalRetorno (int canal, int r) const noexcept
+    {
+        if (! tieneCanal (canal) || r < 0 || r >= kNumRetornos) return 0.0f;
+        return canalRet[(size_t) canal][(size_t) r].load (std::memory_order_relaxed);
     }
     float getCanalSend (int canal, int fx) const noexcept
     {
@@ -4375,6 +4390,15 @@ private:
     std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padRecorte {};
     std::array<std::atomic<juce::uint8>, kNumPads> padCanal {};
     std::array<std::array<std::atomic<float>, kNumFx>, kNumCanales> canalSend {};
+    std::array<std::array<std::atomic<float>, kNumRetornos>, kNumCanales> canalRet {};
+    //  efectos#retorno: del hilo de audio. El nivel suavizado de cada envio, el del fader del retorno, quien manda este bloque y lo que sale de cada canal que manda.
+    std::array<std::array<float, kNumRetornos>, kNumCanales> smRet {};
+    std::array<float, kNumRetornos> smRetCan { 1.0f, 1.0f };
+    std::array<bool, kNumRetornos> retVivo {};
+    std::array<bool, kNumCanales> enviaCanal {};
+    bool hayEnvios = false;
+    std::array<juce::AudioBuffer<float>, kNumCanales> salidaDeCanal;
+    juce::AudioBuffer<float> entradaRet;
     std::array<std::atomic<float>, kNumCanales> canalGain {};
     //  Y EL CANAL SE PANEA Y SE ABRE, que era lo que le faltaba a la tira.
     //

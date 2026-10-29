@@ -258,6 +258,8 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
     padScratch.clear();
     for (auto& b : fxBus) { b.setSize (2, juce::jmax (1, maxBlock)); b.clear(); }
     for (auto& b : secoDeCanal) { b.setSize (2, juce::jmax (1, maxBlock)); b.clear(); }
+    for (auto& b : salidaDeCanal) { b.setSize (2, juce::jmax (1, maxBlock)); b.clear(); }
+    entradaRet.setSize (2, juce::jmax (1, maxBlock));
     busRinging.fill (false);
 
     //  LA LINEA DEL DELAY, LA DEL AMBIENTE, LA DEL PING-PONG Y LA SALA ya no
@@ -1163,6 +1165,24 @@ void AudioEngine::faseGanancias (Mezcla& mz) noexcept
     auto& busFed = mz.busFed;
     auto& canalDePad = mz.canalDePad;
     auto& padSplit = mz.padSplit;
+    //  efectos#retorno: quien manda a un retorno este bloque; sin ninguno todo queda como estaba, bit a bit.
+    hayEnvios = false;
+    for (int c = 0; c < kNumCanales; ++c)
+    {
+        bool manda = false;
+        for (int r = 0; r < kNumRetornos; ++r)
+        {
+            const float v = canalRet[(size_t) c][(size_t) r].load (std::memory_order_relaxed);
+            manda = manda || v > 0.0f || smRet[(size_t) c][(size_t) r] > 0.0f;
+        }
+        enviaCanal[(size_t) c] = manda;
+        if (manda)
+        {
+            hayEnvios = true;
+            for (int ch = 0; ch < 2; ++ch) salidaDeCanal[(size_t) c].clear (ch, startSample, numSamples);
+        }
+    }
+    if (! hayEnvios) retVivo.fill (false);
     for (int p = 0; p < kNumPads; ++p)
     {
         const bool filtered = (filtMask >> (unsigned) p) & 1ull;
@@ -1224,7 +1244,8 @@ void AudioEngine::faseGanancias (Mezcla& mz) noexcept
             //  esta en la unidad clavada. Con `smCan < 0.9995f` un canal por
             //  ENCIMA de 0 dB tomaba el camino corto y su ganancia no se
             //  aplicaba nunca: bajar el fader se oia y subirlo no.
-            padSplit[p] = filtered || canalHot || std::abs (smCan - 1.0f) > 0.0005f;
+            padSplit[p] = filtered || canalHot || std::abs (smCan - 1.0f) > 0.0005f
+                            || (en && enviaCanal[(size_t) canal]);
             canalDePad[p] = canal;
             for (int f = 0; f < kNumFx; ++f) sendGain[p][f] = 0.0f;
             continue;
@@ -1301,7 +1322,7 @@ void AudioEngine::faseGanancias (Mezcla& mz) noexcept
         }
         dryGain[p]  = dry * smCan;
         canalDePad[p] = canal;
-        padSplit[p] = any || filtered || canalHot
+        padSplit[p] = any || filtered || canalHot || enviaCanal[(size_t) canal]
                           || std::abs (smCan - 1.0f) > 0.0005f || medido;
         smSendHot[(size_t) p] = hot;
     }
@@ -1464,6 +1485,10 @@ void AudioEngine::renderVoices (Mezcla& mz, int s, int nn) noexcept
         if (dryGain[p] > 0.0005f)
             for (int ch = 0; ch < busChans; ++ch)
                 out.addFrom (ch, s, padScratch, ch, s, nn, dryGain[p]);
+        //  efectos#retorno: el seco de un canal que manda se apunta tambien en su salida.
+        if (dryGain[p] > 0.0005f && tieneCanal (canalDePad[p]) && enviaCanal[(size_t) canalDePad[p]])
+            for (int ch = 0; ch < busChans; ++ch)
+                salidaDeCanal[(size_t) canalDePad[p]].addFrom (ch, s, padScratch, ch, s, nn, dryGain[p]);
 
         for (int f = 0; f < kNumFx; ++f)
             if (sendGain[p][f] > 0.0f)
@@ -2313,6 +2338,17 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
             return std::pair<float, float> { m0, m1 };
         };
 
+        //  efectos#retorno: todo lo que un canal devuelve al master pasa por aqui, y si el canal manda a un retorno se apunta tambien en su salida.
+        auto alMaster = [&] (const juce::AudioBuffer<float>& src, float g0, float g1) noexcept
+        {
+            const int c = juce::jlimit (0, kNumCanales - 1, canalEtapa);
+            for (int ch = 0; ch < chans; ++ch)
+                out.addFromWithRamp (ch, startSample, src.getReadPointer (ch, startSample), numSamples, g0, g1);
+            if (enviaCanal[(size_t) c])
+                for (int ch = 0; ch < chans; ++ch)
+                    salidaDeCanal[(size_t) c].addFromWithRamp (ch, startSample, src.getReadPointer (ch, startSample), numSamples, g0, g1);
+        };
+
         auto returnBus = [&] (int f) noexcept
         {
             auto& bus = fxBus[busIdx (f)];
@@ -2444,8 +2480,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 busRinging[busIdx (f)] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
                 const auto [m0, m1] = rampaMix (f, mix);
                 if (m0 > 0.0f || m1 > 0.0f)
-                    for (int ch = 0; ch < chans; ++ch)
-                        out.addFromWithRamp (ch, startSample, bus.getReadPointer (ch, startSample), numSamples, m0, m1);
+                    alMaster (bus, m0, m1);
                 if (! busFed[busIdx (f)]) return;
 
                 auto& sec = secoDeCanal[(size_t) c];
@@ -2459,8 +2494,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 }
                 else
                 {
-                    for (int ch = 0; ch < chans; ++ch)
-                        out.addFrom (ch, startSample, sec, ch, startSample, numSamples);
+                    alMaster (sec, 1.0f, 1.0f);
                 }
                 return;
             }
@@ -2561,8 +2595,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  de arriba-.
             }
 
-            for (int ch = 0; ch < chans; ++ch)
-                out.addFrom (ch, startSample, bus, ch, startSample, numSamples);
+            alMaster (bus, 1.0f, 1.0f);
             busRinging[busIdx (f)] = (bus.getMagnitude (startSample, numSamples) > 1.0e-5f);
         };
 
@@ -2588,8 +2621,58 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
         //  nadie les manda -no hay `busFed` ni `busRinging`- asi que el cuerpo
         //  no se ejecuta y la secuencia de `out.addFrom` es identica muestra a
         //  muestra a la de antes. Esa es la fila de control del banco.
+        //  efectos#retorno: con algun envio, dos pasadas; la segunda corre solo los retornos con lo que les mandaron los demas ya sumado.
+        for (int pasada = 0; pasada < (hayEnvios ? 2 : 1); ++pasada)
+        {
+        if (pasada == 1)
+            for (int r = 0; r < kNumRetornos; ++r)
+            {
+                const int R = kCanalRetorno[r];
+                for (int ch = 0; ch < chans; ++ch) entradaRet.clear (ch, startSample, numSamples);
+                bool algo = false;
+                for (int c = 0; c < kNumCanales; ++c)
+                {
+                    if (! enviaCanal[(size_t) c]) continue;
+                    float& sm = smRet[(size_t) c][(size_t) r];
+                    const float obj = canalRet[(size_t) c][(size_t) r].load (std::memory_order_relaxed);
+                    const float g0 = sm;
+                    float g1 = g0 + kBlock * (obj - g0);
+                    if (std::abs (g1 - obj) < 1.0e-4f) g1 = obj;
+                    sm = g1;
+                    if (g0 <= 0.0f && g1 <= 0.0f) continue;
+                    algo = true;
+                    for (int ch = 0; ch < chans; ++ch)
+                        entradaRet.addFromWithRamp (ch, startSample, salidaDeCanal[(size_t) c].getReadPointer (ch, startSample), numSamples, g0, g1);
+                }
+                //  El fader y el mute del retorno; el solo de otro canal no lo calla, que es donde suena su sala.
+                const float objR = canalMute[(size_t) R].load (std::memory_order_relaxed) ? 0.0f
+                                 : canalGain[(size_t) R].load (std::memory_order_relaxed);
+                if (! retVivo[(size_t) r]) smRetCan[(size_t) r] = objR;   // efectos#retorno: si no le entraba nada no hay rampa que oir
+                retVivo[(size_t) r] = algo;
+                if (! algo) continue;
+                const float r0 = smRetCan[(size_t) r];
+                float r1 = r0 + kBlock * (objR - r0);
+                if (std::abs (r1 - objR) < 1.0e-4f) r1 = objR;
+                smRetCan[(size_t) r] = r1;
+                for (int ch = 0; ch < chans; ++ch) entradaRet.applyGainRamp (ch, startSample, numSamples, r0, r1);
+                const int pf = primerFxDe (R);
+                if (pf < 0)
+                {
+                    for (int ch = 0; ch < chans; ++ch) out.addFrom (ch, startSample, entradaRet, ch, startSample, numSamples);
+                    continue;
+                }
+                const size_t b = (size_t) busDe (R, pf);
+                for (int ch = 0; ch < chans; ++ch)
+                {
+                    if (busFed[b]) fxBus[b].addFrom (ch, startSample, entradaRet, ch, startSample, numSamples);
+                    else           fxBus[b].copyFrom (ch, startSample, entradaRet, ch, startSample, numSamples);
+                    secoDeCanal[(size_t) R].copyFrom (ch, startSample, fxBus[b], ch, startSample, numSamples);
+                }
+                busFed[b] = true;
+            }
         for (int canal = 0; canal < kNumCanales; ++canal)
         {
+            if (hayEnvios && (retornoDeCanal (canal) >= 0) != (pasada == 1)) continue;   // efectos#retorno: los retornos, en la segunda pasada
             canalEtapa = canal;
             Inserto& I = ins[(size_t) canal];
             // --- 1. FLT: el barrido, en las dos direcciones. -------------------
@@ -2857,6 +2940,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
         //  muestra a la de antes. Esa es la fila de control del banco.
         for (int canal = 0; canal < kNumCanales; ++canal)
         {
+            if (hayEnvios && (retornoDeCanal (canal) >= 0) != (pasada == 1)) continue;   // efectos#retorno: los retornos, en la segunda pasada
             canalEtapa = canal;
             Inserto& I = ins[(size_t) canal];
             // --- 7. EQ: cinco biquads por canal sobre su propio bus. -----------
@@ -2931,6 +3015,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
         //  Ver `fxPorCanal`.
         for (int canal = 0; canal < kNumCanales; ++canal)
         {
+            if (hayEnvios && (retornoDeCanal (canal) >= 0) != (pasada == 1)) continue;   // efectos#retorno: los retornos, en la segunda pasada
             canalEtapa = canal;
             Inserto& I = ins[(size_t) canal];
             const float fsF = (float) systemSampleRate;
@@ -3214,6 +3299,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
         //  muestra a la de antes. Esa es la fila de control del banco.
         for (int canal = 0; canal < kNumCanales; ++canal)
         {
+            if (hayEnvios && (retornoDeCanal (canal) >= 0) != (pasada == 1)) continue;   // efectos#retorno: los retornos, en la segunda pasada
             canalEtapa = canal;
             Inserto& I = ins[(size_t) canal];
             // --- 10. CARACTER: RNG, PIT, WID, EXC, TRN y FRZ. ------------------
@@ -4588,6 +4674,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
             }
         }
         canalEtapa = 0;
+        }
 
         //  EL ANILLO DEL VISOR SE VACIA CUANDO EL EFECTO MIRADO NO SACA NADA.
         //

@@ -3191,6 +3191,9 @@ private:
     //  Y sus dos chips de banco. Ver `canalBankBtns`: el indice es compartido.
     juce::OwnedArray<Boton> rackBankBtns;
     juce::OwnedArray<juce::Slider>     rackSends;
+    //  efectos#retorno: cuanto manda el canal a RETORNO A y B; la tapa lleva al retorno.
+    juce::OwnedArray<Boton>            rackRetBtns;
+    juce::OwnedArray<juce::Slider>     rackRetSends;
     //  El canalon de la izquierda de cada fila. Era texto PINTADO -el nombre
     //  del efecto y su dibujo- y ahora es una tapa, porque el RACK pasa a ser
     //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es

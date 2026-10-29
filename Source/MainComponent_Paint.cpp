@@ -1846,6 +1846,7 @@ void MainComponent::pintaRotuloCanal (juce::Graphics& g, int c, juce::Rectangle<
     g.setFont (ZatiColours::monoFont (Metrics::fMeta));
     const int nameX = chip.getRight() + 6;
     g.drawText (nombre.isNotEmpty() ? nombre
+                                    : AudioEngine::retornoDeCanal (c) >= 0 ? nombreCanalMesa (c)
                                     : has ? padsTexto (cuenta)
                                           : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
                 nameX, fila.getY(), juce::jmax (24, r.getRight() - nameX), fila.getHeight(),
@@ -2617,7 +2618,7 @@ void MainComponent::paintRackSheetContent (juce::Graphics& g)
     titleRow  = centraEnRenglon (titleRow,  cabRack);
     bandaRack = centraEnRenglon (bandaRack, cabRack);
     pintaTitulo (g, titleRow,
-                 T ("RACK") + "  " + dot + "  " + T ("CANAL %1", Lang::ltr (juce::String (canalActual + 1)))
+                 T ("RACK") + "  " + dot + "  " + nombreCanalMesa (canalActual)
                 + "  " + dot + "  " + padsTexto (cuantos), "titulo", true);
 
     g.setColour (ZatiColours::inkDim);

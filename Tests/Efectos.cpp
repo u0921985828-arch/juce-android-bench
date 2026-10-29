@@ -911,6 +911,80 @@ int main (int argc, char** argv)
                          pf >= 0 ? kMandos[pf].nombre : "-", pg >= 0 ? kMandos[pg].nombre : "-", malas);
         }
     }
+    {
+        //  efectos#retorno: un canal manda a RETORNO A (canal 15, con REV) o B (canal 16, con DLY) y lo humedo sale una vez, de la sala del retorno.
+        constexpr int kRetA = AudioEngine::kCanalRetorno[0], kRetB = AudioEngine::kCanalRetorno[1];
+        auto ruidoDe = [] (int semilla)
+        {
+            auto* sb = new SampleBuffer();
+            sb->buffer.setSize (2, 96000);
+            juce::Random r (semilla);
+            for (int i = 0; i < 96000; ++i)
+            {
+                const float v = 0.25f * (r.nextFloat() * 2.0f - 1.0f);
+                sb->buffer.setSample (0, i, v); sb->buffer.setSample (1, i, v);
+            }
+            sb->sourceSampleRate = kSr;
+            return SampleBuffer::Ptr (sb);
+        };
+        //  canales[k] < 0: el pad k no suena. envia[k]: A, B o -1.
+        auto suena = [&] (std::array<int, 2> canales, std::array<int, 2> envia, bool retMudo)
+        {
+            auto e = monta (-1, ruido (0.25f), 0.0f);
+            e->setSafetyLimiter (false);   // la suma de dos ruidos no puede tocar el limitador o deja de ser una suma
+            constexpr int kPad[2] = { 0, 1 };
+            e->publishSample (kPad[1], ruidoDe (11));
+            e->setPadGain (kPad[1], 1.0f); e->setPadLoop (kPad[1], true);
+            for (int k = 0; k < 2; ++k) { e->setPadChoke (kPad[k], 0); e->setPadSelfCut (kPad[k], false); e->setPadPitch (kPad[k], 0.0f); }
+            e->setCanalSend (kRetA, AudioEngine::kFxRev, 1.0f); e->setFxParam (kRetA, AudioEngine::kFxRev, 2, 1.0f);
+            e->setCanalSend (kRetB, AudioEngine::kFxDly, 1.0f); e->setFxParam (kRetB, AudioEngine::kFxDly, 2, 1.0f);
+            e->setCanalMute (kRetA, retMudo);
+            for (int k = 0; k < 2; ++k)
+            {
+                if (canales[(size_t) k] < 0) continue;
+                e->setPadCanal (kPad[k], canales[(size_t) k]);
+                if (envia[(size_t) k] >= 0) e->setCanalRetorno (canales[(size_t) k], envia[(size_t) k], 1.0f);
+            }
+            //  el primer bloque tras preparar se queda con un solo golpe (Tribunal 2026-09, 1.2): uno en vacio antes.
+            { juce::AudioBuffer<float> b (2, kBs); e->renderNextBlock (b, 0, kBs); }
+            for (int k = 0; k < 2; ++k)
+                if (canales[(size_t) k] >= 0) e->postNoteOn (kPad[k], 1.0f);
+            std::vector<float> y; corre (*e, 48000, y);
+            return y;
+        };
+        auto menos = [] (std::vector<float> a, const std::vector<float>& b) { for (size_t i = 0; i < a.size(); ++i) a[i] -= b[i]; return a; };
+        auto mas   = [] (std::vector<float> a, const std::vector<float>& b) { for (size_t i = 0; i < a.size(); ++i) a[i] += b[i]; return a; };
+        auto potDe = [] (const std::vector<float>& a, const std::vector<float>& ref)
+        {
+            double e = 0.0, r = 0.0;
+            for (size_t i = 24000; i < a.size(); ++i) { e += a[i] * a[i]; r += ref[i] * ref[i]; }
+            return 10.0 * std::log10 (juce::jmax (e, 1e-30) / juce::jmax (r, 1e-30));
+        };
+        auto resto = [&] (const std::vector<float>& a, const std::vector<float>& b) { return potDe (menos (a, b), b); };
+
+        const auto seco1  = suena ({ 1, -1 }, { -1, -1 }, false);
+        const auto envA1  = suena ({ 1, -1 }, { 0, -1 }, false);
+        const auto mudoA1 = suena ({ 1, -1 }, { 0, -1 }, true);
+        const auto seco20 = suena ({ 20, -1 }, { -1, -1 }, false);
+        const auto envA20 = suena ({ 20, -1 }, { 0, -1 }, false);
+        const auto envB1  = suena ({ 1, -1 }, { 1, -1 }, false);
+        const auto seco2  = suena ({ -1, 2 }, { -1, -1 }, false);
+        const auto envA2  = suena ({ -1, 2 }, { -1, 0 }, false);
+        const auto seco12 = suena ({ 1, 2 }, { -1, -1 }, false);
+        const auto envA12 = suena ({ 1, 2 }, { 0, 0 }, false);
+        const auto humA1 = menos (envA1, seco1), humA20 = menos (envA20, seco20), humB1 = menos (envB1, seco1);
+        const auto humA12 = menos (envA12, seco12), humSuma = mas (humA1, menos (envA2, seco2));
+
+        const double sala = potDe (humA1, seco1), eco = potDe (humB1, seco1);
+        const double mudo = resto (mudoA1, seco1), orden = resto (humA20, humA1), compartida = resto (humA12, humSuma);
+        std::printf ("RETORNO  sala A %.1f dB  eco B %.1f dB  retorno mudo %.1f dB  desde el canal 21 %.1f dB  dos canales una sala %.1f dB\n",
+                     sala, eco, mudo, orden, compartida);
+        if (sala < -20.0) falla ("el envio a RETORNO A no llega a su REV: humedo %.1f dB", sala);
+        if (eco  < -20.0) falla ("el envio a RETORNO B no llega a su DLY: humedo %.1f dB", eco);
+        if (mudo > kApagadoMax) falla ("con RETORNO A en mute el envio sigue sonando: resto %.1f dB", mudo);
+        if (orden > kApagadoMax) falla ("el canal 21 manda distinto que el 2 a la misma sala: resto %.1f dB", orden);
+        if (compartida > kApagadoMax) falla ("dos canales en RETORNO A no son una sala compartida: resto %.1f dB", compartida);
+    }
     if (std::getenv ("ZATI_FX_APAGADO")) return fallos == 0 ? 0 : 1;
     std::printf ("%-4s %9s %8s %8s %8s %9s %7s %9s %7s %7s\n",
                  "fx", "pliegue", "en Hz", "mover1", "mover2", "encender", "nivel", "cola", "trino", "preset");

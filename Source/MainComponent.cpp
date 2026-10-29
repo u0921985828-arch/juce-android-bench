@@ -1628,6 +1628,32 @@ void MainComponent::cableaAjustes()
             rackPadBtns.add (b);
         }
 
+        //  efectos#retorno: ENVIO A y B, una fila cada uno debajo de las ranuras.
+        for (int r = 0; r < AudioEngine::kNumRetornos; ++r)
+        {
+            auto* t = new Boton (T (r == 0 ? "ENVIO A" : "ENVIO B"));
+            styleButton (*t, kStepOff);
+            t->onClick = [this, r] { ponCanalActual (AudioEngine::kCanalRetorno[r]); refrescaRanuras(); refreshRack(); };
+            rackSheet.cuerpo.addAndMakeVisible (t);
+            rackRetBtns.add (t);
+
+            auto* sl = new ZatiSlider();
+            sl->setSliderStyle (juce::Slider::LinearHorizontal);
+            sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, Metrics::readout);
+            sl->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
+            sl->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
+            sl->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+            sl->setRange (0.0, 1.0, 0.01);
+            sl->setValue (0.0, juce::dontSendNotification);
+            sl->setDoubleClickReturnValue (true, 0.0);
+            sl->setSliderSnapsToMousePosition (false);
+            sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
+            sl->updateText();
+            sl->onValueChange = [this, r, sl] { engine.setCanalRetorno (canalActual, r, (float) sl->getValue()); };
+            rackSheet.cuerpo.addAndMakeVisible (sl);
+            rackRetSends.add (sl);
+        }
+
         //  Y SUS DOS CHIPS DE BANCO, con el MISMO indice que los del selector de
         //  EL PAD: el canal elegido es uno, asi que un banco por selector
         //  dejaria el rack abriendose en el 1-16 despues de mover un pad al 20.
@@ -13827,6 +13853,13 @@ juce::ValueTree MainComponent::captureState() const
         }
         fx.setProperty ("csends", filas.joinIntoString (";"), nullptr);
     }
+    {
+        //  efectos#retorno: lo que cada canal manda a RETORNO A y B, "a,b" por canal.
+        juce::StringArray filas;
+        for (int c = 0; c < kNumCanales; ++c)
+            filas.add (juce::String (engine.getCanalRetorno (c, 0), 3) + "," + juce::String (engine.getCanalRetorno (c, 1), 3));
+        fx.setProperty ("cret", filas.joinIntoString (";"), nullptr);
+    }
 
     //  El fader y el mute de cada canal, dos listas cortas y no dispersas.
     {
@@ -14419,6 +14452,16 @@ void MainComponent::applyState (const juce::ValueTree& s)
                     engine.setCanalSend (c, f,
                                          traeCanales ? (f < r.size() ? r[f].getFloatValue() : 0.0f)
                                                      : (c == 0 && f < viejos ? 1.0f : 0.0f));
+            }
+            //  efectos#retorno: sin `cret` el fichero es anterior a los retornos y nadie manda.
+            juce::StringArray rets;
+            rets.addTokens (fx.getProperty ("cret", juce::String()).toString(), ";", "");
+            for (int c = 0; c < kNumCanales; ++c)
+            {
+                juce::StringArray r;
+                if (c < rets.size()) r.addTokens (rets[c], ",", "");
+                for (int k = 0; k < AudioEngine::kNumRetornos; ++k)
+                    engine.setCanalRetorno (c, k, k < r.size() ? r[k].getFloatValue() : 0.0f);
             }
 
             //  El fader y el mute, con su defecto antiguo: uno y apagado, que
@@ -15820,6 +15863,7 @@ void MainComponent::newProject()
     for (int c = 0; c < kNumCanales; ++c)
     {
         for (int f = 0; f < kNumFx; ++f) engine.setCanalSend (c, f, 0.0f);
+        for (int k = 0; k < AudioEngine::kNumRetornos; ++k) engine.setCanalRetorno (c, k, 0.0f);   // efectos#retorno
         engine.setCanalGain (c, 1.0f);
         engine.setCanalMute (c, false);
     }
@@ -18854,6 +18898,16 @@ void MainComponent::refreshRack()
                                        : juce::String (fxDefs[fx].name) + " "
                                          + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
                                          + T (AudioEngine::sustituye (fx) ? "SUSTITUYE" : "SUMA"));
+    }
+    //  efectos#retorno: en un retorno no hay envio a un retorno; la tapa sigue llevando al otro.
+    for (int r = 0; r < rackRetSends.size(); ++r)
+    {
+        const bool puede = AudioEngine::retornoDeCanal (canalActual) < 0;
+        rackRetSends[r]->setValue (engine.getCanalRetorno (canalActual, r), juce::dontSendNotification);
+        rackRetSends[r]->setEnabled (puede);
+        rackRetSends[r]->setTitle (T (r == 0 ? "ENVIO A" : "ENVIO B"));
+        rackRetBtns[r]->setButtonText (T (r == 0 ? "ENVIO A" : "ENVIO B"));
+        rackRetBtns[r]->setToggleState (canalActual == AudioEngine::kCanalRetorno[r], juce::dontSendNotification);
     }
     refrescaRanuras();      // el canalon de cada fila, con las seis de la cara
     //  De la ficha, la cabecera -canal y cuantos pads- y lo demas son tapas

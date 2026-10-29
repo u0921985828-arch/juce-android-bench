@@ -3927,7 +3927,8 @@ void MainComponent::maquetaRack()
         auto inner = sheetFromBottom (rackSheet, Ficha::marco + cabecera
                                                    + (chipRowH + Metrics::xs) * 4
                                                    + Metrics::hit + Metrics::xs
-                                                   + Metrics::sm + kNumRanuras * filaFx + Metrics::sm);
+                                                   + Metrics::sm + kNumRanuras * filaFx + Metrics::sm
+                                                   + AudioEngine::kNumRetornos * filaFx);
         auto titleRow = inner.removeFromTop (cabecera);
         rackCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
@@ -4079,6 +4080,13 @@ void MainComponent::maquetaRack()
             if (rackSends[s] != nullptr)
                 rackSends[s]->setBounds (row.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
         };
+        //  efectos#retorno: ENVIO A y B al pie, con el canalon y el fader de una ranura.
+        for (int r = 0; r < juce::jmin (AudioEngine::kNumRetornos, rackRetSends.size()); ++r)
+        {
+            auto row = inner.removeFromBottom (filaFx);
+            rackRetBtns[r]->setBounds (Lang::takeStart (row, 54 + Metrics::hit + 2).reduced (Metrics::aireTapaDensa, Metrics::halfGap));
+            rackRetSends[r]->setBounds (row.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
+        }
         const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumRanuras * filaFx;
         if (dosCol)
         {

@@ -8399,6 +8399,31 @@ void MainComponent::auditRack()
         return n;
     };
 
+    //  efectos#retorno: por la tapa y el mando del rack, ENVIO A escribe el motor, lleva a RETORNO A y sobrevive a guardar.
+    ponCanalActual (2);
+    openSheet (rackSheet, mixButton);
+    refreshRack();
+    resized();
+    const auto retFader = rackRetSends.isEmpty() ? juce::Rectangle<int>() : rackRetSends[0]->getBounds();
+    const auto cuerpoRack = rackSheet.cuerpo.getLocalBounds();
+    const bool retDentro = ! retFader.isEmpty() && cuerpoRack.contains (retFader)
+                        && ! retFader.intersects (rackSends[kNumRanuras - 1]->getBounds());
+    float retEscrito = -1.0f, retGuardado = -1.0f;
+    int retLleva = -1, retEnRetorno = -1;
+    if (! rackRetSends.isEmpty())
+    {
+        rackRetSends[0]->setValue (0.6, juce::sendNotificationSync);
+        retEscrito = engine.getCanalRetorno (2, 0);
+        const auto arbol = captureState();
+        engine.setCanalRetorno (2, 0, 0.0f);
+        applyState (arbol);
+        retGuardado = engine.getCanalRetorno (2, 0);
+        if (rackRetBtns[0]->onClick) rackRetBtns[0]->onClick();
+        retLleva = canalActual;
+        retEnRetorno = rackRetSends[0]->isEnabled() ? 1 : 0;
+        engine.setCanalRetorno (2, 0, 0.0f);
+    }
+
     closeAllSheets();
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
     focusFx (AudioEngine::kFxFlt);
@@ -8448,6 +8473,12 @@ void MainComponent::auditRack()
               << ",\"mute\":["  << mute.getWidth()  << "," << mute.getHeight()  << "]"
               << ",\"mute_antes\":"   << muteAntes
               << ",\"mute_despues\":" << muteDespues
+              << ",\"ret_fader\":[" << retFader.getWidth() << "," << retFader.getHeight() << "]"
+              << ",\"ret_dentro\":" << (retDentro ? 1 : 0)
+              << ",\"ret_escrito\":" << juce::String (retEscrito, 3)
+              << ",\"ret_guardado\":" << juce::String (retGuardado, 3)
+              << ",\"ret_lleva\":" << retLleva
+              << ",\"ret_en_retorno\":" << retEnRetorno
               << ",\"mute_vuelve\":"  << muteVuelve
               << ",\"mute_vacia\":["  << mudoAntes << "," << mudoDespues << "]"
               << ",\"menu_abre\":"    << menuAbre
