@@ -408,6 +408,7 @@ static bool modulaPorOficio (int f)
         default: return false;
     }
 }
+static constexpr double kApagadoMax = -60.0;
 static constexpr double kPliegueMax = -60.0, kChasquidoMax = 6.0, kNivelMax = 4.0, kColaMax = -90.0;
 static int fallos = 0;
 template <typename... A> static void falla (const char* fmt, A... a)
@@ -549,6 +550,37 @@ int main (int argc, char** argv)
     midoReferencia();
     const int solo = argc > 1 ? juce::String (argv[1]).getIntValue() : -1;
     std::printf ("ZATI  banco de calidad de efectos   %.0f Hz  rafaga %d\n", kSr, kBs);
+    {
+        //  efectos#apagado: apagado es MIX 0; la ranura sigue en la cadena y lo que entra tiene que salir igual.
+        auto resto = [] (const std::vector<float>& a, const std::vector<float>& b)
+        {
+            double e = 0.0, r = 0.0;
+            for (size_t i = 24000; i < a.size(); ++i) { e += (a[i] - b[i]) * (a[i] - b[i]); r += b[i] * b[i]; }
+            return 10.0 * std::log10 (juce::jmax (e, 1e-30) / juce::jmax (r, 1e-30));
+        };
+        auto suena = [] (int fOff, int fOn)
+        {
+            auto e = monta (-1, ruido (0.25f), 0.0f);
+            if (fOff >= 0) { e->setCanalSend (kCanal, fOff, 1.0f); e->setFxParam (kCanal, fOff, 2, 0.0f); }
+            if (fOn  >= 0) { e->setCanalSend (kCanal, fOn,  1.0f); e->setFxParam (kCanal, fOn,  2, 1.0f); }
+            e->postNoteOn (0, 1.0f);
+            std::vector<float> y; corre (*e, 48000, y);
+            return y;
+        };
+        const int otro = AudioEngine::kFxDrv;
+        const auto seco = suena (-1, -1), soloOtro = suena (-1, otro);
+        std::printf ("\nAPAGADO  resto solo dB  resto antes de DRV dB\n");
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+        {
+            if (solo >= 0 && f != solo) continue;
+            const double r1 = resto (suena (f, -1), seco);
+            const double r2 = f == otro ? -200.0 : resto (suena (f, otro), soloOtro);
+            std::printf ("%-4s     %12.1f  %21.1f\n", kMandos[f].nombre, r1, r2);
+            if (r1 > kApagadoMax) falla ("%s apagado no deja pasar el seco: resto %.1f dB (tope %.0f)", kMandos[f].nombre, r1, kApagadoMax);
+            if (r2 > kApagadoMax) falla ("%s apagado delante de DRV cambia lo que suena: resto %.1f dB (tope %.0f)", kMandos[f].nombre, r2, kApagadoMax);
+        }
+    }
+    if (std::getenv ("ZATI_FX_APAGADO")) return fallos == 0 ? 0 : 1;
     std::printf ("%-4s %9s %8s %8s %8s %9s %7s %9s %7s %7s\n",
                  "fx", "pliegue", "en Hz", "mover1", "mover2", "encender", "nivel", "cola", "trino", "preset");
     for (int f = 0; f < AudioEngine::kNumFx; ++f)
