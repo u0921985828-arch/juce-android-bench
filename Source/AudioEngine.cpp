@@ -3248,7 +3248,8 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  ruido: seguia sonando. Se congela lo que ENTRA mientras entra
                 //  algo, que ademas es lo que un pedal de freeze hace con el pie
                 //  encima.
-                const bool carVivo[6] = { live (kFxRng), live (kFxPit), live (kFxWid),
+                //  efectos#apagado: cada uno se vuelve a mirar al llegarle su turno; la foto de arriba no veia lo que el de delante le pasaba y la cadena se cortaba.
+                bool carVivo[6] = { live (kFxRng), live (kFxPit), live (kFxWid),
                                           live (kFxExc), live (kFxTrn), live (kFxFrz) };
 
                 // --- RNG: modulador en anillo. ----------------------------------
@@ -3259,6 +3260,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  para lo que nacio estatica.
                 {
                     const int c = carDe (kFxRng);
+                    carVivo[c] = live (kFxRng);
                     const float an = juce::jlimit (0.0f, 1.0f,
                                        P (kFxRng, 1));
                     I.smRngAnillo += (carVivo[c] ? 0.0f : kBlockC) * (an - I.smRngAnillo);   // efectos#preset: vivo se alisa por muestra; por bloque el escalon chasquea.
@@ -3306,6 +3308,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  costura no cambia el nivel.
                 {
                     const int c = carDe (kFxPit);
+                    carVivo[c] = live (kFxPit);
                     const float semis = juce::jlimit (-12.0f, 12.0f,
                                           P (kFxPit, 0));
                     I.smPitSemis += kBlockC * (semis - I.smPitSemis);
@@ -3397,6 +3400,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  puede moverse -en un sistema grande es mono por construccion-.
                 {
                     const int c = carDe (kFxWid);
+                    carVivo[c] = live (kFxWid);
                     const float anc = juce::jlimit (0.0f, 2.0f,
                                         P (kFxWid, 0));
                     I.smWidAncho += kBlockC * (anc - I.smWidAncho);
@@ -3444,6 +3448,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  Saturar la mezcla entera es DRV, que ya existe.
                 {
                     const int c = carDe (kFxExc);
+                    carVivo[c] = live (kFxExc);
                     const float fue = juce::jlimit (0.0f, 1.0f,
                                         P (kFxExc, 1));
                     I.smExcFuerza += kBlockC * (fue - I.smExcFuerza);
@@ -3505,6 +3510,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  que la deteccion de `Dinamica`.
                 {
                     const int c = carDe (kFxTrn);
+                    carVivo[c] = live (kFxTrn);
                     const float at = juce::jlimit (-1.0f, 1.0f,
                                        P (kFxTrn, 0));
                     const float ca = juce::jlimit (-1.0f, 1.0f,
@@ -3563,6 +3569,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  cada vuelta, y aqui la vuelta llega ocho veces por segundo.
                 {
                     const int c = carDe (kFxFrz);
+                    carVivo[c] = live (kFxFrz);
                     const float suave = juce::jlimit (0.0f, 1.0f,
                                           P (kFxFrz, 1));
                     I.smFrzSuave += kBlockC * (suave - I.smFrzSuave);

@@ -55,6 +55,9 @@ DEDO  = 40
 MIN_CAMBIA = 2.0
 
 
+APAGADO_MAX = -60.0   # el mismo tope que ZATI_FX_APAGADO en Tests/Efectos.cpp
+
+
 def leeForma (s):
     """«3x7:460:115» -> columnas, filas, lo que pide de alto, ancho de celda."""
     cf, pide, celda = s.split (":")
@@ -428,6 +431,22 @@ def main():
     print ("familias del menu de efectos: %s   %d de %d sobre su fila, %s zombis"
            % (", ".join (nombres) if nombres else "NINGUNA",
               sobre, len (ESPERADAS), r.get ("bandas_zombis", "?")))
+
+    #  APAGADO ES MIX 0, por el gesto: cada tipo apagado en una ranura, solo y
+    #  delante y detras de DRV y de EXC encendidos, contra lo mismo sin el.
+    #  efectos#apagado: dos del grupo de caracter en un canal cortaban el sonido.
+    print ()
+    print ("apagado  resto peor %s dB (%s)  callados %s  sin apagar %s  %s"
+           % (r.get ("apagado_peor_db"), r.get ("apagado_peor_fx"), r.get ("apagado_callados"),
+              r.get ("apagado_no_apaga"), r.get ("apagado_mudos", "")))
+    if r.get ("apagado_no_apaga", -1) != 0:
+        malas.append ("la tapa no apago %s efectos" % r.get ("apagado_no_apaga"))
+    if r.get ("apagado_callados", -1) != 0:
+        malas.append ("con un efecto apagado en la cadena el canal se callo %s veces: %s"
+                      % (r.get ("apagado_callados"), r.get ("apagado_mudos")))
+    if r.get ("apagado_peor_db", 0.0) > APAGADO_MAX:
+        malas.append ("un efecto apagado cambia lo que suena: resto %.1f dB en %s (tope %.0f)"
+                      % (r["apagado_peor_db"], r.get ("apagado_peor_fx"), APAGADO_MAX))
 
     print()
     if malas:

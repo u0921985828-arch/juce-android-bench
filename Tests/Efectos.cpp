@@ -891,6 +891,25 @@ int main (int argc, char** argv)
             if (r1 > kApagadoMax) falla ("%s apagado no deja pasar el seco: resto %.1f dB (tope %.0f)", kMandos[f].nombre, r1, kApagadoMax);
             if (r2 > kApagadoMax) falla ("%s apagado delante de DRV cambia lo que suena: resto %.1f dB (tope %.0f)", kMandos[f].nombre, r2, kApagadoMax);
         }
+        //  efectos#apagado: con ZATI_FX_PAREJAS, cada apagado junto a cada uno de los otros 29 encendidos.
+        if (std::getenv ("ZATI_FX_PAREJAS"))
+        {
+            int malas = 0;
+            double peor = -400.0; int pf = -1, pg = -1;
+            for (int g = 0; g < AudioEngine::kNumFx; ++g)
+            {
+                const auto soloG = suena (-1, g);
+                for (int f = 0; f < AudioEngine::kNumFx; ++f)
+                {
+                    if (f == g || (solo >= 0 && f != solo)) continue;
+                    const double r = resto (suena (f, g), soloG);
+                    if (r > peor) { peor = r; pf = f; pg = g; }
+                    if (r > kApagadoMax) { ++malas; falla ("%s apagado junto a %s encendido cambia lo que suena: resto %.1f dB", kMandos[f].nombre, kMandos[g].nombre, r); }
+                }
+            }
+            std::printf ("PAREJAS  peor %.1f dB (%s apagado con %s)  malas %d\n", peor,
+                         pf >= 0 ? kMandos[pf].nombre : "-", pg >= 0 ? kMandos[pg].nombre : "-", malas);
+        }
     }
     if (std::getenv ("ZATI_FX_APAGADO")) return fallos == 0 ? 0 : 1;
     std::printf ("%-4s %9s %8s %8s %8s %9s %7s %9s %7s %7s\n",

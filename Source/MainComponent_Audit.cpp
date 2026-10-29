@@ -7552,6 +7552,10 @@ void MainComponent::auditRanuras()
     int    mantenFoco = -1, mantenMandos = -1, mantenApagados = -1;
     double gestoEnvio = -1.0, gestoCambia = -1.0, mandoCambia = -1.0;
     double rmsAntes = 0.0, rmsDespues = 0.0;
+    double apagadoSeco = 0.0, apagadoPeor = -400.0;
+    int    apagadoNoApaga = 0, apagadoCallados = 0;
+    juce::String apagadoPeorFx;
+    juce::String apagadoMudos;
     {
         constexpr int kCanalG  = 4;
         constexpr int kBloque  = 128;
@@ -7714,6 +7718,65 @@ void MainComponent::auditRanuras()
         mantenMandos = (macroCtrl1.isEnabled() ? 1 : 0)
                      + (macroCtrl2.isEnabled() ? 1 : 0)
                      + (macroCtrl3.isEnabled() ? 1 : 0);
+
+        //  efectos#apagado: por el gesto, cada tipo apagado en una ranura, solo y delante y detras de DRV y de EXC encendidos.
+        auto fabrica = [&]
+        {
+            closeAllSheets();
+            abreMenuRanura (-1);
+            for (int c = 0; c < kNumCanales; ++c)
+                for (int k = 0; k < kNumRanuras; ++k) slotFx[(size_t) c][(size_t) k] = kSlotVacia;
+            for (int c = 0; c < kNumCanales; ++c)
+                for (int k = 0; k < kNumFx; ++k) engine.setCanalSend (c, k, 0.0f);
+            for (int k = 0; k < kNumFx; ++k) ponFxEncendido (k, false);
+            engine.setPadCanal (0, AudioEngine::kSinCanal);
+            selectPad (0);
+            ponCanalActual (kCanalG);
+            refrescaRanuras();
+        };
+        auto pon = [&] (int ranura, int f) { pulsaTapa (fxButtons[ranura]); pulsaTapa (ranuraBtns[celdaDeFx (f)]); };
+        auto resto = [] (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b)
+        {
+            double ed = 0.0, eb = 0.0;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < a.getNumSamples(); ++i)
+                {
+                    const double d = (double) a.getSample (ch, i) - b.getSample (ch, i);
+                    ed += d * d;
+                    eb += (double) b.getSample (ch, i) * b.getSample (ch, i);
+                }
+            return 10.0 * std::log10 ((ed + 1.0e-30) / (eb + 1.0e-30));
+        };
+        juce::AudioBuffer<float> ref, conDrv, conExc, x;
+        const int fE = AudioEngine::kFxExc;
+        fabrica();
+        rinde (ref);
+        apagadoSeco = rms (ref);
+        fabrica();
+        pon (1, fG);
+        rinde (conDrv);
+        fabrica();
+        pon (1, fE);
+        rinde (conExc);
+        for (int f = 0; f < kNumFx; ++f)
+            for (int modo = 0; modo < 5; ++modo)
+            {
+                const int otro = modo <= 2 ? fG : fE;
+                if (modo > 0 && f == otro) continue;
+                fabrica();
+                const bool detras = modo == 2 || modo == 4;
+                if (detras) pon (0, otro);
+                const int r = detras ? 1 : 0;
+                pon (r, f);
+                pulsaTapa (fxButtons[r]);
+                if (fxEncendido (f)) ++apagadoNoApaga;
+                if (modo == 1 || modo == 3) pon (1, otro);
+                rinde (x);
+                const auto& contra = modo == 0 ? ref : (otro == fG ? conDrv : conExc);
+                const double rd = resto (x, contra);
+                if (rms (x) < 0.1 * rms (contra)) { ++apagadoCallados; apagadoMudos << fxDefs[f].name << modo << " "; }
+                if (rd > apagadoPeor) { apagadoPeor = rd; apagadoPeorFx = juce::String (fxDefs[f].name) + juce::String (modo); }
+            }
     }
 
     //  5. LA REJILLA, Y NO SOLO LA DE HOY.
@@ -7873,6 +7936,12 @@ void MainComponent::auditRanuras()
               << ",\"manten_apagados\":"  << mantenApagados
               << ",\"manten_foco\":"      << mantenFoco
               << ",\"manten_mandos\":"    << mantenMandos
+              << ",\"apagado_seco\":"     << juce::String (apagadoSeco, 6)
+              << ",\"apagado_peor_db\":"  << juce::String (apagadoPeor, 1)
+              << ",\"apagado_peor_fx\":\"" << apagadoPeorFx << "\""
+              << ",\"apagado_no_apaga\":" << apagadoNoApaga
+              << ",\"apagado_callados\":" << apagadoCallados
+              << ",\"apagado_mudos\":\""   << apagadoMudos.trim() << "\""
               << "}" << std::endl;
 }
 
