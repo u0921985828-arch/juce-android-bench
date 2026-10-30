@@ -6994,6 +6994,7 @@ void MainComponent::auditCanales()
     int mesaCVistaAlto = -1, mesaCFilasAlto = -1, mesaCBarraApp = -1;
     int mesaCArrFader = -1, mesaCArrNombre = -1, mesaCArrDio = 0;
     int mesaCBancos = 0, mesaCBancoB = -1, mesaCFilasB = -1;
+    juce::String mesaCRotulos;   // mesa#bancos
     int canArrAbre = -1, canToqueAbre = -1, canCeldas = 0, canCeldaMin = -1, canIconoOk = -1;
     int canLienzoLado = -1, canUsarAntes = -1, canTrazos = -1, canDibujoDentro = -1, canDibujoUsa = -1;
     int canDibujoTramos = 0, canDibujoCerrados = 0, canIdaVuelta = -1, canCierra = -1;
@@ -7013,7 +7014,9 @@ void MainComponent::auditCanales()
         //  las mismas dieciseis filas del A. Y vuelta al A, que es lo que se
         //  mide arriba y abajo.
         for (auto* t : mixBankBtns)
-            if (t != nullptr && t->isVisible() && t->getWidth() > 0) ++mesaCBancos;
+            if (t != nullptr && t->isVisible() && t->getWidth() > 0) { ++mesaCBancos; mesaCRotulos << t->getButtonText() << "|"; }
+        for (auto* t : rackBankBtns) if (t != nullptr) mesaCRotulos << "rack:" << t->getButtonText() << "|";
+        for (auto* t : canalBankBtns) if (t != nullptr) mesaCRotulos << "pad:" << t->getButtonText() << "|";
         if (mixBankBtns.size() >= kCanBancos && canFaders[kPadsPerBank] != nullptr && canFaders[0] != nullptr)
         {
             pulsaTapa (mixBankBtns[kCanBancos - 1]);
@@ -7275,7 +7278,7 @@ void MainComponent::auditCanales()
               << ",\"mesa_c_barra_app\":" << mesaCBarraApp
               << ",\"mesa_c_arr_fader\":" << mesaCArrFader << ",\"mesa_c_arr_nombre\":" << mesaCArrNombre
               << ",\"mesa_c_arr_dio\":" << mesaCArrDio
-              << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_banco_b\":" << mesaCBancoB
+              << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_banco_b\":" << mesaCBancoB << ",\"mesa_c_rotulos\":\"" << mesaCRotulos << "\""
               << ",\"mesa_c_filas_b\":" << mesaCFilasB
               //  EL NOMBRE Y EL ICONO DE UNA TIRA. Ver el bloque 22.
               << ",\"can_arr_abre\":" << canArrAbre << ",\"can_toque_abre\":" << canToqueAbre

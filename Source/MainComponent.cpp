@@ -923,7 +923,7 @@ void MainComponent::cableaCanal()
         //  cara tiene con los pads: `ponCanalBanco` no mueve el canal del pad.
         for (int b = 0; b < kNumCanalBancos; ++b)
         {
-            auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            auto* t = new Boton (juce::String (b * kCanalesPorBanco + 1) + "-" + juce::String ((b + 1) * kCanalesPorBanco));   // mesa#bancos: el tramo de canales, no una letra
             styleButton (*t, kStepOff);
             litAccent (*t);
             t->setClickingTogglesState (true);
@@ -1633,7 +1633,7 @@ void MainComponent::cableaAjustes()
         //  dejaria el rack abriendose en el 1-16 despues de mover un pad al 20.
         for (int b = 0; b < kNumCanalBancos; ++b)
         {
-            auto* t = new Boton (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+            auto* t = new Boton (juce::String (b * kCanalesPorBanco + 1) + "-" + juce::String ((b + 1) * kCanalesPorBanco));   // mesa#bancos: el tramo de canales, no una letra
             styleButton (*t, kStepOff);
             litAccent (*t);
             t->setClickingTogglesState (true);
@@ -9099,6 +9099,8 @@ void MainComponent::showMixPage (MixPage p)
     for (int b = 0; b < mixBankBtns.size(); ++b) if (auto* t = mixBankBtns[b])
     {
         const bool on = p == mixPagePads || b < kCanBancos;
+        //  mesa#bancos: en CANALES el chip dice el tramo (1-16, 17-32); en PADS sigue la letra del banco de pads.
+        t->setButtonText (p == mixPageCanales ? juce::String (b * kPadsPerBank + 1) + "-" + juce::String ((b + 1) * kPadsPerBank) : juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         t->setVisible (on);
         if (! on) t->setBounds ({});
     }

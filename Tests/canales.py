@@ -982,6 +982,10 @@ def main():
                "y a %d de la M"
                % (nombre, bancos, fila, filasAlto, vistaAlto, barraApp, bancoB, filasB, sw,
                   "en el borde" if orden == 1 else "DENTRO", hueco))
+        rot = rr.get ("mesa_c_rotulos", "")   # mesa#bancos
+        print ("canales  en %s los chips de banco dicen: %s" % (nombre, rot))
+        if rot != "1-16|17-32|rack:1-16|rack:17-32|pad:1-16|pad:17-32|":
+            malas.append ("en %s los chips de banco de canales no dicen el tramo 1-16 / 17-32: %s" % (nombre, rot))
         if bancos != 2:
             malas.append ("en %s la pagina de CANALES lleva %d chips de banco y son dos: A y B, dieciseis y dieciseis"
                           % (nombre, bancos))
