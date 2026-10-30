@@ -1028,6 +1028,25 @@ int main (int argc, char** argv)
         if (dosRet > kApagadoMax) falla ("un canal a dos retornos no es la suma de cada uno: resto %.1f dB", dosRet);
         if (cadena < -30.0) falla ("en la cadena 2>10>4 el canal 4 no recibe lo del 10: %.1f dB", cadena);
         if (circulos) falla ("los envios aceptan un circulo o niegan una cadena abierta: %d", circulos);
+
+        //  mesa#envio: un canal sin efectos que recibe suena (el seco se suma) y su aguja lo dice; el que no recibe, no.
+        const auto rSin = ruta ({ { 1, 7 } }, {}, -1);
+        const double sinFx = potDe (menos (rSin, rSeco), rSeco);
+        float agujaRecibe = 0.0f, agujaOtro = 0.0f;
+        {
+            auto e = monta (-1, ruido (0.25f), 0.0f);
+            e->setPadChoke (0, 0); e->setPadSelfCut (0, false); e->setPadCanal (0, 1);
+            e->setCanalEnvio (1, 7, 1.0f);
+            e->miraMesa (true);
+            { juce::AudioBuffer<float> b (2, kBs); e->renderNextBlock (b, 0, kBs); }
+            e->postNoteOn (0, 1.0f);
+            std::vector<float> y; corre (*e, 4800, y);
+            agujaRecibe = e->readEnvioPico (7);
+            agujaOtro = e->readEnvioPico (5);
+        }
+        std::printf ("ENVIO  canal 8 sin efectos %.1f dB  aguja del 8 %.3f  del 6 %.3f\n", sinFx, agujaRecibe, agujaOtro);
+        if (sinFx < -10.0) falla ("lo enviado a un canal sin efectos no suena: %.1f dB", sinFx);
+        if (agujaRecibe <= 0.01f || agujaOtro > 0.0f) falla ("la aguja del canal que recibe no se mueve (%.3f) o se mueve la de otro (%.3f)", agujaRecibe, agujaOtro);
     }
     {
         //  efectos#fasemod: dos de CHO, FLA, PHA y TRM en la misma cadena; el punto del visor de cada uno tiene que moverse con señal.

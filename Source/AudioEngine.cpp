@@ -2677,6 +2677,12 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 if (std::abs (r1 - objR) < 1.0e-4f) r1 = objR;
                 smRetCan[(size_t) R] = r1;
                 for (int ch = 0; ch < chans; ++ch) entradaRet.applyGainRamp (ch, startSample, numSamples, r0, r1);
+                if (mz.miraMesa)
+                {
+                    float pk = 0.0f;
+                    for (int ch = 0; ch < chans; ++ch) pk = juce::jmax (pk, entradaRet.getMagnitude (ch, startSample, numSamples));
+                    if (pk > envioPico[(size_t) R].load (std::memory_order_relaxed)) envioPico[(size_t) R].store (pk, std::memory_order_relaxed);
+                }
                 const int pf = primerFxDe (R);
                 if (pf < 0)
                 {

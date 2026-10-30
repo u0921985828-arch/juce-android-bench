@@ -2549,6 +2549,11 @@ public:
         return (p >= 0 && p < kNumPads) ? padPico[(size_t) p].exchange (0.0f, std::memory_order_relaxed)
                                         : 0.0f;
     }
+    //  mesa#envio: lo que le llega a un canal por envios, ya por su fader; un canal sin pads no tenia aguja.
+    float readEnvioPico (int c) noexcept
+    {
+        return tieneCanal (c) ? envioPico[(size_t) c].exchange (0.0f, std::memory_order_relaxed) : 0.0f;
+    }
 
     // --- Offline bounce (message thread) --------------------------------
     //  An export does NOT render through this engine. It builds a SECOND
@@ -4470,6 +4475,7 @@ private:
     //  Ver `miraMesa`: si la mesa esta a la vista, y el pico de cada pad.
     std::atomic<bool>  mesaMirada  { false };
     std::array<std::atomic<float>, (size_t) kNumPads> padPico {};
+    std::array<std::atomic<float>, (size_t) kNumCanales> envioPico {};
     //  Bit i puesto = el pad i manda a algun efecto. Ver refrescaSendMask.
     std::atomic<std::uint64_t> padSendMask { 0 };
     static_assert (kNumPads <= 64, "padSendMask es de 64 bits");

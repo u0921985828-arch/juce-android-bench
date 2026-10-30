@@ -23716,7 +23716,11 @@ void MainComponent::mideMesa (double dtMs, bool vista)
     for (int c = 0; c < AudioEngine::kNumCanales; ++c)
         if (auto* f = canFaders[c])
         {
-            float nivel = 0.0f;
+            //  mesa#envio: el canal que recibe un envio mueve su aguja con lo que le llega, no solo con sus pads.
+            float& ve = vuEnvio[(size_t) c];
+            ve = juce::jmax (vista ? engine.readEnvioPico (c) : 0.0f, ve * caida);
+            if (ve < 0.004f) ve = 0.0f;
+            float nivel = ve;
             if (hayNivel)
                 for (int p = 0; p < kNumPads; ++p)
                     if (vuPad[(size_t) p] > nivel && engine.getPadCanal (p) == c)

@@ -5257,6 +5257,7 @@ private:
     //  que decide si hace falta repintar: una aguja que no se ha movido un
     //  pixel no pide cuadro. Ver mideMesa y AudioEngine::miraMesa.
     std::array<float, kNumPads> vuPad {};
+    std::array<float, AudioEngine::kNumCanales> vuEnvio {};   // mesa#envio
     std::array<int, kNumPads>   mesaPx {};
     std::array<int, AudioEngine::kNumCanales> mesaCanalPx {};
     int mesaMasterPx = 0;
