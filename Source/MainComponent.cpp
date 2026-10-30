@@ -9094,20 +9094,19 @@ void MainComponent::showMixPage (MixPage p)
     //  que la pagina de PADS tiene esta tapa, con sesenta y cuatro.
     mixClearSolo.setVisible (true);
 
-    //  Los cuatro chips de banco en la pagina de PADS y los dos primeros en
-    //  la de CANALES -A y B, dieciseis y dieciseis-: ver canBank.
+    //  Los cuatro chips de banco en la pagina de PADS; CANALES no lleva.
     for (int b = 0; b < mixBankBtns.size(); ++b) if (auto* t = mixBankBtns[b])
     {
-        const bool on = p == mixPagePads || b < kCanBancos;
-        //  mesa#bancos: en CANALES el chip dice el tramo (1-16, 17-32); en PADS sigue la letra del banco de pads.
-        t->setButtonText (p == mixPageCanales ? juce::String (b * kPadsPerBank + 1) + "-" + juce::String ((b + 1) * kPadsPerBank) : juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        //  mesa#todos: en CANALES no hay chips; los treinta y dos van en una lista con su barra.
+        const bool on = p == mixPagePads;
+        t->setButtonText (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         t->setVisible (on);
         if (! on) t->setBounds ({});
     }
 
     mixScroll.setViewPosition (0, 0);
     showMixBank (mixBank);       // apaga y vacia las tiras de pad si toca
-    showCanBank (canBank);       // y las de canal del otro banco, o todas
+    showCanBank (canBank);       // y las de canal, todas o ninguna
     refreshMixStrip();
 }
 
@@ -9125,7 +9124,7 @@ void MainComponent::showCanBank (int bank)
 
     for (int c = 0; c < kNumCanales; ++c)
     {
-        const bool on = mixPage == mixPageCanales && (c / kPadsPerBank) == canBank;
+        const bool on = mixPage == mixPageCanales;   // mesa#todos
         if (! on)
         {
             if (auto* f = canFaders[c]) f->setBounds ({});
@@ -9205,7 +9204,7 @@ void MainComponent::refrescaEnvios()
         k->setValue (engine.getCanalEnvio (canalActual, c), juce::dontSendNotification);
         k->setEnabled (c != canalActual && ! engine.llegaEnvio (c, canalActual));
         k->setTitle (T ("Envio del canal %1 al %2", desde, juce::String (c + 1)));
-        const bool on = mixPage == mixPageCanales && mixEnvios && c != canalActual && (c / kPadsPerBank) == canBank;
+        const bool on = mixPage == mixPageCanales && mixEnvios && c != canalActual;   // mesa#todos
         k->setVisible (on);
     }
     if (! mixEnvios || mixPage != mixPageCanales) lupaEnvio.setVisible (false);

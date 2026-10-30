@@ -970,45 +970,53 @@ def main():
     #     barra, el B ensena el 17 con 576; 393x851 filas de 32, 512 en 519.
     #     Roto -el binario de la tanda anterior-: ningun chip en CANALES y
     #     treinta y dos filas de 45 (1440 px en 630) con barra de 40, FALLA.
-    for nombre, rr in (("412x915", r), ("393x851", r393)):
+    #     mesa#todos: y luego, del telefono: «igual mejor es tener los 32 en
+    #     la misma y poner una barra lateral de arrastre [...] con los pads
+    #     no, que es como los bancos A, B, C y D». CANALES ya no lleva chips:
+    #     las treinta y dos tiras van en una lista, con la fila de la de PADS
+    #     (la que hace entrar dieciseis), y la barra de la casa al lado. Lo
+    #     que vale: cero chips; las treinta y dos con sitio dentro de la
+    #     lista; la lista mide 32 filas y es mas alta que el Viewport; la
+    #     barra a la vista; la fila >= 24. Los selectores de rack y de pad
+    #     siguen con sus chips 1-16 / 17-32. Roto -el binario de los bancos-:
+    #     dos chips, dieciseis tiras y sin barra, FALLA.
+    for nombre, rr in (("412x915", r), ("393x851", r393), ("360x640", r360)):
         if rr is None: continue
         fila, ven, sobra = rr.get ("mesa_c_fila", -1), rr.get ("mesa_c_ven", -1), rr.get ("mesa_c_sobra", -1)
         sw, orden, hueco = rr.get ("mesa_c_sw", -1), rr.get ("mesa_c_orden", -1), rr.get ("mesa_c_hueco_sm", -1)
         barraApp = rr.get ("mesa_c_barra_app", -1)
         vistaAlto, filasAlto = rr.get ("mesa_c_vista_alto", -1), rr.get ("mesa_c_filas_alto", -1)
-        bancos, bancoB, filasB = rr.get ("mesa_c_bancos", 0), rr.get ("mesa_c_banco_b", -1), rr.get ("mesa_c_filas_b", -1)
-        print ("canales  en %s la pagina de CANALES: %d chips, filas de %d, las dieciseis miden %d y el Viewport "
-               "ensena %d, barra de la casa %d; el B pone delante el canal 17: %d, con %d; %d switches, la S %s "
-               "y a %d de la M"
-               % (nombre, bancos, fila, filasAlto, vistaAlto, barraApp, bancoB, filasB, sw,
+        bancos, todas, ultima = rr.get ("mesa_c_bancos", -1), rr.get ("mesa_c_todas", -1), rr.get ("mesa_c_ultima", -1)
+        print ("canales  en %s la pagina de CANALES: %d chips, %d tiras en la lista, filas de %d, la lista mide %d "
+               "(la ultima acaba en %d) y el Viewport ensena %d, barra de la casa %d; %d switches, la S %s y a %d de la M"
+               % (nombre, bancos, todas, fila, filasAlto, ultima, vistaAlto, barraApp, sw,
                   "en el borde" if orden == 1 else "DENTRO", hueco))
         rot = rr.get ("mesa_c_rotulos", "")   # mesa#bancos
         print ("canales  en %s los chips de banco dicen: %s" % (nombre, rot))
-        if rot != "1-16|17-32|rack:1-16|rack:17-32|pad:1-16|pad:17-32|":
-            malas.append ("en %s los chips de banco de canales no dicen el tramo 1-16 / 17-32: %s" % (nombre, rot))
-        if bancos != 2:
-            malas.append ("en %s la pagina de CANALES lleva %d chips de banco y son dos: A y B, dieciseis y dieciseis"
+        if rot != "rack:1-16|rack:17-32|pad:1-16|pad:17-32|":
+            malas.append ("en %s los chips de banco no son los de rack y pad con el tramo 1-16 / 17-32: %s" % (nombre, rot))
+        if bancos != 0:
+            malas.append ("en %s la pagina de CANALES lleva %d chips de banco: los treinta y dos van en una lista"
                           % (nombre, bancos))
+        if todas != 32 or ultima < 0 or ultima > filasAlto:
+            malas.append ("en %s la lista de CANALES tiene %d tiras con sitio (la ultima acaba en %d de %d): son treinta y dos"
+                          % (nombre, todas, ultima, filasAlto))
         if fila < 24:
             malas.append ("en %s la fila de CANALES mide %d: nunca por debajo de 24" % (nombre, fila))
-        if filasAlto < 0 or vistaAlto < 0 or filasAlto > vistaAlto:
-            malas.append ("en %s las dieciseis filas de CANALES miden %d y el Viewport ensena %d: no entran todas"
-                          % (nombre, filasAlto, vistaAlto))
-        if barraApp != 0:
-            malas.append ("en %s la pagina de CANALES lleva barra de %d px con las dieciseis filas a la vista: no "
-                          "hay nada que arrastrar" % (nombre, barraApp))
-        if bancoB != 1 or filasB != filasAlto:
-            malas.append ("en %s tocar el B de CANALES %s la fila del canal 17 delante (filas de %d contra %d en "
-                          "el A): el banco no cambia de filas" % (nombre, "pone" if bancoB == 1 else "NO pone",
-                                                                 filasB, filasAlto))
+        if filasAlto != 32 * fila or filasAlto <= vistaAlto:
+            malas.append ("en %s la lista de CANALES mide %d con filas de %d y el Viewport ensena %d: son 32 filas y se arrastra"
+                          % (nombre, filasAlto, fila, vistaAlto))
+        if barraApp <= 0:
+            malas.append ("en %s la pagina de CANALES no lleva la barra de la casa con treinta y dos filas" % nombre)
+        if ven < 12:
+            malas.append ("en %s la pagina de CANALES ensena %d filas: la fila es la de PADS, que hace entrar dieciseis" % (nombre, ven))
         if sw != 2:
             malas.append ("en %s la fila del canal 1 lleva %d switches y son dos: S y M" % (nombre, sw))
         if orden != 1 or hueco != 4:
             malas.append ("en %s la S del canal 1 %s y queda a %d de la M: en el borde y a 4, como en la fila de "
                           "un pad" % (nombre, "esta en el borde" if orden == 1 else "esta DENTRO", hueco))
     if r360 is not None:
-        for pagina, kf, ks, kv, kb in (("PADS", "mesa_fila", "mesa_sobra", "mesa_vista_alto", "mesa_barra_app"),
-                                       ("CANALES", "mesa_c_fila", "mesa_c_sobra", "mesa_c_vista_alto", "mesa_c_barra_app")):
+        for pagina, kf, ks, kv, kb in (("PADS", "mesa_fila", "mesa_sobra", "mesa_vista_alto", "mesa_barra_app"),):
             fila, sobra, barraApp = r360.get (kf, -1), r360.get (ks, -1), r360.get (kb, -1)
             ven = r360.get (kv, 0) // max (1, fila)
             print ("canales  en 360x640 la pagina de %s, con la barra de %d: filas de %d, %d a la vista y %d px al aire"
@@ -1046,7 +1054,7 @@ def main():
                           "del knob y la lista se queda" % (knob, pan))
         if nombre != 0:   # barra#1: sin barra no hay lista que arrastrar
             malas.append ("en 360x640 el dedo sobre el nombre mueve la lista %d px: no hay nada que arrastrar" % nombre)
-    for nombre_p, rr in (("360x640", r360),):
+    for nombre_p, rr in (("412x915", r), ("360x640", r360)):
         if rr is None: continue
         fader, nombre, dio = rr.get ("mesa_c_arr_fader", -1), rr.get ("mesa_c_arr_nombre", -1), rr.get ("mesa_c_arr_dio", 0)
         print ("dedo     en %s, CANALES: sesenta px de dedo sobre el fader del canal 0 mueven la lista %d px "
@@ -1056,9 +1064,9 @@ def main():
         if fader != 0:
             malas.append ("en %s el dedo sobre el fader del canal 0 mueve la lista %d px: el arrastre es del fader"
                           % (nombre_p, fader))
-        if nombre != 0:   # barra#1
-            malas.append ("en %s el dedo sobre el nombre del canal mueve la lista %d px: no hay nada que arrastrar"
-                          % (nombre_p, nombre))
+        if nombre <= 0:   # mesa#todos: treinta y dos filas, la lista se arrastra
+            malas.append ("en %s el dedo sobre el nombre del canal no mueve la lista: con treinta y dos se arrastra"
+                          % nombre_p)
 
     # 20. LA MUESTRA MONO SE ABRE. Del telefono: «con una mono, todas son
     #     mono» y «dale, que abra los canales mono». Hasta aqui el ST y el

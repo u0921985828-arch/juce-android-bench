@@ -7008,23 +7008,15 @@ void MainComponent::auditCanales()
         mesaCFilasAlto = mixRows.getHeight();
         mesaCVen       = mesaCVistaAlto / juce::jmax (1, mesaCFila);
         mesaCBarraApp  = mixBarra.isVisible() ? mixBarra.getWidth() : 0;
-        //  Y LOS DOS BANCOS, A y B, por el gesto: cuantos chips hay a la
-        //  vista en esta pagina, y que al tocar B la fila de delante sea la
-        //  del canal 17 y la del canal 1 ya no este -`mesa_c_banco_b`-, con
-        //  las mismas dieciseis filas del A. Y vuelta al A, que es lo que se
-        //  mide arriba y abajo.
+        //  mesa#todos: chips de canales a la vista (cero) y tiras con sitio en la lista (treinta y dos).
         for (auto* t : mixBankBtns)
             if (t != nullptr && t->isVisible() && t->getWidth() > 0) { ++mesaCBancos; mesaCRotulos << t->getButtonText() << "|"; }
         for (auto* t : rackBankBtns) if (t != nullptr) mesaCRotulos << "rack:" << t->getButtonText() << "|";
         for (auto* t : canalBankBtns) if (t != nullptr) mesaCRotulos << "pad:" << t->getButtonText() << "|";
-        if (mixBankBtns.size() >= kCanBancos && canFaders[kPadsPerBank] != nullptr && canFaders[0] != nullptr)
-        {
-            pulsaTapa (mixBankBtns[kCanBancos - 1]);
-            mesaCBancoB = (canFaders[kPadsPerBank]->isVisible() && canFaders[kPadsPerBank]->getWidth() > 0
-                           && ! canFaders[0]->isVisible()) ? 1 : 0;
-            mesaCFilasB = mixRows.getHeight();
-            pulsaTapa (mixBankBtns[0]);
-        }
+        mesaCBancoB = 0;
+        for (auto* f : canFaders)
+            if (f != nullptr && f->isVisible() && f->getWidth() > 0 && f->getBottom() <= mixRows.getHeight()) ++mesaCBancoB;
+        if (auto* f = canFaders[kNumCanales - 1]) mesaCFilasB = f->getBottom();
         for (auto* b : { canMutes[0], canSolos[0] })
             if (b != nullptr && b->isVisible() && (bool) b->getProperties().getWithDefault ("switch", false))
                 ++mesaCSw;
@@ -7037,8 +7029,7 @@ void MainComponent::auditCanales()
         //  el mando de esta pagina: la lista se queda y el fader lo recibe
         //  -el dedo sube, un fader horizontal no se mueve, y eso no importa:
         //  lo que se mide es que la lista NO se mueve-; y por el nombre si.
-        //  Desde los dos bancos esta pagina solo lleva barra donde la de
-        //  pads -360x640, 280x653, girado-: canales.py lo lee ahi.
+        //  mesa#todos: con las treinta y dos en una lista hay barra en toda pantalla.
         mixScroll.setViewPosition (0, 0);
         mixScroll.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::all);
         if (auto* f = canFaders[0]; f != nullptr && f->isShowing() && f->getWidth() > 0)
@@ -7278,8 +7269,8 @@ void MainComponent::auditCanales()
               << ",\"mesa_c_barra_app\":" << mesaCBarraApp
               << ",\"mesa_c_arr_fader\":" << mesaCArrFader << ",\"mesa_c_arr_nombre\":" << mesaCArrNombre
               << ",\"mesa_c_arr_dio\":" << mesaCArrDio
-              << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_banco_b\":" << mesaCBancoB << ",\"mesa_c_rotulos\":\"" << mesaCRotulos << "\""
-              << ",\"mesa_c_filas_b\":" << mesaCFilasB
+              << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_todas\":" << mesaCBancoB << ",\"mesa_c_rotulos\":\"" << mesaCRotulos << "\""
+              << ",\"mesa_c_ultima\":" << mesaCFilasB
               //  EL NOMBRE Y EL ICONO DE UNA TIRA. Ver el bloque 22.
               << ",\"can_arr_abre\":" << canArrAbre << ",\"can_toque_abre\":" << canToqueAbre
               << ",\"can_nombre\":" << juce::JSON::toString (canNombreDice)

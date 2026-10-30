@@ -5753,25 +5753,20 @@ void MainComponent::maquetaMix()
         }
 
         {
-            //  Y LA FILA DE CHIPS ES LA DE LOS BANCOS, con sus cuatro tapas
-            //  de siempre en PADS y las dos primeras -A y B- en CANALES, que
-            //  son los treinta y dos canales en dos de dieciseis (canBank).
-            //  Las mismas tapas, el mismo sitio y las mismas letras: «banco
-            //  B» es lo mismo en las dos paginas de la ficha.
-            auto tabs = inner.removeFromTop (Metrics::tab);
+            //  Y LA FILA DE CHIPS ES LA DE LOS BANCOS, con sus cuatro tapas en PADS.
+            //  mesa#todos: en CANALES no hay fila de chips; los treinta y dos van en una lista.
             if (mixPage == mixPageCanales)
             {
-                juce::TextButton* pb[kCanBancos] = { mixBankBtns[0], mixBankBtns[1] };
-                layoutModuleBar (tabs, pb, 0, kCanBancos);
-                for (int b = kCanBancos; b < kNumBanks; ++b) mixBankBtns[b]->setBounds ({});
+                for (int b = 0; b < kNumBanks; ++b) mixBankBtns[b]->setBounds ({});
             }
             else
             {
+                auto tabs = inner.removeFromTop (Metrics::tab);
                 juce::TextButton* pb[kNumBanks] = { mixBankBtns[0], mixBankBtns[1],
                                                    mixBankBtns[2], mixBankBtns[3] };
                 layoutModuleBar (tabs, pb, 0, kNumBanks);
+                inner.removeFromTop (Metrics::sm);
             }
-            inner.removeFromTop (Metrics::sm);
         }
 
         //  Aire SOLO a los lados: la fila mide Metrics::btn -44- y quitarle
@@ -5829,6 +5824,8 @@ void MainComponent::maquetaMix()
         //  traiga geometria nueva.
         const int cuantas  = kPadsPerBank;
         const int porCol   = cuantas / columnas;
+        //  mesa#todos: la fila se mide para dieciseis, pero CANALES pone las treinta y dos y se arrastra.
+        const int porColLista = (mixPage == mixPageCanales ? kNumCanales : cuantas) / columnas;
         //  LA FILA MIDE LO QUE LA TARJETA DA, para que entren todas. Del
         //  telefono: «tienen que entrar todos los canales en el pop up del
         //  mixer, o si no es una jodienda para girar los knobs de paneo». Lo
@@ -5880,6 +5877,8 @@ void MainComponent::maquetaMix()
         //  primer `resized`- `inner` mide cero, y repartir cero entre una fila
         //  da una fila de cero, y el resto de dividir por ella mataba la app
         //  al arrancar (SIGFPE, medido con canales.py).
+        //  mesa#todos: CANALES se arrastra siempre, asi que no estrecha por debajo de 24.
+        if (mixPage == mixPageCanales) rowH = juce::jmax (rowH, Metrics::xl);
         mixSobra = 0;
         if (porCol * rowH > inner.getHeight() && inner.getHeight() >= rowH)
         {
@@ -5888,7 +5887,7 @@ void MainComponent::maquetaMix()
             mixSobra = inner.getHeight() % rowH;
             if (mixSobra > 0) inner.removeFromBottom (mixSobra);
         }
-        const int contentH = porCol * rowH;
+        const int contentH = porColLista * rowH;
         //  LA BARRA DE LA CASA, al final de las filas y solo si hay mas filas
         //  que sitio: la misma pareja barra + halfGap que lleva el piano, del
         //  grueso de un dedo porque se arrastra. Del telefono: «la barra que
@@ -5943,11 +5942,11 @@ void MainComponent::maquetaMix()
         {
             //  Los dieciseis del banco de canales que esta delante, como los
             //  dieciseis pads del suyo mas abajo.
-            for (int c = canBank * kPadsPerBank; c < (canBank + 1) * kPadsPerBank; ++c)
+            for (int c = 0; c < kNumCanales; ++c)
             {
-                const int enBanco = c - canBank * kPadsPerBank;
-                if (enBanco % porCol == 0)
-                    columna = (enBanco / porCol < columnas - 1)
+                const int enBanco = c;
+                if (enBanco % porColLista == 0)
+                    columna = (enBanco / porColLista < columnas - 1)
                                 ? Lang::takeStart (rows, anchoCol) : rows;
 
                 auto row = columna.removeFromTop (rowH).reduced (columnas > 1 ? Metrics::halfGap : 0, Metrics::aireTapaDensa);
