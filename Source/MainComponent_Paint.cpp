@@ -1878,7 +1878,7 @@ void MainComponent::pintaCablesEnvio (juce::Graphics& g)
     auto punta = [&] (int c, int otro) -> juce::Point<float>
     {
         const auto b = canEnvios[c]->getBounds();
-        if (! b.isEmpty()) return { (float) b.getRight(), (float) b.getCentreY() };
+        if (! b.isEmpty()) return b.getCentre().toFloat();   // mesa#punta: el cable acaba EN el knob, no a su lado
         const auto o = canEnvios[otro]->getBounds();
         return { (float) o.getRight(), c < canBank * kPadsPerBank ? 0.0f : (float) alto };
     };
@@ -1888,18 +1888,21 @@ void MainComponent::pintaCablesEnvio (juce::Graphics& g)
         const auto p0 = punta (a, b), p1 = punta (b, a);
         const float hueco = (float) (Metrics::hit + Metrics::halfGap);
         const float panza = juce::jmin (hueco - 6.0f, 8.0f + 0.25f * std::abs (p1.y - p0.y));
+        //  mesa#punta: sale y entra por el centro del knob, que lo tapa; la curva va por el canalon de su derecha.
+        const float sale = (float) canEnvios[a]->getWidth() * 0.5f, entra = (float) canEnvios[b]->getWidth() * 0.5f;
         juce::Path cam;
         cam.startNewSubPath (p0);
-        cam.cubicTo (p0.x + panza, p0.y, p1.x + panza, p1.y, p1.x, p1.y);
+        cam.cubicTo (p0.x + sale + panza, p0.y, p1.x + entra + panza, p1.y, p1.x, p1.y);
         //  efectos#rutas: el cable entero del color del canal que manda, llegue a quien llegue: asi se sabe de donde viene cada envio.
         const auto deA = Zati::colour (a).withAlpha (alfa);
         g.setColour (deA);
         g.strokePath (cam, juce::PathStrokeType (2.0f + 2.5f * v, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.setColour (ZatiColours::screenBg.withAlpha (alfa));
-        g.fillEllipse (p0.x - 5.5f, p0.y - 5.5f, 11.0f, 11.0f);
-        g.setColour (deA);
-        g.fillEllipse (p0.x - 4.0f, p0.y - 4.0f, 8.0f, 8.0f);
-        g.drawEllipse (p1.x - 4.0f, p1.y - 4.0f, 8.0f, 8.0f, 2.0f);
+        //  mesa#punta: sin bolas sueltas al lado; el que manda no tiene knob y su punto queda donde iria.
+        if (! canEnvios[a]->isVisible())
+        {
+            g.setColour (deA);
+            g.fillEllipse (p0.x - 6.0f, p0.y - 6.0f, 12.0f, 12.0f);
+        }
     };
     for (int d = 0; d < kNumCanales; ++d)
     {

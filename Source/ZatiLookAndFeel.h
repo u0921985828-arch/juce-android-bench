@@ -1789,11 +1789,25 @@ public:
         //  position against instead of the needle alone.
         const float br = r - 2.0f;
 
-        //  Ticks around the travel, brighter at the ends and at the centre
-        //  detent so the three positions that matter are findable without
-        //  looking at the number.
+        //  mesa#aro: el knob de envio lleva un aro en vez de marcas: hueco de fondo y lleno hasta donde manda.
+        const bool aro = (bool) s.getProperties().getWithDefault ("aro", false);
+        if (aro)
+        {
+            const float ra = r - 2.0f;
+            juce::Path fondo, lleno;
+            fondo.addCentredArc (cx, cy, ra, ra, 0.0f, startAng, endAng, true);
+            g.setColour (ZatiColours::groove (0.42f));
+            g.strokePath (fondo, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            if (pos > 0.0f)
+            {
+                lleno.addCentredArc (cx, cy, ra, ra, 0.0f, startAng, ang, true);
+                g.setColour (s.isColourSpecified (juce::Slider::rotarySliderOutlineColourId)
+                               ? s.findColour (juce::Slider::rotarySliderOutlineColourId) : ZatiColours::amber);
+                g.strokePath (lleno, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+        }
         constexpr int kTicks = 11;
-        for (int i = 0; i < kTicks; ++i)
+        for (int i = 0; i < (aro ? 0 : kTicks); ++i)
         {
             const float t  = (float) i / (float) (kTicks - 1);
             const float a  = startAng + t * (endAng - startAng);

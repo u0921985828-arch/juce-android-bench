@@ -8437,21 +8437,41 @@ void MainComponent::auditRack()
             }
         return n;
     };
+    //  mesa#aro: la mitad izquierda del knob del 8, del color del 3 que manda: el aro lleno hasta lo enviado.
+    auto tintaAro = [this] ()
+    {
+        const auto k = canEnvios[7]->getBounds();
+        const auto mitad = k.withWidth (k.getWidth() / 2);
+        const auto img = mixRows.createComponentSnapshot (mitad, true, 1.0f);
+        const auto t = Zati::colour (2);
+        int n = 0;
+        for (int y = 0; y < img.getHeight(); ++y)
+            for (int x = 0; x < img.getWidth(); ++x)
+            {
+                const auto p = img.getPixelAt (x, y);
+                if (std::abs (p.getRed() - t.getRed()) + std::abs (p.getGreen() - t.getGreen()) + std::abs (p.getBlue() - t.getBlue()) < 60) ++n;
+            }
+        return n;
+    };
     const int cableSin = tintaCable();
+    const int aroSin = tintaAro();
     canEnvios[7]->setValue (0.6, juce::sendNotificationSync);
+    const int aroCon = tintaAro();
     const float envEscrito = engine.getCanalEnvio (2, 7);
     const int cableCon = tintaCable();
     //  efectos#rutas: la punta que llega al 8 sigue del color del 3, que es quien manda (no se funde al del que recibe).
     int puntaOrigen = 0, puntaDestino = 0;
     {
         const auto k7 = canEnvios[7]->getBounds();
-        const auto zona = juce::Rectangle<int> (k7.getRight() + 1, k7.getCentreY() - 8, 12, 16);
+        //  mesa#punta: el cable llega AL knob: se cuenta en el halo de 6 px alrededor de su caja, no dentro.
+        const auto zona = k7.expanded (6);
         const auto img = mixRows.createComponentSnapshot (zona, true, 1.0f);
         const auto o = Zati::colour (2), d = Zati::colour (7);
         auto cerca = [] (juce::Colour p, juce::Colour t) { return std::abs (p.getRed() - t.getRed()) + std::abs (p.getGreen() - t.getGreen()) + std::abs (p.getBlue() - t.getBlue()) < 60; };
         for (int y = 0; y < img.getHeight(); ++y)
             for (int x = 0; x < img.getWidth(); ++x)
             {
+                if (k7.contains (zona.getX() + x, zona.getY() + y)) continue;
                 const auto p = img.getPixelAt (x, y);
                 if (cerca (p, o)) ++puntaOrigen;
                 if (cerca (p, d)) ++puntaDestino;
@@ -8584,6 +8604,7 @@ void MainComponent::auditRack()
               << ",\"cable_sin\":" << cableSin
               << ",\"cable_con\":" << cableCon
               << ",\"cable_punta\":[" << puntaOrigen << "," << puntaDestino << "]"
+              << ",\"aro\":[" << aroSin << "," << aroCon << "]"
               << ",\"canal_acento\":[" << canalAcento << "," << canalPar << "]"
               << ",\"lupa\":[" << lupaVista << "," << lupaTapa << "," << lupaPct << "," << lupaFina << "," << lupaSuelta << "," << lupaCabe << "]"
               << ",\"migra\":[" << juce::String (migraA, 3) << "," << juce::String (migraB, 3) << "]"

@@ -305,9 +305,13 @@ def main ():
     if not (r.get ("cable_sin", -1) < 4 and r.get ("cable_con", -1) >= 40):
         malo.append ("el cable 3>8 no se pinta: %d px sin envio, %d con" % (r.get ("cable_sin", -1), r.get ("cable_con", -1)))
     cp = r.get ("cable_punta", [0, -1])
-    print ("cable      punta en el 8: %d px del color del 3 (manda), %d del 8 (recibe)" % tuple (cp))
+    print ("cable      llega al knob del 8: %d px del color del 3 (manda), %d del 8 (recibe) en su halo" % tuple (cp))
     if cp[0] <= 0 or cp[1] != 0:
         malo.append ("el cable no es del color del canal que manda hasta la punta: %s" % cp)
+    ar = r.get ("aro", [-1, -1])   # mesa#aro: del telefono, «un circulo alrededor que se ve lo cargado que esta»
+    print ("aro        knob del 8, mitad izquierda del color del 3: %d px sin envio, %d con el 60 %%" % tuple (ar))
+    if ar[0] != 0 or ar[1] < 20:
+        malo.append ("el knob de envio no lleva su aro del color del que manda lleno hasta lo enviado: %s" % ar)
     ca = r.get ("canal_acento", [0, 0])   # mesa#color
     print ("color      canal mas cerca de un acento de carcasa: %d; dos canales entre si: %d (OKLab x1000)" % tuple (ca))
     if ca[1] < 100 or ca[0] < 80:   # 80 = cuatro pasos apenas visibles; el ambar viejo daba 29 con MAR

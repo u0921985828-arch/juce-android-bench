@@ -4253,6 +4253,7 @@ void MainComponent::cableaPads()
         k->setRange (0.0, 1.0, 0.01);
         k->setDoubleClickReturnValue (true, 0.0);
         k->setColour (juce::Slider::rotarySliderFillColourId, Zati::colour (c));
+        k->getProperties().set ("aro", true);   // mesa#aro: un aro dice lo cargado que esta el envio
         k->setSliderSnapsToMousePosition (false);
         k->setViewportIgnoreDragFlag (true);
         k->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
@@ -9206,6 +9207,7 @@ void MainComponent::refrescaEnvios()
         k->setValue (engine.getCanalEnvio (canalActual, c), juce::dontSendNotification);
         k->setEnabled (c != canalActual && ! engine.llegaEnvio (c, canalActual));
         k->setTitle (T ("Envio del canal %1 al %2", desde, juce::String (c + 1)));
+        k->setColour (juce::Slider::rotarySliderOutlineColourId, Zati::colour (canalActual));   // mesa#aro: del canal que manda
         const bool on = mixPage == mixPageCanales && mixEnvios && c != canalActual;   // mesa#todos
         k->setVisible (on);
     }
