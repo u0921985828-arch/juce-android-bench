@@ -2444,6 +2444,7 @@ namespace
         { "RETORNO",        "",         "RETURN",     "返回",       "عودة" },
         { "CH. %1",         "",         "CH. %1",     "通道 %1",    "قناة %1" },
         { "ENVIOS",         "ENVÍOS",   "SENDS",      "发送",       "إرسال" },
+        { "ENVIA",          "ENVÍA",    "SENDS",      "发送",       "يرسل" },
         { "Envio del canal %1 al %2", "Envío del canal %1 al %2", "Send from channel %1 to %2", "通道 %1 发送到 %2", "إرسال من القناة %1 إلى %2" },
         { "SONIDO|cancion", "SONIDO",   "ONE SHOT",   "单音",       "لقطة" },
         //  LAS DOS DE LA TAPA DE MODO, con clave propia. La de CANCION vivia

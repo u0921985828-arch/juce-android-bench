@@ -23,7 +23,7 @@
 #
 #      python3 Tests/rack.py
 # ============================================================================
-import json, os, subprocess, sys, tempfile
+import json, os, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
 APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
@@ -50,6 +50,8 @@ def corre (tam="412x915"):
         p = subprocess.run ([APP], env=env, capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
         return None
+    finally:
+        shutil.rmtree (casa, ignore_errors=True)   # disco: cada casa pesa ~30 MB y se quedaba en /tmp
     for l in p.stdout.splitlines():
         l = l.strip()
         if not l.startswith ("{"): continue
@@ -308,6 +310,14 @@ def main ():
     print ("cable      llega al knob del 8: %d px del color del 3 (manda), %d del 8 (recibe) en su halo" % tuple (cp))
     if cp[0] <= 0 or cp[1] != 0:
         malo.append ("el cable no es del color del canal que manda hasta la punta: %s" % cp)
+    gi = r.get ("gira", [-1, -1, -1, -1, -1])   # mesa#gira: del telefono, «es mucho lio»: el cable solo al girar, y en reposo ENVIA y «← 03»
+    print ("gira       cable en reposo %d, al soltar %d   rotulo del 8: %d sin envio, %d con   ENVIA en el 3: %d" % tuple (gi))
+    if gi[0] != 0 or gi[1] != 0:
+        malo.append ("el cable se queda pintado sin girar ningun knob: %d en reposo, %d al soltar" % (gi[0], gi[1]))
+    if gi[2] != 0 or gi[3] < 10:
+        malo.append ("el knob que recibe no dice de quien le llega (← 03): %d sin envio, %d con" % (gi[2], gi[3]))
+    if gi[4] < 10:
+        malo.append ("la fila del canal que manda no dice ENVIA: %d px de su color" % gi[4])
     ar = r.get ("aro", [-1, -1])   # mesa#aro: del telefono, «un circulo alrededor que se ve lo cargado que esta»
     print ("aro        knob del 8, mitad izquierda del color del 3: %d px sin envio, %d con el 60 %%" % tuple (ar))
     if ar[0] != 0 or ar[1] < 20:

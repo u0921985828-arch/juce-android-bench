@@ -4265,8 +4265,8 @@ void MainComponent::cableaPads()
             mixRows.repaint();
         };
         //  efectos#rutas: con el dedo encima, la lupa y el giro el doble de fino.
-        k->onDragStart = [this, c, k] { k->setMouseDragSensitivity (640); ponLupaEnvio (c, true); };
-        k->onDragEnd   = [this, c, k] { k->setMouseDragSensitivity (320); ponLupaEnvio (c, false); };
+        k->onDragStart = [this, c, k] { k->setMouseDragSensitivity (640); ponLupaEnvio (c, true); envioGira = c; mixRows.repaint(); };   // mesa#gira: el cable solo mientras se gira
+        k->onDragEnd   = [this, c, k] { k->setMouseDragSensitivity (320); ponLupaEnvio (c, false); envioGira = -1; mixRows.repaint(); };
         mixRows.addChildComponent (k);
         canEnvios.add (k);
     }
@@ -9095,19 +9095,20 @@ void MainComponent::showMixPage (MixPage p)
     //  que la pagina de PADS tiene esta tapa, con sesenta y cuatro.
     mixClearSolo.setVisible (true);
 
-    //  Los cuatro chips de banco en la pagina de PADS; CANALES no lleva.
+    //  Los cuatro chips de banco en la pagina de PADS y los dos primeros en
+    //  la de CANALES -A y B, dieciseis y dieciseis-: ver canBank.
     for (int b = 0; b < mixBankBtns.size(); ++b) if (auto* t = mixBankBtns[b])
     {
-        //  mesa#todos: en CANALES no hay chips; los treinta y dos van en una lista con su barra.
-        const bool on = p == mixPagePads;
-        t->setButtonText (juce::String::charToString ((juce::juce_wchar) ('A' + b)));
+        const bool on = p == mixPagePads || b < kCanBancos;
+        //  mesa#bancos: en CANALES el chip dice el tramo (1-16, 17-32); en PADS sigue la letra del banco de pads.
+        t->setButtonText (p == mixPageCanales ? juce::String (b * kPadsPerBank + 1) + "-" + juce::String ((b + 1) * kPadsPerBank) : juce::String::charToString ((juce::juce_wchar) ('A' + b)));
         t->setVisible (on);
         if (! on) t->setBounds ({});
     }
 
     mixScroll.setViewPosition (0, 0);
     showMixBank (mixBank);       // apaga y vacia las tiras de pad si toca
-    showCanBank (canBank);       // y las de canal, todas o ninguna
+    showCanBank (canBank);       // y las de canal del otro banco, o todas
     refreshMixStrip();
 }
 
@@ -9125,7 +9126,7 @@ void MainComponent::showCanBank (int bank)
 
     for (int c = 0; c < kNumCanales; ++c)
     {
-        const bool on = mixPage == mixPageCanales;   // mesa#todos
+        const bool on = mixPage == mixPageCanales && (c / kPadsPerBank) == canBank;
         if (! on)
         {
             if (auto* f = canFaders[c]) f->setBounds ({});
@@ -9152,7 +9153,7 @@ void MainComponent::ponLupaEnvio (int c, bool on)
     if (! on || ! juce::isPositiveAndBelow (c, canEnvios.size())) { lupaEnvio.setVisible (false); return; }
     const auto f = canFaders[c]->getBounds();
     const int alto = juce::jmax (112, f.getHeight() * 3);
-    //  mesa#todos: con la barra la fila es mas estrecha; la lupa acaba antes del knob, no encima.
+    //  mesa#lupa: la lupa acaba antes del knob, no encima.
     const int ancho = juce::jmin (juce::jmax (150, f.getWidth()), canEnvios[c]->getX() - Metrics::xs - f.getX());
     auto zona = juce::Rectangle<int> (f.getX(), f.getCentreY() - alto / 2, ancho, alto);
     zona = zona.constrainedWithin (mixRows.getLocalBounds());
@@ -9208,7 +9209,7 @@ void MainComponent::refrescaEnvios()
         k->setEnabled (c != canalActual && ! engine.llegaEnvio (c, canalActual));
         k->setTitle (T ("Envio del canal %1 al %2", desde, juce::String (c + 1)));
         k->setColour (juce::Slider::rotarySliderOutlineColourId, Zati::colour (canalActual));   // mesa#aro: del canal que manda
-        const bool on = mixPage == mixPageCanales && mixEnvios && c != canalActual;   // mesa#todos
+        const bool on = mixPage == mixPageCanales && mixEnvios && c != canalActual && (c / kPadsPerBank) == canBank;
         k->setVisible (on);
     }
     if (! mixEnvios || mixPage != mixPageCanales) lupaEnvio.setVisible (false);

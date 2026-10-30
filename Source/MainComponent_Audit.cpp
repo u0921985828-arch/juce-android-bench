@@ -7008,15 +7008,23 @@ void MainComponent::auditCanales()
         mesaCFilasAlto = mixRows.getHeight();
         mesaCVen       = mesaCVistaAlto / juce::jmax (1, mesaCFila);
         mesaCBarraApp  = mixBarra.isVisible() ? mixBarra.getWidth() : 0;
-        //  mesa#todos: chips de canales a la vista (cero) y tiras con sitio en la lista (treinta y dos).
+        //  Y LOS DOS BANCOS, A y B, por el gesto: cuantos chips hay a la
+        //  vista en esta pagina, y que al tocar B la fila de delante sea la
+        //  del canal 17 y la del canal 1 ya no este -`mesa_c_banco_b`-, con
+        //  las mismas dieciseis filas del A. Y vuelta al A, que es lo que se
+        //  mide arriba y abajo.
         for (auto* t : mixBankBtns)
             if (t != nullptr && t->isVisible() && t->getWidth() > 0) { ++mesaCBancos; mesaCRotulos << t->getButtonText() << "|"; }
         for (auto* t : rackBankBtns) if (t != nullptr) mesaCRotulos << "rack:" << t->getButtonText() << "|";
         for (auto* t : canalBankBtns) if (t != nullptr) mesaCRotulos << "pad:" << t->getButtonText() << "|";
-        mesaCBancoB = 0;
-        for (auto* f : canFaders)
-            if (f != nullptr && f->isVisible() && f->getWidth() > 0 && f->getBottom() <= mixRows.getHeight()) ++mesaCBancoB;
-        if (auto* f = canFaders[kNumCanales - 1]) mesaCFilasB = f->getBottom();
+        if (mixBankBtns.size() >= kCanBancos && canFaders[kPadsPerBank] != nullptr && canFaders[0] != nullptr)
+        {
+            pulsaTapa (mixBankBtns[kCanBancos - 1]);
+            mesaCBancoB = (canFaders[kPadsPerBank]->isVisible() && canFaders[kPadsPerBank]->getWidth() > 0
+                           && ! canFaders[0]->isVisible()) ? 1 : 0;
+            mesaCFilasB = mixRows.getHeight();
+            pulsaTapa (mixBankBtns[0]);
+        }
         for (auto* b : { canMutes[0], canSolos[0] })
             if (b != nullptr && b->isVisible() && (bool) b->getProperties().getWithDefault ("switch", false))
                 ++mesaCSw;
@@ -7029,7 +7037,8 @@ void MainComponent::auditCanales()
         //  el mando de esta pagina: la lista se queda y el fader lo recibe
         //  -el dedo sube, un fader horizontal no se mueve, y eso no importa:
         //  lo que se mide es que la lista NO se mueve-; y por el nombre si.
-        //  mesa#todos: con las treinta y dos en una lista hay barra en toda pantalla.
+        //  Desde los dos bancos esta pagina solo lleva barra donde la de
+        //  pads -360x640, 280x653, girado-: canales.py lo lee ahi.
         mixScroll.setViewPosition (0, 0);
         mixScroll.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::all);
         if (auto* f = canFaders[0]; f != nullptr && f->isShowing() && f->getWidth() > 0)
@@ -7269,8 +7278,8 @@ void MainComponent::auditCanales()
               << ",\"mesa_c_barra_app\":" << mesaCBarraApp
               << ",\"mesa_c_arr_fader\":" << mesaCArrFader << ",\"mesa_c_arr_nombre\":" << mesaCArrNombre
               << ",\"mesa_c_arr_dio\":" << mesaCArrDio
-              << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_todas\":" << mesaCBancoB << ",\"mesa_c_rotulos\":\"" << mesaCRotulos << "\""
-              << ",\"mesa_c_ultima\":" << mesaCFilasB
+              << ",\"mesa_c_bancos\":" << mesaCBancos << ",\"mesa_c_banco_b\":" << mesaCBancoB << ",\"mesa_c_rotulos\":\"" << mesaCRotulos << "\""
+              << ",\"mesa_c_filas_b\":" << mesaCFilasB
               //  EL NOMBRE Y EL ICONO DE UNA TIRA. Ver el bloque 22.
               << ",\"can_arr_abre\":" << canArrAbre << ",\"can_toque_abre\":" << canToqueAbre
               << ",\"can_nombre\":" << juce::JSON::toString (canNombreDice)
@@ -8424,7 +8433,7 @@ void MainComponent::auditRack()
     auto tintaCable = [this] ()
     {
         const auto k2 = canEnvios[2]->getBounds(), k7 = canEnvios[7]->getBounds();
-        const auto zona = juce::Rectangle<int>::leftTopRightBottom (k7.getRight(), k2.getCentreY(), k7.getRight() + Metrics::hit + Metrics::halfGap, k7.getCentreY());
+        const auto zona = juce::Rectangle<int>::leftTopRightBottom (k7.getRight(), k2.getBottom(), k7.getRight() + Metrics::hit + Metrics::halfGap, k7.getY());   // mesa#gira: entre filas, sin rotulos
         if (zona.isEmpty()) return -1;
         const auto img = mixRows.createComponentSnapshot (zona, true, 1.0f);
         const auto t = Zati::colour (2);
@@ -8453,11 +8462,34 @@ void MainComponent::auditRack()
             }
         return n;
     };
+    //  mesa#gira: tinta del 3 en una caja: el «← 03» a la derecha del knob del 8 y el ENVIA donde iria el knob del 3.
+    auto tinta = [this] (juce::Rectangle<int> zona)
+    {
+        if (zona.isEmpty()) return -1;
+        const auto img = mixRows.createComponentSnapshot (zona, true, 1.0f);
+        const auto t = Zati::colour (2);
+        int n = 0;
+        for (int y = 0; y < img.getHeight(); ++y)
+            for (int x = 0; x < img.getWidth(); ++x)
+            {
+                const auto p = img.getPixelAt (x, y);
+                if (std::abs (p.getRed() - t.getRed()) + std::abs (p.getGreen() - t.getGreen()) + std::abs (p.getBlue() - t.getBlue()) < 60) ++n;
+            }
+        return n;
+    };
+    auto zonaRotulo = [this] { const auto k = canEnvios[7]->getBounds(); return juce::Rectangle<int> (k.getRight(), k.getY(), Metrics::hit + Metrics::halfGap, k.getHeight()); };
     const int cableSin = tintaCable();
     const int aroSin = tintaAro();
+    const int rotuloSin = tinta (zonaRotulo());
     canEnvios[7]->setValue (0.6, juce::sendNotificationSync);
     const int aroCon = tintaAro();
     const float envEscrito = engine.getCanalEnvio (2, 7);
+    const int cableSuelto = tintaCable();
+    const int rotuloCon = tinta (zonaRotulo());
+    const int envia = tinta (canEnvios[2]->getBounds());
+    //  mesa#gira: el cable sale con el dedo en el knob; la lupa se aparta para medir solo el cable.
+    canEnvios[7]->onDragStart();
+    lupaEnvio.setVisible (false);
     const int cableCon = tintaCable();
     //  efectos#rutas: la punta que llega al 8 sigue del color del 3, que es quien manda (no se funde al del que recibe).
     int puntaOrigen = 0, puntaDestino = 0;
@@ -8477,6 +8509,8 @@ void MainComponent::auditRack()
                 if (cerca (p, d)) ++puntaDestino;
             }
     }
+    canEnvios[7]->onDragEnd();
+    const int cableSoltado = tintaCable();
     //  mesa#color: ningun canal se confunde con el acento de una carcasa (el 3 ambar era el acento de MAR).
     int canalAcento = 0, canalPar = 0;
     {
@@ -8605,6 +8639,7 @@ void MainComponent::auditRack()
               << ",\"cable_con\":" << cableCon
               << ",\"cable_punta\":[" << puntaOrigen << "," << puntaDestino << "]"
               << ",\"aro\":[" << aroSin << "," << aroCon << "]"
+              << ",\"gira\":[" << cableSuelto << "," << cableSoltado << "," << rotuloSin << "," << rotuloCon << "," << envia << "]"
               << ",\"canal_acento\":[" << canalAcento << "," << canalPar << "]"
               << ",\"lupa\":[" << lupaVista << "," << lupaTapa << "," << lupaPct << "," << lupaFina << "," << lupaSuelta << "," << lupaCabe << "]"
               << ",\"migra\":[" << juce::String (migraA, 3) << "," << juce::String (migraB, 3) << "]"

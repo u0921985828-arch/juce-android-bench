@@ -3585,6 +3585,7 @@ private:
     Boton mixEnviosBtn { "ENVIOS" };
     void refrescaEnvios();
     void pintaCablesEnvio (juce::Graphics& g);
+    int envioGira = -1;   // mesa#gira: knob de envio que se esta girando, -1 si ninguno
     //  efectos#rutas: LA LUPA del knob que se esta girando, sobre el fader de su fila, donde el dedo no la tapa: el knob en grande, el tanto por ciento y de quien a quien.
     struct LupaEnvio : public juce::Component
     {

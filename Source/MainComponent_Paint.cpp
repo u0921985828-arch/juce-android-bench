@@ -1904,16 +1904,27 @@ void MainComponent::pintaCablesEnvio (juce::Graphics& g)
             g.fillEllipse (p0.x - 6.0f, p0.y - 6.0f, 12.0f, 12.0f);
         }
     };
+    //  mesa#gira: en reposo nada de cables; el que manda dice ENVIA y cada knob cargado lleva «← 03».
+    const auto deA = Zati::colour (canalActual);
+    const auto ks = canEnvios[canalActual]->getBounds();
+    if (! ks.isEmpty())
+    {
+        g.setColour (deA);
+        g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.16f));
+        g.drawText (T ("ENVIA"), ks.expanded (Metrics::halfGap, 0), juce::Justification::centred, false);
+    }
+    const juce::String rotulo = juce::String::fromUTF8 ("\xe2\x86\x90 ") + juce::String (canalActual + 1).paddedLeft ('0', 2);
+    g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.10f));
     for (int d = 0; d < kNumCanales; ++d)
     {
-        if (d == canalActual) continue;
-        if (const float v = engine.getCanalEnvio (d, canalActual); v > 0.0f) cable (d, canalActual, v, 0.35f);
+        if (d == canalActual || d == envioGira || ! canEnvios[d]->isVisible() || engine.getCanalEnvio (canalActual, d) <= 0.0f) continue;
+        const auto b = canEnvios[d]->getBounds();
+        g.setColour (deA);
+        g.drawText (rotulo, juce::Rectangle<int> (b.getRight(), b.getY(), Metrics::hit + Metrics::halfGap, b.getHeight()),
+                    juce::Justification::centredLeft, false);
     }
-    for (int d = 0; d < kNumCanales; ++d)
-    {
-        if (d == canalActual) continue;
-        if (const float v = engine.getCanalEnvio (canalActual, d); v > 0.0f) cable (canalActual, d, v, 0.95f);
-    }
+    if (juce::isPositiveAndBelow (envioGira, kNumCanales) && envioGira != canalActual)
+        cable (canalActual, envioGira, engine.getCanalEnvio (canalActual, envioGira), 0.95f);
 }
 
 
