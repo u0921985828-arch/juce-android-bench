@@ -38,7 +38,9 @@ public:
     //  Cuanto mide de grueso. Se ajusta ARRASTRANDO, y esta casa ya tiene
     //  medido que esos son los que menos pueden permitirse ser finos: fallar el
     //  agarre no es fallar un toque, es no poder mover la vista.
-    static constexpr int kGrueso = Metrics::hit;
+    //  barra#fina: del telefono, «las barras un poco mas finas, que la pantalla es reducida»: 24 y no 40;
+    //  el pulgar sigue midiendo un dedo de LARGO, y las listas de la mesa se arrastran tambien con el dedo.
+    static constexpr int kGrueso = Metrics::xl;
 
     void ponEje (bool esVertical) noexcept
     {
@@ -253,7 +255,7 @@ private:
         //  vista de cuatro, `visibles/total` son 24 px en una barra de 380 y
         //  eso no se agarra. Lo que se pierde es proporcion, y la proporcion la
         //  dice ademas el cabezal.
-        const float lp = juce::jlimit ((float) juce::jmin ((int) largo, kGrueso), largo,
+        const float lp = juce::jlimit ((float) juce::jmin ((int) largo, Metrics::hit), largo,
                                        largo * (float) visibles / (float) total);
         const int   rec = juce::jmax (1, total - visibles);
         const float t = (float) primero / (float) rec;

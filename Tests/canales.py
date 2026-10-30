@@ -1008,6 +1008,8 @@ def main():
                           % (nombre, filasAlto, fila, vistaAlto))
         if barraApp <= 0:
             malas.append ("en %s la pagina de CANALES no lleva la barra de la casa con treinta y dos filas" % nombre)
+        if barraApp > 24:   # barra#fina: «mas finas, que la pantalla es reducida»; antes 40
+            malas.append ("en %s la barra de CANALES mide %d px de grueso: 24 como mucho" % (nombre, barraApp))
         if ven < 12:
             malas.append ("en %s la pagina de CANALES ensena %d filas: la fila es la de PADS, que hace entrar dieciseis" % (nombre, ven))
         if sw != 2:
