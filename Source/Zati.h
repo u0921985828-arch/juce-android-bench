@@ -33,7 +33,7 @@ namespace Zati
         static const juce::Colour palette[kNumColours] = {
             juce::Colour (0xffe8544a),   // 1 rojo
             juce::Colour (0xffee853a),   // 2 naranja
-            juce::Colour (0xfff0be44),   // 3 ambar
+            juce::Colour (0xffd0e848),   // 3 lima  mesa#color: el ambar era el acento de MAR y se confundia con los botones
             juce::Colour (0xff96cd5c),   // 4 verde
             juce::Colour (0xff4ac4a8),   // 5 turquesa
             juce::Colour (0xff4c96e8),   // 6 azul
@@ -46,7 +46,7 @@ namespace Zati
     inline const char* name (int index)
     {
         static const char* names[kNumColours] = {
-            "ROJO", "NARANJA", "AMBAR", "VERDE", "TURQUESA", "AZUL", "VIOLETA", "MAGENTA"
+            "ROJO", "NARANJA", "LIMA", "VERDE", "TURQUESA", "AZUL", "VIOLETA", "MAGENTA"
         };
         return names[((index % kNumColours) + kNumColours) % kNumColours];
     }

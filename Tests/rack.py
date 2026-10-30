@@ -308,6 +308,10 @@ def main ():
     print ("cable      punta en el 8: %d px del color del 3 (manda), %d del 8 (recibe)" % tuple (cp))
     if cp[0] <= 0 or cp[1] != 0:
         malo.append ("el cable no es del color del canal que manda hasta la punta: %s" % cp)
+    ca = r.get ("canal_acento", [0, 0])   # mesa#color
+    print ("color      canal mas cerca de un acento de carcasa: %d; dos canales entre si: %d (OKLab x1000)" % tuple (ca))
+    if ca[1] < 100 or ca[0] < 80:   # 80 = cuatro pasos apenas visibles; el ambar viejo daba 29 con MAR
+        malo.append ("un canal se confunde con el acento de una carcasa: %d (minimo 80), entre canales %d" % tuple (ca))
     lp = r.get ("lupa", [0, 1, -1, 0, 1])
     lp = lp + [0] * (6 - len (lp))
     print ("lupa       vista %d  bajo el dedo %d  dice %d %%  giro %d px  al soltar %d  ruta entera %d" % tuple (lp))

@@ -8466,6 +8466,37 @@ void MainComponent::auditRack()
                 if (cerca (p, d)) ++puntaDestino;
             }
     }
+    //  mesa#color: ningun canal se confunde con el acento de una carcasa (el 3 ambar era el acento de MAR).
+    int canalAcento = 0, canalPar = 0;
+    {
+        auto lab = [] (juce::Colour c) {
+            auto li = [] (juce::uint8 v) { const double x = v / 255.0; return x <= 0.04045 ? x / 12.92 : std::pow ((x + 0.055) / 1.055, 2.4); };
+            const double r = li (c.getRed()), g = li (c.getGreen()), b = li (c.getBlue());
+            const double l = std::cbrt (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+            const double m = std::cbrt (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+            const double s = std::cbrt (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+            return std::array<double, 3> { 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+                                           1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+                                           0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s };
+        };
+        auto dist = [&] (juce::Colour a, juce::Colour b) { const auto p = lab (a), q = lab (b);
+            return std::sqrt ((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2])); };
+        double minAc = 9.0, minPar = 9.0;
+        for (int i = 0; i < Zati::kNumColours; ++i)
+            for (int j = i + 1; j < Zati::kNumColours; ++j)
+                minPar = juce::jmin (minPar, dist (Zati::colour (i), Zati::colour (j)));
+        const int piel = ZatiColours::currentSkin;
+        for (int sk = 0; sk < 4; ++sk)
+        {
+            ZatiColours::setSkin (sk);
+            for (auto t : { ZatiColours::accent, ZatiColours::accentBright, ZatiColours::accentDim, ZatiColours::yellow })
+                for (int i = 0; i < Zati::kNumColours; ++i)
+                    minAc = juce::jmin (minAc, dist (Zati::colour (i), t));
+        }
+        ZatiColours::setSkin (piel);
+        canalAcento = (int) std::round (minAc * 1000.0);
+        canalPar = (int) std::round (minPar * 1000.0);
+    }
     //  efectos#rutas: con el dedo en el knob sale la lupa, fuera de debajo del dedo, con el tanto por ciento; al soltar se va.
     if (canEnvios[7]->onDragStart) canEnvios[7]->onDragStart();
     const int lupaVista = lupaEnvio.isVisible() ? 1 : 0;
@@ -8562,6 +8593,7 @@ void MainComponent::auditRack()
               << ",\"cable_sin\":" << cableSin
               << ",\"cable_con\":" << cableCon
               << ",\"cable_punta\":[" << puntaOrigen << "," << puntaDestino << "]"
+              << ",\"canal_acento\":[" << canalAcento << "," << canalPar << "]"
               << ",\"lupa\":[" << lupaVista << "," << lupaTapa << "," << lupaPct << "," << lupaFina << "," << lupaSuelta << "," << lupaCabe << "]"
               << ",\"migra\":[" << juce::String (migraA, 3) << "," << juce::String (migraB, 3) << "]"
               << ",\"mute_vuelve\":"  << muteVuelve

@@ -9167,9 +9167,9 @@ void MainComponent::LupaEnvio::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (1.0f);
     g.setColour (ZatiColours::screenBg.withAlpha (0.96f));
-    g.fillRoundedRectangle (r, 8.0f);
+    g.fillRoundedRectangle (r, Metrics::radio);
     g.setColour (tinta.withAlpha (0.9f));
-    g.drawRoundedRectangle (r, 8.0f, 1.5f);
+    g.drawRoundedRectangle (r, Metrics::radio, Metrics::filoFoco);
     auto cuerpo = r.reduced (8.0f);
     //  efectos#rutas: la ruta en su propia linea a todo lo ancho; al lado del dial se cortaba el «CH. 8».
     const auto pie = cuerpo.removeFromBottom (Metrics::fMeta + 6.0f);
