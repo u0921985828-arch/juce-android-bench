@@ -9151,7 +9151,9 @@ void MainComponent::ponLupaEnvio (int c, bool on)
     if (! on || ! juce::isPositiveAndBelow (c, canEnvios.size())) { lupaEnvio.setVisible (false); return; }
     const auto f = canFaders[c]->getBounds();
     const int alto = juce::jmax (112, f.getHeight() * 3);
-    auto zona = juce::Rectangle<int> (f.getX(), f.getCentreY() - alto / 2, juce::jmax (150, f.getWidth()), alto);
+    //  mesa#todos: con la barra la fila es mas estrecha; la lupa acaba antes del knob, no encima.
+    const int ancho = juce::jmin (juce::jmax (150, f.getWidth()), canEnvios[c]->getX() - Metrics::xs - f.getX());
+    auto zona = juce::Rectangle<int> (f.getX(), f.getCentreY() - alto / 2, ancho, alto);
     zona = zona.constrainedWithin (mixRows.getLocalBounds());
     lupaEnvio.valor = (float) canEnvios[c]->getValue();
     lupaEnvio.tinta = Zati::colour (canalActual);
