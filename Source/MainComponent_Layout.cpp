@@ -4081,7 +4081,7 @@ void MainComponent::maquetaRack()
                 rackSends[s]->setBounds (row.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
         };
         //  efectos#retorno: ENVIO A y B al pie, con el canalon y el fader de una ranura.
-        for (int r = 0; r < juce::jmin (AudioEngine::kNumRetornos, rackRetSends.size()); ++r)
+        for (int r = juce::jmin (AudioEngine::kNumRetornos, rackRetSends.size()) - 1; r >= 0; --r)   // efectos#retorno: de abajo arriba, para que A quede encima de B
         {
             auto row = inner.removeFromBottom (filaFx);
             rackRetBtns[r]->setBounds (Lang::takeStart (row, 54 + Metrics::hit + 2).reduced (Metrics::aireTapaDensa, Metrics::halfGap));

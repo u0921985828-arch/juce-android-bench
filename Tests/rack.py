@@ -295,6 +295,8 @@ def main ():
     if rf[1] < 36 or rf[0] < 100 or r.get ("ret_dentro", 0) != 1:
         malo.append ("el fader de ENVIO A no esta en la ficha o no mide un dedo: %dx%d dentro %d"
                      % (rf[0], rf[1], r.get ("ret_dentro", 0)))
+    if r.get ("ret_a_encima", 0) != 1:
+        malo.append ("ENVIO B sale encima de ENVIO A: se leen al reves")
     if abs (r.get ("ret_escrito", -1) - 0.6) > 0.005:
         malo.append ("mover ENVIO A no escribe el envio del canal: %.3f" % r.get ("ret_escrito", -1))
     if abs (r.get ("ret_guardado", -1) - 0.6) > 0.005:

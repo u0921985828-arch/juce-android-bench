@@ -8475,6 +8475,7 @@ void MainComponent::auditRack()
               << ",\"mute_despues\":" << muteDespues
               << ",\"ret_fader\":[" << retFader.getWidth() << "," << retFader.getHeight() << "]"
               << ",\"ret_dentro\":" << (retDentro ? 1 : 0)
+              << ",\"ret_a_encima\":" << (rackRetSends.size() > 1 && rackRetSends[0]->getY() < rackRetSends[1]->getY() ? 1 : 0)   // efectos#retorno: A antes que B
               << ",\"ret_escrito\":" << juce::String (retEscrito, 3)
               << ",\"ret_guardado\":" << juce::String (retGuardado, 3)
               << ",\"ret_lleva\":" << retLleva
