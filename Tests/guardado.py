@@ -147,6 +147,17 @@ def main():
     if r["atomico_abre"] != 1:
         malas.append ("atomico: abrir lo recien guardado no devuelve el pad 0 que se escribio")
 
+    tc = r.get ("tapa_carga", [-1, -1, -1, -1])   # proyecto#carga
+    print ("  abrir un proyecto: tapa encima %d, a medio cargar %d, sesion intacta %d, tapa al final %d" % tuple (tc))
+    if tc[1] != 1:
+        malas.append ("tapa: la sonda no pillo el proyecto a medio cargar")
+    elif tc[0] != 1:
+        malas.append ("tapa: a medio abrir un proyecto se puede tocar la app y dejarlo cojo")
+    if tc[1] == 1 and tc[2] != 1:
+        malas.append ("tapa: a medio abrir se escribe la sesion Unsaved con el estado a medias")
+    if tc[3] != 0:
+        malas.append ("tapa: la tapa sigue puesta despues de abrir")
+
     print ("  vaciar la sesion con un pad en vuelo: %d WAV resucitan" % r.get ("clear_resucitan", -1))
     if r.get ("clear_resucitan", -1) != 0:   # estabilidad#23
         malas.append ("clear: %d WAV vuelven a la carpeta borrada" % r.get ("clear_resucitan", -1))

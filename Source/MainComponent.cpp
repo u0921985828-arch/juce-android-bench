@@ -1628,32 +1628,6 @@ void MainComponent::cableaAjustes()
             rackPadBtns.add (b);
         }
 
-        //  efectos#retorno: ENVIO A y B, una fila cada uno debajo de las ranuras.
-        for (int r = 0; r < AudioEngine::kNumRetornos; ++r)
-        {
-            auto* t = new Boton (T (r == 0 ? "ENVIO A" : "ENVIO B"));
-            styleButton (*t, kStepOff);
-            t->onClick = [this, r] { ponCanalActual (AudioEngine::kCanalRetorno[r]); refrescaRanuras(); refreshRack(); };
-            rackSheet.cuerpo.addAndMakeVisible (t);
-            rackRetBtns.add (t);
-
-            auto* sl = new ZatiSlider();
-            sl->setSliderStyle (juce::Slider::LinearHorizontal);
-            sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 44, Metrics::readout);
-            sl->setColour (juce::Slider::textBoxTextColourId, ZatiColours::lcdFg);
-            sl->setColour (juce::Slider::textBoxBackgroundColourId, ZatiColours::screenBg);
-            sl->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-            sl->setRange (0.0, 1.0, 0.01);
-            sl->setValue (0.0, juce::dontSendNotification);
-            sl->setDoubleClickReturnValue (true, 0.0);
-            sl->setSliderSnapsToMousePosition (false);
-            sl->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)); };
-            sl->updateText();
-            sl->onValueChange = [this, r, sl] { engine.setCanalRetorno (canalActual, r, (float) sl->getValue()); };
-            rackSheet.cuerpo.addAndMakeVisible (sl);
-            rackRetSends.add (sl);
-        }
-
         //  Y SUS DOS CHIPS DE BANCO, con el MISMO indice que los del selector de
         //  EL PAD: el canal elegido es uno, asi que un banco por selector
         //  dejaria el rack abriendose en el 1-16 despues de mover un pad al 20.
@@ -4204,7 +4178,12 @@ void MainComponent::cableaPads()
         //  El chip y el nombre, que se aprietan: ver RotuloCanal.
         auto* rot = new RotuloCanal();
         rot->pinta = [this, c] (juce::Graphics& g, juce::Rectangle<int> r, bool abajo) { pintaRotuloCanal (g, c, r, abajo); };
-        rot->onClick = [this, c] { abreCanalNombre (c); };
+        rot->onClick = [this, c]
+        {
+            if (! mixEnvios) { abreCanalNombre (c); return; }
+            ponCanalActual (c);   // efectos#rutas: en ENVIOS, tocar el rotulo elige de quien salen los cables
+            refrescaEnvios();
+        };
         rot->setTitle (T ("CANAL %1", juce::String (c + 1)));
         mixRows.addAndMakeVisible (rot);
         canRotulos.add (rot);
@@ -4265,6 +4244,30 @@ void MainComponent::cableaPads()
         s->onClick = [this, c, s] { engine.setCanalSolo (c, s->getToggleState()); refreshMixStrip(); };
         mixRows.addAndMakeVisible (s);
         canSolos.add (s);
+
+        //  efectos#rutas: cuanto le manda el canal elegido; un cero es no tener cable.
+        auto* k = new ZatiSlider();
+        k->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        k->setMouseDragSensitivity (320);
+        k->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        k->setRange (0.0, 1.0, 0.01);
+        k->setDoubleClickReturnValue (true, 0.0);
+        k->setColour (juce::Slider::rotarySliderFillColourId, Zati::colour (c));
+        k->setSliderSnapsToMousePosition (false);
+        k->setViewportIgnoreDragFlag (true);
+        k->textFromValueFunction = [] (double v) { return juce::String ((int) std::round (v * 100.0)) + " %"; };
+        k->onValueChange = [this, c, k]
+        {
+            if (! engine.setCanalEnvio (canalActual, c, (float) k->getValue()))
+                k->setValue (engine.getCanalEnvio (canalActual, c), juce::dontSendNotification);
+            if (lupaEnvio.isVisible()) ponLupaEnvio (c, true);
+            mixRows.repaint();
+        };
+        //  efectos#rutas: con el dedo encima, la lupa y el giro el doble de fino.
+        k->onDragStart = [this, c, k] { k->setMouseDragSensitivity (640); ponLupaEnvio (c, true); };
+        k->onDragEnd   = [this, c, k] { k->setMouseDragSensitivity (320); ponLupaEnvio (c, false); };
+        mixRows.addChildComponent (k);
+        canEnvios.add (k);
     }
 
     //  EL INTERRUPTOR DE VISTA, en el renglon del titulo y no en la fila de
@@ -4293,6 +4296,8 @@ void MainComponent::cableaMezcla()
     busyBar.paintBar = [this] (juce::Graphics& g) { paintBusy (g); };
     addAndMakeVisible (busyBar);
     busyBar.setVisible (false);
+    addChildComponent (tapaCarga);
+    tapaCarga.setTitle (T ("Abriendo proyecto"));
 
     //  Y ya empieza puesta. Abrir la app no es instantaneo -abrir el
     //  dispositivo de audio y montar mil componentes son 700 ms medidos en el
@@ -4490,6 +4495,20 @@ void MainComponent::cableaMezcla()
         refreshMixStrip();
     };
     mixSheet.addAndMakeVisible (mixClearSolo);
+
+    //  efectos#rutas: ENVIOS cambia M y S por los knobs de envio y pinta los cables del canal elegido.
+    styleButton (mixEnviosBtn, kKey);
+    litAccent (mixEnviosBtn);
+    mixEnviosBtn.setClickingTogglesState (true);
+    mixEnviosBtn.onClick = [this]
+    {
+        mixEnvios = mixEnviosBtn.getToggleState();
+        showCanBank (canBank);
+        refrescaEnvios();
+    };
+    mixSheet.addChildComponent (mixEnviosBtn);
+    lupaEnvio.setInterceptsMouseClicks (false, false);
+    mixRows.addChildComponent (lupaEnvio);
 
     //  EL MASTER. En decibelios y con los mismos ayudantes que los otros
     //  diecisiete faders de la app: un mando que se lee en una escala distinta
@@ -5562,6 +5581,7 @@ void MainComponent::ponIconos()
         { &copyRowBtn, Iconos::Id::copiar },      { &pasteRowBtn, Iconos::Id::pegar },
         { &pianoGomaBtn, Iconos::Id::goma },      { &pianoCorteBtn, Iconos::Id::tijeras },
         { &pianoLapizBtn, Iconos::Id::lapiz },
+        { &pianoArpBtn, Iconos::Id::patron },     { &mixEnviosBtn, Iconos::Id::cadena },   // planos: la fila entera con dibujo
         { &pianoClearBtn, Iconos::Id::vaciar },
 
         //  La cancion: ocho herramientas de arreglo, ocho dibujos distintos.
@@ -7605,7 +7625,7 @@ void MainComponent::refrescaRanuras()
         //  -despues de un cambio de tamano-. Las dos llaman al mismo sitio.
         if (auto* pb = (s < rackPresetBtns.size() ? rackPresetBtns[s] : nullptr))
         {
-            const bool hay = fx >= 0;
+            const bool hay = false;   // efectos#preset: el preset no va en el rack; se cambia en la ficha del efecto o manteniendo su canalon
             if (hay != pb->isVisible()) { pb->setVisible (hay); cambiaRackPreset = true; }
             if (hay)
                 rotulaFxPreset (*pb, fx);
@@ -9057,10 +9077,12 @@ void MainComponent::showMixPage (MixPage p)
     {
         const bool on = (p == mixPageCanales);
         if (auto* f = canFaders[c]) { f->setVisible (on); if (! on) f->setBounds ({}); }
-        if (auto* m = canMutes[c])  { m->setVisible (on); if (! on) m->setBounds ({}); }
-        if (auto* s = canSolos[c])  { s->setVisible (on); if (! on) s->setBounds ({}); }
+        if (auto* m = canMutes[c])  { m->setVisible (on && ! mixEnvios); if (! on) m->setBounds ({}); }
+        if (auto* s = canSolos[c])  { s->setVisible (on && ! mixEnvios); if (! on) s->setBounds ({}); }
         if (auto* r = canRotulos[c]) { r->setVisible (on); if (! on) r->setBounds ({}); }
+        if (auto* k = canEnvios[c]) { k->setVisible (false); if (! on) k->setBounds ({}); }
     }
+    mixEnviosBtn.setVisible (p == mixPageCanales);
     //  Y VACIAR SOLO SALE EN LAS DOS, cada una vaciando la suya.
     //
     //  Este parrafo decia que se quedaba en PADS «porque la de CANALES tiene
@@ -9108,14 +9130,83 @@ void MainComponent::showCanBank (int bank)
             if (auto* m = canMutes[c])  m->setBounds ({});
             if (auto* s = canSolos[c])  s->setBounds ({});
             if (auto* r = canRotulos[c]) r->setBounds ({});
+            if (auto* k = canEnvios[c]) k->setBounds ({});
         }
         if (auto* f = canFaders[c]) f->setVisible (on);
-        if (auto* m = canMutes[c])  m->setVisible (on);
-        if (auto* s = canSolos[c])  s->setVisible (on);
+        if (auto* m = canMutes[c])  m->setVisible (on && ! mixEnvios);
+        if (auto* s = canSolos[c])  s->setVisible (on && ! mixEnvios);
         if (auto* r = canRotulos[c]) r->setVisible (on);
+        if (auto* k = canEnvios[c]) k->setVisible (on && mixEnvios && c != canalActual);
     }
     mixScroll.setViewPosition (0, 0);
     resized();
+    mixRows.repaint();
+}
+
+//  efectos#rutas: cada knob dice lo que el canal elegido le manda; el que cerraria un circulo no se deja mover.
+//  efectos#rutas: la lupa ocupa el fader de la fila del knob y algo por arriba y por abajo, sin salirse de la lista.
+void MainComponent::ponLupaEnvio (int c, bool on)
+{
+    if (! on || ! juce::isPositiveAndBelow (c, canEnvios.size())) { lupaEnvio.setVisible (false); return; }
+    const auto f = canFaders[c]->getBounds();
+    const int alto = juce::jmax (112, f.getHeight() * 3);
+    auto zona = juce::Rectangle<int> (f.getX(), f.getCentreY() - alto / 2, juce::jmax (150, f.getWidth()), alto);
+    zona = zona.constrainedWithin (mixRows.getLocalBounds());
+    lupaEnvio.valor = (float) canEnvios[c]->getValue();
+    lupaEnvio.tinta = Zati::colour (canalActual);
+    lupaEnvio.ruta = T ("CH. %1", juce::String (canalActual + 1)) + " " + juce::String::fromUTF8 ("\xe2\x86\x92") + " " + T ("CH. %1", juce::String (c + 1));
+    lupaEnvio.setBounds (zona);
+    lupaEnvio.setVisible (true);
+    lupaEnvio.toFront (false);
+    lupaEnvio.repaint();
+}
+
+void MainComponent::LupaEnvio::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    g.setColour (ZatiColours::screenBg.withAlpha (0.96f));
+    g.fillRoundedRectangle (r, 8.0f);
+    g.setColour (tinta.withAlpha (0.9f));
+    g.drawRoundedRectangle (r, 8.0f, 1.5f);
+    auto cuerpo = r.reduced (8.0f);
+    //  efectos#rutas: la ruta en su propia linea a todo lo ancho; al lado del dial se cortaba el «CH. 8».
+    const auto pie = cuerpo.removeFromBottom (Metrics::fMeta + 6.0f);
+    const float d = juce::jmin (cuerpo.getHeight(), cuerpo.getWidth() * 0.45f);
+    const auto dial = cuerpo.removeFromLeft (d).withSizeKeepingCentre (d, d);
+    const float a0 = juce::MathConstants<float>::pi * 1.25f, a1 = juce::MathConstants<float>::pi * 2.75f;
+    const auto c = dial.getCentre();
+    const float rad = d * 0.5f - 5.0f;
+    juce::Path fondo, lleno;
+    fondo.addCentredArc (c.x, c.y, rad, rad, 0.0f, a0, a1, true);
+    lleno.addCentredArc (c.x, c.y, rad, rad, 0.0f, a0, a0 + valor * (a1 - a0), true);
+    g.setColour (ZatiColours::inkDim.withAlpha (0.4f));
+    g.strokePath (fondo, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (tinta);
+    g.strokePath (lleno, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    const float ang = a0 + valor * (a1 - a0);
+    g.drawLine (c.x, c.y, c.x + (rad - 8.0f) * std::sin (ang), c.y - (rad - 8.0f) * std::cos (ang), 3.0f);
+    cuerpo.removeFromLeft (8.0f);
+    g.setColour (ZatiColours::lcdFg);
+    g.setFont (ZatiColours::monoFont (juce::jmin (34.0f, cuerpo.getHeight() * 0.45f), true));
+    g.drawText (juce::String ((int) std::round (valor * 100.0f)) + " %", cuerpo, juce::Justification::centredLeft, false);
+    g.setColour (ZatiColours::ink.withAlpha (0.75f));
+    g.setFont (ZatiColours::monoFont (Metrics::fMeta, false));
+    g.drawFittedText (ruta, pie.toNearestInt(), juce::Justification::centred, 1, 0.8f);
+}
+
+void MainComponent::refrescaEnvios()
+{
+    const juce::String desde (canalActual + 1);
+    for (int c = 0; c < canEnvios.size(); ++c)
+    {
+        auto* k = canEnvios[c];
+        k->setValue (engine.getCanalEnvio (canalActual, c), juce::dontSendNotification);
+        k->setEnabled (c != canalActual && ! engine.llegaEnvio (c, canalActual));
+        k->setTitle (T ("Envio del canal %1 al %2", desde, juce::String (c + 1)));
+        const bool on = mixPage == mixPageCanales && mixEnvios && c != canalActual && (c / kPadsPerBank) == canBank;
+        k->setVisible (on);
+    }
+    if (! mixEnvios || mixPage != mixPageCanales) lupaEnvio.setVisible (false);
     mixRows.repaint();
 }
 
@@ -12321,6 +12412,7 @@ void MainComponent::retranslateUi()
 
     rackButton   .setButtonText (T ("RACK"));
     mixClearSolo .setButtonText (T ("SIN SOLO"));
+    mixEnviosBtn.setButtonText (T ("ENVIOS"));   // efectos#rutas
     //  Y LA DEL MENU DE UNA RANURA. Se construyo con el literal en español y
     //  no se retraducia jamas: es exactamente el fallo de las tres pestañas de
     //  AJUSTES -la ficha que CONTIENE el selector de idioma- y lo canto el
@@ -13854,11 +13946,13 @@ juce::ValueTree MainComponent::captureState() const
         fx.setProperty ("csends", filas.joinIntoString (";"), nullptr);
     }
     {
-        //  efectos#retorno: lo que cada canal manda a RETORNO A y B, "a,b" por canal.
+        //  efectos#rutas: cada envio abierto, "desde>hacia=nivel", separados por ";".
         juce::StringArray filas;
         for (int c = 0; c < kNumCanales; ++c)
-            filas.add (juce::String (engine.getCanalRetorno (c, 0), 3) + "," + juce::String (engine.getCanalRetorno (c, 1), 3));
-        fx.setProperty ("cret", filas.joinIntoString (";"), nullptr);
+            for (int d = 0; d < kNumCanales; ++d)
+                if (engine.getCanalEnvio (c, d) > 0.0f)
+                    filas.add (juce::String (c) + ">" + juce::String (d) + "=" + juce::String (engine.getCanalEnvio (c, d), 3));
+        fx.setProperty ("cenv", filas.joinIntoString (";"), nullptr);
     }
 
     //  El fader y el mute de cada canal, dos listas cortas y no dispersas.
@@ -14453,15 +14547,29 @@ void MainComponent::applyState (const juce::ValueTree& s)
                                          traeCanales ? (f < r.size() ? r[f].getFloatValue() : 0.0f)
                                                      : (c == 0 && f < viejos ? 1.0f : 0.0f));
             }
-            //  efectos#retorno: sin `cret` el fichero es anterior a los retornos y nadie manda.
-            juce::StringArray rets;
-            rets.addTokens (fx.getProperty ("cret", juce::String()).toString(), ";", "");
+            //  efectos#rutas: sin `cenv`, el `cret` de antes manda a los canales 15 y 16; sin ninguno, nadie manda.
             for (int c = 0; c < kNumCanales; ++c)
+                for (int d = 0; d < kNumCanales; ++d) engine.setCanalEnvio (c, d, 0.0f);
+            if (fx.hasProperty ("cenv"))
             {
-                juce::StringArray r;
-                if (c < rets.size()) r.addTokens (rets[c], ",", "");
-                for (int k = 0; k < AudioEngine::kNumRetornos; ++k)
-                    engine.setCanalRetorno (c, k, k < r.size() ? r[k].getFloatValue() : 0.0f);
+                juce::StringArray envs;
+                envs.addTokens (fx.getProperty ("cenv").toString(), ";", "");
+                for (const auto& t : envs)
+                    engine.setCanalEnvio (t.upToFirstOccurrenceOf (">", false, false).getIntValue(),
+                                          t.fromFirstOccurrenceOf (">", false, false).upToFirstOccurrenceOf ("=", false, false).getIntValue(),
+                                          t.fromFirstOccurrenceOf ("=", false, false).getFloatValue());
+            }
+            else
+            {
+                juce::StringArray rets;
+                rets.addTokens (fx.getProperty ("cret", juce::String()).toString(), ";", "");
+                for (int c = 0; c < kNumCanales && c < rets.size(); ++c)
+                {
+                    juce::StringArray r;
+                    r.addTokens (rets[c], ",", "");
+                    for (int k = 0; k < AudioEngine::kNumRetornos && k < r.size(); ++k)
+                        engine.setCanalEnvio (c, AudioEngine::kCanalRetorno[k], r[k].getFloatValue());
+                }
             }
 
             //  El fader y el mute, con su defecto antiguo: uno y apagado, que
@@ -15356,6 +15464,7 @@ void MainComponent::loadProject (const juce::String& name)
     //  Igual que la sesion: las muestras por trozos, y el estado al final.
     const auto tree = juce::ValueTree::fromXml (*xml);
     beginBusy (T ("Abriendo proyecto"));
+    ponTapaCarga (true);
     padJob = std::make_unique<PadLoadJob>();
     padJob->folder = folder;
     padJob->clearMissing = true;
@@ -15863,7 +15972,7 @@ void MainComponent::newProject()
     for (int c = 0; c < kNumCanales; ++c)
     {
         for (int f = 0; f < kNumFx; ++f) engine.setCanalSend (c, f, 0.0f);
-        for (int k = 0; k < AudioEngine::kNumRetornos; ++k) engine.setCanalRetorno (c, k, 0.0f);   // efectos#retorno
+        for (int d = 0; d < kNumCanales; ++d) engine.setCanalEnvio (c, d, 0.0f);   // efectos#rutas
         engine.setCanalGain (c, 1.0f);
         engine.setCanalMute (c, false);
     }
@@ -18603,6 +18712,7 @@ void MainComponent::refreshSong (bool repintarTarjeta)
 //  has to look silenced or you cannot tell why they went quiet.
 void MainComponent::refreshMixStrip()
 {
+    if (mixEnvios && mixPage == mixPageCanales) refrescaEnvios();   // efectos#rutas: un proyecto que vuelve trae sus cables
     //  Y LAS DIECISEIS TIRAS DE CANAL, con lo que el motor tiene: el fader y el
     //  mute vuelven de un proyecto y nadie los reponia.
     for (int c = 0; c < kNumCanales; ++c)
@@ -18898,16 +19008,6 @@ void MainComponent::refreshRack()
                                        : juce::String (fxDefs[fx].name) + " "
                                          + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " "
                                          + T (AudioEngine::sustituye (fx) ? "SUSTITUYE" : "SUMA"));
-    }
-    //  efectos#retorno: en un retorno no hay envio a un retorno; la tapa sigue llevando al otro.
-    for (int r = 0; r < rackRetSends.size(); ++r)
-    {
-        const bool puede = AudioEngine::retornoDeCanal (canalActual) < 0;
-        rackRetSends[r]->setValue (engine.getCanalRetorno (canalActual, r), juce::dontSendNotification);
-        rackRetSends[r]->setEnabled (puede);
-        rackRetSends[r]->setTitle (T (r == 0 ? "ENVIO A" : "ENVIO B"));
-        rackRetBtns[r]->setButtonText (T (r == 0 ? "ENVIO A" : "ENVIO B"));
-        rackRetBtns[r]->setToggleState (canalActual == AudioEngine::kCanalRetorno[r], juce::dontSendNotification);
     }
     refrescaRanuras();      // el canalon de cada fila, con las seis de la cara
     //  De la ficha, la cabecera -canal y cuantos pads- y lo demas son tapas
@@ -22781,6 +22881,7 @@ void MainComponent::audioFocusGained()
 //  la persona no guardo no se confirma en su proyecto.
 void MainComponent::autosave()
 {    const Bitacora::Tarea marca ("guardar/sesion");
+    if (cargandoPads) return;   // proyecto#carga: a medio abrir, la sesion se queda como estaba
 
     //  EL ESTADO ANTES QUE LOS PADS: sync encola los borrados de los pads que
     //  pasan a salir de otro, y el escritor los haria antes de que state.xml
@@ -22947,7 +23048,27 @@ void MainComponent::stepPadJob()
         padJob.reset();
         endBusy();
         if (done) done (restored);
+        if (padJob == nullptr) ponTapaCarga (false);   // proyecto#carga: despues del remate, que es quien pone el estado
     }
+}
+
+void MainComponent::ponTapaCarga (bool on)
+{
+    cargandoPads = on;
+    tapaCarga.hueco = busyArea;
+    tapaCarga.setBounds (getLocalBounds());
+    tapaCarga.setVisible (on);
+    if (on) tapaCarga.toFront (false);
+    tapaCarga.repaint();
+}
+
+void MainComponent::TapaCarga::paint (juce::Graphics& g)
+{
+    //  proyecto#carga: todo en penumbra menos la barra de la maquina, que es la que cuenta como va.
+    g.saveState();
+    g.excludeClipRegion (hueco);
+    g.fillAll (ZatiColours::screenBg.withAlpha (0.72f));
+    g.restoreState();
 }
 
 void MainComponent::restoreSession()
@@ -23009,6 +23130,7 @@ void MainComponent::restoreSession()
     //  sesenta y cuatro: applyState pisa nombres y recortes, y hacerlo antes
     //  de tener el audio los dejaria a medias.
     beginBusy (T ("Recuperando sesion"));
+    ponTapaCarga (true);
     padJob = std::make_unique<PadLoadJob>();
     padJob->fromSession = true;
     readSourceMap (tree, padJob->source);
@@ -23930,7 +24052,7 @@ void MainComponent::timerCallback()
     //  dura ni siquiera lo que diga la tabla.
     //  Y UN MOMENTO DESPUES DEL ULTIMO TOQUE, el estado entero. Ver
     //  `OidoDeToques`.
-    if (estadoTrasToqueMs > 0.0 && (estadoTrasToqueMs -= dt) <= 0.0)
+    if (! cargandoPads && estadoTrasToqueMs > 0.0 && (estadoTrasToqueMs -= dt) <= 0.0)
     {
         estadoTrasToqueMs = -1.0;
         sessionStateMs = 0.0;
@@ -23941,7 +24063,8 @@ void MainComponent::timerCallback()
     if ((sessionSyncMs += dt) >= kSyncSesionMs)
     {
         sessionSyncMs = 0.0;
-        session.sync (vivos(), kVivos, [this] { return textoSesion(); });
+        if (! cargandoPads)   // proyecto#carga
+            session.sync (vivos(), kVivos, [this] { return textoSesion(); });
         refreshSystemInsets();
         Metrics::holdMsVivo = Sistema::pulsacionLargaMs (Metrics::holdMs);   // accesibilidad#31: cambia en Ajustes sin reiniciar
         {
@@ -23962,7 +24085,7 @@ void MainComponent::timerCallback()
             //  mensajes cada veinte segundos (Tribunal 2026-09, 4.6), y si no
             //  cambio nada ni se escribe (8.4).
             const Bitacora::Tarea marca ("guardar/periodico");
-            session.pideEstado (textoSesion());
+            if (! cargandoPads) session.pideEstado (textoSesion());
         }
     }
 

@@ -813,6 +813,7 @@ void MainComponent::maquetaCromo (Cara& c)
     busyArea = screenBezel.reduced (Metrics::sm, Metrics::xs)
                           .removeFromBottom (Metrics::hit - 6);
     busyBar.setBounds (busyArea);
+    if (cargandoPads) ponTapaCarga (true);   // proyecto#carga: girar el movil a medio abrir
     if (busyJobs > 0) busyBar.toFront (false);
     cristal.setBounds (screenBezel);
     //  El bisel se dibuja 5 px sobresalido, y la fila que viene debajo deja su
@@ -3927,8 +3928,7 @@ void MainComponent::maquetaRack()
         auto inner = sheetFromBottom (rackSheet, Ficha::marco + cabecera
                                                    + (chipRowH + Metrics::xs) * 4
                                                    + Metrics::hit + Metrics::xs
-                                                   + Metrics::sm + kNumRanuras * filaFx + Metrics::sm
-                                                   + AudioEngine::kNumRetornos * filaFx);
+                                                   + Metrics::sm + kNumRanuras * filaFx + Metrics::sm);
         auto titleRow = inner.removeFromTop (cabecera);
         rackCloseButton.setBounds (Lang::takeEnd (titleRow, Metrics::hit).withSizeKeepingCentre (Metrics::hit, Metrics::hit));
 
@@ -4080,13 +4080,6 @@ void MainComponent::maquetaRack()
             if (rackSends[s] != nullptr)
                 rackSends[s]->setBounds (row.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
         };
-        //  efectos#retorno: ENVIO A y B al pie, con el canalon y el fader de una ranura.
-        for (int r = juce::jmin (AudioEngine::kNumRetornos, rackRetSends.size()) - 1; r >= 0; --r)   // efectos#retorno: de abajo arriba, para que A quede encima de B
-        {
-            auto row = inner.removeFromBottom (filaFx);
-            rackRetBtns[r]->setBounds (Lang::takeStart (row, 54 + Metrics::hit + 2).reduced (Metrics::aireTapaDensa, Metrics::halfGap));
-            rackRetSends[r]->setBounds (row.reduced (Metrics::aireTapaDensa, Metrics::halfGap));
-        }
         const bool dosCol = inner.getWidth() >= 560 && inner.getHeight() < kNumRanuras * filaFx;
         if (dosCol)
         {
@@ -5795,6 +5788,10 @@ void MainComponent::maquetaMix()
         //  misma razon por la que S y M se piden en el mismo orden arriba.
         rackButton.setBounds (bottom.removeFromRight (bottom.getWidth() / 3)
                                   .reduced (Metrics::halfGap, Metrics::centraDedo));
+        //  efectos#rutas: en CANALES, ENVIOS entre SIN SOLO y RACK; el RACK no se mueve.
+        mixEnviosBtn.setBounds (mixPage == mixPageCanales ? bottom.removeFromRight (bottom.getWidth() / 2)
+                                                                  .reduced (Metrics::halfGap, Metrics::centraDedo)
+                                                          : juce::Rectangle<int>());
         mixClearSolo.setBounds (bottom.reduced (Metrics::halfGap, Metrics::centraDedo));
         inner.removeFromBottom (Metrics::xs);
 
@@ -5962,10 +5959,23 @@ void MainComponent::maquetaMix()
                 //  al reves -la M en el borde y la S a un pixel- con el
                 //  parrafo de arriba diciendo que no; la foto del telefono lo
                 //  enseno. Tests/canales.py, regla 18.
+                if (mixEnvios)
+                {
+                    //  efectos#rutas: donde iba la S, el canalon de los cables; donde la M, el knob. El fader no cambia de ancho.
+                    row.removeFromRight (Metrics::hit + Metrics::halfGap);
+                    canEnvios[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
+                    row.removeFromRight (Metrics::halfGap);
+                    canSolos[c]->setBounds ({});
+                    canMutes[c]->setBounds ({});
+                }
+                else
+                {
                 canSolos[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
                 canMutes[c]->setBounds (row.removeFromRight (Metrics::hit).reduced (0, Metrics::aireTapaDensa));
                 row.removeFromRight (Metrics::halfGap);
+                canEnvios[c]->setBounds ({});
+                }
 
                 canFaders[c]->setBounds (row.reduced (Metrics::aireTapa, Metrics::aireTapaDensa));
             }

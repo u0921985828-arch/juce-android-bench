@@ -1846,7 +1846,7 @@ void MainComponent::pintaRotuloCanal (juce::Graphics& g, int c, juce::Rectangle<
     g.setFont (ZatiColours::monoFont (Metrics::fMeta));
     const int nameX = chip.getRight() + 6;
     g.drawText (nombre.isNotEmpty() ? nombre
-                                    : AudioEngine::retornoDeCanal (c) >= 0 ? nombreCanalMesa (c)
+                                    : engine.recibeEnvios (c) ? T ("RETORNO")   // efectos#rutas: a quien le mandan hace de retorno
                                     : has ? padsTexto (cuenta)
                                           : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\x94")),
                 nameX, fila.getY(), juce::jmax (24, r.getRight() - nameX), fila.getHeight(),
@@ -1870,6 +1870,50 @@ void MainComponent::paintCanalNombreContent (juce::Graphics& g)
                  "titulo", true);
 }
 
+//  efectos#rutas: LOS CABLES DEL CANAL ELEGIDO, por el canalon a la derecha de los knobs: los que salen, de su color y del grueso de su nivel; los que le entran, en tenue. Un canal del otro banco sale por el borde.
+void MainComponent::pintaCablesEnvio (juce::Graphics& g)
+{
+    if (! juce::isPositiveAndBelow (canalActual, kNumCanales) || canEnvios.size() < kNumCanales) return;
+    const int alto = mixRows.getHeight();
+    auto punta = [&] (int c, int otro) -> juce::Point<float>
+    {
+        const auto b = canEnvios[c]->getBounds();
+        if (! b.isEmpty()) return { (float) b.getRight(), (float) b.getCentreY() };
+        const auto o = canEnvios[otro]->getBounds();
+        return { (float) o.getRight(), c < canBank * kPadsPerBank ? 0.0f : (float) alto };
+    };
+    auto cable = [&] (int a, int b, float v, float alfa)
+    {
+        if (canEnvios[a]->getBounds().isEmpty() && canEnvios[b]->getBounds().isEmpty()) return;
+        const auto p0 = punta (a, b), p1 = punta (b, a);
+        const float hueco = (float) (Metrics::hit + Metrics::halfGap);
+        const float panza = juce::jmin (hueco - 6.0f, 8.0f + 0.25f * std::abs (p1.y - p0.y));
+        juce::Path cam;
+        cam.startNewSubPath (p0);
+        cam.cubicTo (p0.x + panza, p0.y, p1.x + panza, p1.y, p1.x, p1.y);
+        //  efectos#rutas: el cable entero del color del canal que manda, llegue a quien llegue: asi se sabe de donde viene cada envio.
+        const auto deA = Zati::colour (a).withAlpha (alfa);
+        g.setColour (deA);
+        g.strokePath (cam, juce::PathStrokeType (2.0f + 2.5f * v, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (ZatiColours::screenBg.withAlpha (alfa));
+        g.fillEllipse (p0.x - 5.5f, p0.y - 5.5f, 11.0f, 11.0f);
+        g.setColour (deA);
+        g.fillEllipse (p0.x - 4.0f, p0.y - 4.0f, 8.0f, 8.0f);
+        g.drawEllipse (p1.x - 4.0f, p1.y - 4.0f, 8.0f, 8.0f, 2.0f);
+    };
+    for (int d = 0; d < kNumCanales; ++d)
+    {
+        if (d == canalActual) continue;
+        if (const float v = engine.getCanalEnvio (d, canalActual); v > 0.0f) cable (d, canalActual, v, 0.35f);
+    }
+    for (int d = 0; d < kNumCanales; ++d)
+    {
+        if (d == canalActual) continue;
+        if (const float v = engine.getCanalEnvio (canalActual, d); v > 0.0f) cable (canalActual, d, v, 0.95f);
+    }
+}
+
+
 //  The chip and the name belong to the ROW, so they are painted by the panel
 //  the rows live in - in its coordinates, which scroll with them. Painted on
 //  the sheet behind the sliders, as they were, they stayed put while the
@@ -1882,7 +1926,11 @@ void MainComponent::paintMixRows (juce::Graphics& g)
     //  separa un canal vacio de uno que suena y no se oye.
     //  Y EL CHIP Y EL NOMBRE DE CADA CANAL los pinta su tapa, que es lo que
     //  se aprieta: ver RotuloCanal y pintaRotuloCanal.
-    if (mixPage == mixPageCanales) return;
+    if (mixPage == mixPageCanales)
+    {
+        if (mixEnvios) pintaCablesEnvio (g);
+        return;
+    }
 
     //  Only the bank on show. Painting all sixty-four drew the chip, number and
     //  name of forty-eight strips whose sliders are hidden - at whatever

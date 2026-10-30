@@ -285,25 +285,38 @@ def main ():
         malo.append ("poner un efecto cambia %d px de %d: el cristal vacio no es "
                      "un cristal o es ya la curva" % (r["visor_dif"], r["visor_vacio"]))
 
-    #  8. efectos#retorno: ENVIO A, por su mando y su tapa. Que mida un dedo y quepa
-    #     en la ficha, que el mando escriba el motor, que guardar lo conserve y
-    #     que la tapa lleve a RETORNO A con el envio apagado alli.
-    rf = r.get ("ret_fader", [0, 0])
-    print ("retorno    fader %dx%d dentro %d   escrito %.2f guardado %.2f   la tapa lleva al canal %d (envio activo %d)"
-           % (rf[0], rf[1], r.get ("ret_dentro", 0), r.get ("ret_escrito", -1), r.get ("ret_guardado", -1),
-              r.get ("ret_lleva", -1) + 1, r.get ("ret_en_retorno", -1)))
-    if rf[1] < 36 or rf[0] < 100 or r.get ("ret_dentro", 0) != 1:
-        malo.append ("el fader de ENVIO A no esta en la ficha o no mide un dedo: %dx%d dentro %d"
-                     % (rf[0], rf[1], r.get ("ret_dentro", 0)))
-    if r.get ("ret_a_encima", 0) != 1:
-        malo.append ("ENVIO B sale encima de ENVIO A: se leen al reves")
-    if abs (r.get ("ret_escrito", -1) - 0.6) > 0.005:
-        malo.append ("mover ENVIO A no escribe el envio del canal: %.3f" % r.get ("ret_escrito", -1))
-    if abs (r.get ("ret_guardado", -1) - 0.6) > 0.005:
-        malo.append ("guardar y abrir pierde el envio a RETORNO A: %.3f" % r.get ("ret_guardado", -1))
-    if r.get ("ret_lleva", -1) != 14 or r.get ("ret_en_retorno", -1) != 0:
-        malo.append ("la tapa ENVIO A no lleva a RETORNO A (canal %d) o alli deja mandar a un retorno (%d)"
-                     % (r.get ("ret_lleva", -1) + 1, r.get ("ret_en_retorno", -1)))
+    #  8. efectos#rutas: en la mesa, ENVIOS. El knob del canal 8 mide un dedo y no pisa
+    #     el fader, tocar el rotulo 3 lo elige, M y S se apartan, el knob escribe el
+    #     envio 3>8, el cable se pinta, guardar lo conserva, el 8 no puede cerrar el
+    #     circulo y un proyecto de antes llega a los canales 15 y 16.
+    ek = r.get ("env_knob", [0, 0]); mg = r.get ("migra", [-1, -1])
+    print ("envios     knob %dx%d dentro %d   elige %d   M/S %d   escrito %.2f guardado %.2f   circulo %d cerrado %.2f   cable %d -> %d px   migra %.2f %.2f"
+           % (ek[0], ek[1], r.get ("env_dentro", 0), r.get ("env_elige", -1) + 1, r.get ("env_ms", -1),
+              r.get ("env_escrito", -1), r.get ("env_guardado", -1), r.get ("env_circulo", -1), r.get ("env_cerrado", -1),
+              r.get ("cable_sin", -1), r.get ("cable_con", -1), mg[0], mg[1]))
+    if ek[1] < 32 or ek[0] < 40 or r.get ("env_dentro", 0) != 1:
+        malo.append ("el knob de envio no esta en su fila o no mide un dedo: %dx%d dentro %d" % (ek[0], ek[1], r.get ("env_dentro", 0)))
+    if r.get ("env_elige", -1) != 2 or r.get ("env_ms", -1) != 0:
+        malo.append ("en ENVIOS tocar el rotulo 3 no lo elige (%d) o M y S siguen a la vista (%d)" % (r.get ("env_elige", -1) + 1, r.get ("env_ms", -1)))
+    if abs (r.get ("env_escrito", -1) - 0.6) > 0.005 or abs (r.get ("env_guardado", -1) - 0.6) > 0.005:
+        malo.append ("el knob no escribe el envio 3>8 o guardar lo pierde: %.3f / %.3f" % (r.get ("env_escrito", -1), r.get ("env_guardado", -1)))
+    if r.get ("env_circulo", -1) != 0 or r.get ("env_cerrado", -1) != 0:
+        malo.append ("desde el 8 se puede mandar al 3 y cerrar el circulo: activo %d, envio %.3f" % (r.get ("env_circulo", -1), r.get ("env_cerrado", -1)))
+    if not (r.get ("cable_sin", -1) < 4 and r.get ("cable_con", -1) >= 40):
+        malo.append ("el cable 3>8 no se pinta: %d px sin envio, %d con" % (r.get ("cable_sin", -1), r.get ("cable_con", -1)))
+    cp = r.get ("cable_punta", [0, -1])
+    print ("cable      punta en el 8: %d px del color del 3 (manda), %d del 8 (recibe)" % tuple (cp))
+    if cp[0] <= 0 or cp[1] != 0:
+        malo.append ("el cable no es del color del canal que manda hasta la punta: %s" % cp)
+    lp = r.get ("lupa", [0, 1, -1, 0, 1])
+    lp = lp + [0] * (6 - len (lp))
+    print ("lupa       vista %d  bajo el dedo %d  dice %d %%  giro %d px  al soltar %d  ruta entera %d" % tuple (lp))
+    if lp[5] != 1:
+        malo.append ("la lupa corta la ruta: no se lee de que canal a cual va")
+    if lp[0] != 1 or lp[1] != 0 or lp[2] != 60 or lp[3] <= 320 or lp[4] != 0:
+        malo.append ("la lupa del knob no sale fuera del dedo con su 60 %%, mas fina, y se va al soltar: %s" % lp)
+    if abs (mg[0] - 0.5) > 0.005 or abs (mg[1] - 0.25) > 0.005:
+        malo.append ("un proyecto con ENVIO A y B no llega a los canales 15 y 16: %.3f %.3f" % (mg[0], mg[1]))
 
     if malo:
         for m in malo: print ("FALLA  " + m)

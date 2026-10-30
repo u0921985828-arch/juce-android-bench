@@ -247,10 +247,9 @@ public:
     //  regla de siempre -*lo que no esta en el fichero vale su defecto*- que
     //  aqui ya estaba generalizada sin que nadie lo hubiera necesitado.
     static constexpr int kNumCanales = 32;
-    //  efectos#retorno: los canales 15 y 16 son RETORNO A y B; cualquier otro les manda con su nivel y salen al master con sus efectos.
+    //  efectos#rutas: donde iban ENVIO A y B, los canales 15 y 16; solo para abrir proyectos de antes.
     static constexpr int kNumRetornos = 2;
     static constexpr int kCanalRetorno[kNumRetornos] = { 14, 15 };
-    static constexpr int retornoDeCanal (int c) noexcept { return c == 14 ? 0 : c == 15 ? 1 : -1; }
 
     //  QUE CANAL LLEVA DE VERDAD ESE PARAMETRO, escrito UNA vez y aqui.
     //
@@ -2155,16 +2154,43 @@ public:
         for (const auto& I : ins) if (I.mesaLista.load (std::memory_order_acquire)) ++n;
         return n;
     }
-    //  efectos#retorno: cuanto manda un canal a RETORNO A (r 0) o B (r 1), despues de su fader y sus efectos; un retorno no manda.
-    void setCanalRetorno (int canal, int r, float v) noexcept
+    //  efectos#rutas: cuanto manda un canal a otro, despues de su fader y sus efectos; lo que cerraria un circulo, o a si mismo, se niega y devuelve false.
+    bool setCanalEnvio (int desde, int hacia, float v) noexcept
     {
-        if (! tieneCanal (canal) || r < 0 || r >= kNumRetornos || retornoDeCanal (canal) >= 0) return;
-        canalRet[(size_t) canal][(size_t) r].store (juce::jlimit (0.0f, 1.0f, v), std::memory_order_relaxed);
+        if (! tieneCanal (desde) || ! tieneCanal (hacia) || desde == hacia) return false;
+        v = juce::jlimit (0.0f, 1.0f, v);
+        if (v > 0.0f && llegaEnvio (hacia, desde)) return false;
+        canalEnvio[(size_t) desde][(size_t) hacia].store (v, std::memory_order_relaxed);
+        return true;
     }
-    float getCanalRetorno (int canal, int r) const noexcept
+    float getCanalEnvio (int desde, int hacia) const noexcept
     {
-        if (! tieneCanal (canal) || r < 0 || r >= kNumRetornos) return 0.0f;
-        return canalRet[(size_t) canal][(size_t) r].load (std::memory_order_relaxed);
+        if (! tieneCanal (desde) || ! tieneCanal (hacia)) return 0.0f;
+        return canalEnvio[(size_t) desde][(size_t) hacia].load (std::memory_order_relaxed);
+    }
+    //  efectos#rutas: si lo que sale de `desde` acaba entrando, por envios abiertos, en `hacia`.
+    bool llegaEnvio (int desde, int hacia) const noexcept
+    {
+        if (! tieneCanal (desde) || ! tieneCanal (hacia)) return false;
+        juce::uint32 visto = 1u << (unsigned) desde, frente = visto;
+        while (frente != 0)
+        {
+            juce::uint32 nuevo = 0;
+            for (int a = 0; a < kNumCanales; ++a)
+                if ((frente >> (unsigned) a) & 1u)
+                    for (int b = 0; b < kNumCanales; ++b)
+                        if (canalEnvio[(size_t) a][(size_t) b].load (std::memory_order_relaxed) > 0.0f) nuevo |= 1u << (unsigned) b;
+            nuevo &= ~visto;
+            visto |= nuevo;
+            frente = nuevo;
+        }
+        return ((visto >> (unsigned) hacia) & 1u) != 0;
+    }
+    //  efectos#rutas: un canal al que alguien manda hace de retorno.
+    bool recibeEnvios (int c) const noexcept
+    {
+        for (int a = 0; a < kNumCanales; ++a) if (getCanalEnvio (a, c) > 0.0f) return true;
+        return false;
     }
     float getCanalSend (int canal, int fx) const noexcept
     {
@@ -4390,11 +4416,15 @@ private:
     std::array<std::array<std::atomic<float>, kNumFx>, kNumPads> padRecorte {};
     std::array<std::atomic<juce::uint8>, kNumPads> padCanal {};
     std::array<std::array<std::atomic<float>, kNumFx>, kNumCanales> canalSend {};
-    std::array<std::array<std::atomic<float>, kNumRetornos>, kNumCanales> canalRet {};
-    //  efectos#retorno: del hilo de audio. El nivel suavizado de cada envio, el del fader del retorno, quien manda este bloque y lo que sale de cada canal que manda.
-    std::array<std::array<float, kNumRetornos>, kNumCanales> smRet {};
-    std::array<float, kNumRetornos> smRetCan { 1.0f, 1.0f };
-    std::array<bool, kNumRetornos> retVivo {};
+    std::array<std::array<std::atomic<float>, kNumCanales>, kNumCanales> canalEnvio {};
+    //  efectos#rutas: del hilo de audio. El nivel suavizado de cada envio, las rutas vivas del bloque con su rampa, la pasada de cada canal y el fader de cada retorno.
+    std::array<std::array<float, kNumCanales>, kNumCanales> smEnv {};
+    struct Ruta { int desde = 0, hacia = 0; float g0 = 0.0f, g1 = 0.0f; };
+    std::array<Ruta, (size_t) (kNumCanales * kNumCanales)> rutas {};
+    int numRutas = 0, profMax = 0;
+    std::array<int, kNumCanales> profCanal {};
+    std::array<float, kNumCanales> smRetCan {};
+    std::array<bool, kNumCanales> retVivo {};
     std::array<bool, kNumCanales> enviaCanal {};
     bool hayEnvios = false;
     std::array<juce::AudioBuffer<float>, kNumCanales> salidaDeCanal;

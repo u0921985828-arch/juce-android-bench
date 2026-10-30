@@ -3653,6 +3653,21 @@ void MainComponent::auditOpen (const juce::String& pedido)
         pulsaTapa (mixBankBtns[kCanBancos - 1]);
         pulsaTapa (mixBankBtns[0]);
     }
+    //  efectos#rutas: la pagina de CANALES en ENVIOS, con el canal 3 mandando a tres y el 8 de vuelta al 15: cables de salida y de entrada.
+    else if (which == "mixenv" || which == "mixenvl")
+    {
+        for (int p = 0; p < kNumPads; ++p) engine.setPadCanal (p, p % kNumCanales);
+        engine.setCanalEnvio (2, 7, 0.8f);
+        engine.setCanalEnvio (2, 11, 0.4f);
+        engine.setCanalEnvio (2, 14, 1.0f);
+        engine.setCanalEnvio (0, 2, 0.5f);
+        showMixPage (mixPageCanales);
+        openSheet (mixSheet, mixButton);
+        pulsaTapa (mixBankBtns[0]);
+        if (! mixEnviosBtn.getToggleState()) pulsaTapa (&mixEnviosBtn);
+        pulsaTapa (canRotulos[2]);
+        if (which == "mixenvl" && canEnvios[7]->onDragStart) canEnvios[7]->onDragStart();   // con el dedo en el knob del 8
+    }
     //  LA FICHA DEL NOMBRE DE UNA TIRA, en sus dos estados: la rejilla de
     //  iconos y el lienzo, que cambia la fila de abajo y el titulo. Se llega
     //  TOCANDO el rotulo de la tira uno, que es el camino de verdad.
@@ -8399,30 +8414,90 @@ void MainComponent::auditRack()
         return n;
     };
 
-    //  efectos#retorno: por la tapa y el mando del rack, ENVIO A escribe el motor, lleva a RETORNO A y sobrevive a guardar.
-    ponCanalActual (2);
-    openSheet (rackSheet, mixButton);
-    refreshRack();
+    //  efectos#rutas: en la mesa, ENVIOS; del canal 3 al 8 por su knob, el cable se pinta, guardar lo conserva, el 8 no puede cerrar el circulo y un proyecto de antes llega a 15 y 16.
+    for (int c = 0; c < kNumCanales; ++c)
+        for (int d = 0; d < kNumCanales; ++d) engine.setCanalEnvio (c, d, 0.0f);
+    showMixPage (mixPageCanales);
+    openSheet (mixSheet, mixButton);
+    showCanBank (0);
+    if (! mixEnviosBtn.getToggleState()) pulsaTapa (&mixEnviosBtn);
+    pulsaTapa (canRotulos[2]);
     resized();
-    const auto retFader = rackRetSends.isEmpty() ? juce::Rectangle<int>() : rackRetSends[0]->getBounds();
-    const auto cuerpoRack = rackSheet.cuerpo.getLocalBounds();
-    const bool retDentro = ! retFader.isEmpty() && cuerpoRack.contains (retFader)
-                        && ! retFader.intersects (rackSends[kNumRanuras - 1]->getBounds());
-    float retEscrito = -1.0f, retGuardado = -1.0f;
-    int retLleva = -1, retEnRetorno = -1;
-    if (! rackRetSends.isEmpty())
+    const auto envKnob = canEnvios[7]->getBounds();
+    const bool envDentro = ! envKnob.isEmpty() && mixRows.getLocalBounds().contains (envKnob)
+                        && ! envKnob.intersects (canFaders[7]->getBounds()) && canEnvios[7]->isVisible();
+    const int envElige = canalActual, envMs = (canMutes[7]->isVisible() || canSolos[7]->isVisible()) ? 1 : 0;
+    auto tintaCable = [this] ()
     {
-        rackRetSends[0]->setValue (0.6, juce::sendNotificationSync);
-        retEscrito = engine.getCanalRetorno (2, 0);
-        const auto arbol = captureState();
-        engine.setCanalRetorno (2, 0, 0.0f);
-        applyState (arbol);
-        retGuardado = engine.getCanalRetorno (2, 0);
-        if (rackRetBtns[0]->onClick) rackRetBtns[0]->onClick();
-        retLleva = canalActual;
-        retEnRetorno = rackRetSends[0]->isEnabled() ? 1 : 0;
-        engine.setCanalRetorno (2, 0, 0.0f);
+        const auto k2 = canEnvios[2]->getBounds(), k7 = canEnvios[7]->getBounds();
+        const auto zona = juce::Rectangle<int>::leftTopRightBottom (k7.getRight(), k2.getCentreY(), k7.getRight() + Metrics::hit + Metrics::halfGap, k7.getCentreY());
+        if (zona.isEmpty()) return -1;
+        const auto img = mixRows.createComponentSnapshot (zona, true, 1.0f);
+        const auto t = Zati::colour (2);
+        int n = 0;
+        for (int y = 0; y < img.getHeight(); ++y)
+            for (int x = 0; x < img.getWidth(); ++x)
+            {
+                const auto p = img.getPixelAt (x, y);
+                if (std::abs (p.getRed() - t.getRed()) + std::abs (p.getGreen() - t.getGreen()) + std::abs (p.getBlue() - t.getBlue()) < 60) ++n;
+            }
+        return n;
+    };
+    const int cableSin = tintaCable();
+    canEnvios[7]->setValue (0.6, juce::sendNotificationSync);
+    const float envEscrito = engine.getCanalEnvio (2, 7);
+    const int cableCon = tintaCable();
+    //  efectos#rutas: la punta que llega al 8 sigue del color del 3, que es quien manda (no se funde al del que recibe).
+    int puntaOrigen = 0, puntaDestino = 0;
+    {
+        const auto k7 = canEnvios[7]->getBounds();
+        const auto zona = juce::Rectangle<int> (k7.getRight() + 1, k7.getCentreY() - 8, 12, 16);
+        const auto img = mixRows.createComponentSnapshot (zona, true, 1.0f);
+        const auto o = Zati::colour (2), d = Zati::colour (7);
+        auto cerca = [] (juce::Colour p, juce::Colour t) { return std::abs (p.getRed() - t.getRed()) + std::abs (p.getGreen() - t.getGreen()) + std::abs (p.getBlue() - t.getBlue()) < 60; };
+        for (int y = 0; y < img.getHeight(); ++y)
+            for (int x = 0; x < img.getWidth(); ++x)
+            {
+                const auto p = img.getPixelAt (x, y);
+                if (cerca (p, o)) ++puntaOrigen;
+                if (cerca (p, d)) ++puntaDestino;
+            }
     }
+    //  efectos#rutas: con el dedo en el knob sale la lupa, fuera de debajo del dedo, con el tanto por ciento; al soltar se va.
+    if (canEnvios[7]->onDragStart) canEnvios[7]->onDragStart();
+    const int lupaVista = lupaEnvio.isVisible() ? 1 : 0;
+    const int lupaTapa = lupaEnvio.getBounds().intersects (canEnvios[7]->getBounds()) ? 1 : 0;
+    const int lupaPct = (int) std::round (lupaEnvio.valor * 100.0f);
+    const int lupaFina = (int) canEnvios[7]->getMouseDragSensitivity();
+    //  efectos#rutas: la ruta entera cabe a su tamano en la caja (salia «CH. 3 -> CH.» sin el 8).
+    const int lupaCabe = juce::GlyphArrangement::getStringWidth (ZatiColours::monoFont (Metrics::fMeta, false), lupaEnvio.ruta)
+                             <= (float) lupaEnvio.getWidth() - 18.0f && lupaEnvio.ruta.endsWith ("8") ? 1 : 0;
+    if (canEnvios[7]->onDragEnd) canEnvios[7]->onDragEnd();
+    const int lupaSuelta = lupaEnvio.isVisible() ? 1 : 0;
+    float envGuardado = -1.0f;
+    {
+        const auto arbol = captureState();
+        engine.setCanalEnvio (2, 7, 0.0f);
+        applyState (arbol);
+        envGuardado = engine.getCanalEnvio (2, 7);
+    }
+    pulsaTapa (canRotulos[7]);
+    const int envCirculo = canEnvios[2]->isEnabled() ? 1 : 0;
+    canEnvios[2]->setValue (0.5, juce::sendNotificationSync);
+    const float envCerrado = engine.getCanalEnvio (7, 2);
+    float migraA = -1.0f, migraB = -1.0f;
+    {
+        auto arbol = captureState();
+        auto fxv = arbol.getChildWithName ("FX");
+        fxv.removeProperty ("cenv", nullptr);
+        fxv.setProperty ("cret", "0,0;0,0;0.5,0.25", nullptr);
+        applyState (arbol);
+        migraA = engine.getCanalEnvio (2, AudioEngine::kCanalRetorno[0]);
+        migraB = engine.getCanalEnvio (2, AudioEngine::kCanalRetorno[1]);
+    }
+    for (int c = 0; c < kNumCanales; ++c)
+        for (int d = 0; d < kNumCanales; ++d) engine.setCanalEnvio (c, d, 0.0f);
+    if (mixEnviosBtn.getToggleState()) pulsaTapa (&mixEnviosBtn);
 
     closeAllSheets();
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
@@ -8473,13 +8548,19 @@ void MainComponent::auditRack()
               << ",\"mute\":["  << mute.getWidth()  << "," << mute.getHeight()  << "]"
               << ",\"mute_antes\":"   << muteAntes
               << ",\"mute_despues\":" << muteDespues
-              << ",\"ret_fader\":[" << retFader.getWidth() << "," << retFader.getHeight() << "]"
-              << ",\"ret_dentro\":" << (retDentro ? 1 : 0)
-              << ",\"ret_a_encima\":" << (rackRetSends.size() > 1 && rackRetSends[0]->getY() < rackRetSends[1]->getY() ? 1 : 0)   // efectos#retorno: A antes que B
-              << ",\"ret_escrito\":" << juce::String (retEscrito, 3)
-              << ",\"ret_guardado\":" << juce::String (retGuardado, 3)
-              << ",\"ret_lleva\":" << retLleva
-              << ",\"ret_en_retorno\":" << retEnRetorno
+              << ",\"env_knob\":[" << envKnob.getWidth() << "," << envKnob.getHeight() << "]"
+              << ",\"env_dentro\":" << (envDentro ? 1 : 0)
+              << ",\"env_elige\":" << envElige
+              << ",\"env_ms\":" << envMs
+              << ",\"env_escrito\":" << juce::String (envEscrito, 3)
+              << ",\"env_guardado\":" << juce::String (envGuardado, 3)
+              << ",\"env_circulo\":" << envCirculo
+              << ",\"env_cerrado\":" << juce::String (envCerrado, 3)
+              << ",\"cable_sin\":" << cableSin
+              << ",\"cable_con\":" << cableCon
+              << ",\"cable_punta\":[" << puntaOrigen << "," << puntaDestino << "]"
+              << ",\"lupa\":[" << lupaVista << "," << lupaTapa << "," << lupaPct << "," << lupaFina << "," << lupaSuelta << "," << lupaCabe << "]"
+              << ",\"migra\":[" << juce::String (migraA, 3) << "," << juce::String (migraB, 3) << "]"
               << ",\"mute_vuelve\":"  << muteVuelve
               << ",\"mute_vacia\":["  << mudoAntes << "," << mudoDespues << "]"
               << ",\"menu_abre\":"    << menuAbre
@@ -10662,39 +10743,25 @@ void MainComponent::auditFxPresets()
         auto* pb    = rackPresetBtns.isEmpty()      ? nullptr : rackPresetBtns[0];
         auto* pbVac = rackPresetBtns.size() > 1     ? rackPresetBtns[1] : nullptr;
 
-        //  EL CABLE, y los dos gestos: el toque pasa al siguiente y el
-        //  mantener abre la rejilla. Medir la funcion de destino saldria verde
-        //  con la tapa sin cable, que es el fallo que esta regla existe para
-        //  cazar.
-        const int cable = (pb != nullptr && pb->onClick != nullptr && pb->onHold != nullptr) ? 1 : 0;
-        const int seVe  = (pb != nullptr && pb->isVisible() && ! pb->getBounds().isEmpty()) ? 1 : 0;
-        const int anchoP = pb != nullptr ? pb->getWidth()  : 0;
-        const int altoP  = pb != nullptr ? pb->getHeight() : 0;
-        //  Y LA DE UNA RANURA VACIA, APAGADA Y VACIADA: las dos cosas, que
-        //  encendida y de 0x0 pasa las ocho reglas de geometria sin rozarlas.
+        //  efectos#preset: la fila ya no lleva tapa de preset; mantener el canalon abre su rejilla y el fader se queda el sitio.
+        const int cable = (pb != nullptr && pb->isVisible()) ? 1 : 0;
+        const int seVe  = (pb != nullptr && ! pb->getBounds().isEmpty()) ? 1 : 0;
+        const int anchoP = rackSends.isEmpty() ? 0 : rackSends[0]->getWidth();
+        const int altoP  = rackSlotBtns.isEmpty() ? 0 : rackSlotBtns[0]->getWidth();
         const int vacApagada = (pbVac != nullptr && ! pbVac->isVisible()) ? 1 : 0;
         const int vacVaciada = (pbVac != nullptr && pbVac->getBounds().isEmpty()) ? 1 : 0;
-        const int diceNombre = (pb != nullptr
-                                  && pb->getButtonText() == fxPresetNombre (dly)) ? 1 : 0;
-
-        //  EL PASEO: tantos toques como presets hay tienen que recorrerlos
-        //  todos y volver al primero. Se cuenta paso a paso y no solo la
-        //  vuelta, que quedarse quieto en el cero tambien vuelve al cero.
-        aplicaFxPreset (dly, 0);
-        int pasos = 0;
-        for (int i = 0; i < FxPresets::cuantos(); ++i)
+        int diceNombre = 0;
+        if (auto* hb = dynamic_cast<HoldButton*> (rackSlotBtns.isEmpty() ? nullptr : rackSlotBtns[0]); hb != nullptr && hb->onHold)
         {
-            if (cable != 0) pb->onClick();
-            if (fxPresetPuesto[(size_t) kCanal][(size_t) dly] == (i + 1) % FxPresets::cuantos())
-                ++pasos;
+            hb->onHold();
+            diceNombre = presetSheet.isVisible() ? 1 : 0;
+            closeAllSheets();
+            openSheet (rackSheet, mixButton);
+            refreshRack();
+            resized();
         }
-        const int vuelve = (fxPresetPuesto[(size_t) kCanal][(size_t) dly] == 0) ? 1 : 0;
-
-        //  Y EL TOQUE SOBRE UNA RANURA VACIA NO MUEVE NADA, que es la mitad
-        //  que un cable pelado cumpliria igual.
-        const int antes = fxPresetPuesto[(size_t) kCanal][(size_t) dly];
-        if (pbVac != nullptr && pbVac->onClick != nullptr) pbVac->onClick();
-        const int quieto = (fxPresetPuesto[(size_t) kCanal][(size_t) dly] == antes) ? 1 : 0;
+        (void) dly;
+        const int pasos = 0, vuelve = 0, quieto = 0;
 
         //  LA LUZ DE LA FILA, CUATRO VECES: encender, apagar, encender,
         //  apagar. Una sola pasada no distingue «no se entera» de «se entero
@@ -12202,6 +12269,7 @@ void MainComponent::auditGuardado()
     //     los bytes que hay en disco: un WAV que ya no esta o que es otro es un
     //     proyecto que abre a medias aunque la app haya dicho «NO se pudo».
     int padsRotos = -1, cabeceraIntacta = -1, huerfanos = -1, abreLoGuardado = -1;
+    int tapaTapa = -1, tapaPads = -1, tapaSesion = -1, tapaDespues = -1;
     {
         const juce::String nombre ("BANCO_ATOMICO");
         const auto carpeta = ProjectStore::folderFor (nombre);
@@ -12272,8 +12340,22 @@ void MainComponent::auditGuardado()
             if (! nombrados.contains (f.getFileName())) ++huerfanos;
 
         uiSample[0] = nullptr;
+        //  proyecto#carga: a medio abrir, la tapa se come los toques y la sesion no se pisa.
+        session.writeState (captureState(), "antes de abrir");
+        session.flush (10000);
+        juce::MemoryBlock sesionAntes, sesionDurante;
+        SessionKeeper::stateFile().loadFileAsData (sesionAntes);
         loadProject (nombre);
+        const auto centro = getLocalBounds().getCentre();
+        tapaTapa  = (tapaCarga.isVisible() && getComponentAt (centro) == &tapaCarga
+                     && tapaCarga.getBounds() == getLocalBounds()) ? 1 : 0;
+        tapaPads  = padJob != nullptr ? 1 : 0;
+        autosave();
+        session.flush (10000);
+        SessionKeeper::stateFile().loadFileAsData (sesionDurante);
+        tapaSesion = sesionDurante == sesionAntes ? 1 : 0;
         while (padJob != nullptr) stepPadJob();
+        tapaDespues = tapaCarga.isVisible() ? 1 : 0;
         abreLoGuardado = 0;
         if (alReves != nullptr && uiSample[0] != nullptr && uiSample[1] == nullptr
             && uiSample[0]->buffer.getNumSamples() == alReves->buffer.getNumSamples())
@@ -12396,6 +12478,7 @@ void MainComponent::auditGuardado()
               << ",\"atomico_cabecera\":" << cabeceraIntacta
               << ",\"atomico_huerfanos\":" << huerfanos
               << ",\"atomico_abre\":" << abreLoGuardado
+              << ",\"tapa_carga\":[" << tapaTapa << "," << tapaPads << "," << tapaSesion << "," << tapaDespues << "]"
               << ",\"clear_resucitan\":" << resucitan
               << "}" << std::endl;
 }

@@ -3192,8 +3192,6 @@ private:
     juce::OwnedArray<Boton> rackBankBtns;
     juce::OwnedArray<juce::Slider>     rackSends;
     //  efectos#retorno: cuanto manda el canal a RETORNO A y B; la tapa lleva al retorno.
-    juce::OwnedArray<Boton>            rackRetBtns;
-    juce::OwnedArray<juce::Slider>     rackRetSends;
     //  El canalon de la izquierda de cada fila. Era texto PINTADO -el nombre
     //  del efecto y su dibujo- y ahora es una tapa, porque el RACK pasa a ser
     //  el sitio donde se cambia lo que hay en una ranura: la fila del rack es
@@ -3581,6 +3579,22 @@ private:
     juce::OwnedArray<juce::Slider>     canFaders;
     juce::OwnedArray<Boton> canMutes;
     juce::OwnedArray<Boton> canSolos;
+    //  efectos#rutas: el modo ENVIOS de la pagina de CANALES: en lugar de M y S, un knob con lo que el canal elegido manda a esa fila, y los cables pintados al lado.
+    juce::OwnedArray<juce::Slider> canEnvios;
+    bool mixEnvios = false;
+    Boton mixEnviosBtn { "ENVIOS" };
+    void refrescaEnvios();
+    void pintaCablesEnvio (juce::Graphics& g);
+    //  efectos#rutas: LA LUPA del knob que se esta girando, sobre el fader de su fila, donde el dedo no la tapa: el knob en grande, el tanto por ciento y de quien a quien.
+    struct LupaEnvio : public juce::Component
+    {
+        float valor = 0.0f;
+        juce::Colour tinta;
+        juce::String ruta;
+        void paint (juce::Graphics& g) override;
+    };
+    LupaEnvio lupaEnvio;
+    void ponLupaEnvio (int c, bool on);
     //  Donde empieza cada tira, por lo mismo que `mixRowX`: el chip de color, el
     //  numero y la cuenta de pads se PINTAN, asi que el pintor necesita saber
     //  donde el maquetado los dejo.
@@ -3793,6 +3807,15 @@ private:
         void paint (juce::Graphics& g) override { if (paintBar) paintBar (g); }
     };
     BusyBar busyBar;
+    //  proyecto#carga: TAPA mientras se abre un proyecto o vuelve la sesion; se come los toques (tocar a medias dejaba el estado cojo) y la sesion Unsaved no se escribe hasta el final.
+    struct TapaCarga : public juce::Component
+    {
+        juce::Rectangle<int> hueco;
+        void paint (juce::Graphics& g) override;
+    };
+    TapaCarga tapaCarga;
+    bool cargandoPads = false;
+    void ponTapaCarga (bool on);
 
     //  LEER SESENTA Y CUATRO MUESTRAS SIN CONGELAR NADA.
     //

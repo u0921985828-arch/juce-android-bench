@@ -943,7 +943,7 @@ int main (int argc, char** argv)
             {
                 if (canales[(size_t) k] < 0) continue;
                 e->setPadCanal (kPad[k], canales[(size_t) k]);
-                if (envia[(size_t) k] >= 0) e->setCanalRetorno (canales[(size_t) k], envia[(size_t) k], 1.0f);
+                if (envia[(size_t) k] >= 0) e->setCanalEnvio (canales[(size_t) k], AudioEngine::kCanalRetorno[envia[(size_t) k]], 1.0f);
             }
             //  el primer bloque tras preparar se queda con un solo golpe (Tribunal 2026-09, 1.2): uno en vacio antes.
             { juce::AudioBuffer<float> b (2, kBs); e->renderNextBlock (b, 0, kBs); }
@@ -984,6 +984,50 @@ int main (int argc, char** argv)
         if (mudo > kApagadoMax) falla ("con RETORNO A en mute el envio sigue sonando: resto %.1f dB", mudo);
         if (orden > kApagadoMax) falla ("el canal 21 manda distinto que el 2 a la misma sala: resto %.1f dB", orden);
         if (compartida > kApagadoMax) falla ("dos canales en RETORNO A no son una sala compartida: resto %.1f dB", compartida);
+
+        //  efectos#rutas: cualquier canal hace de retorno, en cadena y en cualquier orden de numero; lo que cerraria un circulo se niega.
+        auto ruta = [&] (std::vector<std::array<int, 2>> envios, std::vector<std::array<int, 2>> fxDe, int calla)
+        {
+            auto e = monta (-1, ruido (0.25f), 0.0f);
+            e->setSafetyLimiter (false);
+            e->setPadChoke (0, 0); e->setPadSelfCut (0, false); e->setPadPitch (0, 0.0f);
+            e->setPadCanal (0, 1);
+            for (const auto& cf : fxDe) { e->setCanalSend (cf[0], cf[1], 1.0f); e->setFxParam (cf[0], cf[1], 2, 1.0f); }
+            for (const auto& ab : envios) e->setCanalEnvio (ab[0], ab[1], 1.0f);
+            if (calla >= 0) e->setCanalMute (calla, true);
+            { juce::AudioBuffer<float> b (2, kBs); e->renderNextBlock (b, 0, kBs); }
+            e->postNoteOn (0, 1.0f);
+            std::vector<float> y; corre (*e, 48000, y);
+            return y;
+        };
+        constexpr int kRev = AudioEngine::kFxRev, kDly = AudioEngine::kFxDly;
+        const auto rSeco = ruta ({}, {}, -1);
+        const auto r6    = ruta ({ { 1, 5 } },  { { 5, kRev } },  -1);
+        const auto r15   = ruta ({ { 1, 14 } }, { { 14, kRev } }, -1);
+        const auto r6m   = ruta ({ { 1, 5 } },  { { 5, kRev } },  5);
+        const auto r8    = ruta ({ { 1, 7 } },  { { 7, kDly } },  -1);
+        const auto r68   = ruta ({ { 1, 5 }, { 1, 7 } }, { { 5, kRev }, { 7, kDly } }, -1);
+        const auto c1    = ruta ({ { 1, 9 } },           { { 9, kDly }, { 3, kRev } }, -1);
+        const auto c2    = ruta ({ { 1, 9 }, { 9, 3 } }, { { 9, kDly }, { 3, kRev } }, -1);
+        const auto h6 = menos (r6, rSeco);
+        const double salaR = potDe (h6, rSeco), igual = resto (h6, menos (r15, rSeco));
+        const double mudoR = resto (r6m, rSeco), dosRet = resto (menos (r68, rSeco), mas (h6, menos (r8, rSeco)));
+        const double cadena = potDe (menos (c2, c1), rSeco);
+        int circulos = 0;
+        {
+            auto e = monta (-1, ruido (0.25f), 0.0f);
+            if (! e->setCanalEnvio (1, 9, 0.5f) || ! e->setCanalEnvio (9, 3, 0.5f)) ++circulos;   // una cadena abierta se acepta
+            if (e->setCanalEnvio (3, 1, 0.5f) || e->getCanalEnvio (3, 1) > 0.0f) ++circulos;    // y cerrarla, no
+            if (e->setCanalEnvio (4, 4, 0.5f) || e->getCanalEnvio (4, 4) > 0.0f) ++circulos;    // ni a si mismo
+        }
+        std::printf ("RUTAS  sala en el canal 6 %.1f dB  igual que en el 15 %.1f dB  mudo %.1f dB  dos retornos %.1f dB  cadena 2>10>4 %.1f dB  circulos mal %d\n",
+                     salaR, igual, mudoR, dosRet, cadena, circulos);
+        if (salaR < -20.0) falla ("el envio al canal 6 no llega a su REV: humedo %.1f dB", salaR);
+        if (igual > kApagadoMax) falla ("mandar al canal 6 no suena igual que al 15 con la misma sala: resto %.1f dB", igual);
+        if (mudoR > kApagadoMax) falla ("con el canal 6 en mute su envio sigue sonando: resto %.1f dB", mudoR);
+        if (dosRet > kApagadoMax) falla ("un canal a dos retornos no es la suma de cada uno: resto %.1f dB", dosRet);
+        if (cadena < -30.0) falla ("en la cadena 2>10>4 el canal 4 no recibe lo del 10: %.1f dB", cadena);
+        if (circulos) falla ("los envios aceptan un circulo o niegan una cadena abierta: %d", circulos);
     }
     {
         //  efectos#fasemod: dos de CHO, FLA, PHA y TRM en la misma cadena; el punto del visor de cada uno tiene que moverse con señal.
@@ -1006,7 +1050,7 @@ int main (int argc, char** argv)
                     for (int j = 0; j < 2; ++j)
                     {
                         const float ph = e->getLfoFase (kCanal, j == 0 ? a : b);
-                        if (ph > 0.0f && ph != antes[j]) ++vistos[j];
+                        if (ph > 0.0f && std::abs (ph - antes[j]) > 0.0f) ++vistos[j];
                         antes[j] = ph;
                     }
                 }

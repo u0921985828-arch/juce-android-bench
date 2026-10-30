@@ -380,41 +380,17 @@ def main ():
         fallos.append ("la app no publico la fila del rack")
     else:
         pr = r["prack"][0]
-        print ("fila rack  la tapa del preset: cable %d, se ve %d (%dx%d, dedo %d), "
-               "dice el nombre %d" % (pr["cable"], pr["se_ve"], pr["ancho"],
-                                      pr["alto"], pr["dedo"], pr["dice_nombre"]))
-        print ("paseo      %d de %d toques pasan al siguiente, vuelve al primero %d, "
-               "sobre ranura vacia se queda quieto %d"
-               % (pr["pasos"], pr["presets"], pr["vuelve"], pr["quieto"]))
-        print ("luz        %d de %d veredictos: la tapa de apagar y el canalon dicen "
-               "lo que suena" % (pr["luz_ok"], pr["luces"]))
-
-        if not pr["cable"]:
-            fallos.append ("la tapa del preset del rack no tiene los dos gestos")
-        if not pr["se_ve"]:
-            fallos.append ("la tapa del preset no se ve en una ranura con efecto")
-        #  Y CON EL DEDO ENTERO. Es una tapa, no un rotulo: el suelo es el
-        #  mismo `Metrics::hit` que `expo.py` exige en toda la app, y se lee
-        #  de la propia app para que no haya dos numeros.
-        if pr["se_ve"] and (pr["ancho"] < pr["dedo"] or pr["alto"] < pr["dedo"]):
-            fallos.append ("la tapa del preset mide %dx%d y el dedo son %d"
-                           % (pr["ancho"], pr["alto"], pr["dedo"]))
+        #  efectos#preset: del telefono, «que el preset salga en el rack no mola». La
+        #  fila no lleva tapa de preset, mantener el canalon abre la rejilla y el fader
+        #  gana el sitio: mas ancho que el canalon.
+        print ("fila rack  tapa de preset visible %d con limites %d, mantener el canalon abre presets %d, fader %d px canalon %d px"
+               % (pr["cable"], pr["se_ve"], pr["dice_nombre"], pr["ancho"], pr["alto"]))
+        if pr["cable"] or pr["se_ve"] or not pr["vac_apagada"] or not pr["vac_vaciada"]:
+            fallos.append ("el rack sigue ensenando la tapa del preset")
         if not pr["dice_nombre"]:
-            fallos.append ("la tapa del preset no dice el nombre del preset puesto")
-        #  LAS DOS MITADES de una ranura vacia: apagada Y vaciada. Encendida y
-        #  de 0x0 pasa las ocho reglas de geometria sin rozarlas -es el
-        #  `CERO 840` que costo las celdas de la rejilla hace una tanda-.
-        if not pr["vac_apagada"]:
-            fallos.append ("la tapa del preset de una ranura VACIA se queda encendida")
-        if not pr["vac_vaciada"]:
-            fallos.append ("la tapa del preset de una ranura VACIA se queda con limites")
-        if pr["pasos"] != pr["presets"]:
-            fallos.append ("%d de %d toques no pasaron al preset siguiente"
-                           % (pr["presets"] - pr["pasos"], pr["presets"]))
-        if not pr["vuelve"]:
-            fallos.append ("dar la vuelta entera no volvio al primer preset")
-        if not pr["quieto"]:
-            fallos.append ("tocar el preset de una ranura VACIA cambio el de otra")
+            fallos.append ("mantener el canalon del rack no abre los presets")
+        if pr["ancho"] < 2 * pr["alto"]:
+            fallos.append ("el fader del rack no gano el sitio del preset: %d px" % pr["ancho"])
 
     # ------------------------------------------------------------------
     #  10. Y LA LUZ DE LA FILA NO MIENTE.
