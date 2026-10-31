@@ -2828,20 +2828,21 @@ void MainComponent::maquetaPad (juce::Rectangle<int> full)
             //  presupuestar el alto (`padMuestraWraps`), o la ficha reserva una
             //  fila que no usa o usa una que no reservo. Es lo que ya pasa con
             //  las puertas del pad y con CHOKE.
-            juce::TextButton* pb[4] = { &reverseButton, &loopButton,
+            //  tempo#sincro: AL TEMPO va con REV y BUCLE, que tambien dicen como se recorre el trozo.
+            juce::TextButton* pb[5] = { &reverseButton, &loopButton, &tempoButton,
                                         &denoiseButton, &recorteButton };
             if (padMuestraWraps (inner.getWidth()))
             {
                 auto r1 = inner.removeFromTop (Metrics::hit);
-                layoutModuleBar (r1, pb, 0, 2);
+                layoutModuleBar (r1, pb, 0, 3);
                 inner.removeFromTop (Metrics::xs);
                 auto r2 = inner.removeFromTop (Metrics::hit);
-                layoutModuleBar (r2, pb + 2, 0, 2);
+                layoutModuleBar (r2, pb + 3, 0, 2);
             }
             else
             {
                 auto rr = inner.removeFromTop (Metrics::hit);
-                layoutModuleBar (rr, pb, 0, 4);
+                layoutModuleBar (rr, pb, 0, 5);
             }
             cierra (gLectura);
         }

@@ -7988,6 +7988,46 @@ void MainComponent::auditRanuras()
 //  veces: eso compararia la tabla consigo misma y saldria verde con el rack
 //  dibujando lo que le diera la gana.
 // ============================================================================
+//  tempo#sincro: AL TEMPO en RECORTE pone los tiempos que dura la ventana, el motor los recibe, el proyecto los guarda y apagarlo los quita.
+void MainComponent::auditTempo()
+{
+    selectPad (0);
+    showPadPage (padPageTrim);
+    openSheet (padSheet, padsButton);
+    resized();
+    const auto b = tempoButton.getBounds();
+    const bool vista = tempoButton.isShowing() && ! b.isEmpty() && padSheet.donde().getLocalBounds().contains (b);
+    const auto& sb = uiSample[0];
+    const double seg = (sb != nullptr && sb->sourceSampleRate > 0.0)
+                         ? (padEnd01[0] - padStart01[0]) * sb->buffer.getNumSamples() / sb->sourceSampleRate : 0.0;
+    const float espera = AudioEngine::tiemposPara (seg, engine.getBpm());
+    const float antes = engine.getPadTiempos (0);
+    pulsaTapa (&tempoButton);
+    const float puesto = engine.getPadTiempos (0);
+    const auto texto = tempoButton.getButtonText();
+    const bool encendido = tempoButton.getToggleState();
+    const auto estado = captureState();
+    pulsaTapa (&tempoButton);
+    const float quitado = engine.getPadTiempos (0);
+    const auto textoOff = tempoButton.getButtonText();
+    applyState (estado);
+    const float vuelve = engine.getPadTiempos (0);
+    std::cout << "{\"tempo\":1"
+              << ",\"vista\":" << (vista ? 1 : 0)
+              << ",\"ancho\":[" << b.getWidth() << "," << b.getHeight() << "]"
+              << ",\"seg\":" << juce::String (seg, 3)
+              << ",\"bpm\":" << juce::String (engine.getBpm(), 1)
+              << ",\"espera\":" << juce::String (espera, 2)
+              << ",\"antes\":" << juce::String (antes, 2)
+              << ",\"puesto\":" << juce::String (puesto, 2)
+              << ",\"encendido\":" << (encendido ? 1 : 0)
+              << ",\"texto\":\"" << texto << "\""
+              << ",\"quitado\":" << juce::String (quitado, 2)
+              << ",\"texto_off\":\"" << textoOff << "\""
+              << ",\"vuelve\":" << juce::String (vuelve, 2)
+              << "}" << std::endl;
+}
+
 void MainComponent::auditRack()
 {
     //  1. LA FAMILIA, EN LOS ONCE TIPOS. Se pone el tipo `f` en la ranura 0 y

@@ -4424,6 +4424,67 @@ int main()
                      sin.alPrincipio, sin.alFinal, con.alPrincipio, con.aMitad, con.alFinal, ok ? "OK" : zatiFalla());
     }
 
+    //  tempo#sincro: un bucle de 4 tiempos grabado a 120 suena 4 tiempos a 140 y a 60, sin desafinar, y sigue un cambio de tempo a mitad.
+    {
+        const auto monton_t = std::make_unique<AudioEngine>();
+        AudioEngine& e = *monton_t; e.prepareToPlay (48000.0, 64); e.setPolyphony (16, 4);
+        enCanalCero (e);
+        e.setPadGain (0, 0.9f);
+        {
+            auto* sb = new SampleBuffer();   // 2 s de seno a 440: 4 negras a 120
+            sb->buffer.setSize (2, 96000);
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < 96000; ++i)
+                    sb->buffer.setSample (c, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / 48000.0f));
+            sb->sourceSampleRate = 48000.0;
+            e.publishSample (0, SampleBuffer::Ptr (sb));
+        }
+        juce::AudioBuffer<float> b (2, 64);
+        runBlocks (e, b, 64, 4);
+        struct T { double seg = 0, semis = -99; };
+        auto mide = [&] (float tiempos, double bpm, double bpmLuego) noexcept
+        {
+            e.setPadTiempos (0, tiempos);
+            e.setBpm (bpm);
+            e.postNoteOn (0, 1.0f);
+            std::vector<float> sal;
+            for (int i = 0; i < 48000 * 5 / 64; ++i)
+            {
+                if (i == 48000 / 2 / 64) e.setBpm (bpmLuego);
+                e.renderNextBlock (b, 0, 64);
+                const float* d = b.getReadPointer (0);
+                sal.insert (sal.end(), d, d + 64);
+            }
+            int ultimo = 0;
+            for (int k = 0; k < (int) sal.size(); ++k) if (std::abs (sal[(size_t) k]) > 1.0e-3f) ultimo = k;
+            int cruces = 0; double primero = -1.0, fin = -1.0;
+            for (int k = 12001; k < 12000 + 9600; ++k)
+            {
+                const float a = sal[(size_t) k - 1], c = sal[(size_t) k];
+                if (a >= 0.0f || c < 0.0f) continue;
+                const double x = k - 1 + a / (double) (a - c);
+                if (primero < 0) primero = x;
+                fin = x; ++cruces;
+            }
+            const double hz = cruces > 1 ? (cruces - 1) * 48000.0 / (fin - primero) : 1.0;
+            e.postPanic();
+            for (int i = 0; i < 8; ++i) e.renderNextBlock (b, 0, 64);
+            return T { ultimo / 48000.0, 12.0 * std::log2 (juce::jmax (1.0, hz) / 440.0) };
+        };
+        const T libre = mide (0.0f, 140.0, 140.0);
+        const T a140  = mide (4.0f, 140.0, 140.0);
+        const T a60   = mide (4.0f, 60.0, 60.0);
+        const T cambia = mide (4.0f, 120.0, 60.0);   // 1 tiempo a 120 y 3 a 60: 0.5 + 3.0 s
+        const bool ok = std::abs (libre.seg - 2.0) < 0.02
+                     && std::abs (a140.seg - 240.0 / 140.0) < 0.02 && std::abs (a140.semis) < 0.1
+                     && std::abs (a60.seg - 4.0) < 0.04 && std::abs (a60.semis) < 0.1
+                     && std::abs (cambia.seg - 3.5) < 0.05
+                     && AudioEngine::tiemposPara (2.0, 120.0) == 4.0f && AudioEngine::tiemposPara (2.0, 140.0) == 4.0f
+                     && AudioEngine::tiemposPara (0.5, 120.0) == 1.0f && AudioEngine::tiemposPara (8.0, 120.0) == 16.0f;
+        std::printf ("%-34s libre %.3f s   a 140 %.3f s %+.2f st   a 60 %.3f s %+.2f st   120>60 %.3f s   %s\n", "al tempo",
+                     libre.seg, a140.seg, a140.semis, a60.seg, a60.semis, cambia.seg, ok ? "OK" : zatiFalla());
+    }
+
     //  EL BLOQUEO DEL CORTE, paso a paso. Un filtro por pad es un ajuste; un
     //  filtro que cambia en cada paso es una linea de bajo que se abre y se
     //  cierra sola. Se mide por ENERGIA ALTA: el mismo golpe con el paso

@@ -457,6 +457,14 @@ std::pair<int, int> AudioEngine::ventanaDe (int slot, const SampleBuffer* sb) no
     return { st, en };
 }
 
+double AudioEngine::estiraDe (const Voice& v, float tiempos) const noexcept
+{
+    //  tempo#sincro: la ventana de `largoTempo` muestras tiene que durar `tiempos` negras al tempo de ahora.
+    const double paso = std::abs (v.timeStep) * systemSampleRate;   // muestras de fuente por segundo
+    if (tiempos <= 0.0f || paso <= 0.0 || v.largoTempo <= 0) return 1.0;
+    return (double) v.largoTempo * getBpm() / (paso * 60.0 * (double) tiempos);
+}
+
 std::pair<int, int> AudioEngine::ventanaQueSuena (int slot) noexcept
 {
     if (! juce::isPositiveAndBelow (slot, kNumPads) || padSample[(size_t) slot] == nullptr) return { 0, 0 };
@@ -535,6 +543,7 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
 
     const int len = sb->buffer.getNumSamples();
     auto [st, en] = ventanaDe (slot, sb);
+    const int largoPad = en - st;   // tempo#sincro: los tiempos son de la ventana entera, aunque el golpe entre a medias
 
     // ------------------------------------------------------------------------
     //  UN PAD QUE LLEVA INSTRUMENTO. Ver SampleBuffer::Zona y Sintes.h.
@@ -857,6 +866,9 @@ void AudioEngine::triggerPad (int slot, int extraSemis, float vel, float from01,
     //  DESPUES de start, por lo mismo que el gate: la pone a false y el
     //  bloqueo de pan es del PASO. Sin esto el pan bloqueado dura un bloque -
     //  retarget vuelve a leer el del pad en el siguiente.
+    //  tempo#sincro: DESPUES de start, que la deja libre; un instrumento nunca se estira.
+    if (const float tiempos = padTiempos[(size_t) slot].load (std::memory_order_relaxed); ! instrum && tiempos > 0.0f)
+        { chosen->largoTempo = largoPad; chosen->ponTempo (true, estiraDe (*chosen, tiempos)); }
     chosen->panPropio = (pctPan != kNoPLock);
 
     //  DESPUES de start, que la pone a -1: el largo lo trae el paso y no el
@@ -1409,6 +1421,10 @@ void AudioEngine::renderVoices (Mezcla& mz, int s, int nn) noexcept
         // Control-rate retarget: a looping or long voice keeps following
         // its pad's VOLUME and PAN instead of freezing start()'s values.
         vc.retarget (padGainNow[vc.slot], padPanNow[vc.slot], padAnchoNow[vc.slot]);
+        //  tempo#sincro: si el tempo se mueve con la nota sonando, la nota lo sigue.
+        if (vc.sincro)
+            if (const float tiempos = padTiempos[(size_t) vc.slot].load (std::memory_order_relaxed); tiempos > 0.0f)
+                vc.ponTempo (true, estiraDe (vc, tiempos));
 
         voiceNextInPad[(size_t) v] = padFirstVoice[(size_t) vc.slot];
         padFirstVoice[(size_t) vc.slot] = v;
@@ -6528,6 +6544,7 @@ void AudioEngine::copyStateFrom (const AudioEngine& s) noexcept
     copyArr (padLoop,    s.padLoop);
     copyArr (padReverse, s.padReverse);
     copyArr (padKeepLength, s.padKeepLength);
+    copyArr (padTiempos, s.padTiempos);   // tempo#sincro
     copyArr (padChoke,   s.padChoke);
     copyArr (padPan,     s.padPan);
     copyArr (padAncho,   s.padAncho);   // LS9 la exportacion perdia el ancho

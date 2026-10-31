@@ -2300,6 +2300,7 @@ public:
     void auditCanales();
     void auditPasos();
     void auditRack();
+    void auditTempo();   // tempo#sincro
     //  LOS PRESETS DE CADA EFECTO. Ver Tests/presets.py.
     void auditFxPresets();
     //  SOLO desde la cara y el modo visto en el lienzo. Ver Tests/modos.py.
@@ -4745,6 +4746,8 @@ private:
     Boton clearButton { "VACIAR" };
     Boton reverseButton { "REV" };
     Boton loopButton { "LOOP" };
+    Boton tempoButton { "AL TEMPO" };   // tempo#sincro
+    void textoTempo();
     Boton autocutButton { "AUTOCUT" };
     //  BOMBEO: este pad hace agacharse a todo lo demas. Vive en la ficha del
     //  PAD y no en el mezclador porque es una propiedad del pad - cual de los
@@ -5015,6 +5018,7 @@ private:
     std::array<float, kNumPads> padPitch {};      // whole semitones
     std::array<float, kNumPads> padCents {};      // -100..100, the part between them
     std::array<bool,  kNumPads> padKeepLen {};
+    std::array<float, kNumPads> padTiempos {};   // tempo#sincro: 0 = a su velocidad
     std::array<float, kNumPads> padGain {};
     std::array<float, kNumPads> padStart01 {};
     std::array<float, kNumPads> padEnd01 {};

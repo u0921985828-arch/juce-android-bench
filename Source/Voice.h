@@ -122,6 +122,17 @@ struct Voice
         if (glideQuedan <= 0) glideMul = 1.0;
         if (pitchMode) ratio = ratioBase * glideMul; else delta = deltaBase * glideMul;
     }
+    //  tempo#sincro: la ventana dura los tiempos del pad AL TEMPO del proyecto; la posicion camina a timeStep * estira y el tono lo siguen poniendo los granos.
+    double estira    = 1.0;
+    bool   sincro    = false;
+    int    largoTempo = 0;   // tempo#sincro: muestras de la ventana del pad que duran los tiempos
+    void ponTempo (bool si, double e) noexcept
+    {
+        sincro = si;
+        if (! si || ! std::isfinite (e) || e <= 0.0) { estira = 1.0; sincro = false; return; }
+        pitchMode = true;   // tempo#sincro: el largo lo manda el tempo, no el tono
+        estira    = juce::jlimit (0.25, 4.0, e);
+    }
     double gLen      = 2048.0;  // grain length, output samples
     double gPhase    = 0.0;
     double gOffA     = 0.0, gOffB = 0.0;
@@ -308,6 +319,7 @@ struct Voice
         reverse  = rev;
 
         ratio    = std::pow (2.0, (double) semitones / 12.0);
+        estira   = 1.0; sincro = false;   // tempo#sincro: lo pone ponTempo despues de start
         glideQuedan = 0; glideMul = 1.0;   // LS6
         //  En MAGNITUD: quien decide el sentido es rev, no el signo de una
         //  frecuencia que ha salido de una cabecera. Con fSrc negativa la
@@ -687,10 +699,11 @@ struct Voice
         //  grain apart, under triangular windows that sum to exactly one. Each
         //  head is re-anchored to the position when its own window is at zero,
         //  so the splice happens where it cannot be heard.
-        if (pitchMode && std::abs (ratio - 1.0) > 1.0e-9)
+        if (pitchMode && std::abs (ratio - estira) > 1.0e-9)
         {
             const double lo = (double) winStart, hi = (double) (winEnd - 1);
-            const double drift    = timeStep * (ratio - 1.0);
+            const double paso     = timeStep * estira;   // tempo#sincro
+            const double drift    = timeStep * (ratio - estira);
             const double phaseInc = 1.0 / gLen;
 
             //  Which side of the playing position a grain reads from. Shifting
@@ -812,7 +825,7 @@ struct Voice
                 if (stereoOut)
                     dstR[i] += ge * panR * r;
 
-                pos   += timeStep;
+                pos   += paso;
                 gOffA += drift;
                 gOffB += drift;
 

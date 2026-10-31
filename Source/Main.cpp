@@ -687,6 +687,11 @@ public:
                     {
                         c2->auditRack();
                     }
+                    //  tempo#sincro: AL TEMPO en la ficha del pad. Ver Tests/tempo.py.
+                    else if (UiAudit::env ("ZATI_TEMPO").isNotEmpty())
+                    {
+                        c2->auditTempo();
+                    }
                     //  LOS PRESETS DE CADA EFECTO. Ver Tests/presets.py.
                     else if (UiAudit::env ("ZATI_PRESETS").isNotEmpty())
                     {

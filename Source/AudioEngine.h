@@ -767,6 +767,18 @@ public:
     void setPadKeepLength (int slot, bool b)   noexcept { store (padKeepLength, slot, b); }
     bool getPadKeepLength (int slot) const noexcept
     { return slot >= 0 && slot < kNumPads && padKeepLength[(size_t) slot].load (std::memory_order_relaxed); }
+    //  tempo#sincro: cuantos tiempos dura la ventana del pad; 0 = suena a su velocidad, >0 = se estira al tempo del proyecto sin desafinar.
+    void  setPadTiempos (int slot, float t) noexcept { store (padTiempos, slot, juce::jlimit (0.0f, 256.0f, t)); }
+    float getPadTiempos (int slot) const noexcept
+    { return juce::isPositiveAndBelow (slot, kNumPads) ? padTiempos[(size_t) slot].load (std::memory_order_relaxed) : 0.0f; }
+    //  tempo#sincro: los tiempos que mas se parecen a `segundos` al tempo `bpm` (1, 2, 4, 8...), en escala logaritmica.
+    static float tiemposPara (double segundos, double bpm) noexcept
+    {
+        const double negras = segundos * bpm / 60.0;
+        if (! (negras > 0.0)) return 0.0f;
+        return (float) std::pow (2.0, juce::jlimit (-2.0, 8.0, std::round (std::log2 (negras))));
+    }
+    double estiraDe (const Voice& v, float tiempos) const noexcept;
     void setPadChoke   (int slot, int group)   noexcept { store (padChoke,   slot, group); }   // 0 = none
     //  AUTOCUT: a pad that cuts ITSELF. CHOKE settles arguments between
     //  different pads (the open hat and the closed one); this one is about a
@@ -2992,6 +3004,7 @@ private:
     std::array<std::atomic<bool>,  kNumPads> padLoop {};
     std::array<std::atomic<bool>,  kNumPads> padReverse {};
     std::array<std::atomic<bool>,  kNumPads> padKeepLength {};   // true = pitch only, false = tape
+    std::array<std::atomic<float>, kNumPads> padTiempos {};      // tempo#sincro: 0 = libre
     std::array<std::atomic<int>,   kNumPads> padChoke {};   // 0 = none, 1..8 = choke group
     std::array<std::atomic<float>, kNumPads> padPan {};      // -1 (L) .. 0 (centre) .. 1 (R)
     //  UNO por defecto y no cero, que es lo que deja un array de atomicos: cero

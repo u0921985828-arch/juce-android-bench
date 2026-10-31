@@ -3043,6 +3043,26 @@ void MainComponent::cableaDeslizadores()
     };
     padSheet.donde().addAndMakeVisible (modeButton);
 
+    //  tempo#sincro: del telefono, «no puede sincronizar el sample al tempo del proyecto». Encendido, la ventana dura
+    //  los tiempos que mas se parecen a lo que dura ahora (1, 2, 4, 8...) y se estira al tempo sin desafinar.
+    styleButton (tempoButton, kKey);
+    tempoButton.setClickingTogglesState (true);
+    litAccent (tempoButton);
+    tempoButton.onClick = [this]
+    {
+        if (selectedPad < 0) return;
+        const auto k = (size_t) selectedPad;
+        float t = 0.0f;
+        if (tempoButton.getToggleState())
+            if (auto& sb = uiSample[k]; sb != nullptr && sb->sourceSampleRate > 0.0)
+                t = AudioEngine::tiemposPara ((padEnd01[k] - padStart01[k]) * sb->buffer.getNumSamples() / sb->sourceSampleRate,
+                                              engine.getBpm());
+        padTiempos[k] = t;
+        engine.setPadTiempos (selectedPad, t);
+        textoTempo();
+    };
+    padSheet.donde().addAndMakeVisible (tempoButton);
+
     startSlider.onValueChange = [this]
     {
         if (selectedPad < 0) return;
@@ -5652,6 +5672,7 @@ void MainComponent::ponIconos()
         { &pageAspBtn, Iconos::Id::aspecto },
         { &reverseButton, Iconos::Id::reves },    { &denoiseButton, Iconos::Id::ruido },
         { &recorteButton, Iconos::Id::recortar },
+        { &tempoButton, Iconos::Id::tap },   // tempo#sincro: el metronomo, que es el tempo
         { &mixClearSolo, Iconos::Id::sinsolo },   { &exportFmtBtn, Iconos::Id::comprimir },
 
         //  Y la fila que no tenia NINGUNO, que es la que la persona senalo.
@@ -8925,8 +8946,18 @@ bool MainComponent::padSourceWraps (int rowWidth) const
 //  instrumento -, que es la misma condicion con la que se coloca.
 bool MainComponent::padMuestraWraps (int rowWidth) const
 {
-    return ! padRowFits (rowWidth, { &reverseButton, &loopButton,
+    return ! padRowFits (rowWidth, { &reverseButton, &loopButton, &tempoButton,
                                      &denoiseButton, &recorteButton });
+}
+
+//  tempo#sincro: el texto dice los tiempos a los que se estira, o que se puede.
+void MainComponent::textoTempo()
+{
+    const float t = selectedPad >= 0 ? padTiempos[(size_t) selectedPad] : 0.0f;
+    tempoButton.setToggleState (t > 0.0f, juce::dontSendNotification);
+    if (t <= 0.0f) { tempoButton.setButtonText (T ("AL TEMPO")); return; }
+    const juce::String n = t >= 1.0f ? juce::String ((int) t) : (t >= 0.5f ? "1/2" : "1/4");
+    tempoButton.setButtonText (T ("%1 TIEMPOS", n));
 }
 
 bool MainComponent::padPuertasWraps (int rowWidth) const
@@ -9020,6 +9051,7 @@ void MainComponent::showPadPage (int page)
 
     for (juce::Component* c : { (juce::Component*) &startSlider,   (juce::Component*) &endSlider,
                                 (juce::Component*) &reverseButton, (juce::Component*) &loopButton,
+                                (juce::Component*) &tempoButton,
                                 (juce::Component*) &waveform,      (juce::Component*) &denoiseButton,
                                 (juce::Component*) &recorteButton,
                                 (juce::Component*) &zoomOutButton, (juce::Component*) &zoomFitButton,
@@ -11192,13 +11224,15 @@ void MainComponent::updateControlsFromPad (int index)
                         && uiSample[(size_t) index]->familia >= 0);
     for (juce::Component* c : { (juce::Component*) &loopButton,
                                 (juce::Component*) &reverseButton,
-                                (juce::Component*) &modeButton })
+                                (juce::Component*) &modeButton,
+                                (juce::Component*) &tempoButton })
         c->setEnabled (! instr);
 
     pitchSlider.setValue (padPitch[(size_t) index], juce::dontSendNotification);
     fineSlider.setValue  (padCents[(size_t) index], juce::dontSendNotification);
     modeButton.setToggleState (padKeepLen[(size_t) index], juce::dontSendNotification);
     modeButton.setButtonText (padKeepLen[(size_t) index] ? T ("TONO") : T ("CINTA"));
+    textoTempo();
     volSlider.setValue   (dbFromGain (padGain[(size_t) index]), juce::dontSendNotification);
     startSlider.setValue (padStart01[(size_t) index], juce::dontSendNotification);
     endSlider.setValue   (padEnd01[(size_t) index],   juce::dontSendNotification);
@@ -11811,6 +11845,7 @@ void MainComponent::ponPadPorDefecto (int i)
     padPitch[k]    = 0.0f;
     padCents[k]    = 0.0f;
     padKeepLen[k]  = false;
+    padTiempos[k]  = 0.0f;
     //  Unidad, no 0.85. Un pad toca la muestra como esta: 0.85 eran -1.4 dB
     //  de rebaja escondida que nadie pidio y que ya no hace falta, porque el
     //  limitador de seguridad del master es quien cuida la suma de 64 pads.
@@ -11911,6 +11946,7 @@ void MainComponent::assignSampleToPad (int index, SampleBuffer::Ptr sb, const ju
     engine.setPadGain    (index, padGain[(size_t) index]);
     engine.setPadPitch   (index, padPitch[(size_t) index] + padCents[(size_t) index] / 100.0f);
     engine.setPadKeepLength (index, padKeepLen[(size_t) index]);
+    engine.setPadTiempos (index, padTiempos[(size_t) index]);
     engine.setPadLoop    (index, padLoop[(size_t) index]);
     engine.setPadReverse (index, padReverse[(size_t) index]);
     engine.setPadChoke   (index, padChokeUI[(size_t) index]);
@@ -12337,6 +12373,7 @@ void MainComponent::retranslateUi()
     oirTapa (previewButton, previewSounding);
     modeButton   .setButtonText (selectedPad >= 0 && padKeepLen[(size_t) selectedPad]
                                    ? T ("TONO") : T ("CINTA"));
+    textoTempo();
 
     chainClearButton.setButtonText (T ("QUITAR CADENA"));
 
@@ -13355,6 +13392,7 @@ void MainComponent::applyAutoChop()
         engine.setPadGain    (i, padGain[(size_t) i]);
         engine.setPadPitch   (i, padPitch[(size_t) i] + padCents[(size_t) i] / 100.0f);
         engine.setPadKeepLength (i, padKeepLen[(size_t) i]);
+        engine.setPadTiempos (i, padTiempos[(size_t) i]);
         engine.setPadLoop    (i, false);
         engine.setPadReverse (i, false);
         engine.setPadChoke   (i, 0);
@@ -14042,6 +14080,7 @@ juce::ValueTree MainComponent::captureState() const
         p.setProperty ("pitch",   padPitch[(size_t) i],   nullptr);
         p.setProperty ("cents",   padCents[(size_t) i],   nullptr);
         p.setProperty ("keeplen", padKeepLen[(size_t) i], nullptr);
+        p.setProperty ("tiempos", padTiempos[(size_t) i], nullptr);   // tempo#sincro
         p.setProperty ("gain",    padGain[(size_t) i],    nullptr);
         // The mix is part of the track, not of the session.
         p.setProperty ("mute",    engine.isPadMuted (i),  nullptr);
@@ -14712,6 +14751,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             padPitch[(size_t) i]   = (float) p.getProperty ("pitch", 0.0);
             padCents[(size_t) i]   = (float) p.getProperty ("cents", 0.0);
             padKeepLen[(size_t) i] = (bool)  p.getProperty ("keeplen", false);
+            padTiempos[(size_t) i] = juce::jlimit (0.0f, 256.0f, (float) p.getProperty ("tiempos", 0.0));
             padGain[(size_t) i]    = (float) p.getProperty ("gain", 0.85);
             engine.setPadMute (i, (bool) p.getProperty ("mute", false));
             engine.setPadSolo (i, (bool) p.getProperty ("solo", false));
@@ -14853,6 +14893,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
 
             engine.setPadPitch   (i, padPitch[(size_t) i] + padCents[(size_t) i] / 100.0f);
             engine.setPadKeepLength (i, padKeepLen[(size_t) i]);
+            engine.setPadTiempos (i, padTiempos[(size_t) i]);
             engine.setPadGain    (i, padGain[(size_t) i]);
             engine.setPadLoop    (i, padLoop[(size_t) i]);
             engine.setPadSelfCut (i, padSelfCut[(size_t) i]);
@@ -15857,6 +15898,7 @@ void MainComponent::padPorDefecto (int i)
     padPitch[k]   = 0.0f;
     padCents[k]   = 0.0f;
     padKeepLen[k] = false;
+    padTiempos[k] = 0.0f;
     padGain[k]    = 0.85f;
     padStart01[k] = 0.0f;
     padEnd01[k]   = 1.0f;
