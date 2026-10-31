@@ -60,6 +60,10 @@ def main():
                          % (tam, r["espera"], r["puesto"]))
         if "TIEMPOS" not in r["texto"] or r["texto_off"] != "AL TEMPO":
             malo.append ("en %s la tapa no dice los tiempos encendida o AL TEMPO apagada: «%s» / «%s»" % (tam, r["texto"], r["texto_off"]))
+        mt = r.get ("mantiene", [-1, -1, -1]); e = r["espera"]   # tempo#doble
+        print ("         mantener: %s «%s»" % (mt, r.get ("texto_doble", "")))
+        if [round (x, 2) for x in mt] != [round (2 * e, 2), round (e / 2, 2), round (e, 2)] or "TIEMPO" not in r.get ("texto_doble", ""):
+            malo.append ("en %s mantener AL TEMPO no va al doble, a la mitad y vuelta: %s (ventana %.2f)" % (tam, mt, e))
         if r["quitado"] != 0 or abs (r["vuelve"] - r["puesto"]) > 1e-3:
             malo.append ("en %s apagar no quita los tiempos (%.2f) o el proyecto no los guarda (%.2f)" % (tam, r["quitado"], r["vuelve"]))
     for m in malo: print ("FALLA  " + m)

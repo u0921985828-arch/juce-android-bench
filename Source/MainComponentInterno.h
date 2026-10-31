@@ -883,6 +883,7 @@ namespace
             "CLIC, en la vista de audio de la CANCION, es el metronomo",
             "Los efectos con SYNC enganchan su ritmo al tempo; LIBRE lo suelta",
             "AL TEMPO, en RECORTE, estira el pad a sus tiempos sin cambiarle el tono",
+            "Manten AL TEMPO para doblar o partir sus tiempos",
             nullptr }, 11, 11 },
         { "RECORTE", {
             "Arrastra las asas para mover el inicio y el fin",

@@ -627,6 +627,10 @@ namespace
         { "La ganancia va en decibelios, de -60 a +12", "",
           "gain is in decibels, -60 to +12",
           "增益以分贝计，从 -60 到 +12", "الكسب بالديسيبل، من -60 إلى +12" },
+        { "Manten AL TEMPO para doblar o partir sus tiempos", "Mantén AL TEMPO para doblar o partir sus tiempos",
+          "Hold SYNC to double or halve its beats",
+          "按住同步可把拍数加倍或减半",
+          "اضغط مطولًا على المزامنة لمضاعفة نبضاتها أو تنصيفها" },
         { "AL TEMPO, en RECORTE, estira el pad a sus tiempos sin cambiarle el tono", "",
           "SYNC, in TRIM, stretches the pad to its beats without changing its pitch",
           "裁剪页的同步把音垫拉伸到它的拍数，音高不变",
@@ -2451,6 +2455,7 @@ namespace
         { "ENVIA",          "ENVÍA",    "SENDS",      "发送",       "يرسل" },
         { "AL TEMPO",       "",         "SYNC",       "同步",       "مزامنة" },
         { "%1 TIEMPOS",     "",         "%1 BEATS",   "%1 拍",      "%1 نبضات" },
+        { "1 TIEMPO",       "",         "1 BEAT",     "1 拍",       "1 نبضة" },
         { "Envio del canal %1 al %2", "Envío del canal %1 al %2", "Send from channel %1 to %2", "通道 %1 发送到 %2", "إرسال من القناة %1 إلى %2" },
         { "SONIDO|cancion", "SONIDO",   "ONE SHOT",   "单音",       "لقطة" },
         //  LAS DOS DE LA TAPA DE MODO, con clave propia. La de CANCION vivia

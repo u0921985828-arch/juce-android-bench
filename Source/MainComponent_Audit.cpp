@@ -8007,6 +8007,11 @@ void MainComponent::auditTempo()
     const auto texto = tempoButton.getButtonText();
     const bool encendido = tempoButton.getToggleState();
     const auto estado = captureState();
+    //  tempo#doble: mantener tres veces: doble, mitad y vuelta a los de la ventana.
+    float mantiene[3] {};
+    for (auto& m : mantiene) { tempoButton.onHold(); m = engine.getPadTiempos (0); }
+    const auto textoDoble = (tempoButton.onHold(), tempoButton.getButtonText());
+    tempoButton.onHold(); tempoButton.onHold();
     pulsaTapa (&tempoButton);
     const float quitado = engine.getPadTiempos (0);
     const auto textoOff = tempoButton.getButtonText();
@@ -8025,6 +8030,8 @@ void MainComponent::auditTempo()
               << ",\"quitado\":" << juce::String (quitado, 2)
               << ",\"texto_off\":\"" << textoOff << "\""
               << ",\"vuelve\":" << juce::String (vuelve, 2)
+              << ",\"mantiene\":[" << juce::String (mantiene[0], 2) << "," << juce::String (mantiene[1], 2) << "," << juce::String (mantiene[2], 2) << "]"
+              << ",\"texto_doble\":\"" << textoDoble << "\""
               << "}" << std::endl;
 }
 

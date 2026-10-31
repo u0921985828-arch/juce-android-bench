@@ -4746,7 +4746,8 @@ private:
     Boton clearButton { "VACIAR" };
     Boton reverseButton { "REV" };
     Boton loopButton { "LOOP" };
-    Boton tempoButton { "AL TEMPO" };   // tempo#sincro
+    HoldButton tempoButton { "AL TEMPO" };   // tempo#sincro: mantener dobla o parte los tiempos
+    float tiemposVentana (int pad) const;
     void textoTempo();
     Boton autocutButton { "AUTOCUT" };
     //  BOMBEO: este pad hace agacharse a todo lo demas. Vive en la ficha del

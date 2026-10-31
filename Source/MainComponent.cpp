@@ -3052,13 +3052,22 @@ void MainComponent::cableaDeslizadores()
     {
         if (selectedPad < 0) return;
         const auto k = (size_t) selectedPad;
-        float t = 0.0f;
-        if (tempoButton.getToggleState())
-            if (auto& sb = uiSample[k]; sb != nullptr && sb->sourceSampleRate > 0.0)
-                t = AudioEngine::tiemposPara ((padEnd01[k] - padStart01[k]) * sb->buffer.getNumSamples() / sb->sourceSampleRate,
-                                              engine.getBpm());
-        padTiempos[k] = t;
+        padTiempos[k] = tempoButton.getToggleState() ? tiemposVentana (selectedPad) : 0.0f;
+        const float t = padTiempos[k];
         engine.setPadTiempos (selectedPad, t);
+        textoTempo();
+    };
+    //  tempo#doble: si el calculo no acierta, mantener va de los tiempos de la ventana al doble, a la mitad y vuelta.
+    tempoButton.onHold = [this]
+    {
+        if (selectedPad < 0 || ! tempoButton.isEnabled()) return;
+        const auto k = (size_t) selectedPad;
+        const float d = tiemposVentana (selectedPad);
+        if (d <= 0.0f) return;
+        const float t = padTiempos[k];
+        const float n = t <= 0.0f ? d : (t == d ? d * 2.0f : (t == d * 2.0f ? d * 0.5f : d));
+        padTiempos[k] = juce::jlimit (0.25f, 256.0f, n);
+        engine.setPadTiempos (selectedPad, padTiempos[k]);
         textoTempo();
     };
     padSheet.donde().addAndMakeVisible (tempoButton);
@@ -8950,12 +8959,24 @@ bool MainComponent::padMuestraWraps (int rowWidth) const
                                      &denoiseButton, &recorteButton });
 }
 
+//  tempo#sincro: los tiempos que dura la ventana del pad al tempo de ahora, en potencias de dos.
+float MainComponent::tiemposVentana (int pad) const
+{
+    if (! juce::isPositiveAndBelow (pad, kNumPads)) return 0.0f;
+    const auto k = (size_t) pad;
+    const auto& sb = uiSample[k];
+    if (sb == nullptr || sb->sourceSampleRate <= 0.0) return 0.0f;
+    return AudioEngine::tiemposPara ((padEnd01[k] - padStart01[k]) * sb->buffer.getNumSamples() / sb->sourceSampleRate,
+                                     engine.getBpm());
+}
+
 //  tempo#sincro: el texto dice los tiempos a los que se estira, o que se puede.
 void MainComponent::textoTempo()
 {
     const float t = selectedPad >= 0 ? padTiempos[(size_t) selectedPad] : 0.0f;
     tempoButton.setToggleState (t > 0.0f, juce::dontSendNotification);
     if (t <= 0.0f) { tempoButton.setButtonText (T ("AL TEMPO")); return; }
+    if (t == 1.0f) { tempoButton.setButtonText (T ("1 TIEMPO")); return; }
     const juce::String n = t >= 1.0f ? juce::String ((int) t) : (t >= 0.5f ? "1/2" : "1/4");
     tempoButton.setButtonText (T ("%1 TIEMPOS", n));
 }
