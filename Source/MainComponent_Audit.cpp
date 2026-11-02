@@ -6100,6 +6100,10 @@ void MainComponent::auditViejos (const juce::String& carpeta)
                   //  1.0f -la de un proyecto SIN la propiedad- los 64 pads
                   //  abririan con los cinco nuevos a tope.
                   << ",\"envio_nuevo\":" << engine.sendDePad (0, kNumFx - 1)
+                  //  sampling#: un PRE del canal 0 que el fichero trae movido y dos de los seis nuevos, que no trae.
+                  << ",\"pre0\":" << engine.getFxParam (0, AudioEngine::kFxPre, 0)
+                  << ",\"smp0\":" << engine.getFxParam (0, AudioEngine::kFxSmp, 0)
+                  << ",\"glu4\":" << engine.getFxParam (0, AudioEngine::kFxGlu, 4)
                   //  Y LAS DOS MITADES POR SEPARADO, que es lo unico que separa
                   //  «suena igual» de «suena igual por casualidad»: el recorte
                   //  del pad es lo que el fichero traia y el envio del canal lo
@@ -9062,11 +9066,20 @@ void MainComponent::auditDinamica()
     //     forma de ponerlos. Se cuenta lo que el menu OFRECE, no `kNumFx`.
     for (int s = 0; s < kNumRanuras; ++s) ponEnRanura (s, kSlotVacia);
     abreMenuRanura (0);
-    int enMenu = 0;
-    for (auto* b : ranuraBtns) if (b != nullptr && ! b->getBounds().isEmpty()) ++enMenu;
+    //  sampling#: en navegador cada familia ensena las suyas: se pulsa cada una por su tapa y se cuenta la union.
+    std::vector<bool> visto ((size_t) ranuraBtns.size(), false);
+    const int pasadas = ranuraNavegador ? (int) ranuraFamBtns.size() : 1;
+    for (int f = 0; f < pasadas; ++f)
+    {
+        if (ranuraNavegador) pulsaTapa (ranuraFamBtns[f]);
+        for (int i = 0; i < ranuraBtns.size(); ++i)
+            if (auto* b = ranuraBtns[i]; b != nullptr && b->isVisible() && ! b->getBounds().isEmpty()) visto[(size_t) i] = true;
+    }
+    const int enMenu = (int) std::count (visto.begin(), visto.end(), true);
     //  Y la celda contra el DEDO: con once en dos columnas serian seis filas y
     //  la tarjeta no da; en tres son cuatro. Lo decide esta cifra.
     int celdaW = 0, celdaH = 0;
+    if (ranuraNavegador) pulsaTapa (ranuraFamBtns[0]);   // sampling#: la celda se mide con su familia abierta
     if (auto* b = ranuraBtns[0]) { celdaW = b->getWidth(); celdaH = b->getHeight(); }
     abreMenuRanura (-1);
 

@@ -477,6 +477,8 @@ UNTRANSLATED_OK = {
     "FRM", "FLD", "ROT", "PNG", "DUC", "REP",   # los seis que llevan el
                     # catalogo a cinco por familia, por lo mismo: tres letras
     "GEQ", "PRE", "CIN",   # analogico#: la septima familia, tres letras como los demas
+    "SMP", "CLP", "VIN", "GLU", "OTT", "STP",   # sampling#: tres letras como los demas
+    "SAMPLING", "CLIPPER", "WOW", "BUS", "PAD", "BOOM BAP",   # sampling#: se dicen igual en ingles
     "EXTRAS",       # la puerta del contenido: la palabra es la misma en las dos
     "RATIO",                                   # se escribe igual en las dos lenguas
     "FREQ",                                    # la abreviatura de frecuencia, la misma

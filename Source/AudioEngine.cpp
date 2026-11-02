@@ -334,6 +334,8 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         I.fldLp[0] = I.fldLp[1] = 0.0f;
         I.fldOs[0].limpia(); I.fldOs[1].limpia();
         for (auto& c : I.repVent) c.assign ((size_t) (systemSampleRate * kRepMaxSeg) + 4, 0.0f);
+        I.stpFx.prepara (systemSampleRate);   // sampling#: la cinta del freno, 0.8 s en 16 bits
+        I.smpWasActive = I.clpWasActive = I.vinWasActive = I.gluWasActive = I.ottWasActive = I.stpWasActive = false;
         I.repLargo = (int) (systemSampleRate * 0.125);
         I.repEscritas = 0; I.repLee = 0.0f; I.repFaseAnt = 0.0f;
         I.repColaN = I.repColaI = 0; I.repRepite = false; I.repTrunca = false;
@@ -4445,6 +4447,41 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                         I.cinFx.procesa (escribe (kFxCin), chans, numSamples, systemSampleRate,
                                          P (kFxCin, 0), P (kFxCin, 1));
                         returnBus (kFxCin);
+                    }
+
+                    // --- sampling#: SMP CLP VIN GLU OTT STP, por indice detras de CIN y del mismo molde. ---
+                    auto enciende = [] (bool v, bool& antes, auto& fx) noexcept { if (v && ! antes) fx.limpia(); antes = v; return v; };
+                    if (enciende (live (kFxSmp), I.smpWasActive, I.smpFx))
+                    {
+                        I.smpFx.procesa (escribe (kFxSmp), chans, numSamples, systemSampleRate, P (kFxSmp, 0), P (kFxSmp, 1));
+                        returnBus (kFxSmp);
+                    }
+                    if (enciende (live (kFxClp), I.clpWasActive, I.clpFx))
+                    {
+                        I.clpFx.procesa (escribe (kFxClp), chans, numSamples, P (kFxClp, 0), P (kFxClp, 1));
+                        returnBus (kFxClp);
+                    }
+                    if (enciende (live (kFxVin), I.vinWasActive, I.vinFx))
+                    {
+                        I.vinFx.procesa (escribe (kFxVin), chans, numSamples, systemSampleRate, P (kFxVin, 0), P (kFxVin, 1));
+                        returnBus (kFxVin);
+                    }
+                    if (enciende (live (kFxGlu), I.gluWasActive, I.gluFx))
+                    {
+                        I.gluFx.procesa (escribe (kFxGlu), chans, numSamples, systemSampleRate,
+                                         P (kFxGlu, 0), P (kFxGlu, 1), P (kFxGlu, 4), P (kFxGlu, 5));
+                        returnBus (kFxGlu);
+                    }
+                    if (enciende (live (kFxOtt), I.ottWasActive, I.ottFx))
+                    {
+                        I.ottFx.procesa (escribe (kFxOtt), chans, numSamples, systemSampleRate, P (kFxOtt, 0), P (kFxOtt, 1));
+                        returnBus (kFxOtt);
+                    }
+                    if (enciende (live (kFxStp), I.stpWasActive, I.stpFx))
+                    {
+                        const auto fm = pasoMod (canal, kFxStp);
+                        I.stpFx.procesa (escribe (kFxStp), chans, numSamples, fm.fase, fm.paso, P (kFxStp, 1));
+                        returnBus (kFxStp);
                     }
                 }
                 }

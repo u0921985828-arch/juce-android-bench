@@ -5996,7 +5996,8 @@ const int* MainComponent::ordenFx()
         AE::kFxDly, AE::kFxRev, AE::kFxWid, AE::kFxAmb, AE::kFxPng,   // ESPACIO
         AE::kFxCmp, AE::kFxGte, AE::kFxLim, AE::kFxDss, AE::kFxDuc,   // DINAMICA
         AE::kFxPit, AE::kFxOct, AE::kFxTrn, AE::kFxFrz, AE::kFxRep,   // TIEMPO
-        AE::kFxPre, AE::kFxCin, AE::kFxGeq                            // ANALOGICO (analogico#)
+        AE::kFxSmp, AE::kFxVin, AE::kFxStp, AE::kFxOtt, AE::kFxClp,   // SAMPLING (sampling#)
+        AE::kFxPre, AE::kFxCin, AE::kFxGeq, AE::kFxGlu                // ANALOGICO (analogico#; GLU, sampling#)
     };
     return kOrden;
 }
@@ -6011,7 +6012,7 @@ const int* MainComponent::ordenFx()
 const char* const* MainComponent::categoriasFx()
 {
     static const char* const kNombres[kFxCategorias] =
-        { "FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO", "ANALOGICO" };
+        { "FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO", "SAMPLING", "ANALOGICO" };
     return kNombres;
 }
 
@@ -6305,6 +6306,42 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {    0.0,     1.0, 0.01,    0.0,    0.40, 2 },
         {    0.0,     1.0, 0.01,    0.0,    0.50, 2 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  sampling#: SMP, la frecuencia a la que muestrea y sus bits (26 kHz y 12, los del sampler de los ochenta).
+    { "SMP",  { "FREQ", "BITS", "MIX" },
+      { { 4000.0, 48000.0, 10.0, 16000.0, 26040.0, 0 },
+        {    8.0,    16.0,  1.0,     0.0,    12.0, 4 },
+        {    0.0,     1.0, 0.01,     0.0,     0.0, 2 } }, 1.00 },
+
+    //  CLP: DRIVE sube contra el techo de -0.3 dB; FORMA va del corte seco a la rodilla redonda.
+    { "CLP",  { "DRIVE", "FORMA|x", "MIX" },
+      { {    0.0,    18.0,  0.1,     0.0,     3.0, 8 },
+        {    0.0,     1.0, 0.01,     0.0,    0.30, 2 },
+        {    0.0,     1.0, 0.01,     0.0,     0.0, 2 } }, 1.00 },
+
+    //  VIN: DESGASTE estrecha la banda y mete crujido; WOW es el plato que no gira redondo.
+    { "VIN",  { "DESGASTE", "WOW", "MIX" },
+      { {    0.0,     1.0, 0.01,     0.0,    0.40, 2 },
+        {    0.0,     1.0, 0.01,     0.0,    0.30, 2 },
+        {    0.0,     1.0, 0.01,     0.0,     0.0, 2 } }, 1.00 },
+
+    //  GLU: el compresor de bus; ataque y caida en la pagina CARACTER.
+    { "GLU",  { "UMBRAL", "RATIO", "MIX" },
+      { {  -30.0,     0.0,  0.1,     0.0,   -12.0, 8 },
+        {    1.5,    10.0,  0.1,     4.0,     4.0, 9 },
+        {    0.0,     1.0, 0.01,     0.0,     0.0, 2 } }, 1.00 },
+
+    //  OTT: CANTIDAD aprieta arriba y abajo; TIEMPO lo hace mas rapido o mas lento.
+    { "OTT",  { "CANTIDAD", "TIEMPO", "MIX" },
+      { {    0.0,     1.0, 0.01,     0.0,    0.50, 2 },
+        {    0.0,     1.0, 0.01,     0.0,    0.50, 2 },
+        {    0.0,     1.0, 0.01,     0.0,     0.0, 2 } }, 1.00 },
+
+    //  STP: la vuelta (libre a 0.5 Hz de fabrica, los presets la enganchan al compas) y que parte del final se frena.
+    { "STP",  { "RATE|lfo", "FRENO", "MIX" },
+      { {   0.05,     8.0, 0.01,     1.0,    0.50, 10 },
+        {    0.0,     1.0, 0.01,     0.0,    0.25, 2 },
+        {    0.0,     1.0, 0.01,     0.0,     0.0, 2 } }, 1.00 },
 };
 
 //  LOS MANDOS DE MAS (tanda 32): p4 y p5 de cada tipo, y p6 GRAVES / p7
@@ -6341,6 +6378,8 @@ namespace
         { 14, 4, "FORMA|x",        0.0,     3.0, 1.0,     0.0, 19 },   // TRM  Lfo::kSeno..
         {  0, 4, "PENDIENTE|x",    0.0,     1.0, 1.0,     0.0, 20 },   // FLT  12 / 24 dB
         {  5, 5, "PREVIO|x",       0.0,   200.0, 1.0,     0.0,  3 },
+        { 36, 4, "ATAQUE|x",       0.1,    30.0, 0.1,     3.0, 13 },   // GLU  sampling#
+        { 36, 5, "CAIDA|x",       50.0,  1200.0, 1.0,   300.0,  3 },
     };
 }
 
@@ -6405,7 +6444,13 @@ const char* MainComponent::nombreLargoFx (int f)
         { "REP", "REPETIDOR" },
         { "GEQ", "EQ GRAFICO" },
         { "PRE", "PREVIO VALVULA" },
-        { "CIN", "CINTA" }
+        { "CIN", "CINTA" },
+        { "SMP", "SAMPLER VINTAGE" },   // sampling#
+        { "CLP", "CLIPPER" },
+        { "VIN", "VINILO" },
+        { "GLU", "COMPRESOR DE BUS" },
+        { "OTT", "MULTIBANDA" },
+        { "STP", "FRENO DE CINTA" }
     };
     const char* c = juce::isPositiveAndBelow (f, kNumFx) ? fxDefs[f].name : "";
     for (const auto& l : largos)

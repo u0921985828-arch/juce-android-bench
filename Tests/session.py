@@ -435,11 +435,19 @@ def main():
     ficheros = {k: v for k, v in (vj or {}).items() if not k.startswith ("@")}
     #  Y DIEZ: el `10-treinta-tipos.xml` lo guardo la version de 30 efectos (filas de `fxp` de 240) y con 33 tipos
     #  la app se caia al abrirlo (analogico#). Con que abra y vuelva su fila basta: se cuenta y no se juzga aparte.
-    viejo_ok = vj is not None and len (ficheros) == 10
+    #  Y ONCE: el `11-treintaitres-tipos.xml` es la fila de 264 (33 x 8) abierta con 39 tipos (sampling#): el PRE del
+    #  canal 0 vuelve con el 0.77 que trae y SMP y GLU, que no trae, con su defecto. Esa si se juzga: ver `tipos33`.
+    viejo_ok = vj is not None and len (ficheros) == 11
+    t33 = (vj or {}).get ("11-treintaitres-tipos", {})
+    tipos33 = (abs (t33.get ("pre0", -1) - 0.77) < 1e-3 and abs (t33.get ("smp0", -1) - 26040.0) < 0.5
+               and abs (t33.get ("glu4", -1) - 10.0) < 1e-3)
+    print ("tipos33: PRE %.3f (0.77)  SMP %.1f (26040)  GLU ataque %.2f (10)  %s"
+           % (t33.get ("pre0", -1), t33.get ("smp0", -1), t33.get ("glu4", -1), "correcto" if tipos33 else "CORRIDO"))
+    viejo_ok = viejo_ok and tipos33
     print()
     if vj:
         for nombre, d in sorted (ficheros.items()):
-            if nombre.startswith ("09") or nombre.startswith ("10"):
+            if nombre.startswith ("09") or nombre.startswith ("10") or nombre.startswith ("11"):
                 continue
             #  Lo que el fichero NO trae vale su defecto ANTIGUO: un proyecto
             #  sin `sends` es anterior a que los envios existieran -cada pad iba

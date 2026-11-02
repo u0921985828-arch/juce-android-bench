@@ -283,6 +283,48 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "CALIENTE",     0.65f, 0.50f, 1.00f, 0.0f },
       { "CASETE",       0.60f, 0.00f, 1.00f, 0.0f },
       { "APRETADA",     0.90f, 0.40f, 1.00f, 0.0f } },
+
+    //  sampling#: SMP  frecuencia Hz, bits
+    { { "DOCE BITS",  26040.0f, 12.0f, 1.00f, 0.0f },
+      { "BOOM BAP",   22050.0f, 12.0f, 1.00f, 0.0f },
+      { "LOFI",       12000.0f, 10.0f, 1.00f, 0.0f },
+      { "TELEFONO",    8000.0f,  8.0f, 1.00f, 0.0f },
+      { "SUAVE",      40000.0f, 14.0f, 1.00f, 0.0f } },
+
+    //  CLP  drive 0..18 dB, forma 0 (seco) .. 1 (redondo)
+    { { "BOMBO",        6.0f, 0.20f, 1.00f, 0.0f },
+      { "CAJA",         9.0f, 0.00f, 1.00f, 0.0f },
+      { "BUS",          3.0f, 0.50f, 1.00f, 0.0f },
+      { "DURO",        12.0f, 0.00f, 1.00f, 0.0f },
+      { "REDONDO",      6.0f, 1.00f, 1.00f, 0.0f } },
+
+    //  VIN  desgaste, wow
+    { { "NUEVO",        0.15f, 0.10f, 1.00f, 0.0f },
+      { "GASTADO",      0.60f, 0.35f, 1.00f, 0.0f },
+      { "LOFI",         0.80f, 0.60f, 1.00f, 0.0f },
+      { "MAREO",        0.30f, 1.00f, 1.00f, 0.0f },
+      { "RADIO",        1.00f, 0.20f, 1.00f, 0.0f } },
+
+    //  GLU  umbral dB, ratio (ataque y caida en kExtra)
+    { { "BATERIA",    -16.0f,  4.0f, 1.00f, 0.0f },
+      { "PEGAMENTO",  -10.0f,  2.0f, 1.00f, 0.0f },
+      { "PARALELO",   -24.0f, 10.0f, 0.50f, 0.0f },
+      { "MASTER",      -8.0f,  1.5f, 1.00f, 0.0f },
+      { "APLASTA",    -26.0f, 10.0f, 1.00f, 0.0f } },
+
+    //  OTT  cantidad, tiempo
+    { { "SUTIL",        0.25f, 0.50f, 1.00f, 0.0f },
+      { "SUB",          0.60f, 0.70f, 1.00f, 0.0f },
+      { "PAD",          0.80f, 0.85f, 1.00f, 0.0f },
+      { "VOZ",          0.50f, 0.35f, 1.00f, 0.0f },
+      { "TOTAL",        1.00f, 0.50f, 1.00f, 0.0f } },
+
+    //  STP  rate (libre), freno, mix, enganche (16 compas, 8 blanca, 4 negra, 2 corchea)
+    { { "PARADA",       0.50f, 0.25f, 1.00f, 16.0f },
+      { "MEDIO",        0.50f, 0.50f, 1.00f,  8.0f },
+      { "NEGRA",        0.50f, 0.50f, 1.00f,  4.0f },
+      { "CORCHEA",      0.50f, 0.60f, 1.00f,  2.0f },
+      { "FINAL",        0.50f, 0.60f, 1.00f, 16.0f } },
 };
 
 //  efectos#presets: los cuatro de mas (p4..p7) de los presets que los mueven; lo que no esta aqui queda en su defecto.
@@ -293,6 +335,12 @@ inline constexpr PresetExtra kExtra[] =
 {
     //  tipo, preset, { p4, p5, GRAVES, AGUDOS } (REV: p4 tipo Fdn::Tipo, p5 previo ms; DRV p4 tipo; DLY p5 tipo; TRM p4 forma; FLT p4 pendiente)
     { 0, 1, { 1.0f, kD, kD, kD } },
+    { 36, 1, { 10.0f, 100.0f, kD, kD } },   // sampling#: GLU ataque y caida
+    { 36, 2, { 30.0f, 300.0f, kD, kD } },
+    { 36, 3, { 0.3f, 100.0f, kD, kD } },
+    { 36, 4, { 30.0f, 600.0f, kD, kD } },
+    { 36, 5, { 0.1f, 50.0f, kD, kD } },
+    { 33, 4, { kD, kD, 300.0f, 3400.0f } },  // SMP TELEFONO: la banda del telefono
     { 0, 4, { 1.0f, kD, kD, kD } },
     { 2, 1, { 1.0f, kD, kD, kD } },
     { 2, 2, { kD, kD, kD, 12000.0f } },

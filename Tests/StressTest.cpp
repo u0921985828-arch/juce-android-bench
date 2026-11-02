@@ -9040,7 +9040,8 @@ int main()
         static constexpr const char* kNombre[AudioEngine::kNumFx] =
         { "FLT", "HPF", "DRV", "DLY", "BIT", "REV", "EQ", "CMP", "GTE", "DSS",
           "LIM", "CHO", "FLA", "PHA", "TRM", "RNG", "PIT", "WID", "EXC", "TRN",
-          "FRZ", "WAH", "OCT" };
+          "FRZ", "WAH", "OCT", "AMB", "FRM", "FLD", "ROT", "PNG", "DUC", "REP",
+          "GEQ", "PRE", "CIN", "SMP", "CLP", "VIN", "GLU", "OTT", "STP" };
 
         //  Un tono con las dos mitades DISTINTAS. Con L == R el lado es cero y
         //  un ensanchador -que escala justo el lado- no cambiaria una muestra:
@@ -9082,6 +9083,10 @@ int main()
                 //  El EQ no tiene sus bandas en `fxP`: las guarda el `Eq5` del
                 //  canal. Es la misma banda que la queja movia.
                 case AudioEngine::kFxEq:  e.setEqBand (canal, 2, 300.0f, +12.0f); break;
+                //  sampling#: SMP de fabrica deja pasar 300 Hz casi entero; STP a 0.5 Hz no frena en 0.3 s.
+                case AudioEngine::kFxGeq: e.setFxParam (canal, fx, 0, 6.0f); break;   // sampling#: el grafico nace plano
+                case AudioEngine::kFxSmp: e.setFxParam (canal, fx, 0, 4000.0f); e.setFxParam (canal, fx, 1, 8.0f); break;
+                case AudioEngine::kFxStp: e.setFxParam (canal, fx, 0, 8.0f);    e.setFxParam (canal, fx, 1, 1.0f); break;
                 default: break;
             }
         };
@@ -10535,7 +10540,8 @@ int main()
             //  no era el motor: a 120 BPM una negra dura 0.5 s, asi que 1/4
             //  enganchado ES 2 Hz libres, que es justo su defecto. La misma
             //  fase por dos caminos.
-            if (par == 3) return 16.0f;
+            if (par == 3) return fx == AudioEngine::kFxStp ? 4.0f : 16.0f;   // sampling#: STP nace a 0.5 Hz, que es el compas a 120
+
             if (par == AudioEngine::kParGraves) return 400.0f;
             if (par == AudioEngine::kParAgudos) return 1500.0f;
             if (fx == AudioEngine::kFxRev) return par == 4 ? 2.0f : 30.0f;   //  efectos#tipos: tipo y previo nacen en cero; por tres seguirian en cero

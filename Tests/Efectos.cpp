@@ -63,6 +63,12 @@ static const Mando kMandos[AudioEngine::kNumFx] = {
     { "GEQ", -12.0f, 12.0f, 0.5f, 2.0f, 1.00f },   // analogico#
     { "PRE", 0.0f, 1.0f, 0.0f, 1.0f, 1.00f },
     { "CIN", 0.0f, 1.0f, 0.0f, 1.0f, 1.00f },
+    { "SMP", 4000.0f, 48000.0f, 8.0f, 16.0f, 1.00f },   // sampling#
+    { "CLP", 0.0f, 18.0f, 0.0f, 1.0f, 1.00f },
+    { "VIN", 0.0f, 1.0f, 0.0f, 1.0f, 1.00f },
+    { "GLU", -30.0f, 0.0f, 1.5f, 10.0f, 1.00f },
+    { "OTT", 0.0f, 1.0f, 0.0f, 1.0f, 1.00f },
+    { "STP", 0.05f, 8.0f, 0.0f, 1.0f, 1.00f },
 };
 
 //  Un ciclo entero cabe en la muestra, asi que el bucle no tiene costura.
@@ -158,6 +164,7 @@ static Esperado esperado (int f, double f0)
         case AudioEngine::kFxCho: case AudioEngine::kFxFla: case AudioEngine::kFxPha:
         case AudioEngine::kFxTrm: case AudioEngine::kFxRot: case AudioEngine::kFxDuc:
         case AudioEngine::kFxRep: case AudioEngine::kFxWah: case AudioEngine::kFxFrz:
+        case AudioEngine::kFxVin:   // sampling#: el wow abre la raya como un coro
             e.ancho = 400.0; break;
         //  efectos#rev: la cola modulada abre la raya unas decenas de Hz con cada vuelta; eso es la sala, no un pliegue.
         case AudioEngine::kFxRev:
@@ -408,7 +415,8 @@ static bool modulaPorOficio (int f)
     {
         case AudioEngine::kFxDly: case AudioEngine::kFxRev: case AudioEngine::kFxCho: case AudioEngine::kFxFla:
         case AudioEngine::kFxPha: case AudioEngine::kFxTrm: case AudioEngine::kFxRot: case AudioEngine::kFxPng:
-        case AudioEngine::kFxDuc: return true;
+        case AudioEngine::kFxDuc:
+        case AudioEngine::kFxVin: case AudioEngine::kFxStp: return true;   // sampling#: el wow y el freno
         default: return false;
     }
 }
@@ -1101,7 +1109,8 @@ int main (int argc, char** argv)
         std::printf ("%-4s %9.1f %8.0f %8.1f %8.1f %9.1f %7.1f %9.1f %7.2f %7.1f%s\n",
                      kMandos[f].nombre, pl.dB, pl.hz, m1, m2, en, nv, co.finalDb, tr, ps, co.nan ? "  NaN" : "");
         const char* n = kMandos[f].nombre;
-        if (f != AudioEngine::kFxBit && pl.dB > kPliegueMax)
+        //  sampling#: SMP pliega por oficio como BIT (el aliasing del sampler ES su sonido) y STP barre la nota hasta cero.
+        if (f != AudioEngine::kFxBit && f != AudioEngine::kFxSmp && f != AudioEngine::kFxStp && pl.dB > kPliegueMax)
             falla ("%s pliega %.1f dB en %.0f Hz (tope %.0f)", n, pl.dB, pl.hz, kPliegueMax);
         if (m1 > kChasquidoMax) falla ("%s chasquea %.1f dB al mover el mando 1 (tope %.0f)", n, m1, kChasquidoMax);
         if (m2 > kChasquidoMax) falla ("%s chasquea %.1f dB al mover el mando 2 (tope %.0f)", n, m2, kChasquidoMax);
@@ -1240,6 +1249,106 @@ int main (int argc, char** argv)
         std::printf ("CIN  satura 0.8, +12 dB a la entrada: %+.1f dB a la salida; 3o %.1f dBc\n", sube, c4.second);
         if (sube < 6.0 || sube > 11.0 || c4.second > -20.0)
             falla ("CIN: la cinta no comprime con suavidad (+12 dB dan %+.1f) o rompe la onda (3o %.1f dBc)", sube, c4.second);
+    }
+    //  sampling#: que cada uno de los seis haga lo que dice.
+    if (solo < 0 || solo >= AudioEngine::kFxSmp)
+    {
+        auto banda = [] (const std::vector<float>& y, double hz)
+        {
+            double re = 0.0, im = 0.0;
+            for (size_t i = 24000; i < y.size(); ++i)
+            {
+                const double w = 2.0 * juce::MathConstants<double>::pi * hz * (double) i / kSr;
+                re += y[i] * std::cos (w); im += y[i] * std::sin (w);
+            }
+            return std::sqrt (re * re + im * im) * 2.0 / (double) (y.size() - 24000);
+        };
+        auto db = [] (double a, double b) { return 20.0 * std::log10 (juce::jmax (1.0e-12, a) / juce::jmax (1.0e-12, b)); };
+        //  Lo que no es el tono: la potencia total menos la del tono.
+        auto resto = [&] (const std::vector<float>& y, double hz)
+        {
+            double ms = 0.0;
+            for (size_t i = 24000; i < y.size(); ++i) ms += (double) y[i] * y[i];
+            ms /= (double) (y.size() - 24000);
+            const double a = banda (y, hz);
+            return std::sqrt (juce::jmax (1.0e-24, ms - a * a * 0.5));
+        };
+        auto pico = [] (const std::vector<float>& y) { double p = 0.0; for (size_t i = 24000; i < y.size(); ++i) p = juce::jmax (p, (double) std::abs (y[i])); return p; };
+        std::vector<float> y;
+        auto seco = [&] (double hz, float amp) { auto e = monta (-1, seno (hz, amp), 0.0f); e->postNoteOn (0, 1.0f); corre (*e, 48000, y); return banda (y, hz); };
+        auto con = [&] (int f, double hz, float amp, const std::function<void (AudioEngine&)>& pon, int n = 48000)
+        { auto e = monta (f, seno (hz, amp), 1.0f); pon (*e); e->postNoteOn (0, 1.0f); corre (*e, n, y); };
+        auto par = [] (int f, int pi, float v) { return [=] (AudioEngine& e) { e.setFxParam (kCanal, f, pi, v); }; };
+        auto dos = [] (int f, float a, float b) { return [=] (AudioEngine& e) { e.setFxParam (kCanal, f, 0, a); e.setFxParam (kCanal, f, 1, b); }; };
+        static constexpr int S = AudioEngine::kFxSmp, C = AudioEngine::kFxClp, V = AudioEngine::kFxVin,
+                      G = AudioEngine::kFxGlu, O = AudioEngine::kFxOtt, P = AudioEngine::kFxStp;
+
+        //  SMP: a 26 kHz un tono de 15 kHz no pasa el filtro de entrada; 1 kHz pasa entero; ocho bits dejan mucho mas resto que dieciseis.
+        const double s1k = seco (1000.0, 0.25f), s15k = seco (15000.0, 0.25f);
+        con (S, 1000.0, 0.25f, dos (S, 26040.0f, 12.0f));
+        const double smpPasa = db (banda (y, 1000.0), s1k);
+        con (S, 15000.0, 0.25f, dos (S, 26040.0f, 12.0f));
+        const double smpCorta = db (banda (y, 15000.0), s15k);
+        //  Los bits a 48 kHz, donde no hay retencion: lo que queda de resto es solo la cuantizacion.
+        con (S, 1000.0, 0.25f, dos (S, 48000.0f, 8.0f));
+        const double r8 = resto (y, 1000.0);
+        con (S, 1000.0, 0.25f, dos (S, 48000.0f, 16.0f));
+        const double r16 = resto (y, 1000.0);
+        std::printf ("\nSMP  1 kHz %+.1f dB, 15 kHz %+.1f dB, resto 8 bits sobre 16: %+.1f dB\n", smpPasa, smpCorta, db (r8, r16));
+        if (std::abs (smpPasa) > 1.5 || smpCorta > -24.0 || db (r8, r16) < 20.0)
+            falla ("SMP: no pasa 1 kHz entero, deja pasar 15 kHz o los bits no ensucian");
+
+        //  CLP: con 12 dB de drive el pico no pasa de -0.3 dBFS y suena mas fuerte que el seco.
+        con (C, 220.0, 0.5f, dos (C, 12.0f, 0.0f));
+        const double cPico = 20.0 * std::log10 (pico (y));
+        double msC = 0.0; for (size_t i = 24000; i < y.size(); ++i) msC += (double) y[i] * y[i];
+        const double cSube = 10.0 * std::log10 (msC / (double) (y.size() - 24000) / (0.5 * 0.5 * 0.5));
+        std::printf ("CLP  drive 12: pico %.2f dBFS, %+.1f dB sobre el seco\n", cPico, cSube);
+        if (cPico > -0.29 || cSube < 3.0) falla ("CLP: el pico pasa el techo (%.2f) o no sube (%+.1f)", cPico, cSube);
+
+        //  VIN: el desgaste a tope se come 12 kHz; el wow a tope ensancha la raya de 1 kHz.
+        const double s12k = seco (12000.0, 0.25f);
+        con (V, 12000.0, 0.25f, dos (V, 1.0f, 0.0f));
+        const double vCorta = db (banda (y, 12000.0), s12k);
+        con (V, 1000.0, 0.25f, dos (V, 0.0f, 0.0f));
+        const double vQuieto = banda (y, 1000.0);
+        con (V, 1000.0, 0.25f, dos (V, 0.0f, 1.0f), 96000);
+        const double vWow = db (banda (y, 1000.0), vQuieto);
+        std::printf ("VIN  desgaste 1: 12 kHz %+.1f dB; wow 1: la raya de 1 kHz %+.1f dB\n", vCorta, vWow);
+        if (vCorta > -12.0 || vWow > -3.0) falla ("VIN: el desgaste no estrecha la banda o el wow no mueve la nota");
+
+        //  GLU: umbral -20 y 4:1; doce dB mas de entrada salen entre 2 y 6 mas.
+        auto glu = [&] (float amp) { con (G, 220.0, amp, [] (AudioEngine& e) { e.setFxParam (kCanal, G, 0, -20.0f); e.setFxParam (kCanal, G, 1, 4.0f); }); return banda (y, 220.0); };
+        const double gluSube = db (glu (0.4f), glu (0.1f));
+        std::printf ("GLU  umbral -20, 4:1, +12 dB de entrada: %+.1f dB a la salida\n", gluSube);
+        if (gluSube < 2.0 || gluSube > 6.0) falla ("GLU: +12 dB de entrada dan %+.1f (entre 2 y 6)", gluSube);
+
+        //  OTT: a tope sube lo flojo (-40 dBFS) y baja lo fuerte (-6 dBFS), cuatro dB o mas cada uno.
+        const double sFlojo = seco (1000.0, 0.01f), sFuerte = seco (1000.0, 0.5f);
+        con (O, 1000.0, 0.01f, par (O, 0, 1.0f));
+        const double oSube = db (banda (y, 1000.0), sFlojo);
+        con (O, 1000.0, 0.5f, par (O, 0, 1.0f));
+        const double oBaja = db (banda (y, 1000.0), sFuerte);
+        std::printf ("OTT  cantidad 1: -40 dBFS %+.1f dB, -6 dBFS %+.1f dB\n", oSube, oBaja);
+        if (oSube < 4.0 || oBaja > -4.0) falla ("OTT: no sube lo flojo (%+.1f) o no baja lo fuerte (%+.1f)", oSube, oBaja);
+
+        //  STP: libre a 1 Hz con freno 0.5, en cada vuelta hay un tramo callado y el resto suena; a freno 0 es el seco.
+        auto ventanas = [&] (double& bajoFrac, double& minDb)
+        {
+            const int w = 480; double mx = 0.0; std::vector<double> r;
+            for (size_t i = 24000; i + (size_t) w <= y.size(); i += (size_t) w)
+            { double s = 0.0; for (int k = 0; k < w; ++k) s += (double) y[i + (size_t) k] * y[i + (size_t) k]; r.push_back (std::sqrt (s / w)); mx = juce::jmax (mx, r.back()); }
+            int bajos = 0; double mn = 1.0e9;
+            for (double v : r) { if (db (v, mx) < -20.0) ++bajos; mn = juce::jmin (mn, v); }
+            bajoFrac = (double) bajos / (double) r.size(); minDb = db (mn, mx);
+        };
+        auto stp = [&] (float freno) { con (P, 220.0, 0.25f, [freno] (AudioEngine& e)
+            { e.setFxParam (kCanal, P, 3, 0.0f); e.setFxParam (kCanal, P, 0, 1.0f); e.setFxParam (kCanal, P, 1, freno); }, 24000 + 48000 * 3); };
+        double bf = 0.0, md = 0.0, bf0 = 0.0, md0 = 0.0;
+        stp (0.5f); ventanas (bf, md);
+        stp (0.0f); ventanas (bf0, md0);
+        std::printf ("STP  freno 0.5 a 1 Hz: %.0f %% de ventanas a -20 dB, la mas baja %.1f dB; freno 0: %.0f %%\n", bf * 100.0, md, bf0 * 100.0);
+        if (bf < 0.03 || bf > 0.20 || md > -30.0 || bf0 > 0.0) falla ("STP: el freno no calla el final de la vuelta (%.0f %%, %.1f dB) o a cero no es el seco", bf * 100.0, md);
     }
     std::printf (fallos == 0 ? "OK  los %d efectos, sin pliegue, sin chasquido, a nivel y con la cola limpia\n"
                              : "%d FALLA\n", fallos == 0 ? AudioEngine::kNumFx : fallos);

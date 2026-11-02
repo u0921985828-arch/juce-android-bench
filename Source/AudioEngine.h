@@ -13,6 +13,7 @@
 #include "Anillo.h"
 #include "Eq5.h"
 #include "Analogico.h"
+#include "Sampling.h"
 #include "Dinamica.h"
 #include "Lfo.h"
 #include "Estereo.h"
@@ -107,7 +108,7 @@ public:
     //      no habia forma de hacer un BOMBEO ni un STUTTER, que son dos de los
     //      gestos mas usados en electronica. Entran uno por familia, para que
     //      el reparto por tipos siga cuadrando, y quedan cinco por familia.
-    static constexpr int kNumFx         = 33;   // analogico#: + GEQ, PRE y CIN
+    static constexpr int kNumFx         = 39;   // analogico#: + GEQ, PRE y CIN; sampling#: + SMP CLP VIN GLU OTT STP
     //  CUANTOS PARAMETROS TIENE UN EFECTO, y aqui y no en la cara: el motor es
     //  quien los guarda. Estaba escrito como un `4` literal en el tipo de `fxP`
     //  y otra vez en el de `cebaSuavizados`, y la cara llevaba su propia
@@ -180,6 +181,8 @@ public:
                          kFxPng = 27, kFxDuc = 28, kFxRep = 29;
     //  analogico#: la septima familia, ANALOGICO. Al final por lo mismo que AMB: el indice viaja a los proyectos.
     static constexpr int kFxGeq = 30, kFxPre = 31, kFxCin = 32;
+    //  sampling#: la familia SAMPLING y el compresor de bus (GLU, que va con ANALOGICO). Al final por lo mismo.
+    static constexpr int kFxSmp = 33, kFxClp = 34, kFxVin = 35, kFxGlu = 36, kFxOtt = 37, kFxStp = 38;
 
     //  DIECISEIS CANALES, que es la mesa entre los pads y los efectos.
     //
@@ -433,6 +436,12 @@ public:
         {     0.0f,     1.0f, 0.0f },   // GEQ  salida dB, ancho de las campanas, mix   analogico#
         {    0.35f,    0.50f, 0.0f },   // PRE  drive, calor, mix
         {    0.40f,    0.50f, 0.0f },   // CIN  satura, velocidad, mix
+        { 26040.0f,   12.0f,  0.0f },   // SMP  frecuencia Hz, bits, mix   sampling#
+        {    3.0f,    0.30f,  0.0f },   // CLP  drive dB, forma, mix
+        {    0.40f,   0.30f,  0.0f },   // VIN  desgaste, wow, mix
+        {  -12.0f,    4.0f,   0.0f },   // GLU  umbral dB, ratio, mix
+        {    0.50f,   0.50f,  0.0f },   // OTT  cantidad, tiempo, mix
+        {    0.50f,   0.25f,  0.0f },   // STP  rate, freno, mix
     };
     //  LOS DOS PROPIOS DE CADA TIPO, p4 y p5, con el valor que tenian escrito
     //  en la etapa. `kSinMando` es «este tipo no tiene»: la cara no dibuja el
@@ -472,6 +481,12 @@ public:
         { kSinMando, kSinMando },   // GEQ
         { kSinMando, kSinMando },   // PRE
         { kSinMando, kSinMando },   // CIN
+        { kSinMando, kSinMando },   // SMP   sampling#
+        { kSinMando, kSinMando },   // CLP
+        { kSinMando, kSinMando },   // VIN
+        {     10.0f,    300.0f },   // GLU  ataque ms, caida ms
+        { kSinMando, kSinMando },   // OTT
+        { kSinMando, kSinMando },   // STP
     };
     //  EL DEFECTO DE CUALQUIERA DE LOS OCHO, en un sitio: el motor al nacer,
     //  los presets y el fichero viejo que no trae la columna preguntan aqui.
@@ -488,7 +503,8 @@ public:
     {
         return par < 3 ? true
              : par == 3 ? (f == kFxCho || f == kFxFla || f == kFxPha || f == kFxTrm
-                         || f == kFxRot || f == kFxDuc || f == kFxRep || f == kFxDly || f == kFxPng)
+                         || f == kFxRot || f == kFxDuc || f == kFxRep || f == kFxDly || f == kFxPng
+                         || f == kFxStp)   // sampling#
              : par < 6  ? ! juce::exactlyEqual (kFxDefExtra[f][par - 4], kSinMando)
              : f != kFxEq && f != kFxGeq;   // analogico#: el grafico trae su cara y no lleva cortes
     }
@@ -3799,7 +3815,9 @@ private:
                                                   //  analogico#: los tres SUSTITUYEN; el seco
                                                   //  al lado de una valvula o una cinta es la
                                                   //  mitad de la calidez. Decide el MIX.
-                                                  true, true, true };
+                                                  true, true, true,
+                                                  //  sampling#: los seis SUSTITUYEN; GLU a medias es la compresion en paralelo.
+                                                  true, true, true, true, true, true };
     //  Y NO SE PUEDE QUEDAR CORTA EN SILENCIO. Una lista de inicializacion de
     //  agregado rellena con `false` lo que no se nombre, asi que un tipo nuevo
     //  al que se le olvide su fila aqui entraria como ENVIO —sumando encima en
@@ -3855,7 +3873,8 @@ private:
                                                  true, true,
                                                  true,
                                                  true, true, true, true, true, true,
-                                                 true, true, true };   // analogico#
+                                                 true, true, true,   // analogico#
+                                                 true, true, true, true, true, true };   // sampling#
     static_assert (sizeof (fxPorCanal) / sizeof (fxPorCanal[0]) == kNumFx,
                    "fxPorCanal tiene que tener una fila por tipo");
 
@@ -3886,7 +3905,8 @@ private:
                                                 false, false,
                                                 true,
                                                 false, false, false, true, false, false,
-                                                false, false, false };   // analogico#
+                                                false, false, false,   // analogico#
+                                                false, false, false, false, false, false };   // sampling#
     static_assert (sizeof (fxEsEnvio) / sizeof (fxEsEnvio[0]) == kNumFx,
                    "fxEsEnvio tiene que tener una fila por tipo");
 
@@ -3935,7 +3955,7 @@ private:
     //  `fxSustituye` y el `static_assert` de debajo de la clase los contrasta.
     //  Aqui dentro no se puede llamar -la clase todavia esta incompleta en el
     //  punto en el que haria falta el valor- y ahi fuera si.
-    static constexpr int kNumIns = 26;   // analogico#: + GEQ, PRE y CIN
+    static constexpr int kNumIns = 32;   // analogico#: + GEQ, PRE y CIN; sampling#: + 6
     static constexpr int contarInsertos() noexcept
     {
         int n = 0;
@@ -3956,7 +3976,7 @@ private:
     //  que CHO, FLA y PHA son de su canal. `kNumIns` sigue contando los que
     //  RESTAN SECO —lo publica el banco y lo usa el reparto— y esto cuenta los
     //  que tienen UNO POR CANAL. Eran el mismo numero y ya no lo son: 18 y 21.
-    static constexpr int kNumPorCanal = 33;   // analogico#
+    static constexpr int kNumPorCanal = 39;   // analogico#, sampling#
     static constexpr int contarPorCanal() noexcept
     {
         int n = 0;
@@ -4160,6 +4180,15 @@ private:
         Analogico::Cinta   cinFx;
         bool geqWasActive = false, preWasActive = false, cinWasActive = false;
         float geqSalida = -1.0f;
+        //  sampling#: los seis, uno por canal. La cinta de STP se reserva en prepareToPlay.
+        Sampling::Sampler    smpFx;
+        Sampling::Clipper    clpFx;
+        Sampling::Vinilo     vinFx;
+        Sampling::Bus        gluFx;
+        Sampling::Multibanda ottFx;
+        Sampling::Freno      stpFx;
+        bool smpWasActive = false, clpWasActive = false, vinWasActive = false,
+             gluWasActive = false, ottWasActive = false, stpWasActive = false;
 
         //  LA FAMILIA DE DINAMICA: CMP, GTE, DSS y LIM, una pieza con cuatro
         //  configuraciones. `dynIdx` hace la unica traduccion que queda.

@@ -151,7 +151,10 @@ static const char* nombreDeFx (int f) noexcept
                                "AMB ambiente", "FRM formante",
                                "FLD plegador", "ROT giratorio",
                                "PNG ping-pong", "DUC bombeo",
-                               "REP repetidor" };
+                               "REP repetidor",
+                               "GEQ grafico", "PRE valvula", "CIN cinta",   // analogico#
+                               "SMP sampler", "CLP clipper", "VIN vinilo",   // sampling#
+                               "GLU bus", "OTT multibanda", "STP freno" };
     static_assert (sizeof (n) / sizeof (n[0]) == (size_t) AudioEngine::kNumFx,
                    "nombreDeFx tiene que tener una fila por tipo");
     return juce::isPositiveAndBelow (f, (int) (sizeof (n) / sizeof (n[0]))) ? n[f] : "?";

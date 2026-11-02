@@ -239,6 +239,12 @@ namespace FxVisor
             case AudioEngine::kFxRep: return { true,  true  };
             case AudioEngine::kFxPre: return { true,  true  };   // analogico#: drive y calor doblan la curva
             case AudioEngine::kFxCin: return { true,  false };   // la velocidad es un filtro, no una forma
+            case AudioEngine::kFxSmp: return { true,  false };   // sampling#: la frecuencia mueve los filtros; los bits no se dibujan
+            case AudioEngine::kFxClp: return { true,  true  };   // drive y forma doblan la curva
+            case AudioEngine::kFxVin: return { true,  false };   // el desgaste estrecha la banda; el wow no es una forma
+            case AudioEngine::kFxGlu: return { true,  true  };   // umbral y ratio
+            case AudioEngine::kFxOtt: return { true,  false };   // la cantidad; el tiempo no cambia la curva
+            case AudioEngine::kFxStp: return { false, true  };   // la vuelta es el eje; el freno es la forma
             default:                  return { false, false };
         }
     }
@@ -645,6 +651,51 @@ namespace FxVisor
                                                                                : Analogico::Cinta::transfiere (x, p0); };
                     const float pk = juce::jmax (std::abs (tr (1.0f)), std::abs (tr (-1.0f)));
                     pon (i, 0.5f + 0.5f * tr (-1.0f + 2.0f * t) / juce::jmax (1.0e-6f, pk));
+                    break;
+                }
+
+                //  sampling#: CLP, la transferencia con el techo de -0.3 dB, sin escalar: el techo es lo que se ensena.
+                case AudioEngine::kFxClp:
+                    pon (i, 0.5f + 0.5f * Sampling::Clipper::transfiere (-1.0f + 2.0f * t, p0, p1));
+                    break;
+
+                //  SMP y VIN: la banda que dejan pasar, con los mismos cortes que suenan.
+                case AudioEngine::kFxSmp:
+                {
+                    const float hz = hzDe (t), fc = 0.42f * juce::jlimit (4000.0f, 48000.0f, p0);
+                    pon (i, dbAAlto (AudioEngine::svfDb (hz, fc, 0.541f, false) + AudioEngine::svfDb (hz, fc, 1.307f, false)
+                                     + AudioEngine::svfDb (hz, fc * (0.45f / 0.42f), 0.707f, false)));
+                    break;
+                }
+                case AudioEngine::kFxVin:
+                {
+                    const float hz = hzDe (t), d = juce::jlimit (0.0f, 1.0f, p0);
+                    pon (i, dbAAlto (AudioEngine::svfDb (hz, 25.0f + 100.0f * d, 0.707f, true)
+                                     + AudioEngine::svfDb (hz, 18000.0f * std::pow (0.28f, d), 0.707f, false)));
+                    break;
+                }
+
+                //  GLU y OTT: entrada contra salida en dB, con la MISMA cuenta que corre.
+                case AudioEngine::kFxGlu:
+                {
+                    const float in = dbDe (t);
+                    pon (i, juce::jlimit (0.0f, 1.0f, (in + Sampling::reduce (in, p0, juce::jmax (1.5f, p1))
+                                                        + Sampling::Bus::compensa (p0, juce::jmax (1.5f, p1)) + 60.0f) / 60.0f));
+                    break;
+                }
+                case AudioEngine::kFxOtt:
+                {
+                    const float in = dbDe (t);
+                    pon (i, juce::jlimit (0.0f, 1.0f, (in + Sampling::Multibanda::mueve (in, p0) + 60.0f) / 60.0f));
+                    break;
+                }
+
+                //  STP: la velocidad de la cinta a lo largo de una vuelta.
+                case AudioEngine::kFxStp:
+                {
+                    const float b = juce::jlimit (0.0f, 1.0f, p1);
+                    const float v = (b > 1.0e-3f && t >= 1.0f - b) ? juce::jmax (0.0f, 1.0f - (t - (1.0f - b)) / (0.8f * b)) : 1.0f;
+                    pon (i, 0.05f + 0.90f * v);
                     break;
                 }
 

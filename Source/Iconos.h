@@ -180,6 +180,9 @@ namespace Iconos
         inserto, envio,
         //  analogico#: los tres de la septima familia. GEQ por sus faders, PRE por la valvula y CIN por las dos bobinas.
         geq, pre, cin,
+        //  sampling#: SMP la escalera de la retencion, CLP la onda con las crestas cortadas, VIN el disco,
+        //  GLU tres lineas que se juntan en una, OTT tres bandas entre dos topes y STP la velocidad que cae.
+        smp, clp, vin, glu, ott, stp,
         kNum
     };
 
@@ -259,6 +262,9 @@ namespace Iconos
             case Id::inserto: return "inserto";        case Id::envio: return "envio";
             case Id::geq: return "geq";                case Id::pre: return "pre";
             case Id::cin: return "cin";
+            case Id::smp: return "smp";                case Id::clp: return "clp";
+            case Id::vin: return "vin";                case Id::glu: return "glu";
+            case Id::ott: return "ott";                case Id::stp: return "stp";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -1807,6 +1813,63 @@ namespace Iconos
                 L.lineTo (6.0f, 20.5f);
                 L.lineTo (18.0f, 20.5f);
                 L.lineTo (21.0f, 11.0f);
+                break;
+
+            //  sampling#: SMP, la onda retenida en escalones.
+            case Id::smp:
+                L.startNewSubPath (2.0f, 16.0f);
+                L.lineTo (6.0f, 16.0f);  L.lineTo (6.0f, 9.0f);
+                L.lineTo (10.0f, 9.0f);  L.lineTo (10.0f, 4.0f);
+                L.lineTo (14.0f, 4.0f);  L.lineTo (14.0f, 11.0f);
+                L.lineTo (18.0f, 11.0f); L.lineTo (18.0f, 20.0f);
+                L.lineTo (22.0f, 20.0f);
+                for (auto [x, y] : { std::pair { 6.0f, 9.0f }, { 10.0f, 4.0f }, { 14.0f, 11.0f }, { 18.0f, 20.0f } })
+                    R.addEllipse (x - 1.6f, y - 1.6f, 3.2f, 3.2f);   // sampling#: el punto de cada muestra
+                break;
+
+            //  CLP: la onda que sube, se queda plana en el techo, baja y se queda plana en el suelo.
+            case Id::clp:
+                linea (L, 1.5f, 3.5f, 22.5f, 3.5f);
+                linea (L, 1.5f, 20.5f, 22.5f, 20.5f);
+                L.startNewSubPath (2.0f, 12.0f);
+                L.lineTo (5.5f, 6.5f);  L.lineTo (9.0f, 6.5f);
+                L.lineTo (15.0f, 17.5f); L.lineTo (18.5f, 17.5f);
+                L.lineTo (22.0f, 12.0f);
+                break;
+
+            //  VIN: el disco con un surco y la etiqueta.
+            case Id::vin:
+                L.addEllipse (2.0f, 2.0f, 20.0f, 20.0f);
+                L.addCentredArc (12.0f, 12.0f, 6.5f, 6.5f, 0.0f, 0.4f, 2.2f, true);
+                R.addEllipse (9.5f, 9.5f, 5.0f, 5.0f);
+                break;
+
+            //  GLU: tres pistas que entran por la izquierda y salen pegadas en una.
+            case Id::glu:
+                linea (L, 2.0f, 4.5f, 13.0f, 12.0f);
+                linea (L, 2.0f, 12.0f, 13.0f, 12.0f);
+                linea (L, 2.0f, 19.5f, 13.0f, 12.0f);
+                L.addRectangle (13.0f, 8.0f, 4.0f, 8.0f);
+                linea (L, 17.0f, 12.0f, 22.5f, 12.0f);
+                break;
+
+            //  OTT: tres bandas del mismo alto entre el tope de arriba y el de abajo.
+            case Id::ott:
+                linea (L, 1.5f, 3.0f, 22.5f, 3.0f);
+                linea (L, 1.5f, 21.0f, 22.5f, 21.0f);
+                R.addRectangle (3.0f, 7.0f, 4.5f, 10.0f);
+                R.addRectangle (9.75f, 7.0f, 4.5f, 10.0f);
+                R.addRectangle (16.5f, 7.0f, 4.5f, 10.0f);
+                break;
+
+            //  STP: la velocidad que cae hasta pararse y la linea quieta del final.
+            case Id::stp:
+                L.startNewSubPath (2.0f, 4.0f);
+                L.lineTo (7.0f, 4.0f);
+                L.quadraticTo (12.0f, 4.0f, 15.0f, 19.5f);
+                L.lineTo (22.0f, 19.5f);
+                linea (L, 15.0f, 2.5f, 15.0f, 21.5f);
+                R.addEllipse (13.2f, 17.7f, 3.6f, 3.6f);   // sampling#: el punto donde se para
                 break;
 
             //  APAGAR: el anillo partido y la barra. Ver la enum.
