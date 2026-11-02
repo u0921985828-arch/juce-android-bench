@@ -7852,9 +7852,13 @@ void MainComponent::auditRanuras()
         //  analogico#: si las familias no salen como filas, el menu va en dos columnas (familias | efectos):
         //  pide tantas filas de un dedo como familias haya, y la celda es media tarjeta.
         if (pedido > 0 && bandas == 0)
-            return juce::String (2) + "x" + juce::String (juce::jmax (cats, kFxPorTipo)) + ":"
-                     + juce::String (menuRanuraPide (juce::jmax (cats, kFxPorTipo), true, Metrics::hit, 0)) + ":"
-                     + juce::String (anchoR / 2);
+        {
+            const int r = navegadorFilas (cats, kFxPorTipo, topeR, true);
+            const int nc = (cats + r - 1) / r + (kFxPorTipo + r - 1) / r;
+            return juce::String (nc) + "x" + juce::String (r) + ":"
+                     + juce::String (menuRanuraPide (r, true, Metrics::hit, 0)) + ":"
+                     + juce::String (anchoR / nc);
+        }
         return juce::String (c) + "x" + juce::String (f) + ":"
                  + juce::String (menuRanuraPide (f, true, Metrics::btn, bandas)) + ":"
                  + juce::String (anchoR / c);

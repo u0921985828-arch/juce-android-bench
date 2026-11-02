@@ -1208,6 +1208,16 @@ inline int menuRanuraPide (int filas, bool conVaciar,
            + (conVaciar ? Metrics::sm + Metrics::btn : 0);
 }
 
+//  analogico#: EL MENU EN DOS COLUMNAS, cuantas filas. Las mas que quepan, de `cats` (una familia por fila) hacia
+//  abajo: con menos filas las familias y los efectos se parten en sub-columnas. Nunca menos que `minimo`.
+inline int navegadorFilas (int cats, int porFamilia, int tope, bool conVaciar, int minimo = 2) noexcept
+{
+    const int alto = juce::jmax (cats, porFamilia);
+    for (int r = alto; r > minimo; --r)
+        if (menuRanuraPide (r, conVaciar, Metrics::hit, 0) <= tope) return r;
+    return minimo;
+}
+
 //  Y CON UN NUMERO DE COLUMNAS PEDIDO, que es de quien llama y no de aqui.
 //
 //  El menu de efectos los enseña POR TIPO -seis familias de cuatro, ver

@@ -2264,6 +2264,21 @@ public:
         return f.withHeight (juce::jmax (f.getHeight() / e, f.getHeight() * (float) ancho / w));
     }
 
+    //  menu#justo: lo que una tapa necesita de ancho para su rotulo (y su icono) mas su aire, y no mas. Del telefono:
+    //  «que no ocupe el boton mas de lo que ocupa el texto, pero respetando el aire que aporta tranquilidad».
+    static int anchoJusto (const juce::TextButton& b, int alto)
+    {
+        const auto caja = juce::Rectangle<float> (0.0f, 0.0f, 400.0f, (float) alto);
+        const auto tapa = capaDe (caja);
+        const int borde = (int) std::ceil (caja.getWidth() - tapa.getWidth());
+        int w = (int) std::ceil (juce::GlyphArrangement::getStringWidth (letraDeTapa (tapa.getHeight()), b.getButtonText()))
+                  + 2 * Metrics::margenTapa + borde + 2 * Metrics::sm;
+        const auto id = (Iconos::Id) (int) b.getProperties().getWithDefault ("icono", 0);
+        if (id != Iconos::Id::ninguno && id != Iconos::Id::kNum && (int) b.getProperties().getWithDefault ("sinIcono", 0) == 0)
+            w += iconoLado() + Metrics::halfGap;
+        return juce::jmax (Metrics::hit, w);
+    }
+
     static Reparto reparteTapa (const juce::TextButton& b)
     {
         Reparto r;

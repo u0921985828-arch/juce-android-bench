@@ -1730,7 +1730,8 @@ void MainComponent::maquetaRanura()
         //  analogico#: si las familias no caben como filas, dos columnas -familias y efectos de la elegida- y no
         //  una rejilla de treinta y tres sin rotulos que ademas se sale de la tarjeta (280x653 pedia 648 de 541).
         ranuraNavegador = ! conFamilias;
-        const int quiere = ranuraNavegador ? menuRanuraPide (kFxCategorias, conVaciar, Metrics::hit, 0)
+        const int navFilas = navegadorFilas (kFxCategorias, kFxPorTipo, topeAlto, conVaciar);
+        const int quiere = ranuraNavegador ? menuRanuraPide (navFilas, conVaciar, Metrics::hit, 0)
                                            : menuRanuraPide (filas, conVaciar, Metrics::btn,
                                                              conFamilias ? filas : 0);
         auto inner = sheetFromBottom (ranuraSheet, quiere);
@@ -1811,20 +1812,23 @@ void MainComponent::maquetaRanura()
         for (auto* b : ranuraBtns) if (b != nullptr) b->setVisible (true);
         if (ranuraNavegador)
         {
-            const auto fF = ZatiLookAndFeel::letraDeTapa (ZatiLookAndFeel::capaDe (juce::Rectangle<float> (
-                                0.0f, 0.0f, (float) Metrics::hit, (float) Metrics::hit)).getHeight());
-            int anchoFam = Metrics::hit;
-            for (auto* b : ranuraFamBtns)
-                anchoFam = juce::jmax (anchoFam, (int) std::ceil (juce::GlyphArrangement::getStringWidth (fF, b->getButtonText()))
-                                                   + 2 * Metrics::margenTapa);
-            anchoFam = juce::jmin (anchoFam, inner.getWidth() / 2);
-            auto colF = inner.removeFromLeft (anchoFam);
+            //  Las familias en `famCols` sub-columnas y los efectos de la elegida en `efCols`, todas de `navFilas` filas.
+            const int famCols = (kFxCategorias + navFilas - 1) / navFilas;
+            const int efCols  = (kFxPorTipo + navFilas - 1) / navFilas;
+            const int colW = (inner.getWidth() - Metrics::sm) / (famCols + efCols);
+            auto colF = inner.removeFromLeft (colW * famCols);
             inner.removeFromLeft (Metrics::sm);
-            for (auto* b : ranuraFamBtns)
+            //  menu#justo: cada tapa mide su rotulo y su aire, pegada al principio de su columna; nunca mas que la columna.
+            auto celda = [&] (juce::Rectangle<int> zona, int i, int nCols, const juce::TextButton& b)
             {
-                b->setBounds (colF.removeFromTop (Metrics::hit));
-                colF.removeFromTop (Metrics::xs);
-            }
+                const int c = i / navFilas, f = i % navFilas;
+                const int w = zona.getWidth() / juce::jmax (1, nCols);
+                const int justo = juce::jmin (w - 2 * Metrics::aireTapaDensa, ZatiLookAndFeel::anchoJusto (b, Metrics::hit));
+                return juce::Rectangle<int> (zona.getX() + c * w + Metrics::aireTapaDensa,
+                                             zona.getY() + f * (Metrics::hit + Metrics::xs), justo, Metrics::hit);
+            };
+            for (int i = 0; i < ranuraFamBtns.size(); ++i)
+                if (auto* b = ranuraFamBtns[i]) b->setBounds (celda (colF, i, famCols, *b));
             const int desde = ranuraFamilia * kFxPorTipo;
             for (int i = 0; i < ranuraBtns.size(); ++i)
             {
@@ -1832,8 +1836,7 @@ void MainComponent::maquetaRanura()
                 if (b == nullptr) continue;
                 const bool suya = i >= desde && i < desde + kFxPorTipo;
                 b->setVisible (suya);
-                b->setBounds (suya ? inner.removeFromTop (Metrics::hit) : juce::Rectangle<int>());
-                if (suya) inner.removeFromTop (Metrics::xs);
+                b->setBounds (suya ? celda (inner, i - desde, efCols, *b) : juce::Rectangle<int>());
             }
         }
         for (int r = 0; r < (ranuraNavegador ? 0 : filas); ++r)
@@ -1854,9 +1857,11 @@ void MainComponent::maquetaRanura()
                 //  del doble de ancho que sus hermanas se lee como otra cosa,
                 //  no como la ultima de la lista.
                 const bool ultima = (f == ranuraBtns.size() - 1) || (c == cols - 1);
-                ranuraBtns[f]->setBounds ((ultima && c == cols - 1 ? row
-                                                                   : row.removeFromLeft (w))
-                                            .reduced (Metrics::aireTapaDensa, 0));
+                //  menu#justo: la celda sigue siendo la columna (el sitio de cada efecto no se mueve), y la tapa dentro mide su
+                //  rotulo y su aire, pegada a la izquierda, en vez de estirarse a la columna.
+                auto cel = (ultima && c == cols - 1 ? row : row.removeFromLeft (w)).reduced (Metrics::aireTapaDensa, 0);
+                ranuraBtns[f]->setBounds (cel.withWidth (juce::jmin (cel.getWidth(),
+                                                                     ZatiLookAndFeel::anchoJusto (*ranuraBtns[f], cel.getHeight()))));
                 if (f == ranuraBtns.size() - 1) break;
             }
             inner.removeFromTop (Metrics::xs);
