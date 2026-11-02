@@ -86,6 +86,21 @@ static SampleBuffer::Ptr seno (double hz, float amp)
     return SampleBuffer::Ptr (sb);
 }
 
+//  sampling#: un tono flojo que a mitad salta a fuerte, como el primer golpe tras un silencio.
+static SampleBuffer::Ptr salto (double hz, float bajo, float alto)
+{
+    auto* sb = new SampleBuffer();
+    const int n = 96000;
+    sb->buffer.setSize (2, n);
+    for (int i = 0; i < n; ++i)
+    {
+        const float v = (i < 48000 ? bajo : alto) * (float) std::sin (2.0 * juce::MathConstants<double>::pi * hz * i / kSr);
+        sb->buffer.setSample (0, i, v); sb->buffer.setSample (1, i, v);
+    }
+    sb->sourceSampleRate = kSr;
+    return SampleBuffer::Ptr (sb);
+}
+
 static SampleBuffer::Ptr ruido (float amp)
 {
     auto* sb = new SampleBuffer();
@@ -1305,6 +1320,11 @@ int main (int argc, char** argv)
         const double cSube = 10.0 * std::log10 (msC / (double) (y.size() - 24000) / (0.5 * 0.5 * 0.5));
         std::printf ("CLP  drive 12: pico %.2f dBFS, %+.1f dB sobre el seco\n", cPico, cSube);
         if (cPico > -0.29 || cSube < 3.0) falla ("CLP: el pico pasa el techo (%.2f) o no sube (%+.1f)", cPico, cSube);
+        //  Y con ruido a tope y forma dura, donde el filtro del 2x repica: el techo sigue siendo techo.
+        { auto e = monta (C, ruido (0.9f), 1.0f); dos (C, 18.0f, 0.0f) (*e); e->postNoteOn (0, 1.0f); corre (*e, 48000, y); }
+        const double cRuido = 20.0 * std::log10 (pico (y));
+        std::printf ("CLP  drive 18 forma 0 con ruido: pico %.2f dBFS\n", cRuido);
+        if (cRuido > -0.29) falla ("CLP: con ruido el pico pasa el techo (%.2f dBFS)", cRuido);
 
         //  VIN: el desgaste a tope se come 12 kHz; el wow a tope ensancha la raya de 1 kHz.
         const double s12k = seco (12000.0, 0.25f);
@@ -1331,6 +1351,11 @@ int main (int argc, char** argv)
         const double oBaja = db (banda (y, 1000.0), sFuerte);
         std::printf ("OTT  cantidad 1: -40 dBFS %+.1f dB, -6 dBFS %+.1f dB\n", oSube, oBaja);
         if (oSube < 4.0 || oBaja > -4.0) falla ("OTT: no sube lo flojo (%+.1f) o no baja lo fuerte (%+.1f)", oSube, oBaja);
+        //  Tras un segundo a -60 dBFS entra un golpe a -6: no puede salir mas fuerte que el golpe seco.
+        { auto e = monta (O, salto (1000.0, 0.001f, 0.5f), 1.0f); par (O, 0, 1.0f) (*e); e->postNoteOn (0, 1.0f); corre (*e, 96000, y); }
+        const double oGolpe = 20.0 * std::log10 (pico (y) / 0.5);
+        std::printf ("OTT  golpe tras silencio: pico %+.1f dB sobre el golpe seco\n", oGolpe);
+        if (oGolpe > 1.0) falla ("OTT: el primer golpe tras el silencio sale %+.1f dB por encima", oGolpe);
 
         //  STP: libre a 1 Hz con freno 0.5, en cada vuelta hay un tramo callado y el resto suena; a freno 0 es el seco.
         auto ventanas = [&] (double& bajoFrac, double& minDb)

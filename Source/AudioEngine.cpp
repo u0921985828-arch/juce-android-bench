@@ -334,7 +334,7 @@ void AudioEngine::prepareToPlay (double sampleRate, int maxBlockSize, int inputC
         I.fldLp[0] = I.fldLp[1] = 0.0f;
         I.fldOs[0].limpia(); I.fldOs[1].limpia();
         for (auto& c : I.repVent) c.assign ((size_t) (systemSampleRate * kRepMaxSeg) + 4, 0.0f);
-        I.stpFx.prepara (systemSampleRate);   // sampling#: la cinta del freno, 0.8 s en 16 bits
+        I.stpFx.prepara (systemSampleRate);   // sampling#: la cinta del freno, 0.5 s en 16 bits
         I.smpWasActive = I.clpWasActive = I.vinWasActive = I.gluWasActive = I.ottWasActive = I.stpWasActive = false;
         I.repLargo = (int) (systemSampleRate * 0.125);
         I.repEscritas = 0; I.repLee = 0.0f; I.repFaseAnt = 0.0f;

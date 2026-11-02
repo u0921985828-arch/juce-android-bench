@@ -139,7 +139,8 @@ namespace Sampling
                 for (int i = 0; i < n; ++i)
                 {
                     const float x = w[ch][i] * (g0 + dg * (float) i);
-                    w[ch][i] = kTecho * Sobre2x::paso (os[ch], x, [t] (float v) noexcept { return curva (v, t); });
+                    const float y = Sobre2x::paso (os[ch], x, [t] (float v) noexcept { return curva (v, t); });
+                    w[ch][i] = kTecho * juce::jlimit (-1.0f, 1.0f, y);   // sampling#: el filtro del 2x repica sobre el techo con ruido
                 }
         }
     };
@@ -374,8 +375,12 @@ namespace Sampling
                 for (int b = 0; b < 3; ++b)
                 {
                     const float obj = mueve (gAdB (pk[b]), cantidad);
+                    //  sampling#: lo subido se suelta en el acto al llegar un golpe; solo la bajada lleva ataque.
+                    const bool suelta = obj < grDb[b] && grDb[b] > 0.0f;
+                    if (suelta) grDb[b] = juce::jmax (obj, 0.0f);
                     grDb[b] += (obj < grDb[b] ? cA[b] : cC[b]) * (obj - grDb[b]);
                     g1[b] = dBaG (grDb[b]);
+                    if (suelta) gAntes[b] = juce::jmin (gAntes[b], g1[b]);
                     dg[b] = (g1[b] - gAntes[b]) / (float) m;
                 }
                 for (int ch = 0; ch < cs; ++ch)
@@ -461,7 +466,10 @@ namespace Sampling
                 a *= (float) juce::jmin (1.0, (tope - atras) / (double) nEntra);   // sampling#: al tope de la cinta, silencio y no velocidad 1
 
                 for (int ch = 0; ch < cs; ++ch)
-                    cinta[(size_t) ch][(size_t) escribe] = (int16_t) juce::jlimit (-32767.0f, 32767.0f, w[ch][i] * kEsc);
+                {
+                    const float x = std::isfinite (w[ch][i]) ? w[ch][i] * kEsc : 0.0f;   // sampling#: NaN a int16 es indefinido
+                    cinta[(size_t) ch][(size_t) escribe] = (int16_t) juce::jlimit (-32767.0f, 32767.0f, x);
+                }
                 for (int ch = 0; ch < cs; ++ch)
                     w[ch][i] = (atras > 0.0 ? lee (ch, (double) escribe - atras) : w[ch][i]) * a;
                 escribe = (escribe + 1) % largo;
