@@ -1064,7 +1064,9 @@ void MainComponent::maquetaMaquina (Cara& c)
                 const int x1 = (int) std::ceil  ((float) span.getCentreX() + tw * 0.5f) + Metrics::xs;
                 //  De alto, la costura entera y no un dedo: un dedo pisaba 15 px de REC y CICLO (expo.py, OVERLAP).
                 (void) cy;
-                const int y0 = ctrlSeamTop, h = juce::jmax (1, ctrlPlateArea.getY() - ctrlSeamTop);
+                //  Y desde donde acaba la CAJA del transporte, no su tapa: la caja baja 5 px mas (expo.py, OVERLAP 40x5).
+                const int y0 = juce::jmax (ctrlSeamTop, loadButton.getBounds().isEmpty() ? ctrlSeamTop : loadButton.getBottom());
+                const int h  = juce::jmax (1, ctrlPlateArea.getY() - y0);
                 platoAtras.setBounds    (x0 - Metrics::hit, y0, Metrics::hit, h);
                 platoAdelante.setBounds (x1,                y0, Metrics::hit, h);
                 for (auto* fl : { &platoAtras, &platoAdelante })
