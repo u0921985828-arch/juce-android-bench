@@ -7847,7 +7847,14 @@ void MainComponent::auditRanuras()
         //  Y las bandas de familia se cuentan cuando las hay, por lo mismo:
         //  el alto que publica esta linea tiene que ser el que la tarjeta
         //  pide de verdad.
-        const int bandas = (c == pedido && f == kFxCategorias) ? f : 0;
+        const int cats = (n + kFxPorTipo - 1) / kFxPorTipo;
+        const int bandas = (c == pedido && f == cats) ? f : 0;
+        //  analogico#: si las familias no salen como filas, el menu va en dos columnas (familias | efectos):
+        //  pide tantas filas de un dedo como familias haya, y la celda es media tarjeta.
+        if (pedido > 0 && bandas == 0)
+            return juce::String (2) + "x" + juce::String (juce::jmax (cats, kFxPorTipo)) + ":"
+                     + juce::String (menuRanuraPide (juce::jmax (cats, kFxPorTipo), true, Metrics::hit, 0)) + ":"
+                     + juce::String (anchoR / 2);
         return juce::String (c) + "x" + juce::String (f) + ":"
                  + juce::String (menuRanuraPide (f, true, Metrics::btn, bandas)) + ":"
                  + juce::String (anchoR / c);
@@ -7936,7 +7943,7 @@ void MainComponent::auditRanuras()
               //  Con un tipo mas las familias dejan de salir de cinco -31 no
               //  es multiplo de 5-, asi que esa pregunta se hace SIN pedido:
               //  es la rejilla que quedaria, no la de familias.
-              << ",\"formaMas\":\""       << forma (kNumFx + 1, 0) << "\""
+              << ",\"formaMas\":\""       << forma (kNumFx + 1, kFxPorTipo) << "\""
               << ",\"tope_tarjeta\":"    << topeR
               << ",\"defectos_cruzados\":" << defectosQueNoCuadran
               << ",\"canales\":"           << kNumCanales

@@ -265,10 +265,10 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
 
     //  analogico#: GEQ  salida -12..+12 dB, ancho 0.5..2. Sus siete faders van aparte, en `kBandasGeq`.
     { { "SONRISA",     -1.00f, 1.00f, 1.00f, 0.0f },
-      { "VOZ",          0.00f, 1.00f, 1.00f, 0.0f },
-      { "BOMBO",       -1.00f, 1.00f, 1.00f, 0.0f },
-      { "GUITARRA",     0.00f, 1.00f, 1.00f, 0.0f },
-      { "TELEFONO",     2.00f, 1.00f, 1.00f, 0.0f } },
+      { "VOZ",          0.00f, 0.80f, 1.00f, 0.0f },
+      { "BOMBO",       -2.00f, 1.20f, 1.00f, 0.0f },
+      { "GUITARRA",     0.50f, 0.90f, 1.00f, 0.0f },
+      { "TELEFONO",     2.00f, 1.50f, 1.00f, 0.0f } },
 
     //  PRE  drive 0..1, calor 0..1
     { { "LIMPIO",       0.15f, 0.30f, 1.00f, 0.0f },

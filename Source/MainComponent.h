@@ -4394,6 +4394,11 @@ private:
     Sheet ranuraSheet;
     Boton ranuraCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     juce::OwnedArray<Boton> ranuraBtns;     // un tipo por celda
+    //  analogico#: cuando las familias no caben como filas (280 px), el menu pasa a dos columnas: las familias a la
+    //  izquierda y los efectos de la elegida a la derecha.
+    juce::OwnedArray<Boton> ranuraFamBtns;
+    int  ranuraFamilia = 0;
+    bool ranuraNavegador = false;
     Boton ranuraVaciarBtn { "VACIAR" };
     int  ranuraEditada = -1;               // que ranura se esta eligiendo, o -1
     void abreMenuRanura (int ranura);      // -1 lo cierra

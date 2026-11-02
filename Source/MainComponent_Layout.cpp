@@ -1727,8 +1727,12 @@ void MainComponent::maquetaRanura()
         //  familia deja de ser una fila. Un rotulo encima de una fila que no
         //  es su familia miente, asi que ahi no se pinta ninguno.
         const bool conFamilias = (cols == kFxPorTipo) && (filas == kFxCategorias);
-        const int quiere = menuRanuraPide (filas, conVaciar, Metrics::btn,
-                                           conFamilias ? filas : 0);
+        //  analogico#: si las familias no caben como filas, dos columnas -familias y efectos de la elegida- y no
+        //  una rejilla de treinta y tres sin rotulos que ademas se sale de la tarjeta (280x653 pedia 648 de 541).
+        ranuraNavegador = ! conFamilias;
+        const int quiere = ranuraNavegador ? menuRanuraPide (kFxCategorias, conVaciar, Metrics::hit, 0)
+                                           : menuRanuraPide (filas, conVaciar, Metrics::btn,
+                                                             conFamilias ? filas : 0);
         auto inner = sheetFromBottom (ranuraSheet, quiere);
 
         auto titleRow = inner.removeFromTop (Metrics::hit);
@@ -1802,7 +1806,37 @@ void MainComponent::maquetaRanura()
         //  que es el mismo fallo que ya costo el titulo de la ficha del
         //  instrumento.
         for (auto& rr : ranuraCatArea) rr = {};
-        for (int r = 0; r < filas; ++r)
+        for (int i = 0; i < ranuraFamBtns.size(); ++i)
+            if (auto* b = ranuraFamBtns[i]) { b->setVisible (ranuraNavegador); if (! ranuraNavegador) b->setBounds ({}); }
+        for (auto* b : ranuraBtns) if (b != nullptr) b->setVisible (true);
+        if (ranuraNavegador)
+        {
+            const auto fF = ZatiLookAndFeel::letraDeTapa (ZatiLookAndFeel::capaDe (juce::Rectangle<float> (
+                                0.0f, 0.0f, (float) Metrics::hit, (float) Metrics::hit)).getHeight());
+            int anchoFam = Metrics::hit;
+            for (auto* b : ranuraFamBtns)
+                anchoFam = juce::jmax (anchoFam, (int) std::ceil (juce::GlyphArrangement::getStringWidth (fF, b->getButtonText()))
+                                                   + 2 * Metrics::margenTapa);
+            anchoFam = juce::jmin (anchoFam, inner.getWidth() / 2);
+            auto colF = inner.removeFromLeft (anchoFam);
+            inner.removeFromLeft (Metrics::sm);
+            for (auto* b : ranuraFamBtns)
+            {
+                b->setBounds (colF.removeFromTop (Metrics::hit));
+                colF.removeFromTop (Metrics::xs);
+            }
+            const int desde = ranuraFamilia * kFxPorTipo;
+            for (int i = 0; i < ranuraBtns.size(); ++i)
+            {
+                auto* b = ranuraBtns[i];
+                if (b == nullptr) continue;
+                const bool suya = i >= desde && i < desde + kFxPorTipo;
+                b->setVisible (suya);
+                b->setBounds (suya ? inner.removeFromTop (Metrics::hit) : juce::Rectangle<int>());
+                if (suya) inner.removeFromTop (Metrics::xs);
+            }
+        }
+        for (int r = 0; r < (ranuraNavegador ? 0 : filas); ++r)
         {
             if (conFamilias && r < (int) ranuraCatArea.size())
             {

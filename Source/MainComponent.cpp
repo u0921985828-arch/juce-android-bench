@@ -975,6 +975,16 @@ void MainComponent::cableaRanura()
             ranuraSheet.addAndMakeVisible (b);
             ranuraBtns.add (b);
         }
+        //  analogico#: las familias como tapas, para el menu en dos columnas.
+        for (int cat = 0; cat < kFxCategorias; ++cat)
+        {
+            auto* b = new Boton (T (categoriasFx()[cat]));
+            styleButton (*b, kStepOff);
+            litAccent (*b);
+            b->onClick = [this, cat] { ranuraFamilia = cat; refrescaMenuRanura(); resized(); ranuraSheet.repintaTarjeta(); };
+            ranuraSheet.addChildComponent (b);
+            ranuraFamBtns.add (b);
+        }
 
         //  VACIAR solo aparece con la ranura LLENA, que es la unica vez que
         //  significa algo. Desde la cara este menu se abre sobre un «+», o sea
@@ -7838,6 +7848,10 @@ void MainComponent::abreMenuRanura (int ranura)
         //  Ya abierto ya esta delante: `toFront` sobre una ficha que no es la
         //  ultima hija la reordena, y reordenar repinta la ventana entera.
         if (! yaAbierto) ranuraSheet.toFront (false);
+        //  analogico#: el menu en dos columnas abre en la familia de lo que la ranura lleva.
+        if (! yaAbierto)
+            if (const int p = enRanura (ranura); juce::isPositiveAndBelow (p, kNumFx))
+                ranuraFamilia = celdaDeFx (p) / kFxPorTipo;
         refrescaMenuRanura();
     }
     else
@@ -7845,6 +7859,7 @@ void MainComponent::abreMenuRanura (int ranura)
         //  APAGAR *Y* VACIAR LOS LIMITES, las dos cosas, que es lo que costo
         //  SEGUIR y lo que la septima regla del banco existe para cazar.
         for (auto* b : ranuraBtns) if (b != nullptr) b->setBounds ({});
+        for (auto* b : ranuraFamBtns) if (b != nullptr) { b->setVisible (false); b->setBounds ({}); }
         ranuraCloseBtn.setBounds ({});
         ranuraVaciarBtn.setBounds ({});
         ranuraSheet.sheetBounds = {};
@@ -7873,6 +7888,8 @@ void MainComponent::refrescaMenuRanura()
     //  familias. Recorrer con el indice de la tabla dejaba a cada tapa
     //  contestando por el efecto de otra: la marcada no era la puesta y las
     //  apagadas no eran las ocupadas.
+    for (int cat = 0; cat < ranuraFamBtns.size(); ++cat)
+        if (auto* b = ranuraFamBtns[cat]) b->setToggleState (cat == ranuraFamilia, juce::dontSendNotification);
     for (int i = 0; i < ranuraBtns.size() && i < kNumFx; ++i)
         if (auto* b = ranuraBtns[i])
         {

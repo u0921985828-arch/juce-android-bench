@@ -413,7 +413,7 @@ def main():
     #  que lo que se mide es que cada banda quede por encima de la primera tapa
     #  de SU fila. Los seis nombres van literales: una prueba que lee la tabla
     #  que juzga cambia de opinion a la vez que el fallo.
-    ESPERADAS = ["FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO"]
+    ESPERADAS = ["FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO", "ANALOGICO"]   # analogico#
     fam = [t.split (":") for t in r.get ("familias", "").split (",") if ":" in t]
     nombres = [t[0] for t in fam]
     sobre = r.get ("bandas_sobre", 0)
