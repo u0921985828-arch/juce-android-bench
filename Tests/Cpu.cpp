@@ -76,6 +76,15 @@ struct Medida { double medianaMs = 0, p95Ms = 0, peorMs = 0; double pico = 0;
 static Medida corre (AudioEngine& e, juce::AudioBuffer<float>& buf, int nBlocks,
                      const std::function<void (int)>& antes = {})
 {
+    //  cpu#perfil: ZATI_BLOQUES divide las rafagas de TODAS las filas. Para
+    //  correr el banco bajo callgrind, que va cincuenta veces mas despacio: los
+    //  tiempos dejan de valer -y por eso no se usa para medir- pero el reparto
+    //  de instrucciones es el mismo.
+    {
+        const char* div = std::getenv ("ZATI_BLOQUES");
+        const int d = div != nullptr ? juce::jmax (1, juce::String (div).getIntValue()) : 1;
+        nBlocks = juce::jmax (8, nBlocks / d);
+    }
     std::vector<double> t;
     t.reserve ((size_t) nBlocks);
     Medida m;
