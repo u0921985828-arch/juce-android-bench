@@ -1044,13 +1044,21 @@ void MainComponent::maquetaMaquina (Cara& c)
                 const float tw = juce::GlyphArrangement::getStringWidth (ZatiColours::labelFont (Metrics::fMeta, 0.30f),
                                                                          textoCosturaControl());
                 const int cy = (ctrlSeamTop + ctrlPlateArea.getY()) / 2;
+                //  La banda de las mayusculas del titulo, con la cuenta de `engraveIn`: caja de 11 px centrada en la mitad de la
+                //  costura, la linea centrada en la caja por ascendente + descendente, y la «E» de alto desde la linea base.
+                float capArribaAbs = 0.0f, capAbajoAbs = 0.0f;
                 {
+                    const auto fT = ZatiColours::labelFont (Metrics::fMeta, 0.30f);
                     juce::GlyphArrangement ga;
-                    ga.addLineOfText (ZatiColours::labelFont (Metrics::fMeta, 0.30f), "E", 0.0f, 0.0f);
+                    ga.addLineOfText (fT, "E", 0.0f, 0.0f);
                     juce::Path trazo;
                     ga.createPath (trazo);
-                    const float cap = trazo.getBounds().getHeight();   // la tinta de la «E», no su caja de linea
-                    platoAtras.altoLetra = platoAdelante.altoLetra = cap;
+                    const float cap = -trazo.getBounds().getY();          // de la linea base a lo alto de la E
+                    const float yMedio = (float) (ctrlSeamTop + ctrlPlateArea.getY()) * 0.5f;
+                    const float cajaY = (float) (int) (yMedio - 5.0f);
+                    const float base = cajaY + (11.0f - (fT.getAscent() + fT.getDescent())) * 0.5f + fT.getAscent();
+                    capArribaAbs = base - cap;
+                    capAbajoAbs  = base;
                 }
                 const int x0 = (int) std::floor ((float) span.getCentreX() - tw * 0.5f) - Metrics::xs;
                 const int x1 = (int) std::ceil  ((float) span.getCentreX() + tw * 0.5f) + Metrics::xs;
@@ -1059,6 +1067,12 @@ void MainComponent::maquetaMaquina (Cara& c)
                 const int y0 = ctrlSeamTop, h = juce::jmax (1, ctrlPlateArea.getY() - ctrlSeamTop);
                 platoAtras.setBounds    (x0 - Metrics::hit, y0, Metrics::hit, h);
                 platoAdelante.setBounds (x1,                y0, Metrics::hit, h);
+                for (auto* fl : { &platoAtras, &platoAdelante })
+                {
+                    fl->capArriba = capArribaAbs - (float) y0;
+                    fl->capAbajo  = capAbajoAbs  - (float) y0;
+                    fl->repaint();
+                }
             }
             else
             {
