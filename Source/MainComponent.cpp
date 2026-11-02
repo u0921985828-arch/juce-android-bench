@@ -10545,6 +10545,7 @@ void MainComponent::refreshStepGrid()
                             ? ((float) (ps % ppc) + engine.getStepPhase()) / (float) ppc
                             : 0.0f;
 
+    stepGrid.ponPulso (engine.pasosPorCompas() / juce::jmax (1, ppc) / 4);   // rejilla#pulso
     stepGrid.setSource (gridCells, gridZati, gridLoaded, gridNotes,
                         celdas,
                         seqPrimerCelda, psCelda, selectedPad - base,
@@ -14934,7 +14935,7 @@ void MainComponent::applyState (const juce::ValueTree& s)
             const int b = (int) bk.getProperty ("i", -1);
             if (! juce::isPositiveAndBelow (b, kNumPatterns)) continue;
 
-            engine.setPatternLength (b, (int) bk.getProperty ("len", kMinPatLen));
+            engine.setPatternLength (b, (int) bk.getProperty ("len", engine.pasosPorCompas()));   // rejilla#nuevo: un compas del paso guardado
             patternActiveUI[(size_t) b] = (bool) bk.getProperty ("inChain", false);
             if (auto* btn = patternButtons[b])
                 btn->setToggleState (patternActiveUI[(size_t) b], juce::dontSendNotification);
@@ -15866,10 +15867,10 @@ void MainComponent::patronDemo()
         { 48, 0, 0, 0, 6 }, { 48, 3, 0, 0, 6 }, { 48, 6, 3, 0, 6 },
         { 48, 8, 0, 0, 6 }, { 48, 11, 7, 0, 6 }, { 48, 14, 5, 0, 6 },
     };
-    if (engine.getPatternLength (0) < 16)   // producto#1: tras NUEVO el patron mide uno
+    if (engine.getPatternLength (0) < engine.pasosPorCompas())   // producto#1: tras NUEVO el patron mide uno
     {
-        engine.setPatternLength (0, 16);
-        if (selectedPattern == 0) lengthSlider.setValue (16, juce::dontSendNotification);
+        engine.setPatternLength (0, engine.pasosPorCompas());
+        if (selectedPattern == 0) lengthSlider.setValue (engine.pasosPorCompas(), juce::dontSendNotification);
     }
     for (const auto& g : golpes)
     {
@@ -15992,10 +15993,16 @@ void MainComponent::newProject()
         padPorDefecto (i);
         if (auto* p = pads[i]) p->setSampleInfo (nullptr, {});
     }
+    //  rejilla#nuevo: NUEVO vuelve a 1/16 guardado y mirado; con el paso de ayer en 1/32 los 16 pasos eran medio compas que decia «1 bar».
+    {
+        const juce::ScopedValueSetter<bool> sinFoto (aplicandoEstado, true);   // NUEVO ya apilo su foto
+        engine.setPasoUnidades (rejillaU (kRejillaDefecto));
+        gridSlider.setValue ((double) kRejillaDefecto, juce::sendNotificationSync);
+    }
     for (int b = 0; b < kNumPatterns; ++b)
     {
         engine.clearPattern (b);
-        engine.setPatternLength (b, kMinPatLen);
+        engine.setPatternLength (b, engine.pasosPorCompas());
         for (auto& row : pattern[(size_t) b]) row.fill (false);
         patternActiveUI[(size_t) b] = false;
         if (auto* btn = patternButtons[b]) btn->setToggleState (false, juce::dontSendNotification);

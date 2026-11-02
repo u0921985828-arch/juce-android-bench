@@ -3273,6 +3273,8 @@ void MainComponent::auditNuevo()
                   << ",\"sincanal\":" << sinCanalN
                   << ",\"mixguardados\":" << mixGuardados
                   << ",\"ranuras\":[" << ranuras << "]"
+                  << ",\"patron\":[" << engine.getPatternLength (0) << "," << engine.pasosPorCompas() << "," << engine.pasoUnidades()
+                  << "," << celdasDePatron (0) << "," << (int) gridSlider.getValue() << "]"   // rejilla#nuevo
                   << ",\"largo\":" << engine.getSongLength() << ",\"carriles\":[";
         for (int ln = 0; ln < AudioEngine::kSongLanes; ++ln)
         {
@@ -3300,6 +3302,9 @@ void MainComponent::auditNuevo()
     engine.setCanalMute (2, true);
     slotFx[7][0] = AudioEngine::kFxDly;
     fxMixGuardado[7][(size_t) AudioEngine::kFxDly] = 0.6f;
+    //  rejilla#nuevo: y el proyecto de ayer guardaba en 1/32 y se miraba en 1/32.
+    for (int g = 0; g < kNumGrids; ++g) if (rejillaU (g) == 6) gridSlider.setValue ((double) g, juce::sendNotificationSync);
+    engine.setPasoUnidades (6);
 
     newProject();
     fila ("nuevo");
@@ -3412,6 +3417,11 @@ void MainComponent::auditOpen (const juce::String& pedido)
     else if (which == "pad2") { showPadPage (padPageTrim);  openSheet (padSheet, padsButton); }
     else if (which == "pad3") { showPadPage (padPageRig);   openSheet (padSheet, padsButton); }
     else if (which == "sec")  { showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); }
+    else if (which == "sec8")   // rejilla#celdas: la vista en 1/8 sobre pasos de 1/16
+    {
+        for (int g = 0; g < kNumGrids; ++g) if (rejillaU (g) == 24) gridSlider.setValue ((double) g, juce::sendNotificationSync);
+        showSeqPage (seqPageGrid); openSheet (seqSheet, secButton);
+    }
     else if (which == "xy")   { closeAllSheets(); toggleXyPanel(); }
     else if (which == "paso") { showSeqPage (seqPageStep); openSheet (seqSheet, secButton); }
     //  PASOS CON UN PASO TOCADO, que es otro estado y no el mismo: la tira de
@@ -13859,6 +13869,23 @@ void MainComponent::auditFeria()
         closeAllSheets(); resized();
     }
 
+    //  rejilla#celdas: con la vista en 1/8 sobre pasos de 1/16 el compas son 8 casillas, el pulso cae cada 2,
+    //  lo de fuera del patron no parece una casilla mas y una barra solo sale si hay algo que desplazar.
+    int r8Celdas = 0, r8Cols = 0, r8Barra = 0, r8Pulso = 0, r8Contra = 0, r8Fuera = 0;
+    {
+        const double guardaG = gridSlider.getValue();
+        for (int g = 0; g < kNumGrids; ++g) if (rejillaU (g) == 24) gridSlider.setValue ((double) g, juce::sendNotificationSync);
+        showSeqPage (seqPageGrid); openSheet (seqSheet, secButton); resized(); refreshStepGrid();
+        r8Celdas = celdasDePatron (selectedPattern); r8Cols = stepGrid.numCols(); r8Barra = seqHayBarra ? 1 : 0;
+        const auto img = stepGrid.createComponentSnapshot (stepGrid.getLocalBounds(), true, 1.0f);
+        const float cw = stepGrid.anchoCelda(), lh = stepGrid.altoCelda();
+        auto luz = [&] (int c) {   // lo oscura que es la casilla c del carril 4 (sin golpes): el hueco es negro con alfa
+            return (int) img.getPixelAt ((int) ((float) StepGrid::kGutter + cw * ((float) c + 0.5f)), (int) (lh * 4.5f)).getAlpha(); };
+        r8Pulso = luz (2); r8Contra = luz (1); r8Fuera = (r8Celdas < r8Cols) ? luz (r8Celdas) : -1;
+        closeAllSheets();
+        gridSlider.setValue (guardaG, juce::sendNotificationSync); resized();
+    }
+
     //  ab5. El parte de la vez anterior, en ingles, sin jerga (textos#2).
     juce::String parteEn;
     {
@@ -14066,7 +14093,7 @@ void MainComponent::auditFeria()
               << ",\"manten_dispara\":" << mantenDispara
               << ",\"cara_tapada\":" << caraTapada << ",\"cara_vuelve\":" << caraVuelve
               << ",\"paso_marca\":" << pasoMarca
-              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"x_tapada\":" << xTapada << ",\"deslizadores\":" << deslizadores << ",\"pasos_finos\":" << pasosFinos << ",\"cifra_cruda\":" << cifraCruda << ",\"foco_boton\":" << focoBoton << ",\"foco_mando\":" << focoMando << ",\"negra_min\":" << negraMin << ",\"bitacora_abre\":\"" << bitacoraAbre << "\"" << ",\"toque_sube\":" << toqueSube << ",\"toque_baja\":" << toqueBaja << ",\"crudos\":\"" << crudos.trim() << "\"" << ",\"piel_cajas\":\"" << pielCajas << "\",\"nombre_fuente\":" << nombreFuente << ",\"parte_en\":\"" << parteEn.replace ("\"", "'").replace ("\u2066", "").replace ("\u2069", "") << "\"" << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"sin_letra\":" << sinLetra << ",\"en_ingles\":" << enIngles << ",\"cruces\":" << cruces
+              << ",\"sin_nombre\":" << sinNombre << ",\"pista_slider\":" << pistaSlider << ",\"x_tapada\":" << xTapada << ",\"deslizadores\":" << deslizadores << ",\"pasos_finos\":" << pasosFinos << ",\"cifra_cruda\":" << cifraCruda << ",\"foco_boton\":" << focoBoton << ",\"foco_mando\":" << focoMando << ",\"negra_min\":" << negraMin << ",\"bitacora_abre\":\"" << bitacoraAbre << "\"" << ",\"toque_sube\":" << toqueSube << ",\"toque_baja\":" << toqueBaja << ",\"crudos\":\"" << crudos.trim() << "\"" << ",\"piel_cajas\":\"" << pielCajas << "\",\"nombre_fuente\":" << nombreFuente << ",\"parte_en\":\"" << parteEn.replace ("\"", "'").replace ("\u2066", "").replace ("\u2069", "") << "\"" << ",\"sec_cols\":" << secCols << ",\"sec_largo\":" << secLargo << ",\"sec_barra\":" << secBarra << ",\"r8\":[" << r8Celdas << "," << r8Cols << "," << r8Barra << "," << r8Pulso << "," << r8Contra << "," << r8Fuera << "]" << ",\"bloque_antes\":" << bloqueAntes << ",\"bloque_despues\":" << bloqueDespues << ",\"compas_despues\":" << compasDespues << ",\"simbolos\":" << simbolos << ",\"sin_letra\":" << sinLetra << ",\"en_ingles\":" << enIngles << ",\"cruces\":" << cruces
               << ",\"pads_marcables\":" << padsMarcables << ",\"pad_elegido\":" << padElegido
               << ",\"midi_ajeno\":" << midiAjeno << ",\"midi_gordo\":" << midiGordo
               << ",\"estado_anuncia\":" << estadoAnuncia

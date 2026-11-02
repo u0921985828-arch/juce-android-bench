@@ -6227,7 +6227,9 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
         const bool onPiano = (seqPage == seqPagePiano);
         pianoGrupos.clear();
 
-        const int patLen   = engine.getPatternLength (selectedPattern);
+        //  rejilla#celdas: en CASILLAS de la vista y no en pasos guardados; con la vista en 1/8 sobre pasos de 1/16 un compas son 8 y no 16.
+        const int patLen   = celdasDePatron (selectedPattern);
+        const int celdasCompas = juce::jlimit (1, StepGrid::kBarSteps, engine.pasosPorCompas() / juce::jmax (1, pasosPorCelda()));
 
         //  ASK FOR WHAT YOU WILL ACTUALLY GET. sheetFromBottom clamps the card
         //  at 78% of the window and says nothing; whatever the layout asked
@@ -6414,8 +6416,13 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             const int sinBarra = juce::jmin (Metrics::hit,
                                              juce::jmin ((capH - chrome - stacked) / lanes,
                                                          (anchoRejilla - StepGrid::kGutter)
-                                                           / juce::jmax (1, StepGrid::kBarSteps)));
-            seqHayBarra = colsCon (juce::jmax (1, sinBarra)) < patLen;
+                                                           / celdasCompas));
+            //  rejilla#barra: sin barra la rejilla estrecha la casilla hasta un 25 % (StepGrid::anchoCelda); si asi entra, una barra con el pulgar lleno no desplaza nada.
+            {
+                const float nominal = juce::jmax (1.0f, (float) juce::jmax (1, sinBarra) * seqZoomW);
+                const float cabe    = (float) (anchoRejilla - StepGrid::kGutter) / (float) juce::jmax (1, patLen);
+                seqHayBarra = cabe < nominal && cabe < juce::jmax (nominal * 0.75f, StepGrid::kSuelo);
+            }
             if (seqHayBarra) stacked += costeBarra;
 
             //  Y EL TOPE SUBE DE 26 A UN DEDO. Veintiseis era el alto de un
@@ -6440,7 +6447,7 @@ void MainComponent::maquetaSeq (juce::Rectangle<int> full)
             //  compas entra entero y lo que sobra de alto se lo queda la
             //  maquina, que se sigue viendo detras de la tarjeta.
             const int ladoPorAncho = (anchoRejilla - StepGrid::kGutter)
-                                       / juce::jmax (1, StepGrid::kBarSteps);
+                                       / celdasCompas;
             laneH  = juce::jmin (Metrics::hit,
                                  juce::jmin ((capH - chrome - stacked) / lanes,
                                              ladoPorAncho));

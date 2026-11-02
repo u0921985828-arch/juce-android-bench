@@ -4908,6 +4908,7 @@ private:
     //  cuentas del remapeo salen sin epsilon. Escribir los siete numeros a
     //  mano seria una segunda tabla que dice lo mismo, y la que se quedara
     //  vieja pondria un golpe en el pulso equivocado sin que nada fallara.
+    static constexpr int kRejillaDefecto = 2;   // rejilla#nuevo: 1/16
     static constexpr int rejillaU (int i)
     {
         return (int) (kGridBeats[i < 0 ? 0 : (i >= kNumGrids ? kNumGrids - 1 : i)]

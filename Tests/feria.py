@@ -173,6 +173,15 @@ def main():
     regla ("paso16", r.get ("sec_barra", 0) == 1 or r.get ("sec_cols", 0) >= r.get ("sec_largo", 99),
            "sin barra la rejilla ensena %d columnas enteras de un patron de %d (secuenciador#16)"
            % (r.get ("sec_cols", 0), r.get ("sec_largo", 0)))
+    #  rejilla#celdas: del telefono, la rejilla en 1/8 pintaba el pulso cada 4 casillas y lo de fuera del patron igual que una casilla.
+    r8 = r.get ("r8", [0, 0, 0, 0, 0, 0])
+    print ("r8       vista 1/8: %d casillas, %d columnas, barra %d; oscuro pulso %d contratiempo %d fuera %d" % tuple (r8))
+    regla ("r8pulso", r8[0] == 8 and r8[3] > r8[4] + 20,
+           "en 1/8 la casilla 3 (un tiempo) no es mas oscura que la 2: %s" % r8)
+    regla ("r8fuera", r8[5] < 0 or abs (r8[5] - r8[4]) > 25,
+           "en 1/8 lo de fuera del patron se pinta casi como una casilla: %s" % r8)
+    regla ("r8barra", r8[2] == 0 or r8[1] < r8[0],
+           "en 1/8 sale una barra sin nada que desplazar: %s" % r8)
     parte = r.get ("parte_en", "")
     jerga = [w for w in ("ATASCO", "CAIDA", "senal", " en ", "/", "se paro", "ficha") if w in parte]
     regla ("parte", parte != "" and not jerga,

@@ -88,6 +88,13 @@ def main():
             fallos.append ("%s: envios max %.3f suma %.3f, esperado 0"
                            % (que, d["envmax"], d["envsuma"]))
 
+        #  rejilla#nuevo: del telefono, «el 1 bar que marca no es real»: tras un proyecto en 1/32, NUEVO dejaba
+        #  el paso en 1/32 y el patron en 16 pasos, medio compas que la tapa redondeaba a «1 bar».
+        pt = d.get ("patron", [0, 0, 0, 0, -1])
+        print ("%-9s patron %d pasos, compas %d, paso %d/48, %d casillas, vista %d" % (que, pt[0], pt[1], pt[2], pt[3], pt[4]))
+        if pt[0] != pt[1] or pt[2] != 12 or pt[3] != 16 or pt[4] != 2:
+            fallos.append ("%s: el patron 1 no nace de un compas en 1/16: %s (pasos, compas, paso, casillas, vista)" % (que, pt))
+
         carriles = d["carriles"]
         esperado = [[0] * d["largo"] for _ in carriles]
         esperado[0][0] = 1

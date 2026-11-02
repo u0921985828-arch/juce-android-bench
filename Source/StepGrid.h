@@ -63,6 +63,7 @@ public:
     //  pero sigue siendo la unidad en la que la vista salta y en la que el
     //  patron se mide.
     static constexpr int kBarSteps = 16;
+    static constexpr float kSuelo = 12.0f;   // la celda mas pequena que se pinta (expo.py MIN_CELL)
     //  Lo mas ancho que esta ventana puede llegar a ser, que es el patron
     //  entero: AudioEngine::kNumSteps. Escrito aqui para no arrastrar el motor
     //  a un componente que solo dibuja, y comprobado donde se llenan las
@@ -149,6 +150,8 @@ public:
         return nominal;
     }
     void encajaPasos (int n) noexcept { if (encaje != n) { encaje = n; visto = false; repaint(); } }
+    //  rejilla#pulso: cuantas casillas de la vista son un tiempo; en 1/8 son dos y no cuatro.
+    void ponPulso (int celdas) noexcept { celdas = juce::jmax (1, celdas); if (celdasTiempo != celdas) { celdasTiempo = celdas; visto = false; repaint(); } }
 
     //  CUANTAS COLUMNAS SE VEN ENTERAS. La que asoma por el filo derecho se
     //  dibuja igual -es lo que dice que hay mas- pero no cuenta: la ventana que
@@ -434,8 +437,8 @@ public:
 
                 if (step >= patLen)                       // past this pattern's length
                 {
-                    //  Fuera del patron: el hueco mas profundo de la rejilla.
-                    g.setColour (ZatiColours::groove (0.30f));
+                    //  rejilla#fuera: fuera del patron casi no se pinta; con 0.30 se leia como otra casilla sin pulso.
+                    g.setColour (ZatiColours::groove (0.10f));
                     g.fillRect (cell);
                     continue;
                 }
@@ -502,7 +505,7 @@ public:
                     //  claro que la tarjeta en las dos carcasas oscuras, o sea
                     //  del lado equivocado: la rejilla se leia como si todos los
                     //  pasos estuvieran puestos a medias.
-                    const bool beat = (step % 4) == 0;
+                    const bool beat = (step % celdasTiempo) == 0;   // rejilla#pulso
                     g.setColour (ZatiColours::groove (beat ? 0.48f : 0.28f));
                     g.fillRect (cell);
                 }
@@ -542,7 +545,7 @@ public:
         //  decir.
         g.setColour (ZatiColours::groove (0.28f));
         for (int c = 0; c < cols; ++c)
-            if (((base + c) % 4) == 0 && c > 0)
+            if (((base + c) % celdasTiempo) == 0 && c > 0)   // rejilla#pulso
                 g.fillRect ((float) r.getX() + gutter + cellW * (float) c - 0.5f,
                             (float) r.getY(), 1.0f, (float) r.getHeight());
 
@@ -645,7 +648,7 @@ private:
     int laneBase = 0;      // el pad del carril 0: 0, 16, 32 o 48. Ver setSource.
     int carriles = kLanes, medio = 0;   // la ventana de pistas. Ver setVentana.
     float zoomW = 1.0f;                 // el ancho de la celda contra su alto
-    static constexpr float kSuelo = 12.0f;   // la celda mas pequena que se pinta (expo.py MIN_CELL)
+    int   celdasTiempo = 4;             // rejilla#pulso
     int   encaje = 0;                   // pasos que tienen que entrar sin barra; 0 = los que quepan
     float phase = 0.0f;   // how far through the live step, 0..1
 
