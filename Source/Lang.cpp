@@ -2385,6 +2385,9 @@ namespace
         { "PREVIO VALVULA", "PREVIO VÁLVULA", "TUBE PREAMP", "电子管前级", "مضخم صمامي" },
         { "ANALOGICO", "ANALÓGICO", "ANALOG", "模拟", "تناظري" },
         { "CALOR", "", "WARMTH", "温暖", "دفء" },
+        { "CARACTER", "CARÁCTER", "CHARACTER", "特性", "طابع" },   // plato#paginas
+        { "Pagina anterior", "Página anterior", "Previous page", "上一页", "الصفحة السابقة" },
+        { "Pagina siguiente", "Página siguiente", "Next page", "下一页", "الصفحة التالية" },
         { "SATURA", "", "SATURATE", "饱和", "تشبيع" },
         { "VELOCIDAD", "", "SPEED", "速度", "سرعة" },
         { "GEQ - arrastra un fader", "", "GEQ - drag a fader", "GEQ - 拖动推子", "اسحب فيدر في GEQ" },

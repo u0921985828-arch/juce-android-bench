@@ -3521,18 +3521,15 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  LA FICHA DE MANDOS Y EL PLATO EN PAD, de la tanda 32. La ficha con el
     //  DLY, que es de los que tienen mas -siete, y su fila de SYNC-; el plato
     //  en PAD con un pad con muestra, que es cuando su tapa dice el numero.
-    //  plato#paginas: foto de la propuesta A, el plato del DLY con los mandos de cada pagina (MEZCLA fija a la derecha).
-    else if (which == "platop1" || which == "platop2" || which == "platop3")
+    //  plato#paginas: el plato del DLY (o del DRV con «drv») en la pagina 1, 2 o 3, pasada con su flecha.
+    else if (which.startsWith ("platop") || which.startsWith ("platodrv"))
     {
         closeAllSheets();
-        ponEnRanura (0, AudioEngine::kFxDly);
-        setFxEnabled (AudioEngine::kFxDly, true);
-        focusFx (AudioEngine::kFxDly);
-        const std::array<int, 3> pag = which == "platop1" ? std::array<int, 3> { 0, 1, 2 }
-                                     : which == "platop2" ? std::array<int, 3> { 5, 4, 2 }
-                                                          : std::array<int, 3> { 6, 7, 2 };
-        platoFx[(size_t) AudioEngine::kFxDly] = pag;
-        configuraPlato();
+        const int f = which.startsWith ("platodrv") ? AudioEngine::kFxDrv : AudioEngine::kFxDly;
+        ponEnRanura (0, f);
+        setFxEnabled (f, true);
+        focusFx (f);
+        for (int i = 1; i < which.getTrailingIntValue(); ++i) pulsaTapa (&platoAdelante);
     }
     else if (which == "mandos")
     {

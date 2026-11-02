@@ -34,6 +34,7 @@
 #include "XyPad.h"
 #include "EqCurve.h"
 #include "GeqFaders.h"
+#include "FlechaPlato.h"
 #include "FxMini.h"
 #include "MidiIo.h"
 #include "Instrumentos.h"
@@ -4629,6 +4630,14 @@ private:
     Boton mandosPresetsBtn { "PRESETS" };
     Boton mandosCloseBtn { juce::CharPointer_UTF8 (Metrics::cruz) };
     Boton platoPadBtn;                        // el visor en modo PAD
+    //  plato#paginas: SONIDO, CARACTER y SALIDA; los dos mandos de la izquierda cambian y MEZCLA queda a la derecha.
+    static constexpr int kPlatoVacio = -2;    // un hueco del plato: el mando no se pinta ni se toca
+    struct PaginaPlato { const char* nombre; int a, b; };
+    int  paginasPlato (int f, PaginaPlato out[3]) const;
+    int  paginaPlatoActual (int f) const;
+    void pasaPaginaPlato (int paso);
+    bool mandoVacio (int k) const;
+    FlechaPlato platoAtras { false }, platoAdelante { true };
     juce::Rectangle<int> mandosTituloBanda, mandosAyudaBanda;
     int mandosPara = 0;
     void abreFichaMandos (int mando);                    // -1 la cierra

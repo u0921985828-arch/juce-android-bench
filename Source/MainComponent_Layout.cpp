@@ -1030,6 +1030,37 @@ void MainComponent::maquetaMaquina (Cara& c)
     {
         auto mrow = area.removeFromTop (ZatiLookAndFeel::kCtrlPlate);
         ctrlPlateArea = mrow.expanded (Metrics::margenPlato, Metrics::aireTapa);   // the plate they sit on
+
+        //  plato#paginas: las flechas, una a cada lado del titulo de la costura y del alto de un dedo, centradas en ella.
+        {
+            PaginaPlato pg[3];
+            const bool conPaginas = platoModo == ModoPlato::fx && fxEstaPuesto (focusedFx) && ! fxTraeCara (focusedFx)
+                                    && paginasPlato (focusedFx, pg) > 1;
+            platoAtras.setVisible (conPaginas);
+            platoAdelante.setVisible (conPaginas);
+            if (conPaginas)
+            {
+                const auto span = faceColumn.isEmpty() ? getLocalBounds() : faceColumn;
+                const float tw = juce::GlyphArrangement::getStringWidth (ZatiColours::labelFont (Metrics::fMeta, 0.30f),
+                                                                         textoCosturaControl());
+                const int cy = (ctrlSeamTop + ctrlPlateArea.getY()) / 2;
+                {
+                    juce::GlyphArrangement ga;
+                    ga.addLineOfText (ZatiColours::labelFont (Metrics::fMeta, 0.30f), "E", 0.0f, 0.0f);
+                    const float cap = ga.getBoundingBox (0, 1, true).getHeight();
+                    platoAtras.altoLetra = platoAdelante.altoLetra = cap;
+                }
+                const int x0 = (int) std::floor ((float) span.getCentreX() - tw * 0.5f) - Metrics::xs;
+                const int x1 = (int) std::ceil  ((float) span.getCentreX() + tw * 0.5f) + Metrics::xs;
+                platoAtras.setBounds    (x0 - Metrics::hit, cy - Metrics::hit / 2, Metrics::hit, Metrics::hit);
+                platoAdelante.setBounds (x1,                cy - Metrics::hit / 2, Metrics::hit, Metrics::hit);
+            }
+            else
+            {
+                platoAtras.setBounds ({});
+                platoAdelante.setBounds ({});
+            }
+        }
         juce::Slider* mk[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
 
         //  EL PLATO ES DE QUIEN LO OCUPA. Con un efecto que trae su propia
@@ -1071,7 +1102,7 @@ void MainComponent::maquetaMaquina (Cara& c)
             eqCurva.setBounds ({});
             geqCara.setVisible (false);
             geqCara.setBounds ({});
-            for (auto* k : mk) k->setVisible (true);
+            for (int k = 0; k < 3; ++k) mk[k]->setVisible (! mandoVacio (k));   // plato#paginas: el hueco no se pinta
 
             //  Y LOS OTROS DIEZ ENSEÑAN LO QUE SON EN EL MISMO PLATO.
             //

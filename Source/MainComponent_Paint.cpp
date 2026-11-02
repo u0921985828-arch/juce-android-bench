@@ -96,18 +96,20 @@ void MainComponent::paint (juce::Graphics& g)
     //
     //  Con la banda devuelta las dos salen del MISMO numero, que es lo unico
     //  que impide que vuelvan a separarse.
-    auto engraveIn = [&g, &full, &rule] (const juce::String& text, int seamTop, int zoneTop,
+    float huecoFlechas = 0.0f;
+    auto engraveIn = [&g, &full, &rule, &huecoFlechas] (const juce::String& text, int seamTop, int zoneTop,
                                          juce::Rectangle<int> span = {}) -> juce::Range<float>
     {
         const auto s = span.isEmpty() ? full : span.toFloat();
 
-        auto engrave = [&g, &rule, &s] (const juce::String& t, float y) -> juce::Range<float>
+        auto engrave = [&g, &rule, &s, &huecoFlechas] (const juce::String& t, float y) -> juce::Range<float>
         {
         g.setFont (ZatiColours::labelFont (Metrics::fMeta, 0.30f));
         const float tw  = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), t);
         const float cx  = s.getCentreX();
         const float x0  = cx - tw * 0.5f;
-        const float gap = 9.0f;                       // air the rule leaves around the word
+        //  plato#paginas: con flechas, la raya se aparta tambien de ellas (no las cruza).
+        const float gap = 9.0f + huecoFlechas;        // air the rule leaves around the word
 
         const float rx0 = s.getX() + 10.0f, rx1 = x0 - gap;
         rule (rx0, rx1, y, 0.16f);
@@ -191,7 +193,9 @@ void MainComponent::paint (juce::Graphics& g)
     if (! ctrlPlateArea.isEmpty())
     {
         //  Y CON EL NOMBRE ENTERO DEL EFECTO que gobiernan: ver nombreLargoFx.
+        huecoFlechas = platoAtras.isVisible() ? (float) (Metrics::hit + Metrics::xs) : 0.0f;
         const auto b = engraveIn (textoCosturaControl(), ctrlSeamTop, ctrlPlateArea.getY(), faceColumn);
+        huecoFlechas = 0.0f;
         cajaCosturaCtrl = juce::Rectangle<int> (0, ctrlSeamTop, getWidth(), ctrlPlateArea.getY() - ctrlSeamTop)
                               .getUnion (juce::Rectangle<float> (0.0f, b.getStart(), (float) getWidth(), b.getLength())
                                              .expanded (0.0f, 2.0f).getSmallestIntegerContainer());
@@ -580,7 +584,7 @@ void MainComponent::paint (juce::Graphics& g)
             //  0,0 -encima de la cabecera- y la novena regla del banco los
             //  cazaria como rotulo tapado. Un rotulo no puede sobrevivir al
             //  control que nombra.
-            if (r.isEmpty()) continue;
+            if (r.isEmpty() || ! ks[i]->isVisible()) continue;   // plato#paginas: un hueco no lleva rotulo ni casilla
             const bool touched = macroTouched[(size_t) i];
 
             // Label names, readout measures — never the other way round.

@@ -3958,6 +3958,13 @@ void MainComponent::cableaMandos()
         else if (autoArmado) publicaAutomacion();
     };
     addChildComponent (geqCara);
+    //  plato#paginas: las dos flechas del titulo del plato.
+    platoAtras.setTitle (T ("Pagina anterior"));
+    platoAdelante.setTitle (T ("Pagina siguiente"));
+    platoAtras.onClick    = [this] { pasaPaginaPlato (-1); };
+    platoAdelante.onClick = [this] { pasaPaginaPlato (+1); };
+    addChildComponent (platoAtras);
+    addChildComponent (platoAdelante);
     //  Y la miniatura de los otros diez, en el mismo plato. Ver FxMini.h.
     addChildComponent (platoMini);
 
@@ -8404,6 +8411,7 @@ MainComponent::Destino MainComponent::destinoPlato (int k)
     {
         const int f = juce::jlimit (0, kNumFx - 1, focusedFx);
         int pi = platoFx[(size_t) f][(size_t) k];
+        if (pi == kPlatoVacio) return { -1, -1, nullptr };   // plato#paginas: un hueco no mueve nada
         if (! juce::isPositiveAndBelow (pi, kParamsPorFx) || pi == 3
             || ! AudioEngine::tieneMando (f, pi))
             pi = k;
@@ -8505,6 +8513,13 @@ void MainComponent::configuraPlato()
 
     juce::Slider* ks[3] = { &macroCtrl1, &macroCtrl2, &macroCtrl3 };
     for (int k = 0; k < 3; ++k) configuraMando (*ks[k], destinoPlato (k));
+    //  plato#paginas: un hueco se apaga; si cambia que mandos hay, se vuelve a maquetar (y las flechas con el titulo).
+    {
+        bool cambia = false;
+        for (int k = 0; k < 3; ++k)
+            if (! ks[k]->getBounds().isEmpty() && ks[k]->isVisible() == mandoVacio (k)) cambia = true;
+        if (cambia) resized();
+    }
 
     platoPadBtn.setButtonText (T ("PAD %1", Lang::ltr (juce::String (selectedPad + 1))));
     refrescaPlato();
@@ -8547,7 +8562,7 @@ void MainComponent::platoDeString (const juce::String& txt)
         const auto n = juce::StringArray::fromTokens (t, ".", "");
         if (n.size() != 3) return;
         for (int k = 0; k < 3; ++k)
-            if (const int v = n[k].getIntValue(); juce::isPositiveAndBelow (v, tope))
+            if (const int v = n[k].getIntValue(); juce::isPositiveAndBelow (v, tope) || (tope == kParamsPorFx && v == kPlatoVacio))
                 dst[(size_t) k] = v;
     };
     const auto fx = juce::StringArray::fromTokens (partes[1], ",", "");
@@ -15896,9 +15911,61 @@ void MainComponent::miraCuna()
 
 juce::String MainComponent::textoCosturaControl()
 {
+    //  plato#paginas: con paginas, el titulo dice el efecto y la pagina («RETARDO · SONIDO»).
+    if (platoModo == ModoPlato::fx && fxEstaPuesto (focusedFx) && ! fxTraeCara (focusedFx))
+    {
+        PaginaPlato pg[3];
+        const int n = paginasPlato (focusedFx, pg), cur = paginaPlatoActual (focusedFx);
+        if (n > 1 && cur >= 0)
+            return T (nombreLargoFx (focusedFx)) + " " + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " " + T (pg[cur].nombre);
+    }
     return platoModo == ModoPlato::fx && fxEstaPuesto (focusedFx)
                ? T ("CONTROL · %1", T (nombreLargoFx (focusedFx)))
                : T ("CONTROL");
+}
+
+//  plato#paginas: las paginas de un efecto. SONIDO son los dos primeros; CARACTER los propios del tipo (p4, p5) si los
+//  tiene; SALIDA los dos cortes. La tercera rueda es siempre MEZCLA.
+int MainComponent::paginasPlato (int f, PaginaPlato out[3]) const
+{
+    int n = 0;
+    out[n++] = { "SONIDO", 0, 1 };
+    int e[2], ne = 0;
+    for (int pi : { 4, 5 }) if (AudioEngine::tieneMando (f, pi)) e[ne++] = pi;
+    if (ne > 0) out[n++] = { "CARACTER", e[0], ne > 1 ? e[1] : kPlatoVacio };
+    if (AudioEngine::tieneMando (f, AudioEngine::kParGraves)) out[n++] = { "SALIDA", AudioEngine::kParGraves, AudioEngine::kParAgudos };
+    return n;
+}
+
+int MainComponent::paginaPlatoActual (int f) const
+{
+    if (! juce::isPositiveAndBelow (f, kNumFx)) return -1;
+    PaginaPlato pg[3];
+    const int n = paginasPlato (f, pg);
+    const auto& t = platoFx[(size_t) f];
+    for (int i = 0; i < n; ++i)
+        if (t[0] == pg[i].a && t[1] == pg[i].b && t[2] == 2) return i;
+    return -1;
+}
+
+void MainComponent::pasaPaginaPlato (int paso)
+{
+    if (platoModo != ModoPlato::fx || ! juce::isPositiveAndBelow (focusedFx, kNumFx)) return;
+    PaginaPlato pg[3];
+    const int n = paginasPlato (focusedFx, pg);
+    if (n < 2) return;
+    const int cur = paginaPlatoActual (focusedFx);
+    const int sig = cur < 0 ? 0 : (cur + paso + n) % n;
+    platoFx[(size_t) focusedFx] = { { pg[sig].a, pg[sig].b, 2 } };
+    configuraPlato();
+    resized();
+    repaint();
+}
+
+bool MainComponent::mandoVacio (int k) const
+{
+    return platoModo == ModoPlato::fx && juce::isPositiveAndBelow (focusedFx, kNumFx)
+        && juce::isPositiveAndBelow (k, 3) && platoFx[(size_t) focusedFx][(size_t) k] == kPlatoVacio;
 }
 
 //  Feria J1/J2/J5: el efecto suena en un CANAL y nada lo decia, y la reverb
