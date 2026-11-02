@@ -1047,13 +1047,18 @@ void MainComponent::maquetaMaquina (Cara& c)
                 {
                     juce::GlyphArrangement ga;
                     ga.addLineOfText (ZatiColours::labelFont (Metrics::fMeta, 0.30f), "E", 0.0f, 0.0f);
-                    const float cap = ga.getBoundingBox (0, 1, true).getHeight();
+                    juce::Path trazo;
+                    ga.createPath (trazo);
+                    const float cap = trazo.getBounds().getHeight();   // la tinta de la «E», no su caja de linea
                     platoAtras.altoLetra = platoAdelante.altoLetra = cap;
                 }
                 const int x0 = (int) std::floor ((float) span.getCentreX() - tw * 0.5f) - Metrics::xs;
                 const int x1 = (int) std::ceil  ((float) span.getCentreX() + tw * 0.5f) + Metrics::xs;
-                platoAtras.setBounds    (x0 - Metrics::hit, cy - Metrics::hit / 2, Metrics::hit, Metrics::hit);
-                platoAdelante.setBounds (x1,                cy - Metrics::hit / 2, Metrics::hit, Metrics::hit);
+                //  De alto, la costura entera y no un dedo: un dedo pisaba 15 px de REC y CICLO (expo.py, OVERLAP).
+                (void) cy;
+                const int y0 = ctrlSeamTop, h = juce::jmax (1, ctrlPlateArea.getY() - ctrlSeamTop);
+                platoAtras.setBounds    (x0 - Metrics::hit, y0, Metrics::hit, h);
+                platoAdelante.setBounds (x1,                y0, Metrics::hit, h);
             }
             else
             {
