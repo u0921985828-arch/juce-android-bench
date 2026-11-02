@@ -110,4 +110,12 @@ namespace FxPresets
         if (! juce::isPositiveAndBelow (k - 1, kEscritos)) return nullptr;
         return kBandasEq[k - 1];
     }
+
+    //  analogico#: los siete faders del grafico; `nullptr` en los demas y en DEFECTO (que los deja a cero).
+    inline const char* bandasGeq (int f, int k) noexcept
+    {
+        if (f != AudioEngine::kFxGeq || esDefecto (k)) return nullptr;
+        if (! juce::isPositiveAndBelow (k - 1, kEscritos)) return nullptr;
+        return kBandasGeq[k - 1];
+    }
 }

@@ -33,6 +33,7 @@
 #include "UiAudit.h"
 #include "XyPad.h"
 #include "EqCurve.h"
+#include "GeqFaders.h"
 #include "FxMini.h"
 #include "MidiIo.h"
 #include "Instrumentos.h"
@@ -4228,9 +4229,8 @@ private:
     //  `kNumFx` y `kFxPorTipo`, que es quien decide el reparto. Escribir el
     //  seis aqui serian dos topes, y el dia que entrara un efecto mas uno de
     //  los dos se quedaria viejo sin que nada fallara.
-    static constexpr int kFxCategorias = kNumFx / kFxPorTipo;
-    static_assert (kNumFx % kFxPorTipo == 0,
-                   "cada familia de efectos tiene que ser una fila entera del menu");
+    //  analogico#: la ultima familia puede ser una fila corta (ANALOGICO son tres).
+    static constexpr int kFxCategorias = (kNumFx + kFxPorTipo - 1) / kFxPorTipo;
     static const char* const* categoriasFx();   // kFxCategorias nombres, para T()
     //  Y LA VUELTA: en que celda del menu esta un tipo. La usa el banco, que
     //  pulsa tapas de verdad y tiene el indice del tipo, no el de la celda.
@@ -4240,7 +4240,7 @@ private:
     //  dia que sean cuatro esto es una tabla y no cuatro `if` repartidos por
     //  el maquetado, el pintor y el foco.
     static constexpr int kFxEq = 6;
-    static bool fxTraeCara (int f) noexcept { return f == kFxEq; }
+    static bool fxTraeCara (int f) noexcept { return f == kFxEq || f == AudioEngine::kFxGeq; }   // analogico#
 
     //  Y CUAL DE LOS CUATRO DE DINAMICA ES, o -1. Los indices salen del motor
     //  y no se escriben aqui: son los mismos que decide `AudioEngine::kFxCmp`
@@ -4948,6 +4948,9 @@ private:
     //  que es la ficha que existe justo para mover dos numeros con un dedo, y
     //  MIX es el toque de la ranura.
     EqCurve eqCurva;
+    GeqFaders geqCara;   // analogico#: los siete faders del GEQ, en el mismo plato
+    void ponBandaGeq (int b, float dB);
+    void aplicaBandasGeq (const juce::String& txt);
     //  Y LA MINIATURA DE LOS OTROS DIEZ, en el MISMO plato. Ver FxMini.h: la
     //  curva del EQ contesta «que hay dentro» para uno de los once tipos y los
     //  demas no contestaban nada — tres mandos dicen lo que le has PEDIDO al

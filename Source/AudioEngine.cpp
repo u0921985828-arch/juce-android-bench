@@ -2403,7 +2403,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
             //  guardado: la misma figura que `drvLp`. Dos polos (Butterworth,
             //  `cruceEn`) y no uno: a 6 dB por octava quitarle los graves a una
             //  reverb no se los quita.
-            if (f != kFxEq)
+            if (f != kFxEq && f != kFxGeq)   // analogico#: el grafico no lleva cortes
             {
                 Inserto& Ic = ins[(size_t) juce::jlimit (0, kNumCanales - 1, canalEtapa)];
                 const float nyqC = 0.45f * (float) systemSampleRate;
@@ -4393,6 +4393,60 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                         }
                         returnBus (kFxRep);
                     }
+
+                // --- analogico#: GEQ, PRE y CIN, la septima familia. -----
+                //
+                //  DESPUES DE REP: la cadena va por indice (`siguienteFxDe`) y estos son el 30, 31 y 32.
+                //  Los tres son insertos y se escriben como FLD: entra el bus
+                //  del canal, se procesa en sitio y vuelve por returnBus. Al
+                //  encenderse se vacia el estado, para que no salga la cola de
+                //  la ultima vez que sonaron.
+                {
+                    float* wv[2] {};
+                    auto escribe = [&] (int f) noexcept
+                    {
+                        for (int ch = 0; ch < 2; ++ch)
+                            wv[ch] = fxBus[busIdx (f)].getWritePointer (juce::jmin (ch, chans - 1), startSample);
+                        return wv;
+                    };
+
+                    const bool vGeq = live (kFxGeq);
+                    if (vGeq && ! I.geqWasActive) I.geqFx.limpia();
+                    I.geqWasActive = vGeq;
+                    if (vGeq)
+                    {
+                        I.geqFx.prepara (systemSampleRate, P (kFxGeq, 1));
+                        auto* w = escribe (kFxGeq);
+                        I.geqFx.procesa (w, chans, numSamples);
+                        //  La salida, en rampa dentro del bloque: a saltos chasqueaba al mover el mando.
+                        const float sal = juce::Decibels::decibelsToGain (juce::jlimit (-12.0f, 12.0f, P (kFxGeq, 0)));
+                        const float sal0 = I.geqSalida > 0.0f ? I.geqSalida : sal;
+                        I.geqSalida = sal;
+                        for (int ch = 0; ch < chans; ++ch)
+                            fxBus[busIdx (kFxGeq)].applyGainRamp (ch, startSample, numSamples, sal0, sal);
+                        returnBus (kFxGeq);
+                    }
+
+                    const bool vPre = live (kFxPre);
+                    if (vPre && ! I.preWasActive) I.preFx.limpia();
+                    I.preWasActive = vPre;
+                    if (vPre)
+                    {
+                        I.preFx.procesa (escribe (kFxPre), chans, numSamples, systemSampleRate,
+                                         P (kFxPre, 0), P (kFxPre, 1));
+                        returnBus (kFxPre);
+                    }
+
+                    const bool vCin = live (kFxCin);
+                    if (vCin && ! I.cinWasActive) I.cinFx.limpia();
+                    I.cinWasActive = vCin;
+                    if (vCin)
+                    {
+                        I.cinFx.procesa (escribe (kFxCin), chans, numSamples, systemSampleRate,
+                                         P (kFxCin, 0), P (kFxCin, 1));
+                        returnBus (kFxCin);
+                    }
+                }
                 }
             }
 

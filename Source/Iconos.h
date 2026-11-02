@@ -178,6 +178,8 @@ namespace Iconos
         //  La diferencia es de CAMINO: en un inserto la señal ATRAVIESA la
         //  caja, en un envio SIGUE de largo y una rama baja a ella.
         inserto, envio,
+        //  analogico#: los tres de la septima familia. GEQ por sus faders, PRE por la valvula y CIN por las dos bobinas.
+        geq, pre, cin,
         kNum
     };
 
@@ -255,6 +257,8 @@ namespace Iconos
             case Id::lista: return "lista";
             case Id::apagar: return "apagar";
             case Id::inserto: return "inserto";        case Id::envio: return "envio";
+            case Id::geq: return "geq";                case Id::pre: return "pre";
+            case Id::cin: return "cin";
             case Id::ninguno:
             case Id::kNum:
             default: return "ninguno";
@@ -1765,6 +1769,44 @@ namespace Iconos
                 linea (L, 1.5f, 3.4f, 22.5f, 3.4f);
                 linea (L, 8.0f, 3.4f, 8.0f, 13.6f);
                 L.addRectangle (3.6f, 13.6f, 8.8f, 8.0f);
+                break;
+
+            //  GEQ: cinco carriles de fader con el pomo a alturas distintas; la curva del EQ es otra cosa.
+            case Id::geq:
+                for (int b = 0; b < 5; ++b)
+                {
+                    const float x = 3.0f + 4.5f * (float) b;
+                    const float y = 6.0f + (float) ((b * 7) % 5) * 3.0f;
+                    linea (L, x, 2.5f, x, 21.5f);
+                    R.addRectangle (x - 1.8f, y, 3.6f, 3.0f);
+                }
+                break;
+
+            //  PRE: la valvula, la ampolla redonda por arriba con la rejilla dentro y las patas abajo.
+            case Id::pre:
+                L.startNewSubPath (6.0f, 19.0f);
+                L.lineTo (6.0f, 8.0f);
+                L.addCentredArc (12.0f, 8.0f, 6.0f, 6.0f, 0.0f, -juce::MathConstants<float>::halfPi,
+                                 juce::MathConstants<float>::halfPi, false);
+                L.lineTo (18.0f, 19.0f);
+                L.closeSubPath();
+                linea (L,  9.0f, 10.0f, 15.0f, 10.0f);
+                linea (L,  9.0f, 13.0f, 15.0f, 13.0f);
+                linea (L,  9.0f, 21.5f,  9.0f, 19.0f);
+                linea (L, 15.0f, 21.5f, 15.0f, 19.0f);
+                R.addEllipse (10.5f, 15.0f, 3.0f, 3.0f);
+                break;
+
+            //  CIN: las dos bobinas y la cinta que pasa por debajo de una a otra.
+            case Id::cin:
+                L.addEllipse (1.5f, 3.5f, 9.0f, 9.0f);
+                L.addEllipse (13.5f, 3.5f, 9.0f, 9.0f);
+                R.addEllipse (4.5f, 6.5f, 3.0f, 3.0f);
+                R.addEllipse (16.5f, 6.5f, 3.0f, 3.0f);
+                L.startNewSubPath (3.0f, 11.0f);
+                L.lineTo (6.0f, 20.5f);
+                L.lineTo (18.0f, 20.5f);
+                L.lineTo (21.0f, 11.0f);
                 break;
 
             //  APAGAR: el anillo partido y la barra. Ver la enum.

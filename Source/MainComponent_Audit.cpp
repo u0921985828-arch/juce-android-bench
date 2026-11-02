@@ -3480,6 +3480,20 @@ void MainComponent::auditOpen (const juce::String& pedido)
         for (int b = 0; b < Eq5::kBands; ++b)
             ponBandaEq (b, Eq5::kFreqDef[b], dB[b]);
     }
+    //  analogico#: la cara del GEQ con sus siete faders movidos, y PRE y CIN puestos en el plato.
+    else if (which == "geq" || which == "pre" || which == "cin")
+    {
+        closeAllSheets();
+        const int f = which == "geq" ? AudioEngine::kFxGeq : which == "pre" ? AudioEngine::kFxPre : AudioEngine::kFxCin;
+        ponEnRanura (0, f);
+        setFxEnabled (f, true);
+        focusFx (f);
+        if (f == AudioEngine::kFxGeq)
+        {
+            const float dB[GeqFaders::kBandas] = { 6.0f, 3.0f, -2.0f, -6.0f, 0.0f, 4.0f, 9.5f };
+            for (int b = 0; b < GeqFaders::kBandas; ++b) ponBandaGeq (b, dB[b]);
+        }
+    }
     //  Y LA FICHA DE UNA BANDA, que es la pantalla a la que se llega
     //  MANTENIENDO sobre un nodo y que ninguna otra entrada maqueta: sus cinco
     //  chips de tipo y su mando Q solo existen con ella abierta.

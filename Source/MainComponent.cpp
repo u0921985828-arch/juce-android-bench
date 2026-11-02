@@ -3939,6 +3939,15 @@ void MainComponent::cableaMandos()
         else if (autoArmado) publicaAutomacion();
     };
     addChildComponent (eqCurva);
+    //  analogico#: los faders del GEQ, en el mismo plato y por la misma puerta que la curva.
+    geqCara.valor   = [this] (int b) { return engine.getGeqBanda (canalActual, b); };
+    geqCara.onBanda = [this] (int b, float dB) { ponBandaGeq (b, dB); };
+    geqCara.onTouch = [this] (bool cogido)
+    {
+        if (cogido) status.setText (T ("GEQ - arrastra un fader"), juce::dontSendNotification);
+        else if (autoArmado) publicaAutomacion();
+    };
+    addChildComponent (geqCara);
     //  Y la miniatura de los otros diez, en el mismo plato. Ver FxMini.h.
     addChildComponent (platoMini);
 
@@ -5969,7 +5978,8 @@ const int* MainComponent::ordenFx()
         AE::kFxCho, AE::kFxFla, AE::kFxPha, AE::kFxTrm, AE::kFxRot,   // MODULACION
         AE::kFxDly, AE::kFxRev, AE::kFxWid, AE::kFxAmb, AE::kFxPng,   // ESPACIO
         AE::kFxCmp, AE::kFxGte, AE::kFxLim, AE::kFxDss, AE::kFxDuc,   // DINAMICA
-        AE::kFxPit, AE::kFxOct, AE::kFxTrn, AE::kFxFrz, AE::kFxRep    // TIEMPO
+        AE::kFxPit, AE::kFxOct, AE::kFxTrn, AE::kFxFrz, AE::kFxRep,   // TIEMPO
+        AE::kFxPre, AE::kFxCin, AE::kFxGeq                            // ANALOGICO (analogico#)
     };
     return kOrden;
 }
@@ -5984,7 +5994,7 @@ const int* MainComponent::ordenFx()
 const char* const* MainComponent::categoriasFx()
 {
     static const char* const kNombres[kFxCategorias] =
-        { "FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO" };
+        { "FILTRO", "SATURACION", "MODULACION", "ESPACIO", "DINAMICA", "TIEMPO", "ANALOGICO" };
     return kNombres;
 }
 
@@ -6260,6 +6270,24 @@ const MainComponent::FxDef MainComponent::fxDefs[MainComponent::kNumFx] =
       { {   0.05,     8.0, 0.01,    1.0,    2.00, 10 },
         {    0.0,     1.0, 0.01,    0.0,    0.60, 2 },
         {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  analogico#: GEQ trae sus siete faders en el plato; aqui solo la salida y el ancho de las campanas.
+    { "GEQ",  { "SALIDA", "ANCHO", "MIX" },
+      { {  -12.0,    12.0, 0.10,    0.0,     0.0, 7 },
+        {    0.5,     2.0, 0.01,    0.0,     1.0, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  PRE: DRIVE empuja la valvula y CALOR la polariza (mas pares).
+    { "PRE",  { "DRIVE", "CALOR", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.35, 2 },
+        {    0.0,     1.0, 0.01,    0.0,    0.50, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
+
+    //  CIN: SATURA es el nivel a la cinta y VELOCIDAD va de 7.5 a 30 ips.
+    { "CIN",  { "SATURA", "VELOCIDAD", "MIX" },
+      { {    0.0,     1.0, 0.01,    0.0,    0.40, 2 },
+        {    0.0,     1.0, 0.01,    0.0,    0.50, 2 },
+        {    0.0,     1.0, 0.01,    0.0,     0.0, 2 } }, 1.00 },
 };
 
 //  LOS MANDOS DE MAS (tanda 32): p4 y p5 de cada tipo, y p6 GRAVES / p7
@@ -6357,7 +6385,10 @@ const char* MainComponent::nombreLargoFx (int f)
         { "ROT", "ROTATIVO" },
         { "PNG", "PING-PONG" },
         { "DUC", "ATENUADOR" },
-        { "REP", "REPETIDOR" }
+        { "REP", "REPETIDOR" },
+        { "GEQ", "EQ GRAFICO" },
+        { "PRE", "PREVIO VALVULA" },
+        { "CIN", "CINTA" }
     };
     const char* c = juce::isPositiveAndBelow (f, kNumFx) ? fxDefs[f].name : "";
     for (const auto& l : largos)
@@ -6575,6 +6606,10 @@ void MainComponent::aplicaFxPreset (int f, int k)
     //  superficie propia: veinte numeros no caben en dos mandos.
     if (const char* bandas = FxPresets::bandas (f, k))
         aplicaBandasEq (bandas);
+    if (const char* bandas = FxPresets::bandasGeq (f, k))   // analogico#
+        aplicaBandasGeq (bandas);
+    else if (f == AudioEngine::kFxGeq && FxPresets::esDefecto (k))
+        aplicaBandasGeq ("0;0;0;0;0;0;0");
 
     //  EL MIX ES TAMBIEN EL INTERRUPTOR de la ranura, asi que ponerlo tiene que
     //  mover la luz igual que la mueve el mando. Sin esto queda una tapa
@@ -6780,6 +6815,12 @@ bool MainComponent::guardaFxPresetTuyo (int f, const juce::String& nombre)
                      + juce::String (engine.getEqQ (canalActual, b), 2));
         texto << juce::newLine << e.joinIntoString (";");
     }
+    if (f == AudioEngine::kFxGeq)   // analogico#: los siete faders en la segunda linea
+    {
+        juce::StringArray e;
+        for (int b = 0; b < GeqFaders::kBandas; ++b) e.add (juce::String (engine.getGeqBanda (canalActual, b), 1));
+        texto << juce::newLine << e.joinIntoString (";");
+    }
 
     //  `escribeTexto` y no `replaceWithText`: se escribe al lado, se valida y
     //  se mueve encima. Ver ProjectStore — una escritura que se queda sin
@@ -6837,7 +6878,7 @@ bool MainComponent::leeFxPresetTuyo (int f, const juce::String& nombre,
         p[pi] = acotaFxPreset (f, pi, crudo);
     }
 
-    if (bandasEq != nullptr && f == kFxEq && lineas.size() > 1) *bandasEq = lineas[1];
+    if (bandasEq != nullptr && (f == kFxEq || f == AudioEngine::kFxGeq) && lineas.size() > 1) *bandasEq = lineas[1];
     return true;
 }
 
@@ -6855,7 +6896,7 @@ void MainComponent::aplicaFxPresetTuyo (int f, const juce::String& nombre)
         escribeFxParam (f, pi, (float) p[pi]);
     }
 
-    if (bandas.isNotEmpty()) aplicaBandasEq (bandas);
+    if (bandas.isNotEmpty()) { if (f == AudioEngine::kFxGeq) aplicaBandasGeq (bandas); else aplicaBandasEq (bandas); }
 
     {
         const bool on = engine.getFxParam (canalActual, f, 2) > 0.001f;
@@ -7169,6 +7210,23 @@ void MainComponent::ponBandaEq (int b, float hz, float dB)
     //  excepcion que hace del EQ el unico efecto con superficie propia.
     if (! aplicandoFxPreset) marcaFxMovido (kFxEq);
     eqCurva.repaint();
+}
+
+//  analogico#: un fader del GEQ, y marca el preset como movido como el EQ.
+void MainComponent::ponBandaGeq (int b, float dB)
+{
+    engine.setGeqBanda (canalActual, b, dB);
+    if (! aplicandoFxPreset) marcaFxMovido (AudioEngine::kFxGeq);
+    geqCara.repaint();
+}
+
+//  analogico#: siete numeros por punto y coma, de 100 Hz a 6.4 kHz.
+void MainComponent::aplicaBandasGeq (const juce::String& txt)
+{
+    auto t = juce::StringArray::fromTokens (txt, ";", "");
+    t.removeEmptyStrings();
+    for (int b = 0; b < GeqFaders::kBandas && b < t.size(); ++b)
+        ponBandaGeq (b, t[b].getFloatValue());
 }
 
 //  Y sus dos hermanas. Van por el MISMO sitio y no directas al motor: el tipo
@@ -7756,8 +7814,13 @@ void MainComponent::refrescaPlato()
     macroCtrl3.setEnabled (hayAlguno);
 
     const bool conCara = ! enPad && fxEstaPuesto (focusedFx) && fxTraeCara (focusedFx);
-    const bool cambia  = (conCara != eqCurva.isVisible());
-    eqCurva.setVisible (conCara);
+    //  analogico#: la cara es la curva del EQ o los faders del GEQ, segun quien este delante.
+    const bool conEq  = conCara && focusedFx == kFxEq;
+    const bool conGeq = conCara && focusedFx == AudioEngine::kFxGeq;
+    const bool cambia  = (conEq != eqCurva.isVisible()) || (conGeq != geqCara.isVisible());
+    eqCurva.setVisible (conEq);
+    geqCara.setVisible (conGeq);
+    geqCara.repaint();
     if (cambia) resized();
     repaint (bandaMandos());
 }
@@ -14082,6 +14145,16 @@ juce::ValueTree MainComponent::captureState() const
         }
         fx.setProperty ("eqc", filas.joinIntoString ("|"), nullptr);
     }
+    {   //  analogico#: los siete faders del GEQ, un canal por barra.
+        juce::StringArray filas;
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            juce::StringArray e;
+            for (int b = 0; b < GeqFaders::kBandas; ++b) e.add (juce::String (engine.getGeqBanda (c, b), 1));
+            filas.add (e.joinIntoString (";"));
+        }
+        fx.setProperty ("geqc", filas.joinIntoString ("|"), nullptr);
+    }
     fx.setProperty ("duckPad", engine.getDuckPad(), nullptr);
     fx.setProperty ("xyFx",    xyFx,    nullptr);
     fx.setProperty ("xyLatch", xyLatch, nullptr);
@@ -14412,8 +14485,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 //  TRES ANCHURAS desde la tanda 32: 3 (hasta el enganche), 4
                 //  (hasta la tanda 31) y 8. Se prueba de la mas ancha a la mas
                 //  estrecha, y una fila que no llega a ninguna es de 3.
-                const int porFx = (r.size() >= kNumFx * kParamsPorFx) ? kParamsPorFx
-                                : (r.size() >= kNumFx * 4)             ? 4 : 3;
+                //  analogico#: medido contra los TREINTA tipos que tenia la fila de ocho, no contra los de hoy:
+                //  con 33 una fila vieja de 240 caia en la rama de cuatro y cada efecto leia los del vecino.
+                constexpr int kTiposFila8 = 30;
+                const int porFx = (r.size() >= kTiposFila8 * kParamsPorFx) ? kParamsPorFx
+                                : (r.size() >= kTiposFila8 * 4)             ? 4 : 3;
 
                 for (int f = 0; f < kNumFx; ++f)
                     for (int pi = 0; pi < kParamsPorFx; ++pi)
@@ -14432,8 +14508,11 @@ void MainComponent::applyState (const juce::ValueTree& s)
                         //  de resolver arriba, que ya sabe poner el defecto de
                         //  cada parametro: una segunda lista de defectos aqui
                         //  seria la misma tabla escrita dos veces.
+                        //  analogico#: `fxParam` solo tiene los tres del plato; leerle el cuarto salia del array
+                        //  -un proyecto de 30 tipos abierto con 33 se caia aqui-. Los de mas valen su defecto.
                         engine.setFxParam (c, f, pi, k < r.size() ? r[k].getFloatValue()
-                                                                 : (float) fxParam (f, pi).getValue());
+                                                     : pi < 3 ? (float) fxParam (f, pi).getValue()
+                                                              : AudioEngine::defectoFx (f, pi));
                     }
             }
         }
@@ -14732,6 +14811,17 @@ void MainComponent::applyState (const juce::ValueTree& s)
             }
         }
         refrescaEq();
+        {   //  analogico#: sin la propiedad, planos.
+            juce::StringArray filas;
+            filas.addTokens (fx.getProperty ("geqc").toString(), "|", "");
+            for (int c = 0; c < kNumCanales; ++c)
+            {
+                auto t = juce::StringArray::fromTokens (c < filas.size() ? filas[c] : juce::String(), ";", "");
+                for (int b = 0; b < GeqFaders::kBandas; ++b)
+                    engine.setGeqBanda (c, b, b < t.size() ? t[b].getFloatValue() : 0.0f);
+            }
+            geqCara.repaint();
+        }
 
         engine.setDuckPad (juce::jlimit (-1, kNumPads - 1, (int) fx.getProperty ("duckPad", -1)));
         xyLatch = (bool) fx.getProperty ("xyLatch", false);
@@ -16069,6 +16159,8 @@ void MainComponent::newProject()
         for (int b = 0; b < Eq5::kBands; ++b)
             engine.setEqBand (c, b, Eq5::kFreqDef[b], 0.0f);
     refrescaEq();
+    for (int c = 0; c < kNumCanales; ++c)   // analogico#: el grafico tambien vuelve a plano
+        for (int b = 0; b < GeqFaders::kBandas; ++b) engine.setGeqBanda (c, b, 0.0f);
 
     //  Y LA AUTOMATIZACION, que es de la cancion y se va con ella: sin esto el
     //  proyecto siguiente nacia con los barridos del anterior escritos en unos

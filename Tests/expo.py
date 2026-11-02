@@ -476,6 +476,7 @@ UNTRANSLATED_OK = {
     "AMB",          # el ambiente, el que cerro el reparto por tipos: tres letras
     "FRM", "FLD", "ROT", "PNG", "DUC", "REP",   # los seis que llevan el
                     # catalogo a cinco por familia, por lo mismo: tres letras
+    "GEQ", "PRE", "CIN",   # analogico#: la septima familia, tres letras como los demas
     "EXTRAS",       # la puerta del contenido: la palabra es la misma en las dos
     "RATIO",                                   # se escribe igual en las dos lenguas
     "FREQ",                                    # la abreviatura de frecuencia, la misma

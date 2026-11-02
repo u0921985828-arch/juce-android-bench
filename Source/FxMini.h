@@ -223,7 +223,7 @@ public:
             float pico = 0.0f;
             for (int i = juce::jmax (0, n - 512); i < n; ++i) pico = juce::jmax (pico, std::abs (pre[i]));
             v.punto = true;
-            if (fx == AudioEngine::kFxDrv)
+            if (fx == AudioEngine::kFxDrv || fx == AudioEngine::kFxPre || fx == AudioEngine::kFxCin)   // analogico#: eje de amplitud
             {
                 //  Su eje va de -1 a +1 en amplitud, asi que el pico cae en la
                 //  columna (1 + a) / 2 — que es exactamente donde el banco del

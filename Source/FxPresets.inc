@@ -262,6 +262,27 @@ inline constexpr Preset kTabla[AudioEngine::kNumFx][kEscritos] =
       { "TARTAMUDO",   4.00f, 0.75f, 1.00f, 0.0f },
       { "METRALLA",    8.00f, 0.85f, 1.00f, 0.0f },
       { "ENTERO",      1.00f, 0.95f, 1.00f, 0.0f } },
+
+    //  analogico#: GEQ  salida -12..+12 dB, ancho 0.5..2. Sus siete faders van aparte, en `kBandasGeq`.
+    { { "SONRISA",     -1.00f, 1.00f, 1.00f, 0.0f },
+      { "VOZ",          0.00f, 1.00f, 1.00f, 0.0f },
+      { "BOMBO",       -1.00f, 1.00f, 1.00f, 0.0f },
+      { "GUITARRA",     0.00f, 1.00f, 1.00f, 0.0f },
+      { "TELEFONO",     2.00f, 1.00f, 1.00f, 0.0f } },
+
+    //  PRE  drive 0..1, calor 0..1
+    { { "LIMPIO",       0.15f, 0.30f, 1.00f, 0.0f },
+      { "CALIDO",       0.35f, 0.60f, 1.00f, 0.0f },
+      { "CONSOLA",      0.45f, 0.40f, 1.00f, 0.0f },
+      { "EMPUJADO",     0.70f, 0.70f, 1.00f, 0.0f },
+      { "SATURADO",     0.95f, 0.90f, 1.00f, 0.0f } },
+
+    //  CIN  satura 0..1, velocidad 0..1 (7.5 a 30 ips)
+    { { "MASTER",       0.25f, 1.00f, 1.00f, 0.0f },
+      { "PEGAMENTO",    0.45f, 0.70f, 1.00f, 0.0f },
+      { "CALIENTE",     0.65f, 0.50f, 1.00f, 0.0f },
+      { "CASETE",       0.60f, 0.00f, 1.00f, 0.0f },
+      { "APRETADA",     0.90f, 0.40f, 1.00f, 0.0f } },
 };
 
 //  efectos#presets: los cuatro de mas (p4..p7) de los presets que los mueven; lo que no esta aqui queda en su defecto.
@@ -352,4 +373,14 @@ inline constexpr const char* kBandasEq[kEscritos] =
     "80:0.0:0:0.70;250:-2.0:1:0.90;1000:-1.0:1:0.90;3500:3.0:1:0.90;12000:10.0:2:0.60",
     //  LIMPIA: quita lo que sobra y no sube nada, que es lo que suele faltar.
     "80:-12.0:0:0.70;250:-6.0:1:1.00;1000:0.0:1:0.90;3500:-4.0:1:0.90;10000:3.0:2:0.70",
+};
+
+//  analogico#: LOS SIETE FADERS DE CADA PRESET DEL GRAFICO, en dB y por punto y coma (100 Hz .. 6.4 kHz).
+inline constexpr const char* kBandasGeq[kEscritos] =
+{
+    "5;2;-1;-4;-1;2;5",      // SONRISA
+    "-6;-3;0;2;4;3;0",       // VOZ
+    "6;3;-4;-6;-2;3;1",      // BOMBO
+    "-4;-2;2;3;4;2;-2",      // GUITARRA
+    "-12;-12;0;6;6;-12;-12", // TELEFONO
 };

@@ -237,6 +237,8 @@ namespace FxVisor
             case AudioEngine::kFxPng:
             case AudioEngine::kFxDuc:
             case AudioEngine::kFxRep: return { true,  true  };
+            case AudioEngine::kFxPre: return { true,  true  };   // analogico#: drive y calor doblan la curva
+            case AudioEngine::kFxCin: return { true,  false };   // la velocidad es un filtro, no una forma
             default:                  return { false, false };
         }
     }
@@ -632,6 +634,17 @@ namespace FxVisor
                     const float a = AudioEngine::svfBandaDb (hz, f1, p1);
                     const float b = AudioEngine::svfBandaDb (hz, f2, p1) - 4.2f;
                     pon (i, dbAAlto (juce::jmax (a, b) + juce::Decibels::gainToDecibels (AudioEngine::bandaCompensa (p1, AudioEngine::kFrmSuma2))));
+                    break;
+                }
+
+                //  analogico#: PRE y CIN, la transferencia con la MISMA cuenta que suena, escalada a su pico.
+                case AudioEngine::kFxPre:
+                case AudioEngine::kFxCin:
+                {
+                    auto tr = [&] (float x) { return fx == AudioEngine::kFxPre ? Analogico::Valvula::transfiere (x, p0, p1)
+                                                                               : Analogico::Cinta::transfiere (x, p0); };
+                    const float pk = juce::jmax (std::abs (tr (1.0f)), std::abs (tr (-1.0f)));
+                    pon (i, 0.5f + 0.5f * tr (-1.0f + 2.0f * t) / juce::jmax (1.0e-6f, pk));
                     break;
                 }
 

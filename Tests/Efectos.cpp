@@ -60,6 +60,9 @@ static const Mando kMandos[AudioEngine::kNumFx] = {
     { "PNG", 20.0f, 1000.0f, 0.0f, 0.95f, 0.35f },
     { "DUC", 0.05f, 8.0f, 0.0f, 1.0f, 1.00f },
     { "REP", 0.05f, 8.0f, 0.0f, 1.0f, 1.00f },
+    { "GEQ", -12.0f, 12.0f, 0.5f, 2.0f, 1.00f },   // analogico#
+    { "PRE", 0.0f, 1.0f, 0.0f, 1.0f, 1.00f },
+    { "CIN", 0.0f, 1.0f, 0.0f, 1.0f, 1.00f },
 };
 
 //  Un ciclo entero cabe en la muestra, asi que el bucle no tiene costura.
@@ -1179,6 +1182,64 @@ int main (int argc, char** argv)
         std::printf ("\nEXC  6 kHz a -30 dB, fuerza 1: la nota %+.1f dB, armonicos %.1f dBc\n", fund, arm);
         if (std::abs (fund) > 1.5) falla ("EXC sube %.1f dB la propia nota (tope 1.5): es un realce, no armonicos", fund);
         if (arm < -40.0) falla ("EXC no anade armonicos: %.1f dBc (minimo -40)", arm);
+    }
+    //  analogico#: que cada uno de la septima familia haga lo que dice.
+    if (solo < 0 || solo >= AudioEngine::kFxGeq)
+    {
+        auto banda = [] (const std::vector<float>& y, double hz)
+        {
+            double re = 0.0, im = 0.0;
+            for (size_t i = 24000; i < y.size(); ++i)
+            {
+                const double w = 2.0 * juce::MathConstants<double>::pi * hz * (double) i / kSr;
+                re += y[i] * std::cos (w); im += y[i] * std::sin (w);
+            }
+            return std::sqrt (re * re + im * im) * 2.0 / (double) (y.size() - 24000);
+        };
+        auto db = [] (double a, double b) { return 20.0 * std::log10 (juce::jmax (1.0e-12, a) / juce::jmax (1.0e-12, b)); };
+        std::vector<float> y;
+        auto seco = [&] (double hz, float amp) { auto e = monta (-1, seno (hz, amp), 0.0f); e->postNoteOn (0, 1.0f); corre (*e, 48000, y); return banda (y, hz); };
+        auto con = [&] (int f, double hz, float amp, const std::function<void (AudioEngine&)>& pon)
+        { auto e = monta (f, seno (hz, amp), 1.0f); pon (*e); e->postNoteOn (0, 1.0f); corre (*e, 48000, y); };
+
+        //  GEQ: el fader de 800 Hz a +12 sube 800 Hz unos 12 dB y deja quieto 6.4 kHz; a -12 lo baja.
+        const double s800 = seco (800.0, 0.1f), s6k = seco (6400.0, 0.1f);
+        con (AudioEngine::kFxGeq, 800.0, 0.1f, [] (AudioEngine& e) { e.setGeqBanda (kCanal, 3, 12.0f); });
+        const double gSube = db (banda (y, 800.0), s800);
+        con (AudioEngine::kFxGeq, 6400.0, 0.1f, [] (AudioEngine& e) { e.setGeqBanda (kCanal, 3, 12.0f); });
+        const double gVecina = db (banda (y, 6400.0), s6k);
+        con (AudioEngine::kFxGeq, 800.0, 0.1f, [] (AudioEngine& e) { e.setGeqBanda (kCanal, 3, -12.0f); });
+        const double gBaja = db (banda (y, 800.0), s800);
+        std::printf ("\nGEQ  fader de 800 Hz a +12: 800 Hz %+.1f dB, 6.4 kHz %+.1f dB; a -12: %+.1f dB\n", gSube, gVecina, gBaja);
+        if (std::abs (gSube - 12.0) > 1.0 || std::abs (gVecina) > 0.5 || std::abs (gBaja + 12.0) > 1.0)
+            falla ("GEQ: el fader de 800 Hz no sube y baja su banda 12 dB sin tocar la de 6.4 kHz");
+
+        //  PRE: con calor la valvula da mas segundo armonico que tercero, y el calor es quien lo sube.
+        const double s220 = seco (220.0, 0.3f);
+        auto pre = [&] (float calor)
+        {
+            con (AudioEngine::kFxPre, 220.0, 0.3f, [calor] (AudioEngine& e)
+                 { e.setFxParam (kCanal, AudioEngine::kFxPre, 0, 0.7f); e.setFxParam (kCanal, AudioEngine::kFxPre, 1, calor); });
+            const double f0 = banda (y, 220.0);
+            return std::array<double, 3> { db (f0, s220), db (banda (y, 440.0), f0), db (banda (y, 660.0), f0) };
+        };
+        const auto pc = pre (0.8f), pf = pre (0.0f);
+        std::printf ("PRE  drive 0.7, calor 0.8: nota %+.1f dB, 2o %.1f dBc, 3o %.1f dBc; calor 0: 2o %.1f dBc\n", pc[0], pc[1], pc[2], pf[1]);
+        if (pc[1] < -40.0 || pc[1] < pc[2] || pc[1] < pf[1] + 6.0 || std::abs (pc[0]) > 3.0)
+            falla ("PRE: la valvula no da mas pares que impares, o el calor no los sube, o cambia el nivel");
+
+        //  CIN: doce dB mas a la entrada salen entre 6 y 11 mas (comprime, no aplasta) y el tercero se queda por debajo de -20 dBc.
+        auto cin = [&] (float amp)
+        {
+            con (AudioEngine::kFxCin, 220.0, amp, [] (AudioEngine& e) { e.setFxParam (kCanal, AudioEngine::kFxCin, 0, 0.8f); });
+            const double f0 = banda (y, 220.0);
+            return std::pair<double, double> { f0, db (banda (y, 660.0), f0) };
+        };
+        const auto c1 = cin (0.1f), c4 = cin (0.4f);
+        const double sube = db (c4.first, c1.first);
+        std::printf ("CIN  satura 0.8, +12 dB a la entrada: %+.1f dB a la salida; 3o %.1f dBc\n", sube, c4.second);
+        if (sube < 6.0 || sube > 11.0 || c4.second > -20.0)
+            falla ("CIN: la cinta no comprime con suavidad (+12 dB dan %+.1f) o rompe la onda (3o %.1f dBc)", sube, c4.second);
     }
     std::printf (fallos == 0 ? "OK  los %d efectos, sin pliegue, sin chasquido, a nivel y con la cola limpia\n"
                              : "%d FALLA\n", fallos == 0 ? AudioEngine::kNumFx : fallos);

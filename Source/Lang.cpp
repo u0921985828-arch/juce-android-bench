@@ -2381,6 +2381,23 @@ namespace
         { "PING-PONG", "", "PING-PONG", "乒乓延迟", "بينغ بونغ" },
         { "ATENUADOR", "", "DUCKER", "闪避", "خافض" },
         { "REPETIDOR", "", "REPEATER", "重复器", "مكرر" },
+        { "EQ GRAFICO", "EQ GRÁFICO", "GRAPHIC EQ", "图示均衡", "معادل رسومي" },   // analogico#
+        { "PREVIO VALVULA", "PREVIO VÁLVULA", "TUBE PREAMP", "电子管前级", "مضخم صمامي" },
+        { "ANALOGICO", "ANALÓGICO", "ANALOG", "模拟", "تناظري" },
+        { "CALOR", "", "WARMTH", "温暖", "دفء" },
+        { "SATURA", "", "SATURATE", "饱和", "تشبيع" },
+        { "VELOCIDAD", "", "SPEED", "速度", "سرعة" },
+        { "GEQ - arrastra un fader", "", "GEQ - drag a fader", "GEQ - 拖动推子", "اسحب فيدر في GEQ" },
+        { "GUITARRA|preset", "", "GUITAR", "吉他", "غيتار" },
+        { "TELEFONO|preset", "TELÉFONO", "PHONE", "电话", "هاتف" },
+        { "LIMPIO|preset", "", "CLEAN", "干净", "نظيف" },
+        { "CALIDO|preset", "CÁLIDO", "WARM", "温暖", "دافئ" },
+        { "EMPUJADO|preset", "", "PUSHED", "推动", "مدفوع" },
+        { "SATURADO|preset", "", "SATURATED", "饱和", "مشبع" },
+        { "MASTER|preset", "", "MASTER", "母带", "ماستر" },
+        { "PEGAMENTO|preset", "", "GLUE", "黏合", "لاصق" },
+        { "CASETE|preset", "", "CASSETTE", "卡带", "كاسيت" },
+        { "APRETADA|preset", "", "SQUEEZED", "压紧", "مضغوط" },
         { "Pad %1 -> zati %2 %3", "",   "Pad %1 -> zati %2 %3", "音垫 %1 → zati %2 %3", "باد %1 ← zati %2 %3" },
 
         // --- MIX / RACK / SONG ---------------------------------------------

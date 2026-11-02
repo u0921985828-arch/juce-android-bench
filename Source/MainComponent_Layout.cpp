@@ -1041,13 +1041,16 @@ void MainComponent::maquetaMaquina (Cara& c)
         //  nodo le tocan 48 px -por encima del dedo- y con el reparto a dos
         //  tercios puesto a proposito, **31**. Un nodo que no se puede agarrar
         //  es peor que un mando que hay que ir a buscar al XY.
-        if (eqCurva.isVisible())
+        if (eqCurva.isVisible() || geqCara.isVisible())   // analogico#: la curva del EQ o los faders del GEQ
         {
             //  Sin las dos bandas de rotulo: la curva se explica sola -tiene
             //  su linea de cero y sus decadas- y esos 34 px son el 40 % de su
             //  alto. El nombre del efecto ya esta encendido en su ranura.
-            eqCurva.setVisible (true);
-            eqCurva.setBounds (mrow.reduced (Metrics::margenPlato, Metrics::margenPlato));
+            auto& cara = eqCurva.isVisible() ? (juce::Component&) eqCurva : (juce::Component&) geqCara;
+            auto& otra = eqCurva.isVisible() ? (juce::Component&) geqCara : (juce::Component&) eqCurva;
+            otra.setVisible (false);
+            otra.setBounds ({});
+            cara.setBounds (mrow.reduced (Metrics::margenPlato, Metrics::margenPlato));
             //  Y la miniatura de los otros diez no pinta nada aqui: el EQ trae
             //  su propia cara, que es la version grande de lo mismo.
             platoMini.setVisible (false);
@@ -1066,6 +1069,8 @@ void MainComponent::maquetaMaquina (Cara& c)
         {
             eqCurva.setVisible (false);
             eqCurva.setBounds ({});
+            geqCara.setVisible (false);
+            geqCara.setBounds ({});
             for (auto* k : mk) k->setVisible (true);
 
             //  Y LOS OTROS DIEZ ENSEÑAN LO QUE SON EN EL MISMO PLATO.

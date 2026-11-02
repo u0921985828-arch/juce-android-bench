@@ -433,11 +433,13 @@ def main():
     #  reverb y el delay eran UNO para toda la mesa, y se juzga aparte -abajo-
     #  porque no trae nada de lo que los ocho comparten.
     ficheros = {k: v for k, v in (vj or {}).items() if not k.startswith ("@")}
-    viejo_ok = vj is not None and len (ficheros) == 9
+    #  Y DIEZ: el `10-treinta-tipos.xml` lo guardo la version de 30 efectos (filas de `fxp` de 240) y con 33 tipos
+    #  la app se caia al abrirlo (analogico#). Con que abra y vuelva su fila basta: se cuenta y no se juzga aparte.
+    viejo_ok = vj is not None and len (ficheros) == 10
     print()
     if vj:
         for nombre, d in sorted (ficheros.items()):
-            if nombre.startswith ("09"):
+            if nombre.startswith ("09") or nombre.startswith ("10"):
                 continue
             #  Lo que el fichero NO trae vale su defecto ANTIGUO: un proyecto
             #  sin `sends` es anterior a que los envios existieran -cada pad iba
