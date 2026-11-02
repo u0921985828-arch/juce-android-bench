@@ -1138,6 +1138,8 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         ++fase;
     };
 
+    //  cpu#cadena: las dieciseis listas de la cadena, una vez por bloque.
+    recalculaCadenas();
     faseGanancias (mz); marca();
     faseEventos(); marca();
     faseSecuenciador (mz); marca();
@@ -1337,7 +1339,7 @@ void AudioEngine::faseGanancias (Mezcla& mz) noexcept
         //  y PNG- recibian aqui su copia del pad cuando el canal no tenia
         //  cadena; ahora son eslabones de su tira como los demas -ver
         //  `fxEsEnvio`- y la copia la toman del final de la cadena siempre.
-        const int primero = primerFxDe (canal);
+        const int primero = sigCadena (canal, -1);   // cpu#cadena
 
         for (int f = 0; f < kNumFx; ++f)
         {
@@ -2292,7 +2294,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
         //  de una etapa seria copiar lo que esa etapa ya escribio.
         for (int c = 0; c < kNumCanales; ++c)
         {
-            const int pf = primerFxDe (c);
+            const int pf = sigCadena (c, -1);   // cpu#cadena
             if (pf < 0) continue;
             const auto& src = fxBus[(size_t) busDe (c, pf)];
             auto& dst = secoDeCanal[(size_t) c];
@@ -2529,7 +2531,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 if (! busFed[busIdx (f)]) return;
 
                 auto& sec = secoDeCanal[(size_t) c];
-                const int sig = siguienteFxDe (c, f);
+                const int sig = sigCadena (c, f);   // cpu#cadena
                 if (sig >= 0)
                 {
                     auto& dst = fxBus[(size_t) busDe (c, sig)];
@@ -2617,7 +2619,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     }
                 }
 
-                const int sig = siguienteFxDe (canalEtapa, f);
+                const int sig = sigCadena (canalEtapa, f);   // cpu#cadena
                 if (sig >= 0)
                 {
                     //  Al siguiente, y su seco es LO QUE LE ENTRA: cada eslabon
@@ -2701,7 +2703,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     for (int ch = 0; ch < chans; ++ch) pk = juce::jmax (pk, entradaRet.getMagnitude (ch, startSample, numSamples));
                     if (pk > envioPico[(size_t) R].load (std::memory_order_relaxed)) envioPico[(size_t) R].store (pk, std::memory_order_relaxed);
                 }
-                const int pf = primerFxDe (R);
+                const int pf = sigCadena (R, -1);   // cpu#cadena
                 if (pf < 0)
                 {
                     for (int ch = 0; ch < chans; ++ch) out.addFrom (ch, startSample, entradaRet, ch, startSample, numSamples);

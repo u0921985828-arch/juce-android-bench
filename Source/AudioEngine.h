@@ -4084,10 +4084,58 @@ private:
     //  corrio este bloque la deja en un bus que nadie procesa, y el canal se
     //  queda mudo. Por eso son dos pasadas y no una tabla: primero los
     //  insertos por indice, despues los cuatro por indice.
+ public:
+    //  cpu#cadena: publicas para que el banco pueda comparar la tabla con el
+    //  recorrido. Son de lectura; `recalculaCadenas` solo escribe la tabla.
     bool enCadena (int canal, int f) const noexcept
     {
         return fxPorCanal[f] && canalSend[(size_t) canal][(size_t) f]
                                    .load (std::memory_order_relaxed) > 0.0f;
+    }
+
+    //  cpu#cadena: EL ORDEN DE LA CADENA, RESUELTO UNA VEZ POR BLOQUE.
+    //
+    //  `siguienteFxDe` recorre los treinta y nueve tipos leyendo un atomico por
+    //  tipo, y se llamaba una vez por PAD (el reparto de envios) y otra por
+    //  ESLABON VIVO: con los 39 en los 16 canales son 624 recorridos de 39, o
+    //  sea veinticuatro mil lecturas atomicas por bloque para contestar
+    //  dieciseis listas que no cambian dentro del bloque.
+    //
+    //  Dos tablas por canal, con la MISMA regla que la funcion lenta (primero
+    //  los insertos por indice y luego los envios por indice), y una barrida
+    //  hacia atras de 39 para llenarlas. La funcion lenta se queda: es la que
+    //  define el orden y la que llena esto.
+    void recalculaCadenas() noexcept
+    {
+        for (int c = 0; c < kNumCanales; ++c)
+        {
+            auto& tIns = cadenaIns[(size_t) c];
+            auto& tEnv = cadenaEnv[(size_t) c];
+            int sigIns = -1, sigEnv = -1;
+            for (int f = kNumFx - 1; f >= 0; --f)
+            {
+                tIns[(size_t) f] = (std::int8_t) sigIns;
+                tEnv[(size_t) f] = (std::int8_t) sigEnv;
+                if (enCadena (c, f)) { if (fxEsEnvio[f]) sigEnv = f; else sigIns = f; }
+            }
+            cadenaIns0[(size_t) c] = (std::int8_t) sigIns;
+            cadenaEnv0[(size_t) c] = (std::int8_t) sigEnv;
+        }
+    }
+
+    //  Lo mismo que `siguienteFxDe` leyendo las tablas. Vale para cualquier
+    //  tipo, este en la cadena o no -un bus que suena de cola con el envio ya
+    //  cerrado pregunta por un tipo que ya no es eslabon-.
+    int sigCadena (int canal, int fx) const noexcept
+    {
+        const int c = (canal < 0 || canal >= kNumCanales) ? 0 : canal;
+        if (fx >= 0 && fx < kNumFx && fxEsEnvio[fx]) return (int) cadenaEnv[(size_t) c][(size_t) fx];
+        //  Y el segundo barrido de la funcion lenta empieza en CERO cuando el
+        //  tipo no es un envio: tras el ultimo inserto va el PRIMER envio del
+        //  canal, no el primero despues de ese indice.
+        const int i = fx < 0 ? (int) cadenaIns0[(size_t) c]
+                             : (int) cadenaIns[(size_t) c][(size_t) juce::jmin (fx, kNumFx - 1)];
+        return i >= 0 ? i : (int) cadenaEnv0[(size_t) c];
     }
 
     int primerFxDe (int canal) const noexcept { return siguienteFxDe (canal, -1); }
@@ -4102,6 +4150,11 @@ private:
             if (fxEsEnvio[f] && enCadena (canal, f)) return f;
         return -1;
     }
+
+ private:
+    //  cpu#cadena: el siguiente inserto y el siguiente envio de cada canal.
+    std::array<std::array<std::int8_t, kNumFx>, kNumCanales> cadenaIns {}, cadenaEnv {};
+    std::array<std::int8_t, kNumCanales> cadenaIns0 {}, cadenaEnv0 {};
 
     static constexpr int busDe (int canal, int fx) noexcept
     {

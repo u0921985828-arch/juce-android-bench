@@ -10920,6 +10920,43 @@ int main()
         std::printf ("%-34s la mayor %.6f   %s\n", "transporte, fase del paso", (double) peor, peor < 1.0f ? "OK" : zatiFalla());
     }
 
+    //  ===================================================================
+    //  cpu#cadena · LA TABLA DE LA CADENA DICE LO MISMO QUE EL RECORRIDO
+    //  ===================================================================
+    //
+    //  `sigCadena` lee dos tablas por canal en vez de recorrer los treinta y
+    //  nueve tipos leyendo un atomico por tipo. Las dos tienen que contestar lo
+    //  MISMO para cualquier canal y cualquier tipo -incluido uno que ya no es
+    //  eslabon, que es por donde pregunta un bus sonando de cola con el envio
+    //  cerrado-, o la cadena se reordena sola y el orden de los efectos cambia
+    //  sin que nadie lo pida. Se prueban repartos AL AZAR y no uno: con la
+    //  cadena llena las dos coinciden por casualidad.
+    {
+        const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+        e.prepareToPlay (48000.0, 128);
+        juce::Random r (20261102);
+        int miradas = 0, malas = 0, cadenasNoVacias = 0;
+        for (int tanda = 0; tanda < 40; ++tanda)
+        {
+            for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+                for (int f = 0; f < AudioEngine::kNumFx; ++f)
+                    e.setCanalSend (c, f, r.nextFloat() < 0.25f ? r.nextFloat() : 0.0f);
+            e.recalculaCadenas();
+            for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+            {
+                if (e.siguienteFxDe (c, -1) >= 0) ++cadenasNoVacias;
+                for (int f = -1; f < AudioEngine::kNumFx; ++f)
+                {
+                    ++miradas;
+                    if (e.sigCadena (c, f) != e.siguienteFxDe (c, f)) ++malas;
+                }
+            }
+        }
+        std::printf ("%-34s %d consultas, %d cadenas con eslabones, %d distintas   %s\n",
+                     "cpu la tabla de la cadena", miradas, cadenasNoVacias, malas,
+                     (malas == 0 && cadenasNoVacias > 100) ? "OK" : zatiFalla());
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }
