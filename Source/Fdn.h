@@ -36,7 +36,7 @@ public:
     //  array se lee al vuelo y no en el contexto de clase completa, que es lo
     //  que si tiene el cuerpo de un metodo — que es donde vivia esa tabla.
     //  efectos#rev: dieciseis lineas y cuatro difusores; con cuatro y dos la densidad se quedaba en 0.60 y la cola tenia picos de 6.4 dB.
-    static constexpr int kLines = 16;
+    static constexpr int kLines = 8;    // cpu#rev: ocho lineas, a prueba
     static constexpr int kDiff  = 4;
 
     //  Longitudes en muestras a 44.1 kHz, escaladas despues a la frecuencia de
@@ -51,7 +51,7 @@ public:
     //  dentro del arreglo.
     //  efectos#rev: la vuelta de referencia para fb; asi el largo de las lineas no mueve cuanto dura la cola.
     static constexpr double kRef44 = 1959.75;
-    static constexpr int kBase44[kLines] = { 701, 797, 887, 997, 1123, 1277, 1423, 1597, 1801, 2027, 2281, 2579, 2879, 3251, 3659, 4111 };
+    static constexpr int kBase44[kLines] = { 701, 887, 1123, 1423, 1801, 2281, 2879, 3659 };   // cpu#rev: una de cada dos de las dieciseis
 
     //  efectos#tipos: cinco sitios con su propia forma; SALA es la red de siempre y suena igual que antes.
     enum Tipo { kSala = 0, kCuarto, kPlaca, kMuelle, kCatedral, kNumTipos };
@@ -399,7 +399,7 @@ public:
             //  los dos bucles que la recorren otro 3.43 %, o sea que mas de la
             //  mitad del Hadamard era contar. Con el paso constante tambien se
             //  puede vectorizar, que es lo que no podia hacer con `paso` vivo.
-            static_assert (kLines == 16, "las cuatro etapas son para dieciseis lineas");
+            static_assert (kLines == 8, "las tres etapas son para ocho lineas");
             float hz[kLines];
             for (int i = 0; i < kLines; ++i) hz[i] = s[i];
             auto mariposa = [&hz] (int j, int paso) noexcept
@@ -409,9 +409,8 @@ public:
             };
             for (int i = 0; i < kLines; i += 2)  mariposa (i, 1);
             for (int i = 0; i < kLines; i += 4)  { mariposa (i, 2); mariposa (i + 1, 2); }
-            for (int i = 0; i < kLines; i += 8)  for (int j = 0; j < 4; ++j) mariposa (i + j, 4);
-            for (int j = 0; j < 8; ++j) mariposa (j, 8);
-            constexpr float kNorm = 0.25f;   // 1/sqrt(16)
+            for (int j = 0; j < 4; ++j) mariposa (j, 4);
+            constexpr float kNorm = 0.35355339f;   // 1/sqrt(8)
 
             //  4. Escribir de vuelta: entrada + realimentacion amortiguada.
             for (int i = 0; i < kLines; ++i)
@@ -508,7 +507,7 @@ public:
     }
 
 private:
-    static constexpr float kSalida = 0.125f;
+    static constexpr float kSalida = 0.17677670f;   // cpu#rev: 0.125*sqrt(2), ocho lineas suman la mitad de energia
     static constexpr float kPreLento = 0.25f;   // efectos#tipos: muestras por muestra al deslizar el previo
 
     void aplicaForma (int t) noexcept
@@ -550,9 +549,9 @@ private:
 
     //  efectos#rev: entrada y salida que no son filas de Hadamard; una fila mete toda la energia en una linea.
     //  efectos#rev: los dos lados con la misma entrada y la salida con otros signos; con vectores distintos la cola salia x0.56 de un lado.
-    static constexpr float kEntra[kLines] = {  1.01f, -1.15f, -1.09f, -0.81f,  0.85f,  1.14f,  0.70f, -1.11f,  1.10f, -0.93f, -0.85f, -0.84f,  0.83f,  0.92f,  0.95f, -0.98f };
-    static constexpr float kSale[2][kLines]  = { { -0.72f,  1.00f,  0.78f, -1.04f, -0.71f,  0.86f, -1.17f,  0.97f,  1.11f,  1.03f,  1.01f,  0.80f, -0.99f, -0.72f, -1.10f,  1.18f },
-                                                 { -0.72f, -1.00f,  0.78f, -1.04f, -0.71f, -0.86f,  1.17f,  0.97f, -1.11f, -1.03f,  1.01f,  0.80f, -0.99f,  0.72f,  1.10f, -1.18f } };
+    static constexpr float kEntra[kLines] = {  1.01f, -1.09f,  0.85f,  0.70f,  1.10f, -0.85f,  0.83f,  0.95f };
+    static constexpr float kSale[2][kLines]  = { { -0.72f,  0.78f, -0.71f, -1.17f,  1.11f,  1.01f, -0.99f, -1.10f },
+                                                 { -0.72f,  0.78f, -0.71f,  1.17f, -1.11f,  1.01f, -0.99f,  1.10f } };
 
     double fs = 44100.0;
     int    chans = 2;
