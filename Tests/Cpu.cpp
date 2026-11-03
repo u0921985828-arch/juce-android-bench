@@ -128,6 +128,12 @@ static void fila (const char* nombre, const Medida& m, bool restaBase = true)
 //  arrastraba la etapa anterior.
 static void prepara (AudioEngine& e, bool tono = false)
 {
+    //  calidad#: ZATI_CALIDAD fija el peldano para poder medir los tres con el
+    //  mismo banco. Sin variable, el peldano 0: lo que ve un telefono que da.
+    {
+        const char* v = std::getenv ("ZATI_CALIDAD");
+        if (v != nullptr) e.setCalidad (juce::jlimit (0, 2, juce::String (v).getIntValue()));
+    }
     e.prepareToPlay (kSr, kBs);
     e.setPolyphony (32, 4);
     for (int p = 0; p < 16; ++p)
