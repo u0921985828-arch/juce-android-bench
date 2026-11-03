@@ -114,6 +114,8 @@ NOMBRES = {
     "midf":     ("MIDI · filtro de canal",       "AJUSTES · MIDI, tapa FILTRO"),
     "lang":     ("ASPECTO tras cambiar de idioma", "AJUSTES · ASPECTO, otra lengua"),
     "mixc":     ("MEZCLA · CANALES",             "MEZCLA, pagina CANALES"),
+    #  calidad#tapado: la mesa con los 64 pads sin canal, o sea con el titulo largo.
+    "mixsc":    ("MEZCLA · CANALES",             "MEZCLA con los 64 pads sin canal"),
     "cannom":   ("MEZCLA · nombre de canal",     "MEZCLA · CANALES, tocar el rotulo de la tira"),
     "cannomd":  ("MEZCLA · dibujar el icono",    "la ficha del nombre, tapa DIBUJAR"),
     "canal":    ("SELECTOR DE CANAL",            "EL PAD · ENVIOS, tapa del canal"),
