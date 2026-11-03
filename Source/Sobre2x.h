@@ -137,11 +137,23 @@ struct Sobre2x
     //  EL ESTADO DE UN CANAL. Dos anillos: el de la entrada a 1x para subir y
     //  el de la señal a 2x para bajar. Fijos y en la pila del `Inserto`, que
     //  es lo que permite que el hilo de audio no reserve nada.
+    //  cpu#fir: CADA MUESTRA SE ESCRIBE DOS VECES Y LOS TAPS SE LEEN SEGUIDOS.
+    //
+    //  Antes cada tap resolvia su sitio con `(ix - i) & (kAnilloX - 1)`: doce
+    //  restas y doce mascaras por FIR y por muestra, y el perfil por lineas las
+    //  puso como las dos lineas mas calientes del motor (2.96 % y 2.92 % del
+    //  render). Con el anillo DOBLE -la muestra va a `p` y a `p + K`- la
+    //  ventana de doce cae siempre seguida, asi que el tap se lee con un
+    //  desplazamiento constante y la cuenta del indice desaparece.
+    //
+    //  Y LOS PRODUCTOS SON LOS MISMOS Y EN EL MISMO ORDEN, que es lo que hace
+    //  que la salida sea bit a bit la de antes: lo unico que cambia es como se
+    //  encuentra cada muestra, no cuales son ni en que orden se suman.
     struct Estado
     {
-        float xr[kAnilloX] {};
-        float vr[kAnilloV] {};
-        int   ix = 0, iv = 0;
+        float xr[2 * kAnilloX] {};
+        float vr[2 * kAnilloV] {};
+        int   ix = 0, iv = 0;   // ix: la ultima a 1x; iv: par, la primera de la pareja a 2x
 
         void limpia() noexcept
         {
@@ -163,17 +175,20 @@ struct Sobre2x
     template <typename Fn>
     static float paso (Estado& e, float x, Fn&& f) noexcept
     {
-        //  1. Entra la muestra en el anillo de 1x.
+        //  1. Entra la muestra en el anillo de 1x, en sus dos sitios.
         e.ix = (e.ix + 1) & (kAnilloX - 1);
         e.xr[e.ix] = x;
+        e.xr[e.ix + kAnilloX] = x;
+        //  `xn[-k]` es la muestra de hace k, sin mascara: de ahi sale el ahorro.
+        const float* const xn = e.xr + e.ix + kAnilloX;
 
         //  2. Sube. La fase PAR es la entrada retrasada seis muestras -el
         //     centro del filtro, que vale 0.5 y con el dos de la interpolacion
         //     vale uno-; la IMPAR es el producto de los doce taps.
-        const float u0 = e.xr[(e.ix - 6) & (kAnilloX - 1)];
+        const float u0 = xn[-6];
         float u1 = 0.0f;
         for (int i = 0; i < kPares; ++i)
-            u1 += a[i] * e.xr[(e.ix - i) & (kAnilloX - 1)];
+            u1 += a[i] * xn[-i];
 
         //  3. La no linealidad, en las DOS. Esta es toda la diferencia: a 1x
         //     los armonicos que pasan de 24 kHz se doblan hacia dentro y ya no
@@ -183,15 +198,18 @@ struct Sobre2x
         const float y0 = f (u0);
         const float y1 = f (u1);
 
-        //  4. Baja. Las dos muestras entran en el anillo de 2x en su orden.
-        e.iv = (e.iv + 1) & (kAnilloV - 1); e.vr[e.iv] = y0;
-        e.iv = (e.iv + 1) & (kAnilloV - 1); e.vr[e.iv] = y1;
+        //  4. Baja. Las dos muestras entran en el anillo de 2x en su orden, y
+        //     como `iv` es PAR la pareja nunca parte la vuelta.
+        e.iv = (e.iv + 2) & (kAnilloV - 1);
+        e.vr[e.iv]                 = y0; e.vr[e.iv + 1]                 = y1;
+        e.vr[e.iv + kAnilloV]      = y0; e.vr[e.iv + kAnilloV + 1]      = y1;
+        const float* const vn = e.vr + e.iv + kAnilloV + 1;   // la ultima a 2x
 
         //  El centro cae en `iv - 11` y los impares en los pares de alrededor,
         //  que es la misma simetria de subir leida al reves.
-        float z = 0.5f * e.vr[(e.iv - kMitad) & (kAnilloV - 1)];
+        float z = 0.5f * vn[-kMitad];
         for (int i = 0; i < kPares; ++i)
-            z += h[i] * e.vr[(e.iv - 2 * i) & (kAnilloV - 1)];
+            z += h[i] * vn[-2 * i];
         return z;
     }
 };
