@@ -390,15 +390,27 @@ public:
             }
 
             //  3. Hadamard de dieciseis, normalizada: ortogonal, conserva la energia.
+            //
+            //  rev#cpu: LAS CUATRO ETAPAS ESCRITAS, no un bucle con el paso en
+            //  una variable. Las mariposas son las MISMAS y en el mismo orden
+            //  -cada salida sigue siendo un u+v o un u-v de la misma pareja-,
+            //  asi que la cola sale bit a bit igual; lo que se va es el bucle.
+            //  Medido en el perfil: la mariposa costaba 1.92 % del render y
+            //  los dos bucles que la recorren otro 3.43 %, o sea que mas de la
+            //  mitad del Hadamard era contar. Con el paso constante tambien se
+            //  puede vectorizar, que es lo que no podia hacer con `paso` vivo.
+            static_assert (kLines == 16, "las cuatro etapas son para dieciseis lineas");
             float hz[kLines];
             for (int i = 0; i < kLines; ++i) hz[i] = s[i];
-            for (int paso = 1; paso < kLines; paso <<= 1)
-                for (int i = 0; i < kLines; i += paso << 1)
-                    for (int j = i; j < i + paso; ++j)
-                    {
-                        const float u = hz[j], v = hz[j + paso];
-                        hz[j] = u + v; hz[j + paso] = u - v;
-                    }
+            auto mariposa = [&hz] (int j, int paso) noexcept
+            {
+                const float u = hz[j], v = hz[j + paso];
+                hz[j] = u + v; hz[j + paso] = u - v;
+            };
+            for (int i = 0; i < kLines; i += 2)  mariposa (i, 1);
+            for (int i = 0; i < kLines; i += 4)  { mariposa (i, 2); mariposa (i + 1, 2); }
+            for (int i = 0; i < kLines; i += 8)  for (int j = 0; j < 4; ++j) mariposa (i + j, 4);
+            for (int j = 0; j < 8; ++j) mariposa (j, 8);
             constexpr float kNorm = 0.25f;   // 1/sqrt(16)
 
             //  4. Escribir de vuelta: entrada + realimentacion amortiguada.
