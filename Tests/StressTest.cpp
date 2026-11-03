@@ -23,6 +23,7 @@
 #include <tuple>
 #include <atomic>
 #include <functional>
+#include "../Source/Calidad.h"
 #include "../Source/AudioEngine.h"
 #include "../Source/Denoise.h"
 #include "../Source/MidiIo.h"
@@ -11010,6 +11011,47 @@ int main()
         std::printf ("%-34s vacia %d bloques (peor %.1f %%, media %.1f) · cargada %d (peor %.1f %%, media %.1f) · reinicio %s   %s\n",
                      "carga el motor cuenta bloques", v0, (double) p0, (double) m0, v1, (double) p1, (double) m1,
                      (r0 && r1) ? "a cero" : "NO", ok ? "OK" : zatiFalla());
+    }
+
+    //  ===================================================================
+    //  calidad# · LA LEY DEL PELDANO NI SE QUEDA ARRIBA NI OSCILA
+    //  ===================================================================
+    //
+    //  Cinco cosas, y las cinco son fallos que esta ley podria tener:
+    //    1. con el aparato limpio no baja de peldano,
+    //    2. con bloques pasados baja,
+    //    3. no baja por debajo del suelo que existe (2),
+    //    4. tras cuarenta y cinco segundos limpios sube UNO, y
+    //    5. si al subir vuelve a crepitar, ese peldano queda descartado y no
+    //       se vuelve a intentar en la sesion -que es lo que separa una ley de
+    //       un balanceo eterno en el telefono justo-.
+    {
+        //  Ventana a ventana y no en milisegundos sueltos: asi lo que se prueba
+        //  es la LEY y no la aritmetica de los restos de ventana.
+        auto ventanas = [] (LeyCalidad& ley, int n, int vistos, int pasados)
+        {
+            for (int i = 0; i < n; ++i) ley.paso (LeyCalidad::kVentanaMs, vistos, pasados);
+        };
+        LeyCalidad ley; ley.arranca (0);
+        ventanas (ley, 6, 1000, 0);             // la gracia y cinco limpias
+        const int limpio = ley.peldano;
+        ventanas (ley, 1, 1000, 20);            // 2 % pasados: baja uno
+        const int tras1 = ley.peldano;
+        ventanas (ley, 1, 1000, 20);            // y otro
+        const int fondo = ley.peldano;
+        ventanas (ley, 5, 1000, 20);            // y de ahi no baja mas
+        const int tope = ley.peldano;
+        ventanas (ley, 23, 1000, 0);            // 46 s limpios: sube uno
+        const int sube1 = ley.peldano;
+        ventanas (ley, 1, 1000, 20);            // crepita justo tras subir
+        const int castigo = ley.peldano, suelo = ley.suelo;
+        ventanas (ley, 100, 1000, 0);           // mucho tramo limpio
+        const int tras = ley.peldano;
+        const bool ok = limpio == 0 && tras1 == 1 && fondo == 2 && tope == LeyCalidad::kPeor
+                          && sube1 == 1 && castigo == 2 && suelo == 2 && tras == 2;
+        std::printf ("%-34s limpio %d · baja %d · %d · tope %d · sube %d · castigo %d (suelo %d) · luego %d   %s\n",
+                     "calidad la ley del peldano", limpio, tras1, fondo, tope, sube1, castigo, suelo, tras,
+                     ok ? "OK" : zatiFalla());
     }
 
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);

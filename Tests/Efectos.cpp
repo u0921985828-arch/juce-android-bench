@@ -116,9 +116,13 @@ static SampleBuffer::Ptr ruido (float amp)
     return SampleBuffer::Ptr (sb);
 }
 
+//  calidad#: el peldano con el que corre TODO el banco, puesto por ZATI_CALIDAD.
+static int gCalidad = 0;
+
 static std::unique_ptr<AudioEngine> monta (int f, SampleBuffer::Ptr s, float mix)
 {
     auto e = std::make_unique<AudioEngine>();
+    e->setCalidad (gCalidad);
     e->prepareToPlay (kSr, kBs);
     e->setPolyphony (8, 2);
     e->setPadGain (0, 1.0f);
@@ -831,6 +835,13 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI juceInit;
     midoReferencia();
     const int solo = argc > 1 ? juce::String (argv[1]).getIntValue() : -1;
+    //  calidad#: ZATI_CALIDAD fuerza el peldano (0 plena, 1 media, 2 baja) para
+    //  que las nueve reglas se corran en los tres y no solo en el de arriba. Un
+    //  peldano que no se mide es un peldano que un dia suena a lata.
+    const int calidadFijada = [] { const char* v = std::getenv ("ZATI_CALIDAD");
+                                   return v != nullptr ? juce::jlimit (0, 2, juce::String (v).getIntValue()) : 0; }();
+    gCalidad = calidadFijada;
+    if (calidadFijada > 0) std::printf ("CALIDAD forzada al peldano %d\n", calidadFijada);
     std::printf ("ZATI  banco de calidad de efectos   %.0f Hz  rafaga %d\n", kSr, kBs);
     //  efectos#tipos: cada tipo de un efecto, sobre el mismo preset, tiene que sonar a otra cosa que los demas.
     if (std::getenv ("ZATI_FX_TIPOS"))

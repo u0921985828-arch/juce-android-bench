@@ -24143,6 +24143,29 @@ void MainComponent::timerCallback()
         checkXRuns (dt);
     }
 
+    //  calidad#: EL PELDANO, con los bloques que el motor ha contado.
+    //
+    //  La ley vive en `Source/Calidad.h` y se mide aparte (StressTest). Aqui
+    //  solo se le pasa el reloj y las dos cuentas, y lo que decida va al motor.
+    //  Los contadores se reinician cada ventana para que lo que se juzgue sea
+    //  AHORA y no la media de la sesion: con la media, un minuto tranquilo tapa
+    //  el apuro de este compas.
+    {
+        const int antes = leyCalidad.peldano;
+        if (leyCalidad.paso (dt, engine.cargaVistos(), engine.cargaPasadas()))
+            engine.reiniciaCarga();
+        if (leyCalidad.peldano != antes)
+        {
+            engine.setCalidad (leyCalidad.peldano);
+            //  Y se apunta, que es donde se mira cuando alguien cuenta que «de
+            //  repente sonaba distinto».
+            Bitacora::escribe (leyCalidad.peldano > antes ? "zati: calidad baja un peldano\n"
+                                                          : "zati: calidad sube un peldano\n");
+            //  La ficha de AJUSTES ensena el peldano: si esta abierta, se repinta.
+            if (setSheet.isVisible()) setSheet.repintaTarjeta();
+        }
+    }
+
     //  La exportacion SI sabe cuanto falta - cuenta pasadas y bloques - asi
     //  que la barra deja de ir y venir y dice el numero.
     if (exportJob != nullptr)

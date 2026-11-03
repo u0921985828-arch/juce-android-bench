@@ -204,7 +204,7 @@ namespace Analogico
             return curva (x, g, b, t0, 1.0f / juce::jmax (1.0e-3f, g * (1.0f - t0 * t0)));
         }
 
-        void procesa (float* const* w, int chans, int n, double fs, float drive, float calor) noexcept
+        void procesa (float* const* w, int chans, int n, double fs, float drive, float calor, bool a1x = false) noexcept   // calidad#: a1x = sin sobremuestreo
         {
             smDrive += 0.25f * (juce::jlimit (0.0f, 1.0f, drive) - smDrive);
             smCalor += 0.25f * (juce::jlimit (0.0f, 1.0f, calor) - smCalor);
@@ -219,8 +219,9 @@ namespace Analogico
             for (int ch = 0; ch < juce::jmin (2, chans); ++ch)
                 for (int i = 0; i < n; ++i)
                 {
-                    const float y = Sobre2x::paso (os[ch], w[ch][i],
-                                                   [g, b, t0, inv] (float v) noexcept { return curva (v, g, b, t0, inv); });
+                    const auto cur = [g, b, t0, inv] (float v) noexcept { return curva (v, g, b, t0, inv); };
+                    const float y = a1x ? Sobre2x::pasoA1x (os[ch], w[ch][i], cur)
+                                        : Sobre2x::paso    (os[ch], w[ch][i], cur);
                     //  La asimetria deja continua: fuera con un paso alto de 8 Hz.
                     dc[ch] += cDc * (y - dc[ch]);
                     const float sinDc = y - dc[ch];
@@ -268,7 +269,7 @@ namespace Analogico
             gAntes = -1.0f;
         }
 
-        void procesa (float* const* w, int chans, int n, double fs, float sat, float vel) noexcept
+        void procesa (float* const* w, int chans, int n, double fs, float sat, float vel, bool a1x = false) noexcept   // calidad#: a1x = sin sobremuestreo
         {
             sat = juce::jlimit (0.0f, 1.0f, sat);
             vel = juce::jlimit (0.0f, 1.0f, vel);
@@ -303,7 +304,8 @@ namespace Analogico
                     env[ch] += (a > env[ch] ? cSube : cBaja) * (a - env[ch]);
                     const float gr = 1.0f / (1.0f + 0.6f * juce::jmax (0.0f, env[ch] - 0.25f));
                     x *= juce::jmax (0.63f, gr);
-                    float y = Sobre2x::paso (os[ch], x, [] (float v) noexcept { return tanhR (v); });
+                    const auto th = [] (float v) noexcept { return tanhR (v); };
+                    float y = a1x ? Sobre2x::pasoA1x (os[ch], x, th) : Sobre2x::paso (os[ch], x, th);
                     y = post.paso (y / g, ch);
                     float lp, bp;
                     golpe.paso (y, ch, lp, bp);

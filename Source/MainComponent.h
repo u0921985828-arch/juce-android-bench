@@ -10,6 +10,7 @@
 #include <utility>
 #include <optional>
 #include "AudioEngine.h"
+#include "Calidad.h"
 #include "FxPresets.h"
 #include "Iconos.h"
 #include "SampleLoader.h"
@@ -1412,7 +1413,7 @@ private:
     //  borrar.
     //  Y DOS RENGLONES MAS por la CARGA del hilo de audio y los xruns de esta
     //  tanda: es lo que convierte «crepita» en una cifra. Ver paintAudioInfo.
-    static constexpr int kAltoAudioInfo = 158 + 3 * Metrics::bandaSubtitulo;
+    static constexpr int kAltoAudioInfo = 158 + 4 * Metrics::bandaSubtitulo;
     //  ...MAS LOS SEIS RENGLONES DE LA SONDA, cuando los hay.
     //
     //  Los intentos solo se pintan con el carril NEGADO -si hay exclusiva no
@@ -1422,6 +1423,9 @@ private:
     //  mezclador. Derivado y no otra constante, que es como se llega a un 158
     //  escrito cuatro veces.
     int altoAudioInfo() const;
+
+    //  calidad#: la ley que mueve el peldano. Ver Source/Calidad.h.
+    LeyCalidad leyCalidad;
 
     void padPorDefecto (int i);
     void newProject();

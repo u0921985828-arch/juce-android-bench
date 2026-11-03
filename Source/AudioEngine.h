@@ -664,6 +664,27 @@ public:
     //  codigo#22: el bloque por fases, cronometradas solo para el banco (StressTest)
     static constexpr int kFases = 14;
     static const char* nombreFase (int f) noexcept;
+    //  ========================================================================
+    //  calidad#: EL PELDANO DE CALIDAD, Y LO QUE PUEDE Y NO PUEDE TOCAR
+    //  ========================================================================
+    //
+    //  `DeviceTier` ya tiene la doctrina escrita para la sintesis: «un proyecto
+    //  tiene que sonar PEOR, NO DISTINTO, en un telefono flojo». Esto la
+    //  extiende a los efectos, con tres peldanos y un suelo:
+    //
+    //    0 PLENA  reverb de 16 lineas, saturaciones a 2x. Lo de siempre.
+    //    1 MEDIA  reverb de 8 lineas. Medido: -7.1 % de instrucciones del
+    //             render; densidad de cola 0.96 -> 0.92 y el nivel igual.
+    //    2 BAJA   + saturaciones a 1x. El sobremuestreo cuesta 8.9 % del
+    //             render y lo que se pierde es alias: DRV pasa de -35.6 a
+    //             -19.8 dB de pliegue con el drive a tope.
+    //
+    //  Y LO QUE NINGUN PELDANO TOCA: que efectos hay, el orden de la cadena,
+    //  los parametros, el mapa de zonas ni la afinacion. Un peldano que cambie
+    //  cual es la nota no es calidad, es otro instrumento.
+    void setCalidad (int n) noexcept { calidad.store (juce::jlimit (0, 2, n), std::memory_order_relaxed); }
+    int  getCalidad() const noexcept { return calidad.load (std::memory_order_relaxed); }
+
     //  carga#: lo que la cara pinta en el renglon CARGA.
     int   cargaVistos()  const noexcept { return cargaBloques.load (std::memory_order_relaxed); }
     int   cargaPasadas() const noexcept { return cargaPasados.load (std::memory_order_relaxed); }
@@ -2919,6 +2940,7 @@ private:
     //  Dos lecturas de reloj por bloque (unos 50 ns en Android) y cuatro
     //  atomicos que solo escribe el hilo de audio. `midePorFases` sigue siendo
     //  del banco; esto es de la app.
+    std::atomic<int>   calidad { 0 };   // calidad#: 0 plena, 1 media, 2 baja
     std::atomic<int>   cargaBloques { 0 };
     std::atomic<int>   cargaPasados { 0 };
     std::atomic<float> cargaPeorPc  { 0.0f };
@@ -4244,6 +4266,8 @@ private:
         //  alias metidos por evaluar un `tanh` a 1x. El paso bajo que va detras
         //  no lo evita: llega tarde, cuando lo que estaba por encima de Nyquist
         //  ya se doblo hacia dentro y quedo indistinguible de la señal.
+        //  calidad#: en que carril va cada saturacion de este canal. Ver carril1x.
+        bool drv1x = false, fld1x = false, clp1x = false, pre1x = false, cin1x = false;
         Sobre2x::Estado drvOs[2];
 
         //  BIT: la retencion y la fase del diezmado.

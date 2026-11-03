@@ -127,7 +127,9 @@ namespace Sampling
         static float transfiere (float x, float driveDb, float forma) noexcept
         { return kTecho * curva (x * dBaG (juce::jlimit (0.0f, 18.0f, driveDb)), rodilla (forma)); }
 
-        void procesa (float* const* w, int chans, int n, float driveDb, float forma) noexcept
+        //  calidad#: `a1x` es el peldano BAJO: la curva se evalua una vez por
+        //  muestra en vez de dos y sin los dos FIR. Vuelve el alias; ver Sobre2x.
+        void procesa (float* const* w, int chans, int n, float driveDb, float forma, bool a1x = false) noexcept
         {
             smForma = smForma < 0.0f ? forma : smForma + 0.25f * (forma - smForma);
             const float t = rodilla (smForma);
@@ -139,7 +141,9 @@ namespace Sampling
                 for (int i = 0; i < n; ++i)
                 {
                     const float x = w[ch][i] * (g0 + dg * (float) i);
-                    const float y = Sobre2x::paso (os[ch], x, [t] (float v) noexcept { return curva (v, t); });
+                    const auto curvaT = [t] (float v) noexcept { return curva (v, t); };
+                    const float y = a1x ? Sobre2x::pasoA1x (os[ch], x, curvaT)
+                                        : Sobre2x::paso    (os[ch], x, curvaT);
                     w[ch][i] = kTecho * juce::jlimit (-1.0f, 1.0f, y);   // sampling#: el filtro del 2x repica sobre el techo con ruido
                 }
         }

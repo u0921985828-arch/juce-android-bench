@@ -36,7 +36,15 @@ public:
     //  array se lee al vuelo y no en el contexto de clase completa, que es lo
     //  que si tiene el cuerpo de un metodo — que es donde vivia esa tabla.
     //  efectos#rev: dieciseis lineas y cuatro difusores; con cuatro y dos la densidad se quedaba en 0.60 y la cola tenia picos de 6.4 dB.
-    static constexpr int kLines = 8;    // cpu#rev: ocho lineas, a prueba
+    //  calidad#: DIECISEIS LINEAS COMO TOPE Y OCHO COMO PELDANO.
+    //
+    //  La red se reserva siempre para dieciseis -la memoria es la misma, y
+    //  reservar en marcha esta prohibido en el hilo de audio- y `nLin` dice
+    //  cuantas CORREN. Con ocho se usan las pares (una de cada dos), que
+    //  mantiene el reparto de largos y los signos cruzados, y la normalizacion
+    //  y la salida se ajustan a la cuenta. Ver `pideLineas`: el cambio espera a
+    //  que la cola haya callado, como ya hace el cambio de tipo.
+    static constexpr int kLines = 16;
     static constexpr int kDiff  = 4;
 
     //  Longitudes en muestras a 44.1 kHz, escaladas despues a la frecuencia de
@@ -51,7 +59,7 @@ public:
     //  dentro del arreglo.
     //  efectos#rev: la vuelta de referencia para fb; asi el largo de las lineas no mueve cuanto dura la cola.
     static constexpr double kRef44 = 1959.75;
-    static constexpr int kBase44[kLines] = { 701, 887, 1123, 1423, 1801, 2281, 2879, 3659 };   // cpu#rev: una de cada dos de las dieciseis
+    static constexpr int kBase44[kLines] = { 701, 797, 887, 997, 1123, 1277, 1423, 1597, 1801, 2027, 2281, 2579, 2879, 3251, 3659, 4111 };
 
     //  efectos#tipos: cinco sitios con su propia forma; SALA es la red de siempre y suena igual que antes.
     enum Tipo { kSala = 0, kCuarto, kPlaca, kMuelle, kCatedral, kNumTipos };
@@ -104,6 +112,10 @@ public:
         //  romper el impulso, no crear cola.
         static constexpr int dif44[kDiff]   = { 142, 107, 379, 277 };
 
+        //  calidad#: la tabla se llena para las dieciseis y con ocho se leen las
+        //  OCHO PRIMERAS -0.31 a 1.27 Hz-, que es el abanico que la red de ocho
+        //  ya tenia medido. Los largos y los signos si van de dos en dos (ver
+        //  `pasoLin`): son los que marcan el reparto de la cola.
         for (int i = 0; i < kLines; ++i)
         {
             const double hz = (0.31 + 0.137 * i);
@@ -117,7 +129,14 @@ public:
         const int extraMax = (int) std::ceil (2.0 * kModMax44 * fs / 44100.0) + 4;
         for (int i = 0; i < kLines; ++i)
         {
-            const int largoMax = juce::jmax (16, (int) std::lround (kBase44[i] * kEscalaMax * fs / 44100.0));
+            //  calidad#: Y PARA LAS DOS CUENTAS DE LINEAS. Con ocho, la linea i
+            //  usa el largo de la 2i -una de cada dos- que es MAS LARGO que el
+            //  suyo: reservar por `kBase44[i]` dejaba la octava linea con un
+            //  anillo de 1597 muestras pidiendo 3659, o sea escribiendo fuera
+            //  del buffer. Lo canto un segfault en el primer banco con el
+            //  peldano 1 forzado.
+            const int base = juce::jmax (kBase44[i], kBase44[juce::jmin (kLines - 1, i * 2)]);
+            const int largoMax = juce::jmax (16, (int) std::lround (base * kEscalaMax * fs / 44100.0));
             line[i].setSize (1, largoMax + extraMax, false, true, true);   // rev#cpu: una red para los dos lados
             line[i].clear();
             lineIdx[i] = 0;
@@ -160,9 +179,9 @@ public:
         quedaSub = 0;
         ladoE[0] = ladoE[1] = 0.0f;
         ladoG[0] = ladoG[1] = 1.0f;
-        for (int i = 0; i < kLines; ++i)
+        for (int i = 0; i < nLin; ++i)
         {
-            const double a = 2.0 * juce::MathConstants<double>::pi * ((double) i / kLines);
+            const double a = 2.0 * juce::MathConstants<double>::pi * ((double) i / nLin);
             oscC[i] = (float) std::cos (a); oscS[i] = (float) std::sin (a);
         }
     }
@@ -213,7 +232,7 @@ public:
         //  desde que `tauSegundos` los necesita para decir cuanto dura la cola.
         fb    = realimentacionDe (size, tipo);
         dampC = amortiguadoDe (damping, tipo);
-        for (int i = 0; i < kLines; ++i) fbLinea[i] = std::pow (fb, exponente[i]);
+        for (int i = 0; i < nLin; ++i) fbLinea[i] = std::pow (fb, exponente[i]);
     }
 
     //  efectos#tipos: el tipo se cambia cuando la salida ha bajado a cero (20 ms); el previo, deslizandose.
@@ -224,11 +243,16 @@ public:
     }
     int getTipo() const noexcept { return tipo; }
 
+    //  calidad#: 8 o 16 lineas. Se aplica cuando la cola calla, igual que el
+    //  tipo; mientras suena, la peticion espera.
+    void pideLineas (int n) noexcept { pedidoLin = n >= kLines ? kLines : kLines / 2; }
+    int  lineasAhora() const noexcept { return nLin; }
+
     //  rev#osc: lo que el oscilador de cada linea se ha ido de radio uno; el banco lo mira.
     float oscDesvio() const noexcept
     {
         float peor = 0.0f;
-        for (int i = 0; i < kLines; ++i)
+        for (int i = 0; i < nLin; ++i)
             peor = juce::jmax (peor, std::abs (std::hypot (oscC[i], oscS[i]) - 1.0f));
         return peor;
     }
@@ -250,7 +274,7 @@ public:
         for (int c = 0; c < ch; ++c) w[c] = buf.getWritePointer (c, start);
 
         //  rev#osc: la rotacion en float se va de radio uno; se devuelve a uno cada bloque.
-        for (int i = 0; i < kLines; ++i)
+        for (int i = 0; i < nLin; ++i)
         {
             float& o0 = oscC[i];
             float& o1 = oscS[i];
@@ -262,6 +286,16 @@ public:
         //  rev#cpu: punteros y largos una vez por bloque, no una por muestra y linea.
         //  efectos#tipos: sin nada dentro el tipo nuevo entra ya; sonando, al final del bloque y bajando.
         if (tipoPedido != tipo && ! ringing()) { aplicaForma (tipoPedido); reset(); }
+        //  calidad#: y la cuenta de lineas, con la misma regla que el tipo: solo
+        //  cuando no queda cola. Cambiarla sonando seria media red nueva en
+        //  mitad de una nota, o sea un chasquido.
+        if (pedidoLin != nLin && ! ringing())
+        {
+            nLin = pedidoLin;
+            ultSize = ultDamp = -1.0f;   // los fbLinea son de la otra cuenta
+            aplicaForma (tipo);
+            reset();
+        }
         const bool cambia = tipoPedido != tipo;
         const bool muelle = tipo == kMuelle;
         const bool usaPre = nEco > 0 || preAct > 0.0f || preObj > 0.0f;
@@ -273,7 +307,7 @@ public:
         float* dp[kDiff];
         float tamF[kLines];
         int tam[kLines];
-        for (int i = 0; i < kLines; ++i)
+        for (int i = 0; i < nLin; ++i)
         {
             tam[i] = ringLen[i]; tamF[i] = (float) tam[i];   // efectos#tipos: el anillo del tipo, no el buffer reservado
             lp[i] = line[i].getWritePointer (0);
@@ -363,7 +397,7 @@ public:
             if (--quedaSub <= 0)
             {
                 quedaSub = kSub;
-                for (int i = 0; i < kLines; ++i)
+                for (int i = 0; i < nLin; ++i)
                 {
                     const float nc = oscC[i] * rotC[i] - oscS[i] * rotS[i];
                     oscS[i] = oscC[i] * rotS[i] + oscS[i] * rotC[i];
@@ -380,7 +414,7 @@ public:
                 }
             }
             float s[kLines];
-            for (int i = 0; i < kLines; ++i)
+            for (int i = 0; i < nLin; ++i)
             {
                 const float* r = lp[i];
                 const int k = leeIdx[i];
@@ -399,23 +433,30 @@ public:
             //  los dos bucles que la recorren otro 3.43 %, o sea que mas de la
             //  mitad del Hadamard era contar. Con el paso constante tambien se
             //  puede vectorizar, que es lo que no podia hacer con `paso` vivo.
-            static_assert (kLines == 8, "las tres etapas son para ocho lineas");
+            static_assert (kLines == 16, "las etapas escritas son para dieciseis lineas");
             float hz[kLines];
-            for (int i = 0; i < kLines; ++i) hz[i] = s[i];
+            for (int i = 0; i < nLin; ++i) hz[i] = s[i];
             auto mariposa = [&hz] (int j, int paso) noexcept
             {
                 const float u = hz[j], v = hz[j + paso];
                 hz[j] = u + v; hz[j + paso] = u - v;
             };
-            for (int i = 0; i < kLines; i += 2)  mariposa (i, 1);
-            for (int i = 0; i < kLines; i += 4)  { mariposa (i, 2); mariposa (i + 1, 2); }
-            for (int j = 0; j < 4; ++j) mariposa (j, 4);
-            constexpr float kNorm = 0.35355339f;   // 1/sqrt(8)
+            for (int i = 0; i < nLin; i += 2)  mariposa (i, 1);
+            for (int i = 0; i < nLin; i += 4)  { mariposa (i, 2); mariposa (i + 1, 2); }
+            if (nLin >= 16)
+            {
+                for (int i = 0; i < nLin; i += 8)  for (int j = 0; j < 4; ++j) mariposa (i + j, 4);
+                for (int j = 0; j < 8; ++j) mariposa (j, 8);
+            }
+            else
+                for (int j = 0; j < 4; ++j) mariposa (j, 4);
+            const float kNorm = nLin >= kLines ? 0.25f : 0.35355339f;   // 1/sqrt(n)
 
             //  4. Escribir de vuelta: entrada + realimentacion amortiguada.
-            for (int i = 0; i < kLines; ++i)
+            const int pl = pasoLin();
+            for (int i = 0; i < nLin; ++i)
             {
-                const float v = kEntra[i] * x + fbLinea[i] * kNorm * hz[i];
+                const float v = kEntra[i * pl] * x + fbLinea[i] * kNorm * hz[i];
                 //  Un polo por linea: la cola se oscurece con cada vuelta,
                 //  que es lo que hace el aire de una sala de verdad.
                 const float d = damp[i] + dampC * (v - damp[i]);
@@ -423,15 +464,15 @@ public:
                 //  entra en un estado realimentado se queda para siempre.
                 damp[i] = std::abs (d) <= std::numeric_limits<float>::max() ? d : 0.0f;   // rev#cpu: isfinite sin rama
             }
-            for (int i = 0; i < kLines; ++i) lp[i][lineIdx[i]] = damp[i];
+            for (int i = 0; i < nLin; ++i) lp[i][lineIdx[i]] = damp[i];
 
             //  5. La salida es la suma de las lineas, atenuada para que
             //     dieciseis lineas sumadas no lleguen dieciseis veces mas fuerte.
             for (int c = 0; c < ch; ++c)
             {
                 float suma = 0.0f;
-                for (int i = 0; i < kLines; ++i) suma += kSale[c][i] * s[i];
-                w[c][n] = kSalida * suma;
+                for (int i = 0; i < nLin; ++i) suma += kSale[c][i * pl] * s[i];
+                w[c][n] = salidaDe() * suma;
             }
             }
             if (nEco > 0)
@@ -445,7 +486,7 @@ public:
                 w[0][n] *= gL0; w[1][n] *= gR0;
             }
 
-            for (int i = 0; i < kLines; ++i)
+            for (int i = 0; i < nLin; ++i)
                 if (++lineIdx[i] >= tam[i]) lineIdx[i] = 0;
             for (int d = 0; d < kDiff; ++d)
                 if (++difIdx[d] >= difLen[d]) difIdx[d] = 0;
@@ -507,21 +548,24 @@ public:
     }
 
 private:
-    static constexpr float kSalida = 0.17677670f;   // cpu#rev: 0.125*sqrt(2), ocho lineas suman la mitad de energia
+    //  calidad#: con ocho lineas la suma lleva la mitad de energia, asi que la
+    //  salida se compensa por la raiz de la cuenta y el nivel no se mueve.
+    float salidaDe() const noexcept { return nLin >= kLines ? 0.125f : 0.17677670f; }
     static constexpr float kPreLento = 0.25f;   // efectos#tipos: muestras por muestra al deslizar el previo
 
     void aplicaForma (int t) noexcept
     {
         tipo = tipoDe ((float) t);
         const auto& f = kForma[tipo];
-        for (int i = 0; i < kLines; ++i)
-            lineLen[i] = juce::jmax (16, (int) std::lround (kBase44[i] * f.escala * fs / 44100.0));
+        const int pl = pasoLin();
+        for (int i = 0; i < nLin; ++i)
+            lineLen[i] = juce::jmax (16, (int) std::lround (kBase44[i * pl] * f.escala * fs / 44100.0));
         //  efectos#rev: cada linea pierde por vuelta segun lo que mide, asi todas caen al mismo ritmo.
-        for (int i = 0; i < kLines; ++i) exponente[i] = (float) (lineLen[i] / (kRef44 * fs / 44100.0));
+        for (int i = 0; i < nLin; ++i) exponente[i] = (float) (lineLen[i] / (kRef44 * fs / 44100.0));
         //  efectos#rev: la longitud de cada linea respira unas muestras, a ritmos que no se repiten; rompe los modos fijos.
         profundidad = (float) (f.mod44 * fs / 44100.0);
         const int extra = (int) std::ceil (2.0f * profundidad) + 4;
-        for (int i = 0; i < kLines; ++i) ringLen[i] = lineLen[i] + extra;
+        for (int i = 0; i < nLin; ++i) ringLen[i] = lineLen[i] + extra;
         difG = f.difG;
         hpA = f.hpHz > 0.0f ? (float) std::exp (-2.0 * juce::MathConstants<double>::pi * f.hpHz / fs) : 0.0f;
         nEco = f.erGan > 0.0f ? kEcos : 0;
@@ -549,9 +593,15 @@ private:
 
     //  efectos#rev: entrada y salida que no son filas de Hadamard; una fila mete toda la energia en una linea.
     //  efectos#rev: los dos lados con la misma entrada y la salida con otros signos; con vectores distintos la cola salia x0.56 de un lado.
-    static constexpr float kEntra[kLines] = {  1.01f, -1.09f,  0.85f,  0.70f,  1.10f, -0.85f,  0.83f,  0.95f };
-    static constexpr float kSale[2][kLines]  = { { -0.72f,  0.78f, -0.71f, -1.17f,  1.11f,  1.01f, -0.99f, -1.10f },
-                                                 { -0.72f,  0.78f, -0.71f,  1.17f, -1.11f,  1.01f, -0.99f,  1.10f } };
+    static constexpr float kEntra[kLines] = {  1.01f, -1.15f, -1.09f, -0.81f,  0.85f,  1.14f,  0.70f, -1.11f,  1.10f, -0.93f, -0.85f, -0.84f,  0.83f,  0.92f,  0.95f, -0.98f };
+    static constexpr float kSale[2][kLines]  = { { -0.72f,  1.00f,  0.78f, -1.04f, -0.71f,  0.86f, -1.17f,  0.97f,  1.11f,  1.03f,  1.01f,  0.80f, -0.99f, -0.72f, -1.10f,  1.18f },
+                                                 { -0.72f, -1.00f,  0.78f, -1.04f, -0.71f, -0.86f,  1.17f,  0.97f, -1.11f, -1.03f,  1.01f,  0.80f, -0.99f,  0.72f,  1.10f, -1.18f } };
+
+    //  calidad#: cuantas lineas CORREN (8 o 16) y cuantas se piden. El cambio
+    //  lo aplica `process` cuando la cola ha callado.
+    int nLin = kLines, pedidoLin = kLines;
+    //  Con ocho se usan las PARES de las dieciseis: una de cada dos.
+    int pasoLin() const noexcept { return kLines / juce::jmax (1, nLin); }
 
     double fs = 44100.0;
     int    chans = 2;

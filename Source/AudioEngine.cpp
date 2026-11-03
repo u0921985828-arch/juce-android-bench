@@ -2380,6 +2380,45 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 mirPre[(size_t) ((wi + i) & (kFxScope - 1))] = 0.5f * (l[i] + r[i]);
         };
 
+        //  calidad#: EL CARRIL DE LAS SATURACIONES, Y POR QUE CAMBIA EN SILENCIO.
+        //
+        //  El peldano BAJO evalua las curvas a 1x. Los dos caminos no retrasan
+        //  lo mismo -el de 2x, cinco muestras y media; el directo, seis- asi
+        //  que cambiar de carril con señal dentro mueve la fase media muestra y
+        //  eso, en una saturacion, es un chasquido pequeno pero real. Se cambia
+        //  cuando el bus de ese efecto esta CALLADO, que en un patron pasa
+        //  entre golpe y golpe; mientras suena, la peticion espera. Un peldano
+        //  que tarda dos golpes en aplicarse es exactamente igual de util y no
+        //  se oye llegar.
+        auto carril1x = [&] (int f, bool& usa, bool recien = false) noexcept
+        {
+            //  Y SOLO DONDE EL SOBREMUESTREO NO ESTA PAGANDO NADA, que es lo
+            //  que dijo la medida y no el plan. Con los cinco a 1x, la sonda de
+            //  pliegue del banco canto: DRV pasa de -89.5 a **-38.3 dB** -por
+            //  encima del tope de -60 que el propio banco exige, o sea rojo-,
+            //  PRE de -119.7 a -106.5 y CIN de -118.6 a -100.9. FLD y CLP, en
+            //  cambio, miden LO MISMO a 1x que a 2x (-119.7 dB en 4646 Hz):
+            //  sus curvas son triangulo y rodilla, no un tanh, y a 1x no
+            //  ensucian mas. Asi que el peldano bajo les quita el 2x a esas dos
+            //  -gratis- y a las otras tres no se lo quita: un bajon de calidad
+            //  que mete alias audible no es un peldano, es otra app.
+            const bool quiere = calidad.load (std::memory_order_relaxed) >= 2
+                                  && (f == kFxFld || f == kFxClp);
+            //  Y AL ENCENDERSE, SIN ESPERAR: el estado acaba de vaciarse, asi
+            //  que no hay fase que mover ni nada que chasquear. Sin esto, un
+            //  efecto que no para de sonar nunca llegaba a cambiar de carril.
+            if (recien) { usa = quiere; return usa; }
+            if (usa != quiere)
+            {
+                const auto& bus = fxBus[busIdx (f)];
+                float pk = 0.0f;
+                for (int ch = 0; ch < chans; ++ch)
+                    pk = juce::jmax (pk, bus.getMagnitude (ch, startSample, numSamples));
+                if (pk < 1.0e-5f) usa = quiere;
+            }
+            return usa;
+        };
+
         auto live = [&] (int f) noexcept
         {
             const auto b = busIdx (f);
@@ -2897,6 +2936,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     I.drvTipo = drvTipoT;
                     I.drvFunde = I.drvTipoViejo == drvTipoT ? 1.0f : 0.0f;
                 }
+                const bool drvRecien = drvNow && ! I.drvWasActive;   // calidad#
                 I.drvWasActive = drvNow;
 
                 if (drvNow)
@@ -2906,6 +2946,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     //  compensa por la ganancia que ENTRA y no por el techo del
                     //  tanh, que para cualquier k util vale ~1.
                     const auto  dr = driveDe (I.smDrive, I.drvTipo);
+                    const bool  drv1x = carril1x (kFxDrv, I.drv1x, drvRecien);   // calidad#
                     const bool  drvCruza = I.drvFunde < 1.0f;
                     const auto  drV = driveDe (I.smDrive, I.drvTipoViejo);
                     const float drvPaso = 1.0f / (0.02f * (float) systemSampleRate);
@@ -2930,12 +2971,16 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                             //  y costaria el doble de multiplicaciones.
                             float sat;
                             if (! drvCruza)
-                                sat = Sobre2x::paso (os, w[i], [dr] (float v) noexcept { return saturaDe (v, dr); });
+                            {
+                                const auto cur = [dr] (float v) noexcept { return saturaDe (v, dr); };
+                                sat = drv1x ? Sobre2x::pasoA1x (os, w[i], cur) : Sobre2x::paso (os, w[i], cur);
+                            }
                             else
                             {
                                 fu = juce::jmin (1.0f, fu + drvPaso);
-                                sat = Sobre2x::paso (os, w[i], [dr, drV, fu] (float v) noexcept
-                                                     { return saturaDe (v, drV) + fu * (saturaDe (v, dr) - saturaDe (v, drV)); });
+                                const auto cur = [dr, drV, fu] (float v) noexcept
+                                    { return saturaDe (v, drV) + fu * (saturaDe (v, dr) - saturaDe (v, drV)); };
+                                sat = drv1x ? Sobre2x::pasoA1x (os, w[i], cur) : Sobre2x::paso (os, w[i], cur);
                             }
                             lp += a * (sat - lp);
                             dc = lp - dcX + rDc * dc;
@@ -4102,6 +4147,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     if (vivo && ! I.fldWasActive)
                         { I.fldLp[0] = I.fldLp[1] = 0.0f;
                           I.fldOs[0].limpia(); I.fldOs[1].limpia(); }
+                    const bool fldRecien = vivo && ! I.fldWasActive;   // calidad#
                     I.fldWasActive = vivo;
 
                     if (vivo)
@@ -4111,6 +4157,7 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                         //  mando a cero deja la señal como estaba, que es lo que
                         //  un mando a cero tiene que hacer.
                         const float g = fldGanancia (I.smFldPliegue);
+                        const bool  fld1x = carril1x (kFxFld, I.fld1x, fldRecien);   // calidad#
                         const float cLp = 1.0f - std::exp (-juce::MathConstants<float>::twoPi
                                                            * I.smFldTono / (float) systemSampleRate);
 
@@ -4120,9 +4167,9 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                             auto& os = I.fldOs[ch];
                             for (int i = 0; i < numSamples; ++i)
                             {
-                                const float y = Sobre2x::paso (os, w[i],
-                                                    [g] (float v) noexcept
-                                                    { return pliega (v, g); });
+                                const auto cur = [g] (float v) noexcept { return pliega (v, g); };
+                                const float y = fld1x ? Sobre2x::pasoA1x (os, w[i], cur)
+                                                      : Sobre2x::paso    (os, w[i], cur);
                                 I.fldLp[ch] += cLp * (y - I.fldLp[ch]);
                                 w[i] = I.fldLp[ch];
                             }
@@ -4454,26 +4501,32 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
 
                     const bool vPre = live (kFxPre);
                     if (vPre && ! I.preWasActive) I.preFx.limpia();
+                    const bool preRecien = vPre && ! I.preWasActive;   // calidad#
                     I.preWasActive = vPre;
                     if (vPre)
                     {
                         I.preFx.procesa (escribe (kFxPre), chans, numSamples, systemSampleRate,
-                                         P (kFxPre, 0), P (kFxPre, 1));
+                                         P (kFxPre, 0), P (kFxPre, 1), carril1x (kFxPre, I.pre1x, preRecien));
                         returnBus (kFxPre);
                     }
 
                     const bool vCin = live (kFxCin);
                     if (vCin && ! I.cinWasActive) I.cinFx.limpia();
+                    const bool cinRecien = vCin && ! I.cinWasActive;   // calidad#
                     I.cinWasActive = vCin;
                     if (vCin)
                     {
                         I.cinFx.procesa (escribe (kFxCin), chans, numSamples, systemSampleRate,
-                                         P (kFxCin, 0), P (kFxCin, 1));
+                                         P (kFxCin, 0), P (kFxCin, 1), carril1x (kFxCin, I.cin1x, cinRecien));
                         returnBus (kFxCin);
                     }
 
                     // --- sampling#: SMP CLP VIN GLU OTT STP, por indice detras de CIN y del mismo molde. ---
-                    auto enciende = [] (bool v, bool& antes, auto& fx) noexcept { if (v && ! antes) fx.limpia(); antes = v; return v; };
+                    //  calidad#: `recien` sale por referencia para que el carril de las
+                    //  saturaciones pueda cambiar justo cuando el estado se vacia.
+                    bool recienFx = false;
+                    auto enciende = [&recienFx] (bool v, bool& antes, auto& fx) noexcept
+                    { recienFx = v && ! antes; if (recienFx) fx.limpia(); antes = v; return v; };
                     if (enciende (live (kFxSmp), I.smpWasActive, I.smpFx))
                     {
                         I.smpFx.procesa (escribe (kFxSmp), chans, numSamples, systemSampleRate, P (kFxSmp, 0), P (kFxSmp, 1));
@@ -4481,7 +4534,8 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     }
                     if (enciende (live (kFxClp), I.clpWasActive, I.clpFx))
                     {
-                        I.clpFx.procesa (escribe (kFxClp), chans, numSamples, P (kFxClp, 0), P (kFxClp, 1));
+                        I.clpFx.procesa (escribe (kFxClp), chans, numSamples, P (kFxClp, 0), P (kFxClp, 1),
+                                         carril1x (kFxClp, I.clp1x, recienFx));
                         returnBus (kFxClp);
                     }
                     if (enciende (live (kFxVin), I.vinWasActive, I.vinFx))
@@ -4674,6 +4728,10 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 if ((live (kFxRev) || (lista && I.reverb.ringing()))
                     && entra (kFxRev, I.reverb.ringing()))
                 {
+                    //  calidad#: la cuenta de lineas del peldano. La reverb la
+                    //  aplica cuando su cola calla, asi que pedirla cada bloque
+                    //  no cuesta nada ni corta nada.
+                    I.reverb.pideLineas (calidad.load (std::memory_order_relaxed) >= 1 ? 8 : 16);
                     I.reverb.setTipo (P (kFxRev, 4), P (kFxRev, 5));
                     I.reverb.setParameters (P (kFxRev, 0), P (kFxRev, 1));
                     I.reverb.process (fxBus[busIdx (kFxRev)], startSample, numSamples);

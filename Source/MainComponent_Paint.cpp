@@ -830,6 +830,19 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
         line (T ("cortes"), v, xrunsSeen > 0 ? ZatiColours::yellow : ZatiColours::lcdDim);
     }
 
+    //  ...Y EL PELDANO DE CALIDAD, que es la respuesta de la app a lo de
+    //  arriba. Se pinta SIEMPRE y no solo cuando ha bajado: un peldano que se
+    //  mueve sin decirlo es la app sonando distinto sin motivo visible, que es
+    //  exactamente la queja que trajo todo esto.
+    {
+        const int q = engine.getCalidad();
+        juce::String v = q == 0 ? T ("plena")
+                       : q == 1 ? T ("media|calidad") + "  ·  " + T ("reverb mas simple")
+                                : T ("baja")  + "  ·  " + T ("reverb y saturaciones mas simples");
+        if (q > 0) v += "  ·  " + T ("el aparato no daba mas");
+        line (T ("calidad"), v, q == 0 ? ZatiColours::lcdFg : ZatiColours::yellow);
+    }
+
     //  ...Y LOS SEIS INTENTOS QUE LLEVARON A ESE RENGLON.
     //
     //  La pantalla ensenaba la conclusion -«compartida MEZCLADOR»- y con el

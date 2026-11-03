@@ -163,6 +163,36 @@ struct Sobre2x
         }
     };
 
+    //  LA MISMA MUESTRA SIN SOBREMUESTREAR, para el peldano BAJO de calidad.
+    //
+    //  `f` se evalua UNA vez, a 1x, que es lo que hacian los treinta efectos
+    //  antes de que existiera este fichero: vuelve el alias que la sonda de
+    //  pliegue condeno -DRV pasa de -35.6 a -19.8 dB con el drive a tope- y se
+    //  ahorran los veinticuatro productos de los dos FIR.
+    //
+    //  DOS COSAS QUE NO SON OBVIAS Y SON EL MOTIVO DE QUE ESTO VIVA AQUI:
+    //
+    //    · Se lee `xn[-6]`, o sea la entrada RETRASADA SEIS MUESTRAS, y no `x`.
+    //      El camino de 2x retrasa once muestras a 2x -cinco y media a 1x- asi
+    //      que pasar `x` a secas movaria el sonido media decena de muestras
+    //      hacia delante justo al cambiar de peldano. Con seis, la diferencia
+    //      es MEDIA muestra.
+    //    · Y los dos anillos se mantienen al dia igual, con la salida repetida
+    //      en las dos fases, para que volver a 2x no empiece leyendo lo que
+    //      quedo de hace un minuto.
+    template <typename Fn>
+    static float pasoA1x (Estado& e, float x, Fn&& f) noexcept
+    {
+        e.ix = (e.ix + 1) & (kAnilloX - 1);
+        e.xr[e.ix] = x;
+        e.xr[e.ix + kAnilloX] = x;
+        const float y = f (e.xr[e.ix + kAnilloX - 6]);
+        e.iv = (e.iv + 2) & (kAnilloV - 1);
+        e.vr[e.iv]            = y; e.vr[e.iv + 1]            = y;
+        e.vr[e.iv + kAnilloV] = y; e.vr[e.iv + kAnilloV + 1] = y;
+        return y;
+    }
+
     //  UNA MUESTRA: sube a 2x, deja que `f` trabaje en las dos, y baja.
     //
     //  `f` se pasa como plantilla y no como `std::function` a proposito: una
