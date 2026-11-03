@@ -785,6 +785,51 @@ void MainComponent::paintAudioInfo (juce::Graphics& g, juce::Rectangle<int> area
         line (T ("atasco"), valor, color);
     }
 
+    //  ...Y LA CARGA DEL HILO DE AUDIO, que es la unica cifra que contesta
+    //  «crepita». Un bloque que no cabe en su presupuesto es un hueco en el
+    //  sonido, y hasta esta tanda la app no lo contaba: se discutia con
+    //  milisegundos de un contenedor que da 2.4 y 3.0 ms para el mismo
+    //  binario. Aqui se pinta lo que mide el propio telefono.
+    //
+    //  Media deslizante, peor de la tanda y cuantos bloques se pasaron. El
+    //  semaforo lo decide lo PASADO y no la media: una media de 70 % sin un
+    //  solo bloque pasado suena perfecta, y una de 20 % con un 1 % de bloques
+    //  pasados crepita.
+    {
+        const int   vistos  = engine.cargaVistos();
+        const int   pasados = engine.cargaPasadas();
+        const float media   = engine.cargaMedia();
+        const float peor    = engine.cargaPeor();
+        juce::String v;
+        juce::Colour c = ZatiColours::lcdDim;
+        if (vistos <= 0)
+            v = T ("sin medir");
+        else
+        {
+            v = Lang::ltr (juce::String ((int) (media + 0.5f)) + " %") + "  "
+                  + T ("peor") + " " + Lang::ltr (juce::String ((int) (peor + 0.5f)) + " %");
+            if (pasados > 0)
+                v += "  " + T ("%1 pasados", Lang::ltr (juce::String (pasados)));
+            const double frac = (double) pasados / (double) vistos;
+            c = pasados == 0 ? (media < 70.0f ? ZatiColours::lcdFg : ZatiColours::yellow)
+              : frac > 0.001 ? ZatiColours::redLcd : ZatiColours::yellow;
+        }
+        line (T ("carga"), v, c);
+    }
+
+    //  Y LOS CORTES QUE CUENTA EL APARATO, con el bufer que la app lleva puesto
+    //  por su culpa: los dos numeros juntos o no se entiende por que la
+    //  latencia subio sola. Ver checkXRuns.
+    {
+        const int mult = multDeRuta();
+        juce::String v = xrunsSeen > 0
+                           ? Lang::ltr (juce::String (xrunsSeen)) + "  " + T ("en este bufer")
+                           : T ("ninguno");
+        if (mult > sueloDeRuta())
+            v += "  ·  " + T ("bufer x%1", Lang::ltr (juce::String (mult)));
+        line (T ("cortes"), v, xrunsSeen > 0 ? ZatiColours::yellow : ZatiColours::lcdDim);
+    }
+
     //  ...Y LOS SEIS INTENTOS QUE LLEVARON A ESE RENGLON.
     //
     //  La pantalla ensenaba la conclusion -«compartida MEZCLADOR»- y con el

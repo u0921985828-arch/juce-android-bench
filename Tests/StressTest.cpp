@@ -10957,6 +10957,61 @@ int main()
                      (malas == 0 && cadenasNoVacias > 100) ? "OK" : zatiFalla());
     }
 
+    //  ===================================================================
+    //  carga# · EL MOTOR CUENTA SUS PROPIOS BLOQUES
+    //  ===================================================================
+    //
+    //  La pantalla de AUDIO va a pintar «carga media / peor / bloques pasados»
+    //  en el telefono, que es el unico sitio donde el crujido existe: el reloj
+    //  de este contenedor dio 2.412 y 3.044 ms para el MISMO binario, asi que
+    //  aqui no se puede afirmar un milisegundo. Lo que SI se puede comprobar es
+    //  que el contador cuenta lo que dice que cuenta:
+    //
+    //    · un bloque medido por bloque renderizado, ni uno mas,
+    //    · el peor de una fila cargada es PEOR que el de la misma fila vacia,
+    //    · y `reiniciaCarga` lo deja a cero.
+    //
+    //  Sin la tercera, un contador que se queda pegado al maximo de hace una
+    //  hora pintaria rojo para siempre; sin la segunda, uno que no mide nada
+    //  pasaria igual.
+    {
+        constexpr double kSr = 48000.0; constexpr int kBlk = 128;
+        auto mide = [&] (bool conEfectos, int& vistos, float& peor, float& media)
+        {
+            const auto m = std::make_unique<AudioEngine>(); AudioEngine& e = *m;
+            e.prepareToPlay (kSr, kBlk); e.setPolyphony (8, 2);
+            enCanalCero (e);
+            e.publishSample (0, makeSample (kSr, 0.5, 220.0f, true));
+            if (conEfectos)
+                for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+                    for (int f = 0; f < AudioEngine::kNumFx; ++f)
+                    {
+                        e.setFxParam (c, f, 0, AudioEngine::kFxDef[f][0]);
+                        e.setFxParam (c, f, 1, AudioEngine::kFxDef[f][1]);
+                        e.setFxParam (c, f, 2, 1.0f);
+                        e.setCanalSend (c, f, 0.5f);
+                    }
+            for (int p = 0; p < 16; ++p) e.setPadCanal (p, p % AudioEngine::kNumCanales);
+            e.reiniciaCarga();
+            juce::AudioBuffer<float> b (2, kBlk);
+            for (int i = 0; i < 200; ++i)
+            {
+                if (i == 0) for (int p = 0; p < 16; ++p) e.postNoteOn (p, 0.9f);
+                b.clear(); e.renderNextBlock (b, 0, kBlk);
+            }
+            vistos = e.cargaVistos(); peor = e.cargaPeor(); media = e.cargaMedia();
+            e.reiniciaCarga();
+            return e.cargaVistos() == 0 && e.cargaPeor() <= 0.0f;
+        };
+        int v0 = 0, v1 = 0; float p0 = 0.0f, p1 = 0.0f, m0 = 0.0f, m1 = 0.0f;
+        const bool r0 = mide (false, v0, p0, m0);
+        const bool r1 = mide (true,  v1, p1, m1);
+        const bool ok = v0 == 200 && v1 == 200 && r0 && r1 && p0 > 0.0f && p1 > p0 && m1 > m0;
+        std::printf ("%-34s vacia %d bloques (peor %.1f %%, media %.1f) · cargada %d (peor %.1f %%, media %.1f) · reinicio %s   %s\n",
+                     "carga el motor cuenta bloques", v0, (double) p0, (double) m0, v1, (double) p1, (double) m1,
+                     (r0 && r1) ? "a cero" : "NO", ok ? "OK" : zatiFalla());
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }

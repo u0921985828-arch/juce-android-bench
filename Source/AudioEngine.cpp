@@ -943,11 +943,32 @@ void AudioEngine::renderNextBlock (juce::AudioBuffer<float>& out,
         return;
     }
 
+    //  carga#: el presupuesto de ESTE bloque y lo que acaba costando. La cuenta
+    //  va en el destructor para que cuente igual por todas las salidas.
     struct RenderGuard
     {
+        AudioEngine& e;
         std::atomic<bool>& flag;
-        ~RenderGuard() { flag.store (false, std::memory_order_release); }
-    } renderGuard { inRender };
+        juce::int64 t0;
+        double presupuestoMs;
+        ~RenderGuard()
+        {
+            flag.store (false, std::memory_order_release);
+            if (presupuestoMs <= 0.0) return;
+            const double ms = juce::Time::highResolutionTicksToSeconds
+                                  (juce::Time::getHighResolutionTicks() - t0) * 1000.0;
+            const float pc = (float) (100.0 * ms / presupuestoMs);
+            e.cargaBloques.fetch_add (1, std::memory_order_relaxed);
+            if (pc > 100.0f) e.cargaPasados.fetch_add (1, std::memory_order_relaxed);
+            if (pc > e.cargaPeorPc.load (std::memory_order_relaxed))
+                e.cargaPeorPc.store (pc, std::memory_order_relaxed);
+            //  Media deslizante de unos cincuenta bloques: con la media de toda
+            //  la sesion, un minuto tranquilo tapa el apuro de ahora.
+            const float m = e.cargaMediaPc.load (std::memory_order_relaxed);
+            e.cargaMediaPc.store (m <= 0.0f ? pc : m + 0.02f * (pc - m), std::memory_order_relaxed);
+        }
+    } renderGuard { *this, inRender, juce::Time::getHighResolutionTicks(),
+                    systemSampleRate > 0.0 ? 1000.0 * (double) numSamples / systemSampleRate : 0.0 };
 
     // 0. Capture mic input BEFORE clearing (input is in channel 0 on entry).
     //    Only when the take is coming from the microphone: a resample reads

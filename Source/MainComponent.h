@@ -1410,7 +1410,9 @@ private:
     //  de `bandaSubtitulo`. Escrito como suma y no como numero nuevo, que es de
     //  donde salio el 158 repetido en cuatro sitios que este campo vino a
     //  borrar.
-    static constexpr int kAltoAudioInfo = 158 + Metrics::bandaSubtitulo;
+    //  Y DOS RENGLONES MAS por la CARGA del hilo de audio y los xruns de esta
+    //  tanda: es lo que convierte «crepita» en una cifra. Ver paintAudioInfo.
+    static constexpr int kAltoAudioInfo = 158 + 3 * Metrics::bandaSubtitulo;
     //  ...MAS LOS SEIS RENGLONES DE LA SONDA, cuando los hay.
     //
     //  Los intentos solo se pintan con el carril NEGADO -si hay exclusiva no

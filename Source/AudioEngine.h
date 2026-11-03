@@ -664,6 +664,19 @@ public:
     //  codigo#22: el bloque por fases, cronometradas solo para el banco (StressTest)
     static constexpr int kFases = 14;
     static const char* nombreFase (int f) noexcept;
+    //  carga#: lo que la cara pinta en el renglon CARGA.
+    int   cargaVistos()  const noexcept { return cargaBloques.load (std::memory_order_relaxed); }
+    int   cargaPasadas() const noexcept { return cargaPasados.load (std::memory_order_relaxed); }
+    float cargaPeor()    const noexcept { return cargaPeorPc.load (std::memory_order_relaxed); }
+    float cargaMedia()   const noexcept { return cargaMediaPc.load (std::memory_order_relaxed); }
+    void  reiniciaCarga() noexcept
+    {
+        cargaBloques.store (0, std::memory_order_relaxed);
+        cargaPasados.store (0, std::memory_order_relaxed);
+        cargaPeorPc.store (0.0f, std::memory_order_relaxed);
+        cargaMediaPc.store (0.0f, std::memory_order_relaxed);
+    }
+
     void midePorFases (bool si) noexcept { if (si && ! porFases) for (int f = 0; f < kFases; ++f) { tFase[f] = 0; nFase[f] = 0; } porFases = si; }
     double msDeFase (int f) const noexcept { return juce::Time::highResolutionTicksToSeconds (tFase[f]) * 1000.0; }
     int vecesDeFase (int f) const noexcept { return nFase[f]; }
@@ -2894,6 +2907,22 @@ private:
     //  empty. That is not a glitch that passes, it is permanent, and it looks
     //  exactly like "the pads stopped working but the test tone still beeps".
     std::atomic<bool> inRender { false };
+
+    //  carga#: LO QUE TARDA UN BLOQUE, MEDIDO SIEMPRE Y NO SOLO EN EL BANCO.
+    //
+    //  La pantalla de AUDIO sabia decir la LATENCIA y los atascos del hilo de
+    //  mensajes, y no sabia decir lo unico que define un crujido desde dentro:
+    //  cuantos bloques NO cabieron en su presupuesto. Y eso no se puede medir
+    //  en un contenedor -el mismo binario dio 2.4 y 3.0 ms en dos corridas
+    //  seguidas- asi que se mide en el telefono, que es donde crepita.
+    //
+    //  Dos lecturas de reloj por bloque (unos 50 ns en Android) y cuatro
+    //  atomicos que solo escribe el hilo de audio. `midePorFases` sigue siendo
+    //  del banco; esto es de la app.
+    std::atomic<int>   cargaBloques { 0 };
+    std::atomic<int>   cargaPasados { 0 };
+    std::atomic<float> cargaPeorPc  { 0.0f };
+    std::atomic<float> cargaMediaPc { 0.0f };
 
     std::array<SampleBuffer*, kNumPads>              padSample {};
     std::array<std::atomic<SampleBuffer*>, kNumPads> pendingPad {};
