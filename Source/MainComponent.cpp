@@ -19067,7 +19067,11 @@ void MainComponent::refreshMixStrip()
     //  pintaba a si mismo. Del telefono: «el de MO/ST va fluido, el de M y
     //  S no». Y SOLO SI CAMBIA: un M no lo mueve, y la cabecera sola eran
     //  tres veces lo que pintan la tapa y su fila.
-    if (tituloMesa() != mixTituloPintado) mixSheet.repintaCabecera();
+    //  carga#tapado: la comparacion es contra la forma LARGA a proposito. Si lo
+    //  que cabe es la corta, `mixTituloPintado` la guarda y esto pediria un
+    //  repintado por bloque; con la larga como referencia, el repintado se pide
+    //  cuando cambia LO QUE HAY QUE DECIR, y el pintor decide que forma entra.
+    if (tituloMesa() != mixTituloLargo) { mixTituloLargo = tituloMesa(); mixSheet.repintaCabecera(); }
 }
 
 //  EL SWITCH DE ESTEREO LEE EL ANCHO, no al reves: encendido si el pad tiene

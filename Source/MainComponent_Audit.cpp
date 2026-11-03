@@ -3705,6 +3705,19 @@ void MainComponent::auditOpen (const juce::String& pedido)
     //  LA FICHA DEL NOMBRE DE UNA TIRA, en sus dos estados: la rejilla de
     //  iconos y el lienzo, que cambia la fila de abajo y el titulo. Se llega
     //  TOCANDO el rotulo de la tira uno, que es el camino de verdad.
+    //  carga#tapado: LA MESA CON EL TITULO LARGO, que es el de un proyecto
+    //  recien abierto: sesenta y cuatro pads con sonido y ninguno en una tira,
+    //  o sea «MIX · 64 PADS SIN CANAL». Expo lo canto dos veces como TAPADO -en
+    //  280x653/zh y en 360x640/en- y no habia ficha que lo reprodujera: las de
+    //  `cannom` reparten los pads antes de abrir, asi que el titulo sale CORTO
+    //  y el rotulo no llega a la tapa de vista. Sin esta ficha el fallo solo
+    //  aparecia una vez de cada 2304 corridas, segun que corrida fuera antes.
+    else if (which == "mixsc")
+    {
+        for (int p = 0; p < kNumPads; ++p) engine.setPadCanal (p, AudioEngine::kSinCanal);
+        showMixPage (mixPageCanales);
+        openSheet (mixSheet, mixButton);
+    }
     else if (which == "cannom" || which == "cannomd")
     {
         for (int p = 0; p < kNumPads; ++p) engine.setPadCanal (p, p % kNumCanales);

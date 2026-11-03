@@ -2046,10 +2046,21 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
     //  expo.py recorren el arbol de COMPONENTES. Un rotulo dibujado no es un
     //  componente y por eso llevaba aqui desde el principio.
     {
-        const auto caja = antesDe (centraEnRenglon (mixSheet.sheetBounds
-                                       .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
-                                       .removeFromTop (Metrics::bandaTitulo)),
-                                   mixCloseButton);
+        //  Y APARTANDOSE DE LAS DOS TAPAS DEL RENGLON, no solo de la cruz.
+        //
+        //  `antesDe (…, mixCloseButton)` dejaba el titulo pasando por debajo
+        //  del interruptor CANALES/PADS, que vive en este mismo renglon desde
+        //  que salio de la fila de chips. Con el titulo CORTO no se notaba;
+        //  con el largo -«MIX · 64 PADS SIN CANAL», que es el titulo normal de
+        //  un proyecto recien abierto- si: expo lo canto dos veces en tres
+        //  tandas, en 280x653/zh y en 360x640/en, y las dos veces era el mismo
+        //  rotulo debajo de la misma tapa. `dejaSitio` pregunta por el HUECO
+        //  mas ancho del renglon, que es lo que no se cierra sobre si mismo al
+        //  encadenar -ver su comentario-.
+        const auto caja = dejaSitio (centraEnRenglon (mixSheet.sheetBounds
+                                         .reduced (Metrics::margenFichaX, Metrics::margenFichaY)
+                                         .removeFromTop (Metrics::bandaTitulo)),
+                                     { &mixCloseButton, &mixVistaBtn });
         //  Y EN CANALES, CUANTOS PADS NO ESTAN EN NINGUNA TIRA.
         //
         //  La tira ya dice lo suyo -la cuenta de los que le entran, o una raya
@@ -2066,7 +2077,22 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
         //
         //  Y solo en CANALES: en la pagina de PADS cada tira ES un pad, asi que
         //  «cuantos estan fuera» no es una pregunta de esa pantalla.
-        const auto txt = tituloMesa();
+        //  Y LA CUENTA SE CAE DEL TITULO CUANDO NO CABE, en vez de salir
+        //  cortada. «MEZCLA · 64 PADS SIN CANAL» pide 197 px y en 280x653 el
+        //  hueco del renglon son 101: con la banda ya apartada de las dos
+        //  tapas, lo que antes se pintaba ENCIMA del interruptor ahora se
+        //  pintaria A MEDIAS, y un rotulo cortado miente igual. Se prueban las
+        //  tres formas de mas a menos y se pinta la primera que entra; la
+        //  ficha `mixsc` del volcado existe para que esto lo mida el banco y
+        //  no una corrida de cada 2304.
+        auto cabe = [&g, &caja] (const juce::String& t)
+        {
+            const auto f = ZatiLookAndFeel::cabeEn (g.getCurrentFont(), t, caja.getWidth());
+            return juce::GlyphArrangement::getStringWidth (f, t) <= (float) caja.getWidth();
+        };
+        auto txt = tituloMesa();
+        if (! cabe (txt)) txt = tituloMesa (false, true);
+        if (! cabe (txt)) txt = tituloMesa (false, false);
         mixTituloPintado = txt;
         pintaTitulo (g, caja, txt);
     }
@@ -2074,12 +2100,12 @@ void MainComponent::paintMixSheetContent (juce::Graphics& g)
 
 //  El titulo de la mesa en un sitio: lo pinta `paintMixSheetContent` y lo
 //  compara `refreshMixStrip`, que solo repinta la cabecera si cambia.
-juce::String MainComponent::tituloMesa()
+juce::String MainComponent::tituloMesa (bool conCuenta, bool conSolo)
 {
     const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
     juce::String txt = T ("MIX");
-    if (engine.anySolo()) txt += "  " + dot + "  " + T ("SOLO ACTIVO");
-    if (mixPage == mixPageCanales)
+    if (conSolo && engine.anySolo()) txt += "  " + dot + "  " + T ("SOLO ACTIVO");
+    if (conCuenta && mixPage == mixPageCanales)
     {
         int fuera = 0;
         for (int p = 0; p < kNumPads; ++p)

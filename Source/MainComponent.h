@@ -3477,8 +3477,13 @@ private:
     //  la carga: titulo, renglon del pack y pie. Ver Sheet::repintaContenido.
     void repintaFichaInst();
     //  El titulo de la mesa, y el que se pinto la ultima vez. Ver refreshMixStrip.
-    juce::String tituloMesa();
+    //  carga#tapado: con la cuenta de pads sin canal, o sin ella cuando el
+    //  renglon no da para tanto. Ver paintMixSheetContent.
+    juce::String tituloMesa (bool conCuenta = true, bool conSolo = true);
     juce::String mixTituloPintado;
+    //  carga#tapado: la forma larga de la ultima vez, que es contra la que se
+    //  decide si hay que repintar la cabecera. Ver refreshMixStrip.
+    juce::String mixTituloLargo;
     void pasoPack (int d);
     void cargaInstrumento (int idx);
     //  Y la decision de rejilla: si el nombre no cabe en NINGUNA celda, ninguna
