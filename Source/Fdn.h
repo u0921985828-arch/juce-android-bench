@@ -150,7 +150,20 @@ public:
     //  a pelo, sigue midiendo 8 kHz a -24.0-. Se devuelve en la salida, donde
     //  no hay lazo que realimentar.
     static constexpr float kMuelleSal = 0.6f / 0.70f, kMuelleCruce = 0.3f;
-    static constexpr float kMuelleHz  = 90.0f, kMuelleTopeDef = 3800.0f;
+    //  2600 Hz Y NO 3800, y la ventana es estrecha. Al bajar la ganancia de
+    //  lazo la cola se acorta, o sea que pasa menos veces por este filtro, y el
+    //  tanque se vuelve claro: con 3800 el 8 kHz se fue a -11.1 dB y se salio
+    //  del tope de -12. Barrido con la regla del muelle de StressTest:
+    //
+    //      3800   8 kHz -11.1 dB   dispersion +27.0 ms   FALLA (claro)
+    //      2600   8 kHz -14.4 dB   dispersion +27.0 ms   OK
+    //      1800   8 kHz -17.4 dB   dispersion +13.3 ms   FALLA (se come la toma aguda)
+    //      1200   8 kHz -19.8 dB   dispersion +13.0 ms   FALLA
+    //
+    //  Por debajo de 2600 el filtro se come la toma de agudos y con ella la
+    //  dispersion, que es lo que hace que un muelle sea un muelle. Es la unica
+    //  posicion que cumple las dos cosas.
+    static constexpr float kMuelleHz  = 90.0f, kMuelleTopeDef = 2600.0f;
     //  Sonda: `ZATI_MU_TOPE` mueve el paso bajo del tanque. La oscuridad de un
     //  muelle sale de pasar MUCHAS veces por ese filtro, asi que al bajar la
     //  ganancia de lazo la cola se acorta y el tanque se vuelve claro: los dos
