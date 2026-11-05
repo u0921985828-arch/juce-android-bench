@@ -87,6 +87,27 @@ static SampleBuffer::Ptr seno (double hz, float amp)
     return SampleBuffer::Ptr (sb);
 }
 
+//  UN GOLPE QUE SE ACABA: 100 ms de tono que decae y dos segundos de silencio
+//  detras. Para la columna ACOPLE hace falta una fuente que PARE: con el seno
+//  en bucle de `seno()` -96000 muestras sin costura, a proposito- el pad sigue
+//  sonando a los treinta segundos y la medida sale +0.0 dB en los treinta y
+//  nueve, que es lo que canto que la sonda no medía nada.
+static SampleBuffer::Ptr golpe (double hz, float amp)
+{
+    auto* sb = new SampleBuffer();
+    const int n = (int) (kSr * 2.0);
+    sb->buffer.setSize (2, n);
+    const int largo = (int) (kSr * 0.1);
+    for (int i = 0; i < n; ++i)
+    {
+        const float env = i < largo ? std::exp (-3.0f * (float) i / (float) largo) : 0.0f;
+        const float v = amp * env * (float) std::sin (2.0 * juce::MathConstants<double>::pi * hz * i / kSr);
+        sb->buffer.setSample (0, i, v); sb->buffer.setSample (1, i, v);
+    }
+    sb->sourceSampleRate = kSr;
+    return SampleBuffer::Ptr (sb);
+}
+
 //  sampling#: un tono flojo que a mitad salta a fuerte, como el primer golpe tras un silencio.
 static SampleBuffer::Ptr salto (double hz, float bajo, float alto)
 {
@@ -1645,14 +1666,47 @@ int main (int argc, char** argv)
                 {
                     const int par = caso < 2 ? 0 : 1;
                     const float lo = par == 0 ? m.lo0 : m.lo1, hi = par == 0 ? m.hi0 : m.hi1;
-                    auto e = monta (f, seno (220.0, 0.5f), m.onMix);
+                    auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
                     e->setFxParam (kCanal, f, par, (caso % 2) == 0 ? lo : hi);
                     e->postNoteOn (0, 1.0f);
                     std::vector<float> y;
-                    //  El golpe dura lo que dura la muestra y se suelta: lo que
-                    //  siga sonando a los treinta segundos no es el golpe.
-                    corre (*e, (int) (kSr * 30), y, [&] (int b) { if (b == 8) e->postNoteOff (0); });
+                    corre (*e, (int) (kSr * 30), y);
                     peor = juce::jmax (peor, energia (y, 28.0, 30.0) - energia (y, 4.0, 6.0));
+                }
+                //  Y LOS TIPOS, que es donde estaba el agujero.
+                //
+                //  El barrido de arriba mueve p0 y p1. El TIPO vive en otro
+                //  mando -p4 en REV, DRV y TRM, p5 en DLY-, asi que el MUELLE
+                //  de la reverb no se habia medido NUNCA contra el crecimiento:
+                //  es un tanque con ocho allpass, su banda y un transductor
+                //  DENTRO del lazo, o sea el sitio de esta casa donde una
+                //  ganancia de lazo por encima de uno es mas facil de escribir.
+                //  Del telefono: «tiene que ser algo del spring REVERB o asi,
+                //  suena a efecto porque oscila».
+                {
+                    const int parTipo = f == AudioEngine::kFxDly ? 5
+                                      : (f == AudioEngine::kFxRev || f == AudioEngine::kFxDrv
+                                         || f == AudioEngine::kFxTrm || f == AudioEngine::kFxFlt) ? 4 : -1;
+                    const int nTipos = f == AudioEngine::kFxRev ? 5 : f == AudioEngine::kFxDrv ? 4
+                                     : f == AudioEngine::kFxDly ? 3 : f == AudioEngine::kFxTrm ? 4 : 2;
+                    if (parTipo >= 0)
+                        for (int t = 0; t < nTipos; ++t)
+                            for (int caso = 0; caso < 4; ++caso)
+                            {
+                                auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
+                                e->setFxParam (kCanal, f, parTipo, (float) t);
+                                e->setFxParam (kCanal, f, 0, (caso & 1) ? m.hi0 : m.lo0);
+                                e->setFxParam (kCanal, f, 1, (caso & 2) ? m.hi1 : m.lo1);
+                                e->postNoteOn (0, 1.0f);
+                                std::vector<float> y;
+                                corre (*e, (int) (kSr * 30), y);
+                                const double cr = energia (y, 28.0, 30.0) - energia (y, 4.0, 6.0);
+                                if (cr > -6.0)
+                                    std::printf ("  %-4s tipo %d caso %d  %+7.1f dB\n", m.nombre, t, caso, cr);
+                                if (f != AudioEngine::kFxFrz && cr > 0.0)
+                                    falla ("%s tipo %d CRECE solo: %+.1f dB en treinta segundos", m.nombre, t, cr);
+                                peor = juce::jmax (peor, cr);
+                            }
                 }
                 if (peor > peorTodos) { peorTodos = peor; peorF = f; }
                 if (peor > -6.0)
