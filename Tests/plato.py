@@ -111,11 +111,26 @@ def main():
         malas.append ("el mando del instrumento no llega (%.3f contra %.3f)"
                       % (r["inst_mando"], r["inst_valor"]))
 
+    #  7. LAS FLECHAS DEL PLATO EN UN CANAL SIN PADS. Del telefono: «cuando
+    #     pongo un efecto a un canal en el que solo hay envios y no hay pads
+    #     linkados, no me deja cambiar con las flechas; con un pad puesto si».
+    #     Se pone un envio en la fila de un canal vacio y se toca, sin pedir
+    #     una maqueta a mano: las dos flechas tienen que estar y los tres
+    #     mandos encendidos.
+    print ("flechas  canal sin pads: flechas %d, mandos %d, paginas del DLY %d"
+           % (r["flechas_sin_pads"], r["mandos_sin_pads"], r["paginas_sin_pads"]))
+    if r["paginas_sin_pads"] < 2:
+        malas.append ("la medida no vale: el DLY dice %d paginas" % r["paginas_sin_pads"])
+    if r["flechas_sin_pads"] != 1:
+        malas.append ("en un canal sin pads, enfocar el efecto no trae las flechas del plato")
+    if r["mandos_sin_pads"] != 1:
+        malas.append ("en un canal sin pads, enfocar el efecto deja los tres mandos apagados")
+
     print()
     if malas:
         for m in malas: print ("FALLA  " + m)
         return 1
-    print ("el plato se elige, escribe solo lo suyo, vuelve del proyecto, y en PAD toca el pad o su instrumento")
+    print ("el plato se elige, escribe solo lo suyo, vuelve del proyecto, en PAD toca el pad o su instrumento, y sus flechas salen sin pads")
     return 0
 
 

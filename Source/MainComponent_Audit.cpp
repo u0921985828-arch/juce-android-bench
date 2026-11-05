@@ -9512,6 +9512,38 @@ void MainComponent::auditPlato()
     const double instValor = dInst.s != nullptr ? dInst.s->getValue() : -1.0;
     ponModoPlato (ModoPlato::fx);
 
+    //  7. LAS FLECHAS DEL PLATO SIGUEN AL EFECTO, EN UN CANAL SIN PADS.
+    //
+    //  Del telefono: «cuando pongo un efecto a un canal en el que solo hay
+    //  envios y no hay pads linkados, no me deja cambiar con las flechas; con
+    //  un pad puesto si». Las flechas se ENSENAN en la maqueta -su condicion
+    //  es `fxEstaPuesto (focusedFx)`, ver MainComponent_Layout- y `focusFx`
+    //  solo rehace la cara cuando el plato CAMBIA DE MODO. Asi que enfocar un
+    //  efecto recien puesto no las trae: lo que las traia era cualquier otra
+    //  cosa que pidiera `resized()`, y en un canal con pads eso pasa solo.
+    //
+    //  Se mide sin tocar la pantalla y sin un `resized()` a mano, que es
+    //  exactamente lo que la persona hace: canal sin un solo pad, un tipo
+    //  puesto y enfocado, y las dos flechas tienen que estar ahi.
+    int flechasSinPads = 0, mandosSinPads = 0, paginasSinPads = 0;
+    {
+        for (int i = 0; i < kNumPads; ++i) engine.setPadCanal (i, AudioEngine::kSinCanal);
+        ponCanalActual (4);                  // el canal 5 de la cara, sin un pad dentro
+        for (int s2 = 0; s2 < kNumRanuras; ++s2) ponEnRanura (s2, kSlotVacia);
+        focusFx (AudioEngine::kFxFlt);       // un tipo que NO esta puesto: sin flechas
+        resized();
+        const int antesFl = platoAtras.isVisible() ? 1 : 0;
+        //  Y AHORA el gesto de verdad: poner un envio en la fila y tocarlo.
+        ponEnRanura (0, AudioEngine::kFxDly);
+        setFxEnabled (AudioEngine::kFxDly, true);
+        focusFx (AudioEngine::kFxDly);
+        PaginaPlato pg2[3];
+        paginasSinPads = paginasPlato (AudioEngine::kFxDly, pg2);
+        flechasSinPads = (platoAtras.isVisible() && platoAdelante.isVisible()) ? 1 : 0;
+        mandosSinPads  = macroCtrl1.isEnabled() ? 1 : 0;
+        (void) antesFl;
+    }
+
     std::cout << "{\"plato\":1"
               << ",\"fabrica\":\""       << fabrica << "\""
               << ",\"ficha\":"           << fichaAbierta
@@ -9532,6 +9564,9 @@ void MainComponent::auditPlato()
               << ",\"inst_idx\":"        << instIdx
               << ",\"inst_mando\":"      << juce::String (instMando, 3)
               << ",\"inst_valor\":"      << juce::String (instValor, 3)
+              << ",\"flechas_sin_pads\":" << flechasSinPads
+              << ",\"mandos_sin_pads\":"  << mandosSinPads
+              << ",\"paginas_sin_pads\":" << paginasSinPads
               << "}" << std::endl;
 }
 
