@@ -1651,13 +1651,35 @@ int main (int argc, char** argv)
         {
             std::printf ("\nACOPLE  golpe y 30 s: energia de los 2 ultimos contra la de 4-6 s\n");
             double peorTodos = -999.0; int peorF = -1;
+            //  LA MAS ALTA DE SUS VENTANAS DE UN SEGUNDO, y no la energia del
+            //  tramo entero. Dos arreglos en una cuenta, los dos cantados por
+            //  la salida anterior:
+            //
+            //   · UN TREMOLO NO CRECE. Comparando dos tramos de dos segundos,
+            //     TRM salia +40.3 dB: su LFO mas lento da una vuelta cada
+            //     veinte segundos, asi que los dos tramos caian en partes
+            //     distintas del vaiven. El maximo de las ventanas de un segundo
+            //     de un tramo LARGO no se entera de la fase.
+            //   · Y EL SILENCIO NO CRECE. Con los dos tramos callados, las dos
+            //     energias dan el suelo del `jmax` y la resta sale +0.0 dB
+            //     EXACTO: asi salieron «creciendo» un filtro, un EQ y un
+            //     ecualizador grafico, que no tienen de donde. Por eso debajo
+            //     hay una puerta: si lo ultimo no se oye, no se juzga.
             auto energia = [] (const std::vector<float>& y, double t0, double t1)
             {
-                double e2 = 0.0; size_t n = 0;
-                for (size_t i = (size_t) (t0 * kSr); i < (size_t) (t1 * kSr) && i < y.size(); ++i, ++n)
-                    e2 += (double) y[i] * y[i];
-                return 10.0 * std::log10 (juce::jmax (1.0e-30, e2 / juce::jmax ((size_t) 1, n)));
+                double peor = -300.0;
+                for (double t = t0; t + 1.0 <= t1; t += 0.5)
+                {
+                    double e2 = 0.0; size_t n = 0;
+                    for (size_t i = (size_t) (t * kSr); i < (size_t) ((t + 1.0) * kSr) && i < y.size(); ++i, ++n)
+                        e2 += (double) y[i] * y[i];
+                    peor = juce::jmax (peor, 10.0 * std::log10 (juce::jmax (1.0e-30, e2 / juce::jmax ((size_t) 1, n))));
+                }
+                return peor;
             };
+            //  El suelo de lo que se oye: por debajo de -80 dB la cola ya se
+            //  fue y no hay nada que juzgar.
+            constexpr double kOido = -80.0;
             for (int f = 0; f < AudioEngine::kNumFx; ++f)
             {
                 const auto& m = kMandos[f];
@@ -1671,7 +1693,8 @@ int main (int argc, char** argv)
                     e->postNoteOn (0, 1.0f);
                     std::vector<float> y;
                     corre (*e, (int) (kSr * 30), y);
-                    peor = juce::jmax (peor, energia (y, 28.0, 30.0) - energia (y, 4.0, 6.0));
+                    const double fin = energia (y, 22.0, 30.0);
+                    if (fin > kOido) peor = juce::jmax (peor, fin - energia (y, 4.0, 12.0));
                 }
                 //  Y LOS TIPOS, que es donde estaba el agujero.
                 //
@@ -1700,20 +1723,23 @@ int main (int argc, char** argv)
                                 e->postNoteOn (0, 1.0f);
                                 std::vector<float> y;
                                 corre (*e, (int) (kSr * 30), y);
-                                const double cr = energia (y, 28.0, 30.0) - energia (y, 4.0, 6.0);
+                                const double fin = energia (y, 22.0, 30.0);
+                                if (fin <= kOido) continue;          // se apago: nada que juzgar
+                                const double cr = fin - energia (y, 4.0, 12.0);
                                 if (cr > -6.0)
-                                    std::printf ("  %-4s tipo %d caso %d  %+7.1f dB\n", m.nombre, t, caso, cr);
-                                if (f != AudioEngine::kFxFrz && cr > 0.0)
+                                    std::printf ("  %-4s tipo %d caso %d  %+7.1f dB  (final %.0f dB)\n",
+                                                 m.nombre, t, caso, cr, fin);
+                                if (f != AudioEngine::kFxFrz && cr > 1.0)
                                     falla ("%s tipo %d CRECE solo: %+.1f dB en treinta segundos", m.nombre, t, cr);
                                 peor = juce::jmax (peor, cr);
                             }
                 }
                 if (peor > peorTodos) { peorTodos = peor; peorF = f; }
-                if (peor > -6.0)
+                if (peor > -6.0 && peor > -900.0)
                     std::printf ("  %-4s %+7.1f dB\n", m.nombre, peor);
                 //  FRZ es un CONGELADOR: sostener es lo que hace, y por eso su
                 //  `cola` tambien esta exenta desde que se escribio.
-                if (f != AudioEngine::kFxFrz && peor > 0.0)
+                if (f != AudioEngine::kFxFrz && peor > 1.0)
                     falla ("%s CRECE solo: %+.1f dB en treinta segundos", m.nombre, peor);
             }
             std::printf ("  el que mas crece: %s %+.1f dB\n",
