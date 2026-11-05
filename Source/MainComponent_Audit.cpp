@@ -9512,36 +9512,51 @@ void MainComponent::auditPlato()
     const double instValor = dInst.s != nullptr ? dInst.s->getValue() : -1.0;
     ponModoPlato (ModoPlato::fx);
 
-    //  7. LAS FLECHAS DEL PLATO SIGUEN AL EFECTO, EN UN CANAL SIN PADS.
+    //  7. UN EFECTO EN UN CANAL QUE SOLO RECIBE ENVIOS.
     //
     //  Del telefono: «cuando pongo un efecto a un canal en el que solo hay
-    //  envios y no hay pads linkados, no me deja cambiar con las flechas; con
-    //  un pad puesto si». Las flechas se ENSENAN en la maqueta -su condicion
-    //  es `fxEstaPuesto (focusedFx)`, ver MainComponent_Layout- y `focusFx`
-    //  solo rehace la cara cuando el plato CAMBIA DE MODO. Asi que enfocar un
-    //  efecto recien puesto no las trae: lo que las traia era cualquier otra
-    //  cosa que pidiera `resized()`, y en un canal con pads eso pasa solo.
+    //  envios y no hay pads linkados, a la hora de tocar el efecto, en la zona
+    //  donde se tocan los parametros, no me deja cambiar con las flechas; en
+    //  cambio cuando tengo puesto un pad, si».
     //
-    //  Se mide sin tocar la pantalla y sin un `resized()` a mano, que es
-    //  exactamente lo que la persona hace: canal sin un solo pad, un tipo
-    //  puesto y enfocado, y las dos flechas tienen que estar ahi.
-    int flechasSinPads = 0, mandosSinPads = 0, paginasSinPads = 0;
+    //  Se miden las TRES situaciones con el mismo gesto -poner el efecto en la
+    //  fila de ese canal, tocarlo, y despues tocar un PAD, que es lo que uno
+    //  hace para oirlo- y se publica, por situacion: el canal que quedo
+    //  delante, si el tipo sigue PUESTO en el, si estan las flechas, si los
+    //  tres mandos estan encendidos, y si la flecha MUEVE de pagina de verdad.
+    //  La ultima es la queja literal y las otras cuatro dicen por que.
+    juce::String casos;
     {
-        for (int i = 0; i < kNumPads; ++i) engine.setPadCanal (i, AudioEngine::kSinCanal);
-        ponCanalActual (4);                  // el canal 5 de la cara, sin un pad dentro
-        for (int s2 = 0; s2 < kNumRanuras; ++s2) ponEnRanura (s2, kSlotVacia);
-        focusFx (AudioEngine::kFxFlt);       // un tipo que NO esta puesto: sin flechas
-        resized();
-        const int antesFl = platoAtras.isVisible() ? 1 : 0;
-        //  Y AHORA el gesto de verdad: poner un envio en la fila y tocarlo.
-        ponEnRanura (0, AudioEngine::kFxDly);
-        setFxEnabled (AudioEngine::kFxDly, true);
-        focusFx (AudioEngine::kFxDly);
-        PaginaPlato pg2[3];
-        paginasSinPads = paginasPlato (AudioEngine::kFxDly, pg2);
-        flechasSinPads = (platoAtras.isVisible() && platoAdelante.isVisible()) ? 1 : 0;
-        mandosSinPads  = macroCtrl1.isEnabled() ? 1 : 0;
-        (void) antesFl;
+        const int fxAux = AudioEngine::kFxRev;   // un ENVIO: su bus es de todos
+        //  tres situaciones: pads en OTRO canal, pads SIN canal, y un pad DENTRO
+        //  Y EL CUARTO ES LA GUARDA: un canal sin pads y SIN cadena no es un
+        //  retorno, es un canal al que nadie ha tocado, y ahi la cara TIENE que
+        //  seguir al pad. Sin esta cifra, la regla nueva se podria escribir
+        //  pegando la cara a cualquier canal vacio y el banco diria OK.
+        for (int caso = 0; caso < 4; ++caso)
+        {
+            for (int i2 = 0; i2 < kNumPads; ++i2)
+                engine.setPadCanal (i2, caso == 1 ? AudioEngine::kSinCanal : caso == 2 ? 4 : 0);
+            ponCanalActual (4);                       // el canal 5 de la cara
+            for (int s2 = 0; s2 < kNumRanuras; ++s2) ponEnRanura (s2, kSlotVacia);
+            if (caso < 3)
+            {
+                ponEnRanura (0, fxAux);
+                setFxEnabled (fxAux, true);
+            }
+            focusFx (fxAux);
+            //  Y AHORA EL PAD, que es lo que uno toca para oir el efecto.
+            selectPad (0);
+            const int cAct = canalActual;
+            const int puesto = fxEstaPuesto (fxAux) ? 1 : 0;
+            const int fl = (platoAtras.isVisible() && platoAdelante.isVisible()) ? 1 : 0;
+            const int mn = macroCtrl1.isEnabled() ? 1 : 0;
+            const int p0b = paginaPlatoActual (focusedFx);
+            pulsaTapa (&platoAdelante);
+            const int p1b = paginaPlatoActual (focusedFx);
+            const int mueve = (p0b != p1b) ? 1 : 0;
+            casos << (caso > 0 ? "|" : "") << cAct << ":" << puesto << ":" << fl << ":" << mn << ":" << mueve;
+        }
     }
 
     std::cout << "{\"plato\":1"
@@ -9564,9 +9579,7 @@ void MainComponent::auditPlato()
               << ",\"inst_idx\":"        << instIdx
               << ",\"inst_mando\":"      << juce::String (instMando, 3)
               << ",\"inst_valor\":"      << juce::String (instValor, 3)
-              << ",\"flechas_sin_pads\":" << flechasSinPads
-              << ",\"mandos_sin_pads\":"  << mandosSinPads
-              << ",\"paginas_sin_pads\":" << paginasSinPads
+              << ",\"aux\":\""           << casos << "\""
               << "}" << std::endl;
 }
 

@@ -4378,6 +4378,8 @@ private:
     //  Y EN QUE CANAL VIVE UN TIPO, o -1. Es la mitad que hace falta para «un
     //  inserto, un canal»: al ponerlo en otro hay que quitarlo de donde estaba.
     int  canalDeFx (int fx) const;
+    //  Si un canal es un RETORNO: sin un pad dentro y con cadena. Ver `selectPad`.
+    bool esCanalRetorno (int canal) const;
     bool fxEstaPuesto (int fx) const { return slotDeFx (fx) >= 0; }
     void ponEnRanura (int ranura, int fx); // fx = kSlotVacia para vaciarla
     void refrescaRanuras();                // rotulo, icono y luz de las seis

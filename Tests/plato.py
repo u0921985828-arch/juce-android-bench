@@ -121,14 +121,25 @@ def main():
     #     Se pone un envio en la fila de un canal vacio y se toca, sin pedir
     #     una maqueta a mano: las dos flechas tienen que estar y los tres
     #     mandos encendidos.
-    print ("flechas  canal sin pads: flechas %d, mandos %d, paginas del DLY %d"
-           % (r["flechas_sin_pads"], r["mandos_sin_pads"], r["paginas_sin_pads"]))
-    if r["paginas_sin_pads"] < 2:
-        malas.append ("la medida no vale: el DLY dice %d paginas" % r["paginas_sin_pads"])
-    if r["flechas_sin_pads"] != 1:
-        malas.append ("en un canal sin pads, enfocar el efecto no trae las flechas del plato")
-    if r["mandos_sin_pads"] != 1:
-        malas.append ("en un canal sin pads, enfocar el efecto deja los tres mandos apagados")
+    nombres = ("pads en otro canal", "pads sin canal", "un pad dentro", "canal vacio (guarda)")
+    for i, (caso, trozo) in enumerate (zip (nombres, r["aux"].split ("|"))):
+        cAct, puesto, fl, mn, mueve = (int (x) for x in trozo.split (":"))
+        print ("aux      %-22s canal %2d, puesto %d, flechas %d, mandos %d, la flecha mueve %d"
+               % (caso, cAct + 1, puesto, fl, mn, mueve))
+        if i == 3:
+            #  La guarda: sin cadena no es un retorno y la cara sigue al pad.
+            if cAct != 0:
+                malas.append ("un canal sin pads y sin cadena se queda pegado: la cara no siguio al pad (canal %d)"
+                              % (cAct + 1))
+            continue
+        if cAct != 4:
+            malas.append ("con %s, tocar un pad saco la cara del canal de retorno (quedo en el %d)"
+                          % (caso, cAct + 1))
+        if mueve != 1:
+            malas.append ("con %s, la flecha del plato no pasa de pagina" % caso)
+        if fl != 1 or mn != 1:
+            malas.append ("con %s, el plato queda sin flechas (%d) o con los mandos apagados (%d)"
+                          % (caso, fl, mn))
 
     print()
     if malas:

@@ -7440,6 +7440,23 @@ int MainComponent::slotDeFxEn (int canal, int fx) const
     return -1;
 }
 
+//  SI UN CANAL ES UN RETORNO: sin un solo pad dentro y con cadena puesta.
+//
+//  Las dos mitades cuentan. Sin pads es lo que lo hace un retorno -lo que suena
+//  por el son los envios de los demas- y con cadena es lo que lo hace un sitio
+//  donde se esta trabajando: un canal vacio y sin pads no es un retorno, es un
+//  canal al que nadie ha tocado, y tratarlo como tal pegaria la cara a el por
+//  nada. Ver `selectPad`, que es quien la usa y donde esta razonada.
+bool MainComponent::esCanalRetorno (int canal) const
+{
+    if (! juce::isPositiveAndBelow (canal, kNumCanales)) return false;
+    for (int i = 0; i < kNumPads; ++i)
+        if (engine.getPadCanal (i) == canal) return false;
+    for (int s = 0; s < kNumRanuras; ++s)
+        if (slotFx[(size_t) canal][(size_t) s] != kSlotVacia) return true;
+    return false;
+}
+
 int MainComponent::canalDeFx (int fx) const
 {
     if (fx < 0) return -1;
@@ -11049,8 +11066,35 @@ void MainComponent::selectPad (int index)
     //  tira no es estar en la ultima, es no haber elegido. Quien elige la tira
     //  de un pad es la mesa, y hasta que alguien la elija el rack sigue
     //  enseñando el canal en el que estabas trabajando.
+    //  Y UN CANAL DE RETORNO NO SE DEJA AL TOCAR UN PAD, que es la otra mitad
+    //  de la misma regla y llego del telefono asi: «cuando pongo un efecto a un
+    //  canal en el que solo hay envios y no hay pads linkados, a la hora de
+    //  tocar el efecto no me deja cambiar con las flechas; en cambio cuando
+    //  tengo puesto un pad, si».
+    //
+    //  Era literal y esta medido (`Tests/plato.py`, regla `aux`): un canal sin
+    //  pads con la reverb puesta se queda delante mientras no se toque nada, y
+    //  al tocar un pad de OTRO canal `canalActual` salta a ese, la fila de seis
+    //  pasa a ser la del pad y el plato se queda ensenando un efecto que ya no
+    //  esta en el canal de delante -`fxEstaPuesto` dice no-: sin flechas y con
+    //  los tres mandos apagados. O sea que un RETORNO no se podia tocar, porque
+    //  para oir lo que le entra hay que tocar un pad, y tocarlo te saca.
+    //
+    //  Y NO VALE DEJAR QUE EL PLATO LO TOQUE DESDE OTRO CANAL: desde la tanda
+    //  30 los treinta y nueve tipos son UNO POR CANAL (`fxPorCanal`), asi que
+    //  la reverb del 5 y la del 1 son dos aparatos y mover el mando con el 1
+    //  delante movería el otro — que es exactamente la queja que hizo nacer
+    //  esa tabla.
+    //
+    //  La regla es la misma que la de arriba, con la frase dada la vuelta: si
+    //  el canal de delante no tiene NI UN pad pero SI tiene cadena, es un
+    //  retorno, y tocar un pad no es elegir otra tira — es oir lo que le
+    //  entra. Se pide cadena a proposito: un canal vacio y sin pads no es un
+    //  retorno, es un canal en el que nadie ha hecho nada, y quedarse ahi
+    //  pegado dejaria la cara sin seguir a los pads por nada.
     const int canalDelPad = engine.getPadCanal (index);
-    if (AudioEngine::tieneCanal (canalDelPad) && canalDelPad != canalActual)
+    if (AudioEngine::tieneCanal (canalDelPad) && canalDelPad != canalActual
+        && ! esCanalRetorno (canalActual))
     {
         ponCanalActual (canalDelPad);
         refrescaRanuras();
