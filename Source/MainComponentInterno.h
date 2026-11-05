@@ -862,7 +862,7 @@ namespace
             "El EQ tiene cinco bandas: arrastra un nodo, o mantenlo para abrir su banda",
             "Manten un mando del plato: salen todos, con SYNC y PRESETS, y el que toques se queda",
             "Toca el nombre del efecto en el plato y los tres mandos pasan al pad elegido",
-            "TIPO cambia el caracter: REV cinco salas, DRV SUAVE, VALVULA, FUZZ o ROTO, DLY DIGITAL, CINTA o ANALOGICO",   // efectos#tipos
+            "TIPO cambia el caracter: REV cinco salas, DRV SUAVE, VALVULA, FUZZ o ROTO, DLY DIGITAL, CINTA o ANALOGICO, y CHO, FLA y PHA DIGITAL o ANALOGICO",   // efectos#tipos, modulacion#
             "TRM tiene FORMA y FLT PENDIENTE de 12 o 24 dB; cada preset tambien pone los mandos de mas" }, 4, 6 },
         //  Este capitulo prometia una pestana que ya no existe -"la pestana
         //  PASO"- desde que sus mandos bajaron a la tira que hay debajo de la
@@ -1353,7 +1353,7 @@ namespace ZatiTour
 
           "Manten un mando del plato y salen todos los del efecto, con su SYNC y "
           "sus PRESETS. Toca uno y se queda en ese mando del plato. En REV, "
-          "DRV y DLY, TIPO cambia el caracter.",   // efectos#tipos
+          "DRV, DLY, CHO, FLA y PHA, TIPO cambia el caracter.",   // efectos#tipos, modulacion#
 
           "Dieciseis pasos por dieciseis pads. Toca una casilla y ese pad suena "
           "ahi; arrastra el dedo para escribir varias seguidas.",

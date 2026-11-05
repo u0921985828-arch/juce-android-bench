@@ -6380,6 +6380,11 @@ namespace
         {  5, 5, "PREVIO|x",       0.0,   200.0, 1.0,     0.0,  3 },
         { 36, 4, "ATAQUE|x",       0.1,    30.0, 0.1,     3.0, 13 },   // GLU  sampling#
         { 36, 5, "CAIDA|x",       50.0,  1200.0, 1.0,   300.0,  3 },
+        //  modulacion#: el noveno de los tres de la familia de modulacion.
+        //  Dos posiciones, DIGITAL y ANALOGICO, y de fabrica la segunda.
+        { 11, 8, "TIPO|rev",       0.0,     1.0, 1.0,     0.0, 21 },   // CHO
+        { 12, 8, "TIPO|rev",       0.0,     1.0, 1.0,     0.0, 21 },   // FLA
+        { 13, 8, "TIPO|rev",       0.0,     1.0, 1.0,     0.0, 21 },   // PHA
     };
 }
 
@@ -6507,6 +6512,14 @@ juce::String MainComponent::fxFormat (const FxDef::Spec& sp, double v)
             return T (kTipos[Lfo::formaDe ((float) v)]);
         }
         case 20: return v >= 0.5 ? "24 dB" : "12 dB";
+        //  modulacion#: los DOS de CHO, FLA y PHA. No vale el 18 -el de DLY-
+        //  porque alli el uno es CINTA: con tres nombres y dos posiciones el
+        //  mando diria «CINTA» en el sitio del analogico.
+        case 21:
+        {
+            static constexpr const char* kTipos[] = { "DIGITAL|tipo", "ANALOGICO|tipo" };
+            return T (kTipos[juce::jlimit (0, AudioEngine::kModTipos - 1, (int) std::lround (v))]);
+        }
         case 5:  return juce::String ((int) v) + "x";
         //  Un LFO se dice con DECIMAL. Con el formato de frecuencia de los
         //  filtros -entero- los cuatro de modulacion arrancarian diciendo
@@ -14565,7 +14578,17 @@ void MainComponent::applyState (const juce::ValueTree& s)
                 //  analogico#: medido contra los TREINTA tipos que tenia la fila de ocho, no contra los de hoy:
                 //  con 33 una fila vieja de 240 caia en la rama de cuatro y cada efecto leia los del vecino.
                 constexpr int kTiposFila8 = 30;
-                const int porFx = (r.size() >= kTiposFila8 * kParamsPorFx) ? kParamsPorFx
+                //  modulacion#: CUATRO ANCHURAS. El noveno parametro -el TIPO
+                //  de CHO, FLA y PHA- hace que una fila de HOY traiga 39x9=351
+                //  numeros, y una de la tanda de sampling 39x8=312. La de ocho
+                //  NO se puede reconocer con `kTiposFila8 * kParamsPorFx`
+                //  -30x9=270, y 312 pasa de 270-: con esa cuenta un fichero de
+                //  la tanda anterior se leeria a nueve de ancho y cada efecto
+                //  se quedaria con el parametro del vecino, que es el fallo que
+                //  este comentario lleva avisando dos tandas. La anchura nueva
+                //  se reconoce por los tipos de HOY, exactos.
+                const int porFx = (r.size() >= kNumFx * kParamsPorFx)       ? kParamsPorFx
+                                : (r.size() >= kTiposFila8 * 8)             ? 8
                                 : (r.size() >= kTiposFila8 * 4)             ? 4 : 3;
 
                 for (int f = 0; f < kNumFx; ++f)

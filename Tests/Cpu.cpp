@@ -134,6 +134,20 @@ static void prepara (AudioEngine& e, bool tono = false)
         const char* v = std::getenv ("ZATI_CALIDAD");
         if (v != nullptr) e.setCalidad (juce::jlimit (0, 2, juce::String (v).getIntValue()));
     }
+    //  modulacion#: ZATI_MODTIPO fija el TIPO de CHO, FLA y PHA en los
+    //  dieciseis canales. Con 0 -DIGITAL- las tres filas tienen que dar la
+    //  huella de ANTES de que existiera el color, bit a bit: es lo que
+    //  garantiza que el mando devuelve el coro de siempre y no una imitacion.
+    {
+        const char* v = std::getenv ("ZATI_MODTIPO");
+        if (v != nullptr)
+        {
+            const float t = (float) juce::jlimit (0, AudioEngine::kModTipos - 1, juce::String (v).getIntValue());
+            for (int c = 0; c < AudioEngine::kNumCanales; ++c)
+                for (int f : { AudioEngine::kFxCho, AudioEngine::kFxFla, AudioEngine::kFxPha })
+                    e.setFxParam (c, f, AudioEngine::kParTipoMod, t);
+        }
+    }
     e.prepareToPlay (kSr, kBs);
     e.setPolyphony (32, 4);
     for (int p = 0; p < 16; ++p)

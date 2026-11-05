@@ -130,9 +130,27 @@ public:
     //  el corte cuando esta en su tope, asi que un proyecto viejo suena BIT A
     //  BIT igual: 12.0f / 1000.0f es 0.012f exacto porque la division de coma
     //  flotante redondea bien, y eso es lo que se mide.
-    static constexpr int kNumParFx      = 8;
+    //  NUEVE Y NO OCHO (modulacion#). La columna `caracter` del banco de
+    //  Efectos -la mugre de un seno a -36 dBFS contra la de -6 dBFS- dejo
+    //  medido que CHO, FLA y PHA dan **0.0 dB**: son lineales perfectos, o sea
+    //  que suenan igual flojo que fuerte y solo mas altos. Un coro, un flanger
+    //  y un phaser analogicos NO son eso: los dos primeros son BBD -banda
+    //  corta y su propia mugre, que crece con el nivel- y el tercero lleva
+    //  OTAs que ensucian. DLY ya tenia ese problema resuelto con su mando TIPO
+    //  (p5, DIGITAL / CINTA / ANALOGICO) y la familia de modulacion nunca lo
+    //  tuvo, porque sus OCHO estaban todos ocupados: p4 y p5 son el centro y
+    //  el recorrido, y p6/p7 el corte de salida.
+    //
+    //  El noveno es `kParTipoMod` y solo lo tienen esos tres. Que la tabla
+    //  crezca no cuesta nada que se note -16 canales x 39 tipos x un flotante
+    //  son 2.4 KB- y el plato sigue ensenando TRES mandos elegidos de la lista,
+    //  asi que la cara no cambia de forma: lo unico que cambia es que la lista
+    //  de candidatos de esos tres tipos tiene un elemento mas.
+    static constexpr int kNumParFx      = 9;
     //  Los dos cortes de salida, y el tope en el que se apagan.
     static constexpr int   kParGraves   = 6, kParAgudos = 7;
+    //  modulacion#: el noveno, el TIPO de CHO, FLA y PHA.
+    static constexpr int   kParTipoMod  = 8;
     static constexpr float kGravesOff   = 20.0f, kAgudosOff = 20000.0f;
     static constexpr float kSinMando    = -1.0e9f;
     //  Y HASTA DONDE LLEGA EL CUARTO. Cero es libre en Hz; por encima es el
@@ -495,6 +513,13 @@ public:
         return par < 3 ? kFxDef[f][par]
              : par == 3 ? 0.0f
              : par < 6  ? (juce::exactlyEqual (kFxDefExtra[f][par - 4], kSinMando) ? 0.0f : kFxDefExtra[f][par - 4])
+             //  modulacion#: Y EL NOVENO ES EL COLOR ANALOGICO DE FABRICA.
+             //
+             //  Esta es la mitad del pedido que cambia como suena lo que ya
+             //  existe, y es a proposito: un proyecto guardado antes no trae la
+             //  columna, cae aqui y se abre en ANALOGICO. Quien quiera el coro
+             //  de antes lo tiene en el mismo mando, en DIGITAL.
+             : par == kParTipoMod ? (tieneMando (f, kParTipoMod) ? (float) kModAnalogico : 0.0f)
              : par == kParGraves ? kGravesOff : kAgudosOff;
     }
     //  Si el tipo tiene ese mando. p0..p2 siempre; p3 (enganche) solo los que
@@ -506,6 +531,8 @@ public:
                          || f == kFxRot || f == kFxDuc || f == kFxRep || f == kFxDly || f == kFxPng
                          || f == kFxStp)   // sampling#
              : par < 6  ? ! juce::exactlyEqual (kFxDefExtra[f][par - 4], kSinMando)
+             //  modulacion#: el noveno es de los tres de la familia de modulacion y de nadie mas.
+             : par == kParTipoMod ? (f == kFxCho || f == kFxFla || f == kFxPha)
              : f != kFxEq && f != kFxGeq;   // analogico#: el grafico trae su cara y no lleva cortes
     }
 
@@ -1896,6 +1923,10 @@ public:
     //  efectos#tipos: los cuatro tipos de DRV (p4): SUAVE tanh, VALVULA asimetrica, FUZZ de rodilla dura, ROTO rectificado (octava arriba).
     enum { kDrvSuave, kDrvValvula, kDrvFuzz, kDrvRoto, kDrvTipos };
     enum { kDlyDigital, kDlyCinta, kDlyAnalogico, kDlyTipos };   // efectos#tipos: los tres de DLY (p5)
+    //  modulacion#: los dos de CHO, FLA y PHA (p8). Mismo vocabulario que DLY
+    //  -DIGITAL es la cuenta limpia y ANALOGICO el aparato- para no inventar
+    //  una segunda palabra para la misma idea.
+    enum { kModDigital, kModAnalogico, kModTipos };
     static int drvTipoDe (float v) noexcept { return std::isfinite (v) ? juce::jlimit (0, kDrvTipos - 1, (int) std::lround (v)) : 0; }
     static float curvaDrv (float v, int tipo) noexcept
     {
@@ -3732,6 +3763,31 @@ private:
     //  Los cuatro allpass de PHA, uno por etapa y por canal. Estado de primer
     //  orden: una muestra cada uno.
     static constexpr int kPhaEtapas = 4;
+    //  modulacion#: las tres constantes del color analogico. Ver `Inserto`.
+    //  El acoplo en 70 Hz y la reconstruccion en 7 kHz son los de un BBD de
+    //  los de siempre; el empuje de 1.9 es el que deja `caracter` en el orden
+    //  de los otros aparatos del banco sin que el coro suene roto -medido-.
+    static constexpr float kModHpHz   = 70.0f;
+    static constexpr float kModLpHz   = 7000.0f;
+    static constexpr float kModDrive  = 1.9f;
+    //  UNA MUESTRA POR EL COLOR, y aqui y no copiada en las tres etapas: es la
+    //  misma cuenta las tres veces y la diferencia -si lleva el paso bajo de
+    //  reconstruccion- cabe en un booleano. `c` es cuanto color hay puesto, de
+    //  cero -la cuenta limpia de siempre- a uno.
+    //
+    //  A nivel bajo `fastTanh(k x)/k` vale x, asi que esto NO es un filtro que
+    //  se note con el coro flojo: lo que hace es que el mismo coro suene
+    //  distinto cuando se le mete caña, que es la unica diferencia que hay
+    //  entre un aparato y su formula.
+    static float modColorea (float x, float c, float& zHp, float& zLp,
+                             float aHp, float aLp, bool conLp) noexcept
+    {
+        zHp += aHp * (x - zHp);
+        float v = x - zHp;                                       // el acoplo
+        v = fastTanh (kModDrive * v) * (1.0f / kModDrive);        // el chip
+        if (conLp) { zLp += aLp * (v - zLp); v = zLp; }           // la reconstruccion
+        return x + c * (v - x);
+    }
 
     //  LA FAMILIA DE CARACTER: RNG · PIT · WID · EXC · TRN · FRZ.
     //
@@ -4335,6 +4391,27 @@ private:
         std::array<bool, 3> modWasActive {};
         float phaZ[2][kPhaEtapas] {};
         float flaFbZ[2] {};
+
+        //  modulacion#: EL COLOR ANALOGICO DE LOS TRES, y su memoria.
+        //
+        //  Tres cosas que hace un BBD -el chip de los coros y flangers de
+        //  verdad- y que juntas SON su sonido:
+        //    · el condensador de acoplo le quita los graves (`kModHpHz`);
+        //    · el chip tiene unos setenta decibelios de margen, asi que satura
+        //      SUAVE y la mugre crece con el nivel, que es lo que la columna
+        //      `caracter` mide y lo que estos tres no tenian;
+        //    · el reloj va a el doble de la banda, asi que el filtro de
+        //      reconstruccion deja la cola en siete kilohercios (`kModLpHz`).
+        //  En PHA no hay linea ni reloj, asi que lleva las dos primeras: sus
+        //  OTAs ensucian y su acoplo quita graves, pero un phaser es de banda
+        //  entera y un paso bajo ahi seria un filtro que nadie pidio.
+        //
+        //  `modColor` es el TIPO deslizado -0 digital, 1 analogico-, y desliza
+        //  por la misma razon que `dlyCinta`: cambiar de tipo con sonido dentro
+        //  es un salto, y un tipo que tarda veinte milisegundos en entrar no se
+        //  oye llegar.
+        float modColor[3] {};
+        float modHp[3][2] {}, modLp[3][2] {};
 
         //  RNG: su oscilador es de AUDIO -llega a 4 kHz- y por eso no es un
         //  `Lfo`, que acota a 40 Hz a proposito.

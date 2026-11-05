@@ -437,17 +437,32 @@ def main():
     #  la app se caia al abrirlo (analogico#). Con que abra y vuelva su fila basta: se cuenta y no se juzga aparte.
     #  Y ONCE: el `11-treintaitres-tipos.xml` es la fila de 264 (33 x 8) abierta con 39 tipos (sampling#): el PRE del
     #  canal 0 vuelve con el 0.77 que trae y SMP y GLU, que no trae, con su defecto. Esa si se juzga: ver `tipos33`.
-    viejo_ok = vj is not None and len (ficheros) == 11
+    #  Y DOCE: el `12-ocho-mandos.xml` es la fila de 312 (39 x 8) abierta con
+    #  nueve parametros por tipo (modulacion#). Cada numero DICE SU SITIO
+    #  -(fx*8+par)/1000-, asi que si el lector se equivoca de anchura las tres
+    #  cifras que ya se miran cantan a la vez: ver `ocho8`.
+    viejo_ok = vj is not None and len (ficheros) == 12
     t33 = (vj or {}).get ("11-treintaitres-tipos", {})
     tipos33 = (abs (t33.get ("pre0", -1) - 0.77) < 1e-3 and abs (t33.get ("smp0", -1) - 26040.0) < 0.5
                and abs (t33.get ("glu4", -1) - 10.0) < 1e-3)
     print ("tipos33: PRE %.3f (0.77)  SMP %.1f (26040)  GLU ataque %.2f (10)  %s"
            % (t33.get ("pre0", -1), t33.get ("smp0", -1), t33.get ("glu4", -1), "correcto" if tipos33 else "CORRIDO"))
     viejo_ok = viejo_ok and tipos33
+
+    #  modulacion#: LA FILA DE OCHO LEIDA CON NUEVE. Los tres sitios que ya se
+    #  miran, con los valores que el fichero DICE que tienen. A nueve de ancho
+    #  el PRE saldria 0.279 -el p7 del tipo 34- en vez de 0.248.
+    t8 = (vj or {}).get ("12-ocho-mandos", {})
+    ocho8 = (abs (t8.get ("pre0", -1) - 0.248) < 1e-4 and abs (t8.get ("smp0", -1) - 0.264) < 1e-4
+             and abs (t8.get ("glu4", -1) - 0.292) < 1e-4)
+    print ("ocho8:   PRE %.4f (0.2480)  SMP %.4f (0.2640)  GLU ataque %.4f (0.2920)  %s"
+           % (t8.get ("pre0", -1), t8.get ("smp0", -1), t8.get ("glu4", -1), "correcto" if ocho8 else "CORRIDO"))
+    viejo_ok = viejo_ok and ocho8
     print()
     if vj:
         for nombre, d in sorted (ficheros.items()):
-            if nombre.startswith ("09") or nombre.startswith ("10") or nombre.startswith ("11"):
+            if (nombre.startswith ("09") or nombre.startswith ("10") or nombre.startswith ("11")
+                    or nombre.startswith ("12")):
                 continue
             #  Lo que el fichero NO trae vale su defecto ANTIGUO: un proyecto
             #  sin `sends` es anterior a que los envios existieran -cada pad iba

@@ -1291,9 +1291,13 @@ int main (int argc, char** argv)
         //  son con sus valores de fabrica -el clipper no muerde hasta que se le
         //  sube el drive y el retardo trae el tipo DIGITAL-.
         {
+            //  modulacion#: y los tres de la familia de modulacion, que
+            //  entraron en esta lista el dia que dejaron de ser lineales: con
+            //  su TIPO de fabrica -ANALOGICO- pasaron de 0.0 a +58 dB.
             static constexpr int kAparatos[] = { AudioEngine::kFxDrv, AudioEngine::kFxFld, AudioEngine::kFxExc,
                                                  AudioEngine::kFxWah, AudioEngine::kFxCmp, AudioEngine::kFxGlu,
-                                                 AudioEngine::kFxPre, AudioEngine::kFxCin };
+                                                 AudioEngine::kFxPre, AudioEngine::kFxCin,
+                                                 AudioEngine::kFxCho, AudioEngine::kFxFla, AudioEngine::kFxPha };
             for (int a : kAparatos)
                 if (f == a && ca < 5.0)
                     falla ("%s no cambia con el nivel: %+.1f dB de mugre de flojo a fuerte (tope 5)", n, ca);
@@ -1606,6 +1610,53 @@ int main (int argc, char** argv)
         const double cRuido = 20.0 * std::log10 (pico (y));
         std::printf ("CLP  drive 18 forma 0 con ruido: pico %.2f dBFS\n", cRuido);
         if (cRuido > -0.29) falla ("CLP: con ruido el pico pasa el techo (%.2f dBFS)", cRuido);
+
+        //  MODULACION: cuanta mugre mete el color analogico de CHO, FLA y PHA
+        //  a nivel de trabajo, y que en DIGITAL no mete NINGUNA.
+        //
+        //  Un BBD de verdad da del orden del uno por ciento de distorsion a su
+        //  nivel nominal -o sea unos -40 dB-, no un diez por ciento: el color
+        //  tiene que oirse como calidez y no como un efecto roto. Y DIGITAL
+        //  tiene que dar lo de siempre, que es lo que deja volver atras a quien
+        //  no lo quiera.
+        {
+            static constexpr int kMod[] = { AudioEngine::kFxCho, AudioEngine::kFxFla, AudioEngine::kFxPha };
+            std::printf ("\nMODULACION  mugre del color a 0.25 de amplitud\n");
+            for (int f : kMod)
+            {
+                auto mugre = [&] (int tipo)
+                {
+                    auto e = monta (f, seno (220.0, 0.25f), kMandos[f].onMix);
+                    e->setFxParam (kCanal, f, AudioEngine::kParTipoMod, (float) tipo);
+                    e->postNoteOn (0, 1.0f);
+                    corre (*e, 48000 + 32768, y);
+                    const int orden = 15, n = 1 << orden;
+                    const auto pp = espectro (y.data() + 48000, orden);
+                    auto raya = [&] (double hz)
+                    {
+                        double s2 = 0.0;
+                        const int k0 = (int) std::floor ((hz - 30.0) * n / kSr), k1 = (int) std::ceil ((hz + 30.0) * n / kSr);
+                        for (int k = juce::jmax (1, k0); k <= k1 && k < n / 2; ++k) s2 += pp[(size_t) k];
+                        return s2;
+                    };
+                    double arm = 0.0;
+                    for (int k = 2; k <= 8; ++k) arm += raya (220.0 * k);
+                    return dB (arm / juce::jmax (1.0e-30, raya (220.0)));
+                };
+                const double ana = mugre (AudioEngine::kModAnalogico), dig = mugre (AudioEngine::kModDigital);
+                std::printf ("%-4s ANALOGICO %7.1f dB   DIGITAL %7.1f dB\n", kMandos[f].nombre, ana, dig);
+                //  La horquilla sale de la MEDIDA y no del plan: a 0.25 de
+                //  amplitud -o sea -12 dBFS, nivel de trabajo- el color da
+                //  CHO -50.3, FLA -49.8 y PHA -47.2 dB, que es un tercio del
+                //  uno por ciento: por debajo de lo que da un BBD de verdad en
+                //  su nominal, o sea calidez y no un efecto roto. La gracia es
+                //  que crece con el nivel -la columna `caracter` lo mide: de
+                //  0.0 a +58- y no que se note con el coro flojo.
+                if (ana > -26.0) falla ("%s ANALOGICO ensucia %.1f dB a nivel de trabajo (tope -26)", kMandos[f].nombre, ana);
+                if (ana < -56.0) falla ("%s ANALOGICO no ensucia nada: %.1f dB (pide -56 o mas)", kMandos[f].nombre, ana);
+                if (dig > -60.0) falla ("%s DIGITAL no esta limpio: %.1f dB (tope -60)", kMandos[f].nombre, dig);
+            }
+        }
 
         //  CALOR: LOS ARMONICOS PARES DE LAS CINCO SATURACIONES.
         //

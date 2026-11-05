@@ -2340,6 +2340,19 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
         auto P = [this, &canalEtapa] (int f, int par) noexcept
         { return fxParamDe (canalEtapa, f, par).load (std::memory_order_relaxed); };
 
+        //  modulacion#: el TIPO de CHO, FLA y PHA, leido como CUANTO color
+        //  -0 o 1-, y el coeficiente de un polo. Las dos aqui por lo mismo que
+        //  `P`: son la misma cuenta en las tres etapas.
+        auto tipoMod = [] (float v) noexcept
+        {
+            return std::isfinite (v) && (int) std::lround (v) == kModAnalogico ? 1.0f : 0.0f;
+        };
+        auto polo1 = [this] (float hz) noexcept
+        {
+            return 1.0f - std::exp (-juce::MathConstants<float>::twoPi * hz
+                                      / (float) juce::jmax (8000.0, systemSampleRate));
+        };
+
         //  LO QUE ENTRA AL BUS MIRADO, Y AQUI Y NO ANTES DE LAS ETAPAS.
         //
         //  Se leia UNA vez, antes de que ninguna etapa tocara nada, con este
@@ -3182,7 +3195,12 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 //  El flanco limpia la linea: sin esto, volver a abrir el coro
                 //  suena con la cola de la vez anterior. Es lo mismo que hacen
                 //  DRV con su paso bajo y BIT con su retenedor.
-                if (ahora && ! I.modWasActive[(size_t) m]) I.choLine.reset();
+                if (ahora && ! I.modWasActive[(size_t) m])
+                {
+                    I.choLine.reset();
+                    I.modHp[(size_t) m][0] = I.modHp[(size_t) m][1] = 0.0f;   // modulacion#
+                    I.modLp[(size_t) m][0] = I.modLp[(size_t) m][1] = 0.0f;
+                }
                 I.modWasActive[(size_t) m] = ahora;
 
                 if (ahora)
@@ -3198,6 +3216,9 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     const float cenT = juce::jlimit (1.0f, 30.0f, P (kFxCho, 4)) / 1000.0f * fsF;
                     const float recT = juce::jlimit (0.0f, 10.0f, P (kFxCho, 5)) / 1000.0f * fsF;
                     if (I.smChoCen < 0.0f) { I.smChoCen = cenT; I.smChoRec = recT; }
+                    //  modulacion#: el color del BBD. Ver `AudioEngine::modColorea`.
+                    const float choObj = tipoMod (P (kFxCho, kParTipoMod));
+                    const float choHp = polo1 (kModHpHz), choLp = polo1 (kModLpHz);
                     float* w0 = fxBus[busIdx (kFxCho)].getWritePointer (0, startSample);
                     float* w1 = (chans > 1) ? fxBus[busIdx (kFxCho)].getWritePointer (1, startSample) : w0;
 
@@ -3211,15 +3232,24 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                         const float q = (chans > 1) ? Lfo::valorEn (fm.fase + Lfo::kCuadratura) : v;
                         const float x0 = w0[i], x1 = w1[i];
 
+                        I.modColor[(size_t) m] += kSamp * (choObj - I.modColor[(size_t) m]);
+                        const float cc = I.modColor[(size_t) m];
+
                         I.choLine.pushSample (0, std::isfinite (x0) ? x0 : 0.0f);
                         I.choLine.setDelay (juce::jmax (1.0f, centro + amp * v));
-                        const float d0 = I.choLine.popSample (0);
+                        float d0 = I.choLine.popSample (0);
+                        if (cc > 1.0e-6f && std::isfinite (d0))
+                            d0 = modColorea (d0, cc, I.modHp[(size_t) m][0], I.modLp[(size_t) m][0],
+                                             choHp, choLp, true);
 
                         if (chans > 1)
                         {
                             I.choLine.pushSample (1, std::isfinite (x1) ? x1 : 0.0f);
                             I.choLine.setDelay (juce::jmax (1.0f, centro + amp * q));
-                            const float d1 = I.choLine.popSample (1);
+                            float d1 = I.choLine.popSample (1);
+                            if (cc > 1.0e-6f && std::isfinite (d1))
+                                d1 = modColorea (d1, cc, I.modHp[(size_t) m][1], I.modLp[(size_t) m][1],
+                                                 choHp, choLp, true);
                             w1[i] = std::isfinite (d1) ? d1 : 0.0f;
                         }
                         w0[i] = std::isfinite (d0) ? d0 : 0.0f;
@@ -3242,6 +3272,8 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 if (ahora && ! I.modWasActive[(size_t) m])
                 {
                     I.flaLine.reset(); I.flaFbZ[0] = I.flaFbZ[1] = 0.0f;
+                    I.modHp[(size_t) m][0] = I.modHp[(size_t) m][1] = 0.0f;   // modulacion#
+                    I.modLp[(size_t) m][0] = I.modLp[(size_t) m][1] = 0.0f;
                 }
                 I.modWasActive[(size_t) m] = ahora;
 
@@ -3255,6 +3287,12 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     const float cenT = juce::jlimit (0.5f, 10.0f, P (kFxFla, 4)) / 1000.0f * fsF;
                     const float recT = juce::jlimit (0.0f,  5.0f, P (kFxFla, 5)) / 1000.0f * fsF;
                     if (I.smFlaCen < 0.0f) { I.smFlaCen = cenT; I.smFlaRec = recT; }
+                    //  modulacion#: el color va DENTRO del lazo, que es donde
+                    //  esta el chip en el aparato: asi cada vuelta sale un poco
+                    //  mas oscura y un poco mas apretada, igual que en CINTA de
+                    //  DLY, en vez de repetirse identica para siempre.
+                    const float flaObj = tipoMod (P (kFxFla, kParTipoMod));
+                    const float flaHp = polo1 (kModHpHz), flaLp = polo1 (kModLpHz);
                     float* w0 = fxBus[busIdx (kFxFla)].getWritePointer (0, startSample);
                     float* w1 = (chans > 1) ? fxBus[busIdx (kFxFla)].getWritePointer (1, startSample) : w0;
 
@@ -3265,6 +3303,8 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                         I.smFlaRec += kSamp * (recT - I.smFlaRec);
                         const float v = Lfo::valorEn (fm.fase); fm.fase += fm.paso;
                         const float dl = juce::jmax (1.0f, I.smFlaCen + I.smFlaRec * v);
+                        I.modColor[(size_t) m] += kSamp * (flaObj - I.modColor[(size_t) m]);
+                        const float cc = I.modColor[(size_t) m];
 
                         for (int ch = 0; ch < chans; ++ch)
                         {
@@ -3272,7 +3312,10 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                             const float in = w[i] + I.smFlaFb * I.flaFbZ[ch];
                             I.flaLine.pushSample (ch, std::isfinite (in) ? in : 0.0f);
                             I.flaLine.setDelay (dl);
-                            const float d = I.flaLine.popSample (ch);
+                            float d = I.flaLine.popSample (ch);
+                            if (cc > 1.0e-6f && std::isfinite (d))
+                                d = modColorea (d, cc, I.modHp[(size_t) m][ch & 1], I.modLp[(size_t) m][ch & 1],
+                                                flaHp, flaLp, true);
                             I.flaFbZ[ch] = std::isfinite (d) ? d : 0.0f;
                             w[i] = I.flaFbZ[ch];
                         }
@@ -3300,6 +3343,8 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                 if (ahora && ! I.modWasActive[(size_t) m])
                 {
                     for (auto& fila : I.phaZ) for (auto& z : fila) z = 0.0f;
+                    I.modHp[(size_t) m][0] = I.modHp[(size_t) m][1] = 0.0f;   // modulacion#
+                    I.modLp[(size_t) m][0] = I.modLp[(size_t) m][1] = 0.0f;
                 }
                 I.modWasActive[(size_t) m] = ahora;
 
@@ -3310,8 +3355,16 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                     //  p4 BASE y p5 RANGO (tanda 32): eran 300 Hz y x8.
                     const float phaBase  = juce::jlimit (50.0f, 2000.0f, P (kFxPha, 4));
                     const float phaRango = juce::jlimit (1.0f, 16.0f, P (kFxPha, 5));
+                    //  modulacion#: en el phaser SIN paso bajo. Lo que ensucia
+                    //  son los OTAs de las etapas y el acoplo que les quita los
+                    //  graves; un phaser es de banda entera, asi que un filtro
+                    //  de reconstruccion ahi seria un corte que nadie pidio.
+                    const float phaObj = tipoMod (P (kFxPha, kParTipoMod));
+                    const float phaHp = polo1 (kModHpHz);
                     for (int i = 0; i < numSamples; ++i)
                     {
+                        I.modColor[(size_t) m] += kSamp * (phaObj - I.modColor[(size_t) m]);
+                        const float cc = I.modColor[(size_t) m];
                         const float v = Lfo::valorEn (fm.fase); fm.fase += fm.paso;
                         //  La esquina se barre en OCTAVAS y no en Hz: 300 Hz
                         //  arriba de 300 son una octava y 300 arriba de 3000
@@ -3332,6 +3385,9 @@ void AudioEngine::faseBuses (Mezcla& mz) noexcept
                                 I.phaZ[ch][e] = x - a * y;
                                 x = y;
                             }
+                            if (cc > 1.0e-6f && std::isfinite (x))
+                                x = modColorea (x, cc, I.modHp[(size_t) m][ch & 1], I.modLp[(size_t) m][ch & 1],
+                                                phaHp, phaHp, false);
                             w[i] = std::isfinite (x) ? x : 0.0f;
                         }
                     }

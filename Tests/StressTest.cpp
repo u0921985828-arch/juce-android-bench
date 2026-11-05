@@ -10548,6 +10548,10 @@ int main()
             if (fx == AudioEngine::kFxRev) return par == 4 ? 2.0f : 30.0f;   //  efectos#tipos: tipo y previo nacen en cero; por tres seguirian en cero
             if ((fx == AudioEngine::kFxDrv || fx == AudioEngine::kFxTrm || fx == AudioEngine::kFxFlt) && par == 4) return 1.0f;   //  efectos#tipos: el tipo nace en cero
             if (fx == AudioEngine::kFxDly && par == 5) return 2.0f;
+            //  modulacion#: el TIPO de CHO, FLA y PHA nace en ANALOGICO, asi
+            //  que el valor movido es DIGITAL. Por tres saldria 3, que `tipoMod`
+            //  tambien lee como digital, pero por accidente: esto lo dice.
+            if (par == AudioEngine::kParTipoMod) return (float) AudioEngine::kModDigital;
             const float d = AudioEngine::defectoFx (fx, par);
             return d >= 19999.0f ? 1500.0f : d * 3.0f;
         };
