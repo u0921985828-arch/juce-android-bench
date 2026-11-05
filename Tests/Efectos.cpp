@@ -1294,6 +1294,9 @@ int main (int argc, char** argv)
         std::printf ("FASEMOD  parejas %d  puntos quietos con señal %d\n", parejas, quietos);
     }
     if (std::getenv ("ZATI_FX_APAGADO")) return fallos == 0 ? 0 : 1;
+    //  Sonda: `ZATI_FX_CASO` salta a las reglas de abajo -el caso de verdad y
+    //  la biseccion dentro de el- sin correr la tabla de los treinta y nueve.
+    const bool soloCaso = std::getenv ("ZATI_FX_CASO") != nullptr;
     std::printf ("%-4s %9s %8s %8s %8s %9s %7s %9s %7s %7s %8s\n",
                  "fx", "pliegue", "en Hz", "mover1", "mover2", "encender", "nivel", "cola", "trino", "preset", "caracter");
     for (int f = 0; f < AudioEngine::kNumFx; ++f)
@@ -1507,7 +1510,7 @@ int main (int argc, char** argv)
             if (pi > kPicosMax)    falla ("REV a %.2f: la cola tiene picos de %.1f dB (tope %.1f)", tam, pi, kPicosMax);
         }
     }
-    if (solo < 0 || solo == AudioEngine::kFxExc)
+    if (! soloCaso && (solo < 0 || solo == AudioEngine::kFxExc))
     {
         //  exc#armonicos: un agudo flojo a fuerza 1 gana armonicos, no +6 dB en su propia frecuencia.
         auto banda = [] (const std::vector<float>& y, double hz)
@@ -1535,7 +1538,7 @@ int main (int argc, char** argv)
         if (arm < -40.0) falla ("EXC no anade armonicos: %.1f dBc (minimo -40)", arm);
     }
     //  analogico#: que cada uno de la septima familia haga lo que dice.
-    if (solo < 0 || solo >= AudioEngine::kFxGeq)
+    if (! soloCaso && (solo < 0 || solo >= AudioEngine::kFxGeq))
     {
         auto banda = [] (const std::vector<float>& y, double hz)
         {
@@ -1964,9 +1967,46 @@ int main (int argc, char** argv)
                 falla ("el proyecto de la persona sostiene a %.1f dBFS un minuto despues de un solo golpe en el canal %d",
                        20.0 * std::log10 (picoFin), padCanal + 1);
         }
+
+        //  Y LA BISECCION DENTRO DE SU PATCH. Sostiene con el golpe en el canal
+        //  2, que es el que manda 0.70 al 15 -el retorno con REV en MUELLE y
+        //  PHA detras, los dos a mezcla 1.00-. Se apaga una cosa cada vez y la
+        //  que lo mata es la culpable: eso es lo que hay que arreglar, y no lo
+        //  que yo suponga.
+        {
+            static const char* kQue[] = { "tal cual", "sin PHA en el 15", "sin REV en el 15",
+                                          "el REV del 15 en SALA", "sin el envio 2>15",
+                                          "PHA del 15 a profundidad 0" };
+            for (int v = 0; v < 6; ++v)
+            {
+                auto e = std::make_unique<AudioEngine>();
+                e->setCalidad (gCalidad);
+                e->prepareToPlay (kSr, kBs);
+                e->setPolyphony (8, 2);
+                e->setPadGain (0, 1.0f);
+                e->setPadPitch (0, 0.0f);
+                e->setPadLoop (0, false);
+                e->setPadCanal (0, 1);
+                e->publishSample (0, golpe (220.0, 0.5f));
+                #include "proyectos/caso-acople.inc"
+                if (v == 1) e->setFxParam (14, AudioEngine::kFxPha, 2, 0.0f);
+                if (v == 2) e->setFxParam (14, AudioEngine::kFxRev, 2, 0.0f);
+                if (v == 3) e->setFxParam (14, AudioEngine::kFxRev, 4, 0.0f);
+                if (v == 4) e->setCanalEnvio (1, 14, 0.0f);
+                if (v == 5) e->setFxParam (14, AudioEngine::kFxPha, 1, 0.0f);
+                e->postNoteOn (0, 1.0f);
+                std::vector<float> y;
+                corre (*e, (int) (kSr * 60.0), y);
+                double picoFin = 0.0;
+                for (size_t k = (size_t) (kSr * 40.0); k < y.size(); ++k) picoFin = juce::jmax (picoFin, (double) std::abs (y[k]));
+                std::printf ("    %-28s %7.1f dBFS%s\n", kQue[v],
+                             20.0 * std::log10 (juce::jmax (1.0e-12, picoFin)),
+                             picoFin > 0.25 ? "   sostiene" : "   se apaga");
+            }
+        }
     }
 
-    if (solo < 0 || solo >= AudioEngine::kFxSmp)
+    if (! soloCaso && (solo < 0 || solo >= AudioEngine::kFxSmp))
     {
         auto banda = [] (const std::vector<float>& y, double hz)
         {
