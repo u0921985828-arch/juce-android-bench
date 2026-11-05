@@ -1572,6 +1572,121 @@ int main (int argc, char** argv)
             falla ("CIN: la cinta no comprime con suavidad (+12 dB dan %+.1f) o rompe la onda (3o %.1f dBc)", sube, c4.second);
     }
     //  sampling#: que cada uno de los seis haga lo que dice.
+    //  ACOPLE: NADA PUEDE CRECER SOLO.
+    //
+    //  Del telefono: «es un sonido pitido de acople». Con el monitor
+    //  apagado Y encendido suena igual, asi que no es el microfono: algo
+    //  del motor se engancha. La columna `cola` mide que la cola SE APAGA
+    //  en diez segundos sin entrada, y eso NO es lo mismo: un lazo con
+    //  ganancia justo por encima de uno tarda mucho mas en hacerse oir, y
+    //  arranca de un golpe y no del silencio.
+    //
+    //  Asi que se mide el CRECIMIENTO: un golpe al principio, treinta
+    //  segundos, y la energia de los dos ultimos contra la de los segundos
+    //  cuatro a seis. Un efecto que decae da un numero muy negativo; uno
+    //  que se engancha da positivo, y da igual lo despacio que lo haga.
+    //  Cada tipo en sus DOS extremos de los dos mandos, que es donde vive
+    //  la resonancia -la realimentacion del delay, el signo del flanger,
+    //  la sala sin amortiguar-.
+    {
+        std::printf ("\nACOPLE  golpe y 30 s: energia de los 2 ultimos contra la de 4-6 s\n");
+        double peorTodos = -999.0; int peorF = -1;
+        //  LA MAS ALTA DE SUS VENTANAS DE UN SEGUNDO, y no la energia del
+        //  tramo entero. Dos arreglos en una cuenta, los dos cantados por
+        //  la salida anterior:
+        //
+        //   · UN TREMOLO NO CRECE. Comparando dos tramos de dos segundos,
+        //     TRM salia +40.3 dB: su LFO mas lento da una vuelta cada
+        //     veinte segundos, asi que los dos tramos caian en partes
+        //     distintas del vaiven. El maximo de las ventanas de un segundo
+        //     de un tramo LARGO no se entera de la fase.
+        //   · Y EL SILENCIO NO CRECE. Con los dos tramos callados, las dos
+        //     energias dan el suelo del `jmax` y la resta sale +0.0 dB
+        //     EXACTO: asi salieron «creciendo» un filtro, un EQ y un
+        //     ecualizador grafico, que no tienen de donde. Por eso debajo
+        //     hay una puerta: si lo ultimo no se oye, no se juzga.
+        auto energia = [] (const std::vector<float>& y, double t0, double t1)
+        {
+            double peor = -300.0;
+            for (double t = t0; t + 1.0 <= t1; t += 0.5)
+            {
+                double e2 = 0.0; size_t n = 0;
+                for (size_t i = (size_t) (t * kSr); i < (size_t) ((t + 1.0) * kSr) && i < y.size(); ++i, ++n)
+                    e2 += (double) y[i] * y[i];
+                peor = juce::jmax (peor, 10.0 * std::log10 (juce::jmax (1.0e-30, e2 / juce::jmax ((size_t) 1, n))));
+            }
+            return peor;
+        };
+        //  El suelo de lo que se oye: por debajo de -80 dB la cola ya se
+        //  fue y no hay nada que juzgar.
+        constexpr double kOido = -80.0;
+        for (int f = 0; f < AudioEngine::kNumFx; ++f)
+        {
+            if (solo >= 0 && f != solo) continue;   // para perseguir una cifra sin correr los 39
+            const auto& m = kMandos[f];
+            double peor = -999.0;
+            for (int caso = 0; caso < 4; ++caso)
+            {
+                const int par = caso < 2 ? 0 : 1;
+                const float lo = par == 0 ? m.lo0 : m.lo1, hi = par == 0 ? m.hi0 : m.hi1;
+                auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
+                e->setFxParam (kCanal, f, par, (caso % 2) == 0 ? lo : hi);
+                e->postNoteOn (0, 1.0f);
+                std::vector<float> y;
+                corre (*e, (int) (kSr * 30), y);
+                const double fin = energia (y, 22.0, 30.0);
+                if (fin > kOido) peor = juce::jmax (peor, fin - energia (y, 4.0, 12.0));
+            }
+            //  Y LOS TIPOS, que es donde estaba el agujero.
+            //
+            //  El barrido de arriba mueve p0 y p1. El TIPO vive en otro
+            //  mando -p4 en REV, DRV y TRM, p5 en DLY-, asi que el MUELLE
+            //  de la reverb no se habia medido NUNCA contra el crecimiento:
+            //  es un tanque con ocho allpass, su banda y un transductor
+            //  DENTRO del lazo, o sea el sitio de esta casa donde una
+            //  ganancia de lazo por encima de uno es mas facil de escribir.
+            //  Del telefono: «tiene que ser algo del spring REVERB o asi,
+            //  suena a efecto porque oscila».
+            {
+                const int parTipo = f == AudioEngine::kFxDly ? 5
+                                  : (f == AudioEngine::kFxRev || f == AudioEngine::kFxDrv
+                                     || f == AudioEngine::kFxTrm || f == AudioEngine::kFxFlt) ? 4 : -1;
+                const int nTipos = f == AudioEngine::kFxRev ? 5 : f == AudioEngine::kFxDrv ? 4
+                                 : f == AudioEngine::kFxDly ? 3 : f == AudioEngine::kFxTrm ? 4 : 2;
+                if (parTipo >= 0)
+                    for (int t = 0; t < nTipos; ++t)
+                        for (int caso = 0; caso < 4; ++caso)
+                        {
+                            auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
+                            e->setFxParam (kCanal, f, parTipo, (float) t);
+                            e->setFxParam (kCanal, f, 0, (caso & 1) ? m.hi0 : m.lo0);
+                            e->setFxParam (kCanal, f, 1, (caso & 2) ? m.hi1 : m.lo1);
+                            e->postNoteOn (0, 1.0f);
+                            std::vector<float> y;
+                            corre (*e, (int) (kSr * 30), y);
+                            const double fin = energia (y, 22.0, 30.0);
+                            if (fin <= kOido) continue;          // se apago: nada que juzgar
+                            const double cr = fin - energia (y, 4.0, 12.0);
+                            if (cr > -6.0)
+                                std::printf ("  %-4s tipo %d caso %d  %+7.1f dB  (final %.0f dB)\n",
+                                             m.nombre, t, caso, cr, fin);
+                            if (f != AudioEngine::kFxFrz && cr > 1.0)
+                                falla ("%s tipo %d CRECE solo: %+.1f dB en treinta segundos", m.nombre, t, cr);
+                            peor = juce::jmax (peor, cr);
+                        }
+            }
+            if (peor > peorTodos) { peorTodos = peor; peorF = f; }
+            if (peor > -6.0 && peor > -900.0)
+                std::printf ("  %-4s %+7.1f dB\n", m.nombre, peor);
+            //  FRZ es un CONGELADOR: sostener es lo que hace, y por eso su
+            //  `cola` tambien esta exenta desde que se escribio.
+            if (f != AudioEngine::kFxFrz && peor > 1.0)
+                falla ("%s CRECE solo: %+.1f dB en treinta segundos", m.nombre, peor);
+        }
+        std::printf ("  el que mas crece: %s %+.1f dB\n",
+                     peorF >= 0 ? kMandos[peorF].nombre : "-", peorTodos);
+    }
+
     if (solo < 0 || solo >= AudioEngine::kFxSmp)
     {
         auto banda = [] (const std::vector<float>& y, double hz)
@@ -1631,120 +1746,6 @@ int main (int argc, char** argv)
         const double cRuido = 20.0 * std::log10 (pico (y));
         std::printf ("CLP  drive 18 forma 0 con ruido: pico %.2f dBFS\n", cRuido);
         if (cRuido > -0.29) falla ("CLP: con ruido el pico pasa el techo (%.2f dBFS)", cRuido);
-
-        //  ACOPLE: NADA PUEDE CRECER SOLO.
-        //
-        //  Del telefono: «es un sonido pitido de acople». Con el monitor
-        //  apagado Y encendido suena igual, asi que no es el microfono: algo
-        //  del motor se engancha. La columna `cola` mide que la cola SE APAGA
-        //  en diez segundos sin entrada, y eso NO es lo mismo: un lazo con
-        //  ganancia justo por encima de uno tarda mucho mas en hacerse oir, y
-        //  arranca de un golpe y no del silencio.
-        //
-        //  Asi que se mide el CRECIMIENTO: un golpe al principio, treinta
-        //  segundos, y la energia de los dos ultimos contra la de los segundos
-        //  cuatro a seis. Un efecto que decae da un numero muy negativo; uno
-        //  que se engancha da positivo, y da igual lo despacio que lo haga.
-        //  Cada tipo en sus DOS extremos de los dos mandos, que es donde vive
-        //  la resonancia -la realimentacion del delay, el signo del flanger,
-        //  la sala sin amortiguar-.
-        {
-            std::printf ("\nACOPLE  golpe y 30 s: energia de los 2 ultimos contra la de 4-6 s\n");
-            double peorTodos = -999.0; int peorF = -1;
-            //  LA MAS ALTA DE SUS VENTANAS DE UN SEGUNDO, y no la energia del
-            //  tramo entero. Dos arreglos en una cuenta, los dos cantados por
-            //  la salida anterior:
-            //
-            //   · UN TREMOLO NO CRECE. Comparando dos tramos de dos segundos,
-            //     TRM salia +40.3 dB: su LFO mas lento da una vuelta cada
-            //     veinte segundos, asi que los dos tramos caian en partes
-            //     distintas del vaiven. El maximo de las ventanas de un segundo
-            //     de un tramo LARGO no se entera de la fase.
-            //   · Y EL SILENCIO NO CRECE. Con los dos tramos callados, las dos
-            //     energias dan el suelo del `jmax` y la resta sale +0.0 dB
-            //     EXACTO: asi salieron «creciendo» un filtro, un EQ y un
-            //     ecualizador grafico, que no tienen de donde. Por eso debajo
-            //     hay una puerta: si lo ultimo no se oye, no se juzga.
-            auto energia = [] (const std::vector<float>& y, double t0, double t1)
-            {
-                double peor = -300.0;
-                for (double t = t0; t + 1.0 <= t1; t += 0.5)
-                {
-                    double e2 = 0.0; size_t n = 0;
-                    for (size_t i = (size_t) (t * kSr); i < (size_t) ((t + 1.0) * kSr) && i < y.size(); ++i, ++n)
-                        e2 += (double) y[i] * y[i];
-                    peor = juce::jmax (peor, 10.0 * std::log10 (juce::jmax (1.0e-30, e2 / juce::jmax ((size_t) 1, n))));
-                }
-                return peor;
-            };
-            //  El suelo de lo que se oye: por debajo de -80 dB la cola ya se
-            //  fue y no hay nada que juzgar.
-            constexpr double kOido = -80.0;
-            for (int f = 0; f < AudioEngine::kNumFx; ++f)
-            {
-                const auto& m = kMandos[f];
-                double peor = -999.0;
-                for (int caso = 0; caso < 4; ++caso)
-                {
-                    const int par = caso < 2 ? 0 : 1;
-                    const float lo = par == 0 ? m.lo0 : m.lo1, hi = par == 0 ? m.hi0 : m.hi1;
-                    auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
-                    e->setFxParam (kCanal, f, par, (caso % 2) == 0 ? lo : hi);
-                    e->postNoteOn (0, 1.0f);
-                    std::vector<float> y;
-                    corre (*e, (int) (kSr * 30), y);
-                    const double fin = energia (y, 22.0, 30.0);
-                    if (fin > kOido) peor = juce::jmax (peor, fin - energia (y, 4.0, 12.0));
-                }
-                //  Y LOS TIPOS, que es donde estaba el agujero.
-                //
-                //  El barrido de arriba mueve p0 y p1. El TIPO vive en otro
-                //  mando -p4 en REV, DRV y TRM, p5 en DLY-, asi que el MUELLE
-                //  de la reverb no se habia medido NUNCA contra el crecimiento:
-                //  es un tanque con ocho allpass, su banda y un transductor
-                //  DENTRO del lazo, o sea el sitio de esta casa donde una
-                //  ganancia de lazo por encima de uno es mas facil de escribir.
-                //  Del telefono: «tiene que ser algo del spring REVERB o asi,
-                //  suena a efecto porque oscila».
-                {
-                    const int parTipo = f == AudioEngine::kFxDly ? 5
-                                      : (f == AudioEngine::kFxRev || f == AudioEngine::kFxDrv
-                                         || f == AudioEngine::kFxTrm || f == AudioEngine::kFxFlt) ? 4 : -1;
-                    const int nTipos = f == AudioEngine::kFxRev ? 5 : f == AudioEngine::kFxDrv ? 4
-                                     : f == AudioEngine::kFxDly ? 3 : f == AudioEngine::kFxTrm ? 4 : 2;
-                    if (parTipo >= 0)
-                        for (int t = 0; t < nTipos; ++t)
-                            for (int caso = 0; caso < 4; ++caso)
-                            {
-                                auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
-                                e->setFxParam (kCanal, f, parTipo, (float) t);
-                                e->setFxParam (kCanal, f, 0, (caso & 1) ? m.hi0 : m.lo0);
-                                e->setFxParam (kCanal, f, 1, (caso & 2) ? m.hi1 : m.lo1);
-                                e->postNoteOn (0, 1.0f);
-                                std::vector<float> y;
-                                corre (*e, (int) (kSr * 30), y);
-                                const double fin = energia (y, 22.0, 30.0);
-                                if (fin <= kOido) continue;          // se apago: nada que juzgar
-                                const double cr = fin - energia (y, 4.0, 12.0);
-                                if (cr > -6.0)
-                                    std::printf ("  %-4s tipo %d caso %d  %+7.1f dB  (final %.0f dB)\n",
-                                                 m.nombre, t, caso, cr, fin);
-                                if (f != AudioEngine::kFxFrz && cr > 1.0)
-                                    falla ("%s tipo %d CRECE solo: %+.1f dB en treinta segundos", m.nombre, t, cr);
-                                peor = juce::jmax (peor, cr);
-                            }
-                }
-                if (peor > peorTodos) { peorTodos = peor; peorF = f; }
-                if (peor > -6.0 && peor > -900.0)
-                    std::printf ("  %-4s %+7.1f dB\n", m.nombre, peor);
-                //  FRZ es un CONGELADOR: sostener es lo que hace, y por eso su
-                //  `cola` tambien esta exenta desde que se escribio.
-                if (f != AudioEngine::kFxFrz && peor > 1.0)
-                    falla ("%s CRECE solo: %+.1f dB en treinta segundos", m.nombre, peor);
-            }
-            std::printf ("  el que mas crece: %s %+.1f dB\n",
-                         peorF >= 0 ? kMandos[peorF].nombre : "-", peorTodos);
-        }
 
         //  PITIDO: UN MOTOR QUE TOCA PLAY CON EL PROYECTO VACIO TIENE QUE CALLAR.
         //

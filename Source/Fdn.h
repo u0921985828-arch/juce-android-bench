@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <cstdlib>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -145,6 +146,50 @@ public:
     //  Lo que entra al muelle antes de saturar: con el tanque a nivel de
     //  trabajo, la rodilla del tanh cae donde los golpes la encuentran.
     static constexpr float kMuelleDrive = 1.6f;
+    //  muelle#: LA PERDIDA DEL LAZO, Y POR QUE HACE FALTA UNA.
+    //
+    //  El tanque se enganchaba. Medido con la columna ACOPLE del banco -un
+    //  golpe y treinta segundos-: con el tipo MUELLE la cola CRECIA +2.5 dB en
+    //  vez de caer, y en las otras tres esquinas acababa a -15 dB a los treinta
+    //  segundos, o sea sostenida. Del telefono: «es un sonido pitido de acople
+    //  [...] tiene que ser algo del spring REVERB, suena a efecto porque
+    //  oscila».
+    //
+    //  La realimentacion sola no lo explica -de 0.55 a 0.85- y el lazo no tiene
+    //  ni un filtro resonante: los ocho allpass son de magnitud UNO por
+    //  definicion y los cuatro cortes van a Q 0.707. La ganancia de mas sale de
+    //  SUMAR LAS TRES TOMAS: `graves + medios + agudos` salen de tres sitios
+    //  DISTINTOS del muelle -28 ms, 14 ms y el final-, que es lo que hace la
+    //  dispersion, asi que no son un filtro de cruce que suma plano: son tres
+    //  caminos con fase propia. Donde dos de ellos se solapan -los cruces, en
+    //  700 y 2200 Hz, con cada banda a -3 dB- la suma puede llegar a 1.41, o
+    //  sea +3 dB de ganancia de lazo, y con eso 0.85 pasa de uno.
+    //
+    //  Esto es una perdida FIJA en la vuelta y no un recorte de la cola: la
+    //  dispersion, la banda y el transductor se quedan como estan. El valor
+    //  sale de la medida y no del plan; ver el comentario de `kMuelleLazo` en
+    //  ESTADO y la columna ACOPLE del banco.
+    static float muelleLazo() noexcept
+    {
+        //  Sonda: `ZATI_MU_LAZO` lo mueve para poder BUSCAR el valor con el
+        //  banco en vez de elegirlo a ojo. Sin variable, el que quedo medido.
+        static const float v = [] {
+            if (const char* e = std::getenv ("ZATI_MU_LAZO"))
+            {
+                const float x = (float) atof (e);
+                if (x > 0.0f && x <= 1.0f) return x;
+            }
+            return kMuelleLazoDef;
+        }();
+        return v;
+    }
+    //  OCHO DECIMAS, Y SALE DEL BARRIDO. Medido con la columna ACOPLE sobre el
+    //  tipo MUELLE, crecimiento en treinta segundos: con 1.00 (lo que habia)
+    //  **+2.5 dB**, con 0.90 +0.8, con 0.80 **+0.1** y con 0.70 +0.1. Se queda
+    //  el primero que deja de crecer y no el mas bajo: con 0.80 la cola de la
+    //  esquina mas larga sigue acabando a -16 dB a los treinta segundos -con
+    //  0.70 a -18-, o sea que la perdida quita el enganche y no el muelle.
+    static constexpr float kMuelleLazoDef = 0.80f;
 
     //  LOS DOS NUMEROS QUE MANDAN EN LA COLA, por la misma razon. 0.72 a 0.94:
     //  por debajo no es una sala y por encima de 0.95 una FDN
@@ -304,6 +349,10 @@ public:
         //  desde que `tauSegundos` los necesita para decir cuanto dura la cola.
         fb    = realimentacionDe (size, tipo);
         dampC = amortiguadoDe (damping, tipo);
+        //  muelle#: la vuelta del TANQUE lleva su perdida, y la red de lineas
+        //  no: son dos lazos distintos y el que se enganchaba es el del muelle.
+        //  Ver `muelleLazo`.
+        fbMu  = fb * muelleLazo();
         for (int i = 0; i < nLin; ++i) fbLinea[i] = std::pow (fb, exponente[i]);
     }
 
@@ -482,7 +531,7 @@ public:
                     //  entra al muelle pasa por una rodilla suave, no por un
                     //  limitador. Armonicos de orden bajo, que es lo que el oido
                     //  llama «analogico».
-                    const float e = Analogico::tanhR (kMuelleDrive * (x + fb * muLp[sm])) * (1.0f / kMuelleDrive);
+                    const float e = Analogico::tanhR (kMuelleDrive * (x + fbMu * muLp[sm])) * (1.0f / kMuelleDrive);
                     const float eb = std::abs (e) <= std::numeric_limits<float>::max() ? e : 0.0f;
                     mp[sm][muIdx[sm]] = eb;
                     muPico = juce::jmax (muPico, std::abs (eb));
@@ -768,6 +817,7 @@ private:
     int muAntes[2] {};
 
     float fb    = 0.85f;
+    float fbMu  = 0.85f * kMuelleLazoDef;   // muelle#: la vuelta del tanque, con su perdida
     float ultSize = -1.0f, ultDamp = -1.0f;
     float dampC = 0.4f;
 };
