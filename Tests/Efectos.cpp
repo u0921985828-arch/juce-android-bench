@@ -1830,6 +1830,50 @@ int main (int argc, char** argv)
             if (picoDb > -3.0)
                 falla ("el montaje «%s» acaba pegado al techo con un solo golpe: %.1f dBFS", nombre, picoDb);
         }
+
+        //  Y LA BISECCION: que PAREJA lo hace. Los montajes de arriba dicen que
+        //  pasa; esto dice con cuales dos, que es lo que se puede evitar o
+        //  arreglar. Se miran los que tienen memoria con realimentacion -el
+        //  resto no puede sostener- solos y de dos en dos, en el mismo canal.
+        {
+            static constexpr int kLazo[] = { AudioEngine::kFxDly, AudioEngine::kFxPng, AudioEngine::kFxRev,
+                                             AudioEngine::kFxAmb, AudioEngine::kFxFla, AudioEngine::kFxCho,
+                                             AudioEngine::kFxRep, AudioEngine::kFxFrz, AudioEngine::kFxStp };
+            constexpr int n = (int) (sizeof (kLazo) / sizeof (kLazo[0]));
+            std::printf ("  parejas que acaban por encima de -12 dBFS con un solo golpe:\n");
+            int cuantas = 0;
+            for (int i = 0; i < n; ++i)
+                for (int j = i; j < n; ++j)
+                {
+                    auto e = montaUnGolpe (golpe (220.0, 0.5f));
+                    auto pon = [&] (int f)
+                    {
+                        e->setCanalSend (kCanal, f, 1.0f);
+                        e->setFxParam (kCanal, f, 2, 1.0f);
+                        //  Cada uno en su esquina mas resonante, que es lo que
+                        //  un dedo encuentra en dos segundos.
+                        if (f == AudioEngine::kFxDly || f == AudioEngine::kFxPng)
+                        { e->setFxParam (kCanal, f, 0, 1000.0f); e->setFxParam (kCanal, f, 1, 0.95f); }
+                        if (f == AudioEngine::kFxRev) { e->setFxParam (kCanal, f, 0, 1.0f); e->setFxParam (kCanal, f, 1, 0.0f); }
+                        if (f == AudioEngine::kFxAmb) e->setFxParam (kCanal, f, 0, 1.0f);
+                        if (f == AudioEngine::kFxFla) e->setFxParam (kCanal, f, 1, 1.0f);
+                    };
+                    pon (kLazo[i]); if (j != i) pon (kLazo[j]);
+                    e->postNoteOn (0, 1.0f);
+                    std::vector<float> y;
+                    corre (*e, (int) (kSr * 60.0), y);
+                    double pico = 0.0;
+                    for (size_t k = (size_t) (kSr * 40.0); k < y.size(); ++k) pico = juce::jmax (pico, (double) std::abs (y[k]));
+                    const double db = 20.0 * std::log10 (juce::jmax (1.0e-12, pico));
+                    if (db > -12.0)
+                    {
+                        ++cuantas;
+                        std::printf ("    %-4s %-4s  %7.1f dBFS\n", kMandos[kLazo[i]].nombre,
+                                     j == i ? "" : kMandos[kLazo[j]].nombre, db);
+                    }
+                }
+            if (cuantas == 0) std::printf ("    ninguna\n");
+        }
     }
 
     if (solo < 0 || solo >= AudioEngine::kFxSmp)
