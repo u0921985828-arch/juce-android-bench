@@ -1611,6 +1611,61 @@ int main (int argc, char** argv)
         std::printf ("CLP  drive 18 forma 0 con ruido: pico %.2f dBFS\n", cRuido);
         if (cRuido > -0.29) falla ("CLP: con ruido el pico pasa el techo (%.2f dBFS)", cRuido);
 
+        //  ACOPLE: NADA PUEDE CRECER SOLO.
+        //
+        //  Del telefono: «es un sonido pitido de acople». Con el monitor
+        //  apagado Y encendido suena igual, asi que no es el microfono: algo
+        //  del motor se engancha. La columna `cola` mide que la cola SE APAGA
+        //  en diez segundos sin entrada, y eso NO es lo mismo: un lazo con
+        //  ganancia justo por encima de uno tarda mucho mas en hacerse oir, y
+        //  arranca de un golpe y no del silencio.
+        //
+        //  Asi que se mide el CRECIMIENTO: un golpe al principio, treinta
+        //  segundos, y la energia de los dos ultimos contra la de los segundos
+        //  cuatro a seis. Un efecto que decae da un numero muy negativo; uno
+        //  que se engancha da positivo, y da igual lo despacio que lo haga.
+        //  Cada tipo en sus DOS extremos de los dos mandos, que es donde vive
+        //  la resonancia -la realimentacion del delay, el signo del flanger,
+        //  la sala sin amortiguar-.
+        {
+            std::printf ("\nACOPLE  golpe y 30 s: energia de los 2 ultimos contra la de 4-6 s\n");
+            double peorTodos = -999.0; int peorF = -1;
+            auto energia = [] (const std::vector<float>& y, double t0, double t1)
+            {
+                double e2 = 0.0; size_t n = 0;
+                for (size_t i = (size_t) (t0 * kSr); i < (size_t) (t1 * kSr) && i < y.size(); ++i, ++n)
+                    e2 += (double) y[i] * y[i];
+                return 10.0 * std::log10 (juce::jmax (1.0e-30, e2 / juce::jmax ((size_t) 1, n)));
+            };
+            for (int f = 0; f < AudioEngine::kNumFx; ++f)
+            {
+                const auto& m = kMandos[f];
+                double peor = -999.0;
+                for (int caso = 0; caso < 4; ++caso)
+                {
+                    const int par = caso < 2 ? 0 : 1;
+                    const float lo = par == 0 ? m.lo0 : m.lo1, hi = par == 0 ? m.hi0 : m.hi1;
+                    auto e = monta (f, seno (220.0, 0.5f), m.onMix);
+                    e->setFxParam (kCanal, f, par, (caso % 2) == 0 ? lo : hi);
+                    e->postNoteOn (0, 1.0f);
+                    std::vector<float> y;
+                    //  El golpe dura lo que dura la muestra y se suelta: lo que
+                    //  siga sonando a los treinta segundos no es el golpe.
+                    corre (*e, (int) (kSr * 30), y, [&] (int b) { if (b == 8) e->postNoteOff (0); });
+                    peor = juce::jmax (peor, energia (y, 28.0, 30.0) - energia (y, 4.0, 6.0));
+                }
+                if (peor > peorTodos) { peorTodos = peor; peorF = f; }
+                if (peor > -6.0)
+                    std::printf ("  %-4s %+7.1f dB\n", m.nombre, peor);
+                //  FRZ es un CONGELADOR: sostener es lo que hace, y por eso su
+                //  `cola` tambien esta exenta desde que se escribio.
+                if (f != AudioEngine::kFxFrz && peor > 0.0)
+                    falla ("%s CRECE solo: %+.1f dB en treinta segundos", m.nombre, peor);
+            }
+            std::printf ("  el que mas crece: %s %+.1f dB\n",
+                         peorF >= 0 ? kMandos[peorF].nombre : "-", peorTodos);
+        }
+
         //  PITIDO: UN MOTOR QUE TOCA PLAY CON EL PROYECTO VACIO TIENE QUE CALLAR.
         //
         //  Del telefono: «hay un pitido cuando le doy al play». Un pitido es un
