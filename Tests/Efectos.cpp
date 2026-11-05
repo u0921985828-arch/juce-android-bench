@@ -20,6 +20,7 @@
 #include "../Source/FxPresets.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <vector>
 
@@ -273,47 +274,167 @@ static void midoReferencia()
 //  Por debajo de esto un chasquido no se oye: energia sobre 8 kHz a -70 dB del seno seco.
 static constexpr double kSuelo = -70.0;
 
+//  Cuanto mas despacio va la referencia de `mover`. Ocho: un salto por bloque
+//  se hace ocho veces mas pequeno ahi, y dieciseis segundos de tirada caben
+//  tanto el azar como un modulador de 0.05 Hz.
+static constexpr int kLento = 8;
+
 static float enRango (float lo, float hi, float t)
 {
     if (lo > 0.0f && hi / lo > 50.0f) return lo * std::pow (hi / lo, t);   // los de Hz van en octavas
     return lo + (hi - lo) * t;
 }
 
-//  El mando barrido contra el mismo efecto quieto en diecisiete sitios del barrido.
+//  EL MANDO BARRIDO CONTRA EL MISMO MANDO BARRIDO OCHO VECES MAS DESPACIO.
+//
+//  La referencia eran DIECISIETE SITIOS QUIETOS y medía dos cosas que no son
+//  el mando. Las dos, medidas:
+//
+//   · LA VENTANA. El quieto se miraba en 8192 muestras y el barrido en 96000:
+//     once veces mas tiempo para que caiga el peor pico. Con `ZATI_FX_QUIETO=1`
+//     -el mando PARADO en la tirada larga- salian VIN mando 2 **+1.1 dB**,
+//     SMP 0.0, STP 0.0 y FRZ **+12.5**, o sea una FALLA, sin que nadie tocara
+//     nada: un efecto con AZAR dentro -el crujido del vinilo- o un modulador de
+//     0.05 Hz -veinte segundos de vuelta- no cabe en 8192 muestras.
+//   · LA RESOLUCION. Diecisiete sitios no cubren un mando cuyo brillo no es
+//     monotono. Con `ZATI_FX_SITIOS=256`, BIT bajo de **+1.3 a -0.7 dB** y SMP
+//     de +0.4 a -0.1: el barrido no chasqueaba, VISITABA un sitio quieto peor
+//     que los diecisiete mirados.
+//
+//  Subir las dos cosas a la vez -doscientos cincuenta y siete sitios de dos
+//  segundos- son once horas de banco. Asi que la referencia es el MISMO
+//  barrido a un octavo de velocidad: visita todos los valores -resolucion
+//  infinita- y dura dieciseis segundos -ventana de sobra-, y lo que queda
+//  medido es exactamente la pregunta: cuanto añade mover el mando DEPRISA.
+//  Un mecanismo que salta por bloque salta ocho veces menos ahi, asi que lo
+//  que sobresale es el salto y no el sitio.
+//
+//  `ZATI_FX_QUIETO=1` deja el mando parado y `ZATI_FX_SITIOS=N` vuelve a la
+//  referencia vieja con N sitios: las dos sondas siguen puestas porque son las
+//  que descubrieron esto.
 static double mover (int f, int par)
 {
     const auto& m = kMandos[f];
     const float lo = par == 0 ? m.lo0 : m.lo1, hi = par == 0 ? m.hi0 : m.hi1;
-    double quieto = 0.0;
     std::vector<float> y;
-    //  Diecisiete sitios: con cinco, un BIT a 2.3 bits sonaba peor que cualquiera de los quietos sin chasquear.
-    constexpr int kSitios = 16;
-    for (int i = 0; i <= kSitios; ++i)
+    const int arranque = 24000 / kBs;
+
+    //  Una tirada con el mando subiendo y bajando a la velocidad pedida.
+    //  `lento` multiplica el tiempo del barrido; 1 es el dedo de verdad.
+    auto tirada = [&] (int lento) noexcept
     {
+        const int barrido = 48000 * lento / kBs;
         auto e = monta (f, seno (220.0, 0.25f), m.onMix);
-        e->setFxParam (kCanal, f, par, enRango (lo, hi, (float) i / (float) kSitios));
+        e->setFxParam (kCanal, f, par, lo);
         e->postNoteOn (0, 1.0f);
-        corre (*e, 24000 + 8192, y);
-        quieto = juce::jmax (quieto, agudoPeor (y, 24000));
-    }
-    auto e = monta (f, seno (220.0, 0.25f), m.onMix);
-    e->setFxParam (kCanal, f, par, lo);
-    e->postNoteOn (0, 1.0f);
-    const int arranque = 24000 / kBs, barrido = 48000 / kBs;
-    corre (*e, 24000 + 48000 * 2, y, [&] (int b)
+        corre (*e, 24000 + 48000 * 2 * lento, y, [&] (int b)
+        {
+            const int k = b - arranque;
+            if (k < 0) return;
+            const float t = k < barrido ? (float) k / barrido
+                                        : 1.0f - (float) (k - barrido) / barrido;
+            e->setFxParam (kCanal, f, par, enRango (lo, hi, juce::jlimit (0.0f, 1.0f, t)));
+        });
+        return agudoPeor (y, 24000);
+    };
+
+    double quieto = 0.0;
+    if (auto* sv = std::getenv ("ZATI_FX_SITIOS"))
     {
-        const int k = b - arranque;
-        if (k < 0) return;
-        const float t = k < barrido ? (float) k / barrido : 1.0f - (float) (k - barrido) / barrido;
-        e->setFxParam (kCanal, f, par, enRango (lo, hi, juce::jlimit (0.0f, 1.0f, t)));
-    });
+        //  La referencia vieja, a mano: N sitios quietos.
+        const int sitios = juce::jlimit (4, 4096, std::atoi (sv));
+        const int quietoLargo = std::getenv ("ZATI_FX_CORTO") != nullptr ? 24000 + 8192
+                                                                        : 24000 + 48000 * 2;
+        for (int i = 0; i <= sitios; ++i)
+        {
+            auto e = monta (f, seno (220.0, 0.25f), m.onMix);
+            e->setFxParam (kCanal, f, par, enRango (lo, hi, (float) i / (float) sitios));
+            e->postNoteOn (0, 1.0f);
+            corre (*e, quietoLargo, y);
+            quieto = juce::jmax (quieto, agudoPeor (y, 24000));
+        }
+    }
+    else
+    {
+        quieto = tirada (kLento);
+    }
+
+    double rapido = 0.0;
+    if (std::getenv ("ZATI_FX_QUIETO") != nullptr)
+    {
+        //  SONDA: el mando parado en la tirada corta. Si esto no sale muy
+        //  negativo, la columna esta midiendo la ventana y no el mando.
+        auto e = monta (f, seno (220.0, 0.25f), m.onMix);
+        e->setFxParam (kCanal, f, par, lo);
+        e->postNoteOn (0, 1.0f);
+        corre (*e, 24000 + 48000 * 2, y);
+        rapido = agudoPeor (y, 24000);
+    }
+    else
+    {
+        rapido = tirada (1);
+    }
+
     if (auto* v = std::getenv ("ZATI_FX_VOLCADO"))
     {
         juce::FileOutputStream o (juce::File (juce::String (v) + "-" + juce::String (f) + "-" + juce::String (par) + ".f32"));
         o.setPosition (0); o.truncate();
         o.write (y.data(), y.size() * sizeof (float));
     }
-    return dB (agudoPeor (y, 24000)) - juce::jmax (dB (quieto), kSuelo);
+    //  SONDA `ZATI_FX_ABS`: los dos numeros ABSOLUTOS. La columna es una
+    //  diferencia contra una referencia ACOTADA en `kSuelo`, asi que un 0.0 en
+    //  un efecto limpio no quiere decir «chasquea»: quiere decir que el
+    //  artefacto esta en -70 dB, que es el suelo de lo inaudible que el propio
+    //  banco fijo. Sin estos dos numeros la columna se lee al reves.
+    if (std::getenv ("ZATI_FX_ABS") != nullptr)
+        std::fprintf (stderr, "ABS mover %-4s p%d  rapido %7.1f  lento %7.1f\n",
+                      kMandos[f].nombre, par, dB (rapido), dB (quieto));
+    return dB (rapido) - juce::jmax (dB (quieto), kSuelo);
+}
+
+//  EL CARACTER: SI EL EFECTO CAMBIA AL SUBIRLE EL NIVEL DE ENTRADA.
+//
+//  Esta es la pregunta del muelle hecha a los treinta y nueve, y la unica que
+//  no estaba en ninguna columna: un APARATO suena distinto flojo que fuerte
+//  -una valvula, una cinta, un muelle, un compresor-, mientras una FORMULA
+//  lineal suena igual a cualquier nivel y solo mas alta. Es literalmente la
+//  diferencia entre «sonido analogico» y «digital», y hasta hoy el banco no
+//  tenia una cifra para ella.
+//
+//  Se mide con el MISMO seno de 220 Hz a dos niveles -30 dB aparte- y se mira
+//  cuanta mugre (armonicos del 2 al 8, mas el resto de la banda) lleva la nota
+//  en cada caso. La cuenta se normaliza por la fundamental, asi que subir el
+//  volumen no cuenta como caracter: solo cuenta que la FORMA cambie.
+//
+//  Un numero alto no es un fallo y un cero tampoco: un filtro, un EQ o un
+//  retardo SON lineales y tienen que dar cero; lo que seria un fallo es que un
+//  aparato -las saturaciones, la dinamica, el muelle- diera cero, porque
+//  entonces no es el aparato, es su formula.
+static double caracter (int f)
+{
+    const auto& m = kMandos[f];
+    std::vector<float> y;
+    auto mugre = [&] (float amp)
+    {
+        auto e = monta (f, seno (220.0, amp), m.onMix);
+        e->postNoteOn (0, 1.0f);
+        corre (*e, 48000 + 32768, y);
+        const int orden = 15, n = 1 << orden;
+        const auto p = espectro (y.data() + 48000, orden);
+        auto raya = [&] (double hz)
+        {
+            double s2 = 0.0;
+            const int k0 = (int) std::floor ((hz - 30.0) * n / kSr), k1 = (int) std::ceil ((hz + 30.0) * n / kSr);
+            for (int k = juce::jmax (1, k0); k <= k1 && k < n / 2; ++k) s2 += p[(size_t) k];
+            return s2;
+        };
+        double h1 = raya (220.0), arm = 0.0;
+        for (int k = 2; k <= 8; ++k) arm += raya (220.0 * k);
+        return dB (arm / juce::jmax (1.0e-30, h1));
+    };
+    const double flojo = mugre (0.016f);   // -36 dBFS
+    const double duro  = mugre (0.5f);     //  -6 dBFS
+    return duro - flojo;
 }
 
 //  Cambiar de preset con el tono sonando: los ocho mandos saltan a la vez, que es lo que hace la cara.
@@ -351,9 +472,13 @@ static double encender (int f)
 {
     const auto& m = kMandos[f];
     std::vector<float> y;
+    //  LA MISMA VENTANA QUE LA TIRADA CON EL INTERRUPTOR, por lo mismo que en
+    //  `mover`: el quieto se media en 8192 muestras y el encendido en 52000.
+    //  Un ROT con 13.8 dB de trino -su propio vaiven- sale «chasqueando» solo
+    //  porque la ventana larga ve el peor cuarto de su vuelta y la corta no.
     auto e = monta (f, seno (220.0, 0.25f), m.onMix);
     e->postNoteOn (0, 1.0f);
-    corre (*e, 24000 + 8192, y);
+    corre (*e, 24000 + 52000, y);
     const double quieto = agudoPeor (y, 24000);
     auto g = monta (f, seno (220.0, 0.25f), 0.0f);
     g->postNoteOn (0, 1.0f);
@@ -363,7 +488,11 @@ static double encender (int f)
         if (b == on)  g->setFxParam (kCanal, f, 2, m.onMix);
         if (b == off) g->setFxParam (kCanal, f, 2, 0.0f);
     });
-    return dB (agudoPeor (y, 20000)) - juce::jmax (dB (quieto), kSuelo);
+    const double conmuta = agudoPeor (y, 20000);
+    if (std::getenv ("ZATI_FX_ABS") != nullptr)
+        std::fprintf (stderr, "ABS encen %-4s      conmuta %6.1f  quieto %7.1f\n",
+                      kMandos[f].nombre, dB (conmuta), dB (quieto));
+    return dB (conmuta) - juce::jmax (dB (quieto), kSuelo);
 }
 
 static double rms (const std::vector<float>& y, int desde)
@@ -1123,8 +1252,8 @@ int main (int argc, char** argv)
         std::printf ("FASEMOD  parejas %d  puntos quietos con señal %d\n", parejas, quietos);
     }
     if (std::getenv ("ZATI_FX_APAGADO")) return fallos == 0 ? 0 : 1;
-    std::printf ("%-4s %9s %8s %8s %8s %9s %7s %9s %7s %7s\n",
-                 "fx", "pliegue", "en Hz", "mover1", "mover2", "encender", "nivel", "cola", "trino", "preset");
+    std::printf ("%-4s %9s %8s %8s %8s %9s %7s %9s %7s %7s %8s\n",
+                 "fx", "pliegue", "en Hz", "mover1", "mover2", "encender", "nivel", "cola", "trino", "preset", "caracter");
     for (int f = 0; f < AudioEngine::kNumFx; ++f)
     {
         if (solo >= 0 && f != solo) continue;
@@ -1133,8 +1262,9 @@ int main (int argc, char** argv)
         const auto co = cola (f);
         const double tr = juce::jmax (trino (f, 110.0), trino (f, 440.0), trino (f, 1760.0));
         const double ps = preset (f);
-        std::printf ("%-4s %9.1f %8.0f %8.1f %8.1f %9.1f %7.1f %9.1f %7.2f %7.1f%s\n",
-                     kMandos[f].nombre, pl.dB, pl.hz, m1, m2, en, nv, co.finalDb, tr, ps, co.nan ? "  NaN" : "");
+        const double ca = caracter (f);
+        std::printf ("%-4s %9.1f %8.0f %8.1f %8.1f %9.1f %7.1f %9.1f %7.2f %7.1f %8.1f%s\n",
+                     kMandos[f].nombre, pl.dB, pl.hz, m1, m2, en, nv, co.finalDb, tr, ps, ca, co.nan ? "  NaN" : "");
         const char* n = kMandos[f].nombre;
         //  sampling#: SMP pliega por oficio como BIT (el aliasing del sampler ES su sonido) y STP barre la nota hasta cero.
         if (f != AudioEngine::kFxBit && f != AudioEngine::kFxSmp && f != AudioEngine::kFxStp && pl.dB > kPliegueMax)
@@ -1144,6 +1274,30 @@ int main (int argc, char** argv)
         if (ps > kChasquidoMax) falla ("%s chasquea %.1f dB al cambiar de preset (tope %.0f)", n, ps, kChasquidoMax);
         if (en > kChasquidoMax) falla ("%s chasquea %.1f dB al encender o apagar (tope %.0f)", n, en, kChasquidoMax);
         if (std::abs (nv) > kNivelMax) falla ("%s sale %+.1f dB encendido (tope +-%.0f)", n, nv, kNivelMax);
+        //  Y LOS QUE MODELAN UN APARATO TIENEN QUE CAMBIAR CON EL NIVEL.
+        //
+        //  Ver `caracter`. Estos ocho son los que, con sus valores de fabrica,
+        //  SON un aparato y no una cuenta lineal: el drive, el pliegue, el
+        //  realce, el wah, los dos compresores y la valvula y la cinta de la
+        //  familia ANALOGICO. Medido hoy, de flojo a fuerte: FLD +92.5, CIN
+        //  +54.9, GLU +45.0, DRV +41.1, WAH +35.7, PRE +29.3, CMP +24.1 y
+        //  EXC +8.4. Un cero ahi querria decir que el aparato se quedo en su
+        //  formula -que suena igual flojo que fuerte y solo mas alto-, que es
+        //  exactamente lo que se oye como digital, y nada en el banco lo
+        //  miraba. Cinco dB de tope: la mitad del mas flojo de los ocho.
+        //
+        //  Los demas dan cero A PROPOSITO y no se les pide nada: un filtro, un
+        //  EQ, un retardo o un desplazador SON lineales, y CLP, DLY y REV lo
+        //  son con sus valores de fabrica -el clipper no muerde hasta que se le
+        //  sube el drive y el retardo trae el tipo DIGITAL-.
+        {
+            static constexpr int kAparatos[] = { AudioEngine::kFxDrv, AudioEngine::kFxFld, AudioEngine::kFxExc,
+                                                 AudioEngine::kFxWah, AudioEngine::kFxCmp, AudioEngine::kFxGlu,
+                                                 AudioEngine::kFxPre, AudioEngine::kFxCin };
+            for (int a : kAparatos)
+                if (f == a && ca < 5.0)
+                    falla ("%s no cambia con el nivel: %+.1f dB de mugre de flojo a fuerte (tope 5)", n, ca);
+        }
         if (co.nan) falla ("%s deja un NaN en la cola", n);
         if (! modulaPorOficio (f) && tr > kTrinoMax) falla ("%s trina %.2f dB con un seno fijo (tope %.1f)", n, tr, kTrinoMax);
         if (f != AudioEngine::kFxFrz && co.finalDb > kColaMax) falla ("%s sigue a %.1f dB a los 10 s", n, co.finalDb);
@@ -1452,6 +1606,53 @@ int main (int argc, char** argv)
         const double cRuido = 20.0 * std::log10 (pico (y));
         std::printf ("CLP  drive 18 forma 0 con ruido: pico %.2f dBFS\n", cRuido);
         if (cRuido > -0.29) falla ("CLP: con ruido el pico pasa el techo (%.2f dBFS)", cRuido);
+
+        //  CALOR: LOS ARMONICOS PARES DE LAS CINCO SATURACIONES.
+        //
+        //  La pregunta del muelle, hecha a la otra familia que modela un
+        //  aparato fisico: una valvula, un transformador o un diodo no son
+        //  simetricos, asi que sacan el SEGUNDO armonico -y el cuarto- y no
+        //  solo los impares. Una curva impar pura -un `tanh`, un triangulo, una
+        //  rodilla- saca tercero y quinto y el par se queda en el ruido de la
+        //  cuenta: eso es exactamente lo que se oye como «digital» y lo que la
+        //  palabra calidez nombra. Se mide con un seno de 220 Hz: el par (440 y
+        //  880) y el impar (660) contra la fundamental.
+        {
+            static constexpr int kSat[] = { AudioEngine::kFxDrv, AudioEngine::kFxFld, C,
+                                            AudioEngine::kFxPre, AudioEngine::kFxCin };
+            //  Un empuje que ya ensucia de verdad en cada uno, en sus unidades.
+            static const float kEmpuje[] = { 0.75f, 0.60f, 12.0f, 0.75f, 0.75f };
+            std::printf ("\nCALOR  seno de 220 Hz, el par contra el impar\n");
+            for (size_t k = 0; k < std::size (kSat); ++k)
+            {
+                const int f = kSat[k];
+                con (f, 220.0, 0.5f, par (f, 0, kEmpuje[k]));
+                const double h1 = banda (y, 220.0);
+                const double h2 = banda (y, 440.0), h3 = banda (y, 660.0), h4 = banda (y, 880.0);
+                const double pi2 = db (h2, h3);
+                std::printf ("%-4s empuje %5.2f   2do %7.1f dB   3ro %7.1f dB   4to %7.1f dB   par-impar %+6.1f dB\n",
+                             kMandos[f].nombre, kEmpuje[k], db (h2, h1), db (h3, h1), db (h4, h1), pi2);
+                //  Y CADA UNO TIENE QUE SEGUIR SIENDO LO QUE ES, que es lo que
+                //  no estaba guardado por nada. Medido hoy: PRE -0.3 dB -una
+                //  valvula: par e impar a la par-, CIN -201.8 -una cinta: solo
+                //  impar, que es su fisica-, y DRV -212.9, CLP -222.9 y FLD
+                //  -167.0 -dos diodos en contrafase, una rodilla y un
+                //  triangulo: simetricos por construccion-.
+                //
+                //  DE LA VALVULA YA SE ENCARGA LA SONDA `PRE` DE ABAJO -«la
+                //  valvula no da mas pares que impares»-, asi que aqui PRE solo
+                //  IMPRIME: es la fila contra la que se leen las otras cuatro, y
+                //  escribir su tope otra vez seria la misma regla dos veces.
+                //  Lo que no estaba guardado por nada es lo de enfrente: que las
+                //  otras cuatro NO se vuelvan asimetricas. Una rodilla o un
+                //  triangulo que empiezan a sacar segundo armonico es un sesgo
+                //  que se colo, y el banco entero seguia en verde.
+                if (f == AudioEngine::kFxCin && pi2 > -20.0)
+                    falla ("CIN dejo de ser simetrica: par-impar %+.1f dB (la cinta pide -20 o menos)", pi2);
+                if ((f == AudioEngine::kFxDrv || f == C || f == AudioEngine::kFxFld) && pi2 > -40.0)
+                    falla ("%s dejo de ser simetrico: par-impar %+.1f dB (tope -40)", kMandos[f].nombre, pi2);
+            }
+        }
 
         //  VIN: el desgaste a tope se come 12 kHz; el wow a tope ensancha la raya de 1 kHz.
         const double s12k = seco (12000.0, 0.25f);
