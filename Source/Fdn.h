@@ -171,7 +171,20 @@ public:
     //  llegan a actuar, y el muelle volvia a su 8 kHz a +6.0 dB, o sea al
     //  metalico de la primera queja. Normalizando la suma la vuelta se queda
     //  como estaba y la cola tambien.
-    static constexpr float kMuelleTomas = 0.70f;   // 1/1.41
+    //  MEDIO, y sale del banco y no de la cuenta. Mi estimacion era 1/1.41 =
+    //  0.70 y se quedaba corta: con ella el caso de la persona bajo de -0.0 a
+    //  -11.5 dBFS pero SEGUIA sosteniendo. Barrido con su patch cargado,
+    //  moviendo esta misma constante:
+    //
+    //      0.700  -11.5 dBFS   sostiene
+    //      0.595            se apaga
+    //      0.490            se apaga
+    //      0.385            se apaga
+    //
+    //  El escalon esta en 0.65, o sea que la suma de las tres tomas llega a
+    //  1.54 y no a 1.41. Su tamano es 0.85 y el mando llega a 1, asi que el
+    //  valor seguro es 0.595 x 0.805/0.85 = 0.563; se queda 0.50 por margen.
+    static constexpr float kMuelleTomas = 0.50f;
     //  muelle#: LA PERDIDA DEL LAZO, Y POR QUE HACE FALTA UNA.
     //
     //  El tanque se enganchaba. Medido con la columna ACOPLE del banco -un

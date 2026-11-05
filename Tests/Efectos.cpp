@@ -1463,9 +1463,18 @@ int main (int argc, char** argv)
                     const double q = 2.0, al = std::sin (w) / (2.0 * q);
                     const double b0 = al, b2 = -al, a0 = 1.0 + al, a1 = -2.0 * std::cos (w), a2 = 1.0 - al;
                     double x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0, s = 0.0;
-                    for (float v : h)
+                    //  Y SIN LOS PRIMEROS CINCUENTA MILISEGUNDOS, que es donde
+                    //  vive el SECO. El envio deja el impulso del pad en el
+                    //  master -ya esta escrito arriba, por eso la dispersion se
+                    //  mide en StressTest-, y un impulso es plano: en cuanto el
+                    //  muelle baja de nivel, lo que esta sonda mide es el seco y
+                    //  no el tanque. Se vio al normalizar la suma de las tomas:
+                    //  8 kHz paso de -23.8 a +1.6 dB aqui mientras StressTest,
+                    //  que mueve el `Fdn` a pelo, seguia midiendo -24.0.
+                    size_t salta = (size_t) (0.050 * kSr);
+                    for (size_t i = salta < h.size() ? salta : 0; i < h.size(); ++i)
                     {
-                        const double x = v;
+                        const double x = h[i];
                         const double y = (b0 * x + b2 * x2 - a1 * y1 - a2 * y2) / a0;
                         x2 = x1; x1 = x; y2 = y1; y1 = y;
                         s += y * y;
