@@ -1922,6 +1922,50 @@ int main (int argc, char** argv)
         }
     }
 
+    //  ===================================================================
+    //  EL CASO DE VERDAD: el proyecto que pita, tal cual
+    //  ===================================================================
+    //
+    //  Cuatro medidas y cuatro sesgos despues, la persona mando SU proyecto.
+    //  `Tests/proyectos/caso-acople.inc` son sus siete canales con efectos,
+    //  los nueve parametros de cada uno, los envios a efecto, los dos envios
+    //  entre canales, el fader y el mute de cada canal, generados del .xml y
+    //  no escritos a mano. Se le da UN golpe a un pad de cada canal que manda
+    //  a un retorno y se mira si sostiene.
+    //
+    //  Esto es lo contrario de un montaje inventado: si aqui no pita, lo que
+    //  pita no esta en el estado de los efectos.
+    if (solo < 0)
+    {
+        std::printf ("\nCASO  el proyecto de la persona, un golpe y 60 s\n");
+        for (int padCanal : { 1, 9 })
+        {
+            auto e = std::make_unique<AudioEngine>();
+            e->setCalidad (gCalidad);
+            e->prepareToPlay (kSr, kBs);
+            e->setPolyphony (8, 2);
+            e->setPadGain (0, 1.0f);
+            e->setPadPitch (0, 0.0f);
+            e->setPadLoop (0, false);
+            e->setPadCanal (0, padCanal);
+            e->publishSample (0, golpe (220.0, 0.5f));
+            #include "proyectos/caso-acople.inc"
+            e->postNoteOn (0, 1.0f);
+            std::vector<float> y;
+            corre (*e, (int) (kSr * 60.0), y);
+            double pico = 0.0, picoFin = 0.0;
+            for (size_t k = 0; k < y.size(); ++k) pico = juce::jmax (pico, (double) std::abs (y[k]));
+            for (size_t k = (size_t) (kSr * 40.0); k < y.size(); ++k) picoFin = juce::jmax (picoFin, (double) std::abs (y[k]));
+            std::printf ("  golpe en el canal %-2d   pico %7.1f dBFS   pico a los 40-60 s %7.1f dBFS%s\n",
+                         padCanal + 1, 20.0 * std::log10 (juce::jmax (1.0e-12, pico)),
+                         20.0 * std::log10 (juce::jmax (1.0e-12, picoFin)),
+                         picoFin > 0.25 ? "   <- SOSTIENE" : "");
+            if (picoFin > 0.25)
+                falla ("el proyecto de la persona sostiene a %.1f dBFS un minuto despues de un solo golpe en el canal %d",
+                       20.0 * std::log10 (picoFin), padCanal + 1);
+        }
+    }
+
     if (solo < 0 || solo >= AudioEngine::kFxSmp)
     {
         auto banda = [] (const std::vector<float>& y, double hz)
