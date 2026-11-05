@@ -1589,7 +1589,7 @@ int main (int argc, char** argv)
     //  la resonancia -la realimentacion del delay, el signo del flanger,
     //  la sala sin amortiguar-.
     {
-        std::printf ("\nACOPLE  golpe y 30 s: energia de los 2 ultimos contra la de 4-6 s\n");
+        std::printf ("\nACOPLE  golpe y 60 s: lo mas alto de 50-60 s contra lo mas alto de 20-30 s\n");
         double peorTodos = -999.0; int peorF = -1;
         //  LA MAS ALTA DE SUS VENTANAS DE UN SEGUNDO, y no la energia del
         //  tramo entero. Dos arreglos en una cuenta, los dos cantados por
@@ -1620,6 +1620,15 @@ int main (int argc, char** argv)
         //  El suelo de lo que se oye: por debajo de -80 dB la cola ya se
         //  fue y no hay nada que juzgar.
         constexpr double kOido = -80.0;
+        //  Y LA SEGUNDA MITAD CONTRA LA PRIMERA, no el final contra el
+        //  principio. Un resonador que se CARGA tambien sube: un delay con la
+        //  realimentacion en 0.95 y un segundo de retardo tarda unas veinte
+        //  vueltas en llegar a su peine, o sea medio minuto de subida que no es
+        //  una inestabilidad -medido: DLY daba +3.5 dB, REP +4.8 y ROT +1.6-.
+        //  Lo que separa las dos cosas es si SIGUE subiendo cuando ya tendria
+        //  que haberse asentado, asi que la tirada dura un minuto y se compara
+        //  50-60 s con 20-30 s.
+        constexpr double kLargo = 60.0;
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
         {
             if (solo >= 0 && f != solo) continue;   // para perseguir una cifra sin correr los 39
@@ -1633,9 +1642,9 @@ int main (int argc, char** argv)
                 e->setFxParam (kCanal, f, par, (caso % 2) == 0 ? lo : hi);
                 e->postNoteOn (0, 1.0f);
                 std::vector<float> y;
-                corre (*e, (int) (kSr * 30), y);
-                const double fin = energia (y, 22.0, 30.0);
-                if (fin > kOido) peor = juce::jmax (peor, fin - energia (y, 4.0, 12.0));
+                corre (*e, (int) (kSr * kLargo), y);
+                const double fin = energia (y, 50.0, 60.0);
+                if (fin > kOido) peor = juce::jmax (peor, fin - energia (y, 20.0, 30.0));
             }
             //  Y LOS TIPOS, que es donde estaba el agujero.
             //
@@ -1663,15 +1672,15 @@ int main (int argc, char** argv)
                             e->setFxParam (kCanal, f, 1, (caso & 2) ? m.hi1 : m.lo1);
                             e->postNoteOn (0, 1.0f);
                             std::vector<float> y;
-                            corre (*e, (int) (kSr * 30), y);
-                            const double fin = energia (y, 22.0, 30.0);
+                            corre (*e, (int) (kSr * kLargo), y);
+                            const double fin = energia (y, 50.0, 60.0);
                             if (fin <= kOido) continue;          // se apago: nada que juzgar
-                            const double cr = fin - energia (y, 4.0, 12.0);
+                            const double cr = fin - energia (y, 20.0, 30.0);
                             if (cr > -6.0)
                                 std::printf ("  %-4s tipo %d caso %d  %+7.1f dB  (final %.0f dB)\n",
                                              m.nombre, t, caso, cr, fin);
                             if (f != AudioEngine::kFxFrz && cr > 1.0)
-                                falla ("%s tipo %d CRECE solo: %+.1f dB en treinta segundos", m.nombre, t, cr);
+                                falla ("%s tipo %d SIGUE CRECIENDO al minuto: %+.1f dB de la primera mitad a la segunda", m.nombre, t, cr);
                             peor = juce::jmax (peor, cr);
                         }
             }
@@ -1681,7 +1690,7 @@ int main (int argc, char** argv)
             //  FRZ es un CONGELADOR: sostener es lo que hace, y por eso su
             //  `cola` tambien esta exenta desde que se escribio.
             if (f != AudioEngine::kFxFrz && peor > 1.0)
-                falla ("%s CRECE solo: %+.1f dB en treinta segundos", m.nombre, peor);
+                falla ("%s SIGUE CRECIENDO al minuto: %+.1f dB de la primera mitad a la segunda", m.nombre, peor);
         }
         std::printf ("  el que mas crece: %s %+.1f dB\n",
                      peorF >= 0 ? kMandos[peorF].nombre : "-", peorTodos);
