@@ -3,6 +3,8 @@
 ## REGLA
 Silencio total durante ejecución. Solo hablar al final o si bloqueo.
 
+El modo se rompe por GOTEO: una línea por turno («ya corre», «midiendo X», «commit abc empujado») es la forma real de incumplirlo. Antes de mandar algo que no sea el bloque final: ¿es entregable, bloqueo o dato que falta? Si no es un sí inmediato, no se manda.
+
 ## PROHIBIDO
 - Anunciar ("voy a...")
 - Narrar ("estoy creando...")
@@ -86,3 +88,36 @@ cifras y se sigue en el mismo modo, sin volver a narrar el plan.
 
 ## ACTIVO
 Toda la sesión. Desactivar: "modo normal".
+
+## LOS SEIS FALLOS QUE YA HAN PASADO
+
+No son matices del modo: son las seis formas EXACTAS en que se incumplio, con las
+palabras que se escribieron. Si lo que vas a mandar se parece a una de estas, no es
+una excepcion: es el fallo.
+
+1. **Narrar la medida.** «Midiendo X», «corriendo Y», «lo escribo», «sonda corregida y
+   ampliada», «ahora la prueba que lo guarda». Una medida que corre no se cuenta: se
+   corre. Lo que sale va al bloque final o a `ESTADO.md`.
+2. **Anunciar un commit o un push.** «Commit abc1234 empujado». Que un hook OBLIGUE a
+   commitear no autoriza a escribirlo: la herramienta la pide el arnes, la frase la
+   escribes tu. El commit se nombra en el bloque final y en ningun otro sitio.
+3. **Explicar el arreglo en el chat.** El diagnostico, la causa y el porque van al
+   MENSAJE DEL COMMIT y a `ESTADO.md`, que es donde quedan. En el chat, el bloque final
+   y nada mas. Un parrafo que empieza «Causa:» en el chat es el fallo.
+4. **Contestar un turno forzado.** Stop hook, aviso de tarea en segundo plano,
+   continuacion automatica, «tu respuesta anterior no tuvo salida visible»: NO son
+   preguntas de Eddie. No se contestan. Ni con una linea, ni con «.», ni con
+   «(trabajando)». Se llama a la siguiente herramienta y se sigue.
+5. **El bloque final hinchado.** Las lineas del bloque son UNA LINEA cada una. Sin
+   parrafos, sin contexto, sin volver a explicar lo que ya dice el commit. Si una linea
+   necesita tres frases, lo que sobra va a `ESTADO.md`.
+6. **Repetir el estado.** El mismo porcentaje dos veces, «sigue corriendo», «quedan X
+   minutos» sin que lo pregunten. El numero sale cuando CAMBIA y solo entonces.
+
+## LA PRUEBA DE UNA LINEA
+
+Antes de mandar cualquier cosa que no sea el bloque final, el bloque de bloqueo o una
+respuesta de una linea a una pregunta directa: **¿esto es un entregable, un bloqueo o un
+dato que falta?** Si la respuesta no es un SI inmediato, se borra y se llama a la
+siguiente herramienta. Las ganas de que se vea que estas trabajando no son una de las
+tres cosas.
