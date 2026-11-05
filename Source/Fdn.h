@@ -146,6 +146,24 @@ public:
     //  Lo que entra al muelle antes de saturar: con el tanque a nivel de
     //  trabajo, la rodilla del tanh cae donde los golpes la encuentran.
     static constexpr float kMuelleDrive = 1.6f;
+    //  muelle#: EL REPARTO DE LAS TRES TOMAS, Y POR QUE NO SUMAN UNO.
+    //
+    //  `graves + medios + agudos` NO es un filtro de cruce que suma plano: las
+    //  tres bandas salen de tres SITIOS distintos del muelle -28 ms, 14 ms y el
+    //  final-, que es precisamente lo que hace la dispersion, asi que son tres
+    //  caminos con fase propia. Donde dos se solapan -los cruces, 700 y
+    //  2200 Hz, con cada banda a -3 dB- la suma llega a 1.41, o sea +3 dB, y
+    //  eso va DENTRO del lazo: con una vuelta de 0.85 la ganancia pasa de uno y
+    //  el tanque se engancha.
+    //
+    //  Aqui se corrige donde esta el problema. Lo primero que probe fue una
+    //  perdida en la realimentacion, y ESO NO VALE: con la perdida bastante
+    //  grande para que el caso de la persona se apagara (0.50) la cola se queda
+    //  tan corta que los filtros del tanque -que estan DENTRO del lazo- no
+    //  llegan a actuar, y el muelle volvia a su 8 kHz a +6.0 dB, o sea al
+    //  metalico de la primera queja. Normalizando la suma la vuelta se queda
+    //  como estaba y la cola tambien.
+    static constexpr float kMuelleTomas = 0.70f;   // 1/1.41
     //  muelle#: LA PERDIDA DEL LAZO, Y POR QUE HACE FALTA UNA.
     //
     //  El tanque se enganchaba. Medido con la columna ACOPLE del banco -un
@@ -209,7 +227,7 @@ public:
     //  Y en el peor caso del mando -tamano 1- con 0.58 la cola todavia acaba a
     //  -37 dB con un rastro de subida; con 0.50 se apagan las cuatro esquinas.
     //  Se queda 0.50: el escalon esta en 0.60 y el tope del mando pide margen.
-    static constexpr float kMuelleLazoDef = 0.50f;
+    static constexpr float kMuelleLazoDef = 1.00f;
 
     //  LOS DOS NUMEROS QUE MANDAN EN LA COLA, por la misma razon. 0.72 a 0.94:
     //  por debajo no es una sala y por encima de 0.95 una FDN
@@ -521,7 +539,10 @@ public:
                     muBajaM[sm].paso  (tM, 0, lp, bp);  const float bajoM  = lp;
                     muMedia[sm].paso  (tM, 0, lp, bp);  const float medios = lp - bajoM;
                     muMediaA[sm].paso (tA, 0, lp, bp);  const float agudos = tA - lp;
-                    float v = graves + medios + agudos;
+                    //  muelle#: LA SUMA DE LAS TRES TOMAS, NORMALIZADA, que es
+                    //  donde estaba la ganancia de lazo y no en la
+                    //  realimentacion. Ver `kMuelleTomas`.
+                    float v = kMuelleTomas * (graves + medios + agudos);
                     const float a = kMuelleA[sm];
                     //  muelle#: la cadena de allpass ESTIRADOS. Cada etapa es
                     //  `(a + z^-K)/(1 + a z^-K)`: una multiplica y una suma como
