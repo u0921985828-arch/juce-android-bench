@@ -141,6 +141,24 @@ static SampleBuffer::Ptr ruido (float amp)
 //  calidad#: el peldano con el que corre TODO el banco, puesto por ZATI_CALIDAD.
 static int gCalidad = 0;
 
+//  Y UNO QUE NO SE REPITE, para las reglas que miran si algo SOSTIENE: `monta`
+//  pone el pad en BUCLE -lo necesitan las columnas que miden con tono
+//  continuo-, asi que con una muestra corta la fuente vuelve a disparar cada
+//  dos segundos y una cola que sostiene no se distingue de una que cae.
+static std::unique_ptr<AudioEngine> montaUnGolpe (SampleBuffer::Ptr s)
+{
+    auto e = std::make_unique<AudioEngine>();
+    e->setCalidad (gCalidad);
+    e->prepareToPlay (kSr, kBs);
+    e->setPolyphony (8, 2);
+    e->setPadGain (0, 1.0f);
+    e->setPadPitch (0, 0.0f);
+    e->setPadLoop (0, false);
+    e->setPadCanal (0, kCanal);
+    e->publishSample (0, s);
+    return e;
+}
+
 static std::unique_ptr<AudioEngine> monta (int f, SampleBuffer::Ptr s, float mix)
 {
     auto e = std::make_unique<AudioEngine>();
@@ -294,6 +312,9 @@ static void midoReferencia()
 
 //  Por debajo de esto un chasquido no se oye: energia sobre 8 kHz a -70 dB del seno seco.
 static constexpr double kSuelo = -70.0;
+
+//  El suelo de lo que se oye en las reglas de acople y de proyecto.
+static constexpr double kOidoProy = -80.0;
 
 //  Cuanto mas despacio va la referencia de `mover`. Ocho: un salto por bloque
 //  se hace ocho veces mas pequeno ahi, y dieciseis segundos de tirada caben
@@ -1646,7 +1667,9 @@ int main (int argc, char** argv)
             {
                 const int par = caso < 2 ? 0 : 1;
                 const float lo = par == 0 ? m.lo0 : m.lo1, hi = par == 0 ? m.hi0 : m.hi1;
-                auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
+                auto e = montaUnGolpe (golpe (220.0, 0.5f));
+                e->setCanalSend (kCanal, f, 1.0f);
+                e->setFxParam (kCanal, f, 2, m.onMix);
                 e->setFxParam (kCanal, f, par, (caso % 2) == 0 ? lo : hi);
                 e->postNoteOn (0, 1.0f);
                 std::vector<float> y;
@@ -1674,7 +1697,9 @@ int main (int argc, char** argv)
                     for (int t = 0; t < nTipos; ++t)
                         for (int caso = 0; caso < 4; ++caso)
                         {
-                            auto e = monta (f, golpe (220.0, 0.5f), m.onMix);
+                            auto e = montaUnGolpe (golpe (220.0, 0.5f));
+                            e->setCanalSend (kCanal, f, 1.0f);
+                            e->setFxParam (kCanal, f, 2, m.onMix);
                             e->setFxParam (kCanal, f, parTipo, (float) t);
                             e->setFxParam (kCanal, f, 0, (caso & 1) ? m.hi0 : m.lo0);
                             e->setFxParam (kCanal, f, 1, (caso & 2) ? m.hi1 : m.lo1);
@@ -1702,6 +1727,109 @@ int main (int argc, char** argv)
         }
         std::printf ("  el que mas crece: %s %+.1f dB\n",
                      peorF >= 0 ? kMandos[peorF].nombre : "-", peorTodos);
+    }
+
+    //  ===================================================================
+    //  PROYECTO: LA COMBINACION, que es lo que hace un proyecto y no una fila
+    //  ===================================================================
+    //
+    //  Del telefono, con el muelle YA arreglado: «sigue pasando». La columna
+    //  ACOPLE mira UN efecto en UN canal, y un proyecto combina hasta seis
+    //  ranuras por canal, dieciseis canales y los envios de unos a otros. Esa
+    //  combinacion no la miraba nadie, y es justo donde un lazo se arma sin que
+    //  ninguna pieza por separado este mal.
+    //
+    //  Cuatro montajes, con un SOLO golpe y un minuto, y la misma cuenta que
+    //  ACOPLE -lo mas alto de 40-60 s contra lo mas alto de 10-30 s- mas el
+    //  PICO final, porque un acople se oye por LO ALTO que esta y el limitador
+    //  del master lo deja pegado al techo.
+    if (solo < 0)
+    {
+        std::printf ("\nPROYECTO  un golpe y 60 s: crecimiento y pico final\n");
+        auto energia = [] (const std::vector<float>& y, double t0, double t1)
+        {
+            double peor = -300.0;
+            for (double t = t0; t + 1.0 <= t1; t += 0.5)
+            {
+                double e2 = 0.0; size_t n = 0;
+                for (size_t i = (size_t) (t * kSr); i < (size_t) ((t + 1.0) * kSr) && i < y.size(); ++i, ++n)
+                    e2 += (double) y[i] * y[i];
+                peor = juce::jmax (peor, 10.0 * std::log10 (juce::jmax (1.0e-30, e2 / juce::jmax ((size_t) 1, n))));
+            }
+            return peor;
+        };
+        struct Montaje { const char* nombre; };
+        //  Los cuatro, y por que cada uno:
+        //   1. LA TIRA LLENA: seis efectos con realimentacion en el MISMO canal,
+        //      que es lo que cabe en una fila de ranuras.
+        //   2. DOS CANALES CON DELAY, uno mandando al otro: dos peines en serie.
+        //   3. UNA CADENA DE CUATRO, 1>2>3>4, cada uno con su sala: el camino
+        //      mas largo que los envios permiten sin cerrar circulo.
+        //   4. LOS TREINTA Y NUEVE A LA VEZ en un canal, a su mezcla de
+        //      encendido, que es el peor caso que la cara permite montar.
+        for (int caso = 0; caso < 4; ++caso)
+        {
+            auto e = montaUnGolpe (golpe (220.0, 0.5f));
+            auto pon = [&] (int c, int f, float mix, int p0 = -1, float v0 = 0.0f, int p1 = -1, float v1 = 0.0f)
+            {
+                e->setCanalSend (c, f, 1.0f);
+                e->setFxParam (c, f, 2, mix);
+                if (p0 >= 0) e->setFxParam (c, f, p0, v0);
+                if (p1 >= 0) e->setFxParam (c, f, p1, v1);
+            };
+            const char* nombre = "";
+            if (caso == 0)
+            {
+                nombre = "la tira llena";
+                pon (kCanal, AudioEngine::kFxDly, 1.0f, 0, 1000.0f, 1, 0.95f);
+                pon (kCanal, AudioEngine::kFxPng, 1.0f, 0, 1000.0f, 1, 0.95f);
+                pon (kCanal, AudioEngine::kFxRev, 1.0f, 0, 1.0f,    1, 0.0f);
+                e->setFxParam (kCanal, AudioEngine::kFxRev, 4, 3.0f);   // MUELLE
+                pon (kCanal, AudioEngine::kFxFla, 1.0f, 1, 1.0f);
+                pon (kCanal, AudioEngine::kFxRep, 1.0f);
+                pon (kCanal, AudioEngine::kFxAmb, 1.0f, 0, 1.0f);
+            }
+            else if (caso == 1)
+            {
+                nombre = "dos canales con delay";
+                pon (kCanal, AudioEngine::kFxDly, 1.0f, 0, 1000.0f, 1, 0.95f);
+                pon (5, AudioEngine::kFxDly, 1.0f, 0, 700.0f, 1, 0.95f);
+                e->setCanalEnvio (kCanal, 5, 1.0f);
+            }
+            else if (caso == 2)
+            {
+                nombre = "cadena de cuatro";
+                for (int c : { kCanal, 5, 9, 13 })
+                {
+                    pon (c, AudioEngine::kFxRev, 1.0f, 0, 1.0f, 1, 0.0f);
+                    pon (c, AudioEngine::kFxDly, 1.0f, 0, 800.0f, 1, 0.9f);
+                }
+                e->setCanalEnvio (kCanal, 5, 1.0f);
+                e->setCanalEnvio (5, 9, 1.0f);
+                e->setCanalEnvio (9, 13, 1.0f);
+            }
+            else
+            {
+                nombre = "los treinta y nueve";
+                for (int f = 0; f < AudioEngine::kNumFx; ++f) pon (kCanal, f, kMandos[f].onMix);
+            }
+            e->postNoteOn (0, 1.0f);
+            std::vector<float> y;
+            corre (*e, (int) (kSr * 60.0), y);
+            const double fin = energia (y, 40.0, 60.0), medio = energia (y, 10.0, 30.0);
+            double pico = 0.0;
+            for (size_t i = (size_t) (kSr * 40.0); i < y.size(); ++i) pico = juce::jmax (pico, (double) std::abs (y[i]));
+            const double picoDb = 20.0 * std::log10 (juce::jmax (1.0e-12, pico));
+            std::printf ("  %-24s crecimiento %+6.1f dB   pico final %7.1f dBFS%s\n",
+                         nombre, fin > kOidoProy ? fin - medio : 0.0, picoDb,
+                         fin > kOidoProy ? "" : "   (se apago)");
+            if (fin > kOidoProy && fin - medio > 1.0)
+                falla ("el montaje «%s» SIGUE CRECIENDO al minuto: %+.1f dB", nombre, fin - medio);
+            //  Y un montaje que acaba pegado al techo con una sola nota es un
+            //  acople aunque ya no crezca: el limitador lo sostiene ahi.
+            if (picoDb > -3.0)
+                falla ("el montaje «%s» acaba pegado al techo con un solo golpe: %.1f dBFS", nombre, picoDb);
+        }
     }
 
     if (solo < 0 || solo >= AudioEngine::kFxSmp)
