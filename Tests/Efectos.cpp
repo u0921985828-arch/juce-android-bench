@@ -1959,6 +1959,18 @@ int main (int argc, char** argv)
             double pico = 0.0, picoFin = 0.0;
             for (size_t k = 0; k < y.size(); ++k) pico = juce::jmax (pico, (double) std::abs (y[k]));
             for (size_t k = (size_t) (kSr * 40.0); k < y.size(); ++k) picoFin = juce::jmax (picoFin, (double) std::abs (y[k]));
+            //  Y CUANTO TARDA EN IRSE, que es la pregunta de verdad: un pico
+            //  a los sesenta segundos dice que sigue ahi, no cuanto le queda.
+            //  Se busca el ultimo segundo que todavia pasa de -60 dB.
+            double seVa = 0.0;
+            for (double t = 0.0; t + 1.0 <= 60.0; t += 1.0)
+            {
+                double pk = 0.0;
+                for (size_t k = (size_t) (t * kSr); k < (size_t) ((t + 1.0) * kSr) && k < y.size(); ++k)
+                    pk = juce::jmax (pk, (double) std::abs (y[k]));
+                if (pk > 0.001) seVa = t + 1.0;
+            }
+            std::printf ("  golpe en el canal %-2d   se oye hasta el segundo %4.0f\n", padCanal + 1, seVa);
             std::printf ("  golpe en el canal %-2d   pico %7.1f dBFS   pico a los 40-60 s %7.1f dBFS%s\n",
                          padCanal + 1, 20.0 * std::log10 (juce::jmax (1.0e-12, pico)),
                          20.0 * std::log10 (juce::jmax (1.0e-12, picoFin)),

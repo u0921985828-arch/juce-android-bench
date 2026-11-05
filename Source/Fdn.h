@@ -141,7 +141,15 @@ public:
     static constexpr float kMuelleCorte[2]   = { 700.0f, 2200.0f };
     static constexpr int   kMuelle44[2] = { 1631, 1897 };
     static constexpr float kMuelleA[2]  = { 0.86f, 0.84f };
-    static constexpr float kMuelleSal = 0.6f, kMuelleCruce = 0.3f;
+    //  muelle#: la salida del tanque, COMPENSADA por lo que la normalizacion de
+    //  las tomas le quito. Normalizar la suma arregla la ganancia de LAZO, que
+    //  es lo que se engancha, pero tambien baja la salida 3 dB, y eso no es lo
+    //  que se queria cambiar: con el muelle 3 dB mas flojo el seco del envio
+    //  manda y la sonda de banda del banco de Efectos pasa de -23.8 a +3.7 dB
+    //  sin que el tanque haya cambiado de color -StressTest, que mueve el `Fdn`
+    //  a pelo, sigue midiendo 8 kHz a -24.0-. Se devuelve en la salida, donde
+    //  no hay lazo que realimentar.
+    static constexpr float kMuelleSal = 0.6f / 0.70f, kMuelleCruce = 0.3f;
     static constexpr float kMuelleHz  = 90.0f, kMuelleTope = 3800.0f;
     //  Lo que entra al muelle antes de saturar: con el tanque a nivel de
     //  trabajo, la rodilla del tanh cae donde los golpes la encuentran.
