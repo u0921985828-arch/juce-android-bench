@@ -550,7 +550,7 @@ public:
                     //  muelle#: LA SUMA DE LAS TRES TOMAS, NORMALIZADA, que es
                     //  donde estaba la ganancia de lazo y no en la
                     //  realimentacion. Ver `kMuelleTomas`.
-                    float v = kMuelleTomas * (graves + medios + agudos);
+                    float v = kMuelleTomas * muelleLazo() * (graves + medios + agudos);
                     const float a = kMuelleA[sm];
                     //  muelle#: la cadena de allpass ESTIRADOS. Cada etapa es
                     //  `(a + z^-K)/(1 + a z^-K)`: una multiplica y una suma como
