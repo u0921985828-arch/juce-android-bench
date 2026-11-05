@@ -150,7 +150,20 @@ public:
     //  a pelo, sigue midiendo 8 kHz a -24.0-. Se devuelve en la salida, donde
     //  no hay lazo que realimentar.
     static constexpr float kMuelleSal = 0.6f / 0.70f, kMuelleCruce = 0.3f;
-    static constexpr float kMuelleHz  = 90.0f, kMuelleTope = 3800.0f;
+    static constexpr float kMuelleHz  = 90.0f, kMuelleTopeDef = 3800.0f;
+    //  Sonda: `ZATI_MU_TOPE` mueve el paso bajo del tanque. La oscuridad de un
+    //  muelle sale de pasar MUCHAS veces por ese filtro, asi que al bajar la
+    //  ganancia de lazo la cola se acorta y el tanque se vuelve claro: los dos
+    //  numeros estan atados y hay que medirlos juntos.
+    static float muelleTope() noexcept
+    {
+        static const float v = [] {
+            if (const char* e = std::getenv ("ZATI_MU_TOPE"))
+            { const float x = (float) atof (e); if (x > 200.0f && x < 20000.0f) return x; }
+            return kMuelleTopeDef;
+        }();
+        return v;
+    }
     //  Lo que entra al muelle antes de saturar: con el tanque a nivel de
     //  trabajo, la rodilla del tanh cae donde los golpes la encuentran.
     static constexpr float kMuelleDrive = 1.6f;
@@ -306,7 +319,7 @@ public:
             muLen[s] = juce::jmax (16, (int) std::lround (kMuelle44[s] * fs / 44100.0));
             //  muelle#: la banda del tanque no depende de ningun mando: es el
             //  aparato. El DAMP sigue mandando sobre `dampC`, que es la cola.
-            muLp2[s].pon (fs, kMuelleTope, 0.707);
+            muLp2[s].pon (fs, muelleTope(), 0.707);
             muHp[s].pon (fs, kMuelleHz, 0.707);
             muLp2[s].limpia(); muHp[s].limpia();
             //  muelle#: el buffer lleva el lazo MAS lo que se adelantan las
