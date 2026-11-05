@@ -11054,6 +11054,120 @@ int main()
                      ok ? "OK" : zatiFalla());
     }
 
+    //  ===================================================================
+    //  muelle# · EL TANQUE, MEDIDO EN EL `Fdn` A PELO
+    //  ===================================================================
+    //
+    //  El banco de efectos mide el muelle POR EL MOTOR -con su bus, su mezcla
+    //  y su envio- y eso es lo que hay que medir al final. Pero cuando las dos
+    //  cifras del muelle salieron IGUALES que las de la sala, esa prueba no
+    //  podia distinguir «el muelle no suena a muelle» de «el tipo no llega al
+    //  tanque». Aqui se mide el `Fdn` directamente: sin motor, sin buses y sin
+    //  mezcla, asi que lo que diga es del DSP.
+    {
+        constexpr double fs = 48000.0;
+        auto mide = [] (int tipo, double& disp, double& g60, double& a8k, int& dentro)
+        {
+            Fdn r; r.prepare (fs, 2);
+            r.setTipo ((float) tipo, 0.0f);
+            r.setParameters (0.55f, 0.45f);
+            juce::AudioBuffer<float> b (2, 128);
+            std::vector<float> y;
+            for (int blk = 0; blk < 940; ++blk)
+            {
+                b.clear();
+                if (blk == 1) { b.setSample (0, 0, 1.0f); b.setSample (1, 0, 1.0f); }
+                r.process (b, 0, 128);
+                for (int i = 0; i < 128; ++i) y.push_back (b.getSample (0, i));
+            }
+            dentro = r.getTipo();
+            //  Paso de banda de segundo orden y dos preguntas: CUANDO llega la
+            //  banda (el 5 % de su energia en los primeros 200 ms) y CUANTA
+            //  energia tiene en toda la cola.
+            auto filtra = [&y] (double hz, double q, std::vector<double>& e)
+            {
+                const double w = 2.0 * juce::MathConstants<double>::pi * hz / fs;
+                const double al = std::sin (w) / (2.0 * q);
+                const double b0 = al, b2 = -al, a0 = 1.0 + al, a1 = -2.0 * std::cos (w), a2 = 1.0 - al;
+                double x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0;
+                e.assign (y.size(), 0.0);
+                for (size_t i = 0; i < y.size(); ++i)
+                {
+                    const double x = y[i];
+                    const double v = (b0 * x + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+                    x2 = x1; x1 = x; y2 = y1; y1 = v;
+                    e[i] = v * v;
+                }
+            };
+            //  CUANDO CANTA la banda: el maximo de su envolvente en los
+            //  primeros 150 ms. El 5 % de la energia acumulada no valia -en una
+            //  sala los agudos se APAGAN antes, asi que su 5 % cae antes y la
+            //  sala media -12 ms de «dispersion» que no tiene-. El maximo de la
+            //  envolvente es la llegada: en una sala las dos bandas pican en el
+            //  golpe; en un muelle los agudos pican decenas de ms despues.
+            auto llegada = [&] (double hz)
+            {
+                std::vector<double> e; filtra (hz, 4.0, e);
+                const size_t n = juce::jmin (e.size(), (size_t) (0.150 * fs));
+                const double c = 1.0 - std::exp (-1.0 / (0.005 * fs));   // 5 ms
+                //  Y LA LLEGADA ES EL PRIMER CRUCE, no el maximo: en una cola
+                //  sostenida el maximo cae donde quiera -con el maximo, el
+                //  grave del muelle media -62.9 ms porque su envolvente seguia
+                //  subiendo al final de la ventana-. Se busca el instante en
+                //  que la banda alcanza una cuarta parte de su pico.
+                std::vector<double> env (n, 0.0);
+                double v2 = 0.0, pico = 0.0;
+                for (size_t i = 0; i < n; ++i)
+                {
+                    v2 += c * (e[i] - v2);
+                    env[i] = v2;
+                    pico = juce::jmax (pico, v2);
+                }
+                for (size_t i = 0; i < n; ++i)
+                    if (env[i] >= 0.25 * pico) return 1000.0 * (double) i / fs;
+                return 0.0;
+            };
+            auto energia = [&] (double hz)
+            {
+                std::vector<double> e; filtra (hz, 2.0, e);
+                double s2 = 0.0; for (double v : e) s2 += v; return s2;
+            };
+            if (std::getenv ("ZATI_MUELLE_VER") != nullptr)
+                for (double hz : { 300.0, 3000.0 })
+                {
+                    std::vector<double> e; filtra (hz, 4.0, e);
+                    std::printf ("   tipo %d  %5.0f Hz  por 10 ms:", tipo, hz);
+                    for (int b10 = 0; b10 < 16; ++b10)
+                    {
+                        double s2 = 0.0;
+                        const size_t d = (size_t) (b10 * 0.010 * fs), h2 = (size_t) ((b10 + 1) * 0.010 * fs);
+                        for (size_t i = d; i < juce::jmin (h2, e.size()); ++i) s2 += e[i];
+                        std::printf (" %.0f", 10.0 * std::log10 (juce::jmax (1.0e-30, s2)));
+                    }
+                    std::printf ("\n");
+                }
+            disp = llegada (3000.0) - llegada (300.0);
+            const double ref = energia (1000.0);
+            g60 = 10.0 * std::log10 (juce::jmax (1.0e-30, energia (60.0))   / juce::jmax (1.0e-30, ref));
+            a8k = 10.0 * std::log10 (juce::jmax (1.0e-30, energia (8000.0)) / juce::jmax (1.0e-30, ref));
+        };
+        double dM = 0.0, gM = 0.0, aM = 0.0, dS = 0.0, gS = 0.0, aS = 0.0;
+        int tM = -1, tS = -1;
+        mide (3, dM, gM, aM, tM);
+        mide (0, dS, gS, aS, tS);
+        //  EL TESTIGO SE JUZGA POR LA DIFERENCIA Y NO POR SU VALOR, y esto es
+        //  una propiedad de la medida y no una excusa: en una red densa los
+        //  graves TARDAN EN FORMARSE -la difusion los va construyendo- asi que
+        //  su cuarto de pico llega despues que el de los agudos y la sala mide
+        //  -18.6 ms con esta misma regla. Lo que no puede pasar es que el
+        //  muelle y la sala se parezcan: treinta milisegundos de diferencia es
+        //  lo que separa un boing de una cola.
+        const bool ok = tM == 3 && tS == 0 && dM >= 20.0 && gM <= -12.0 && aM <= -12.0
+                          && (dM - dS) >= 30.0;
+        std::printf ("%-34s dispersion %+.1f ms (sala %+.1f, %+.1f de diferencia) · 60 Hz %+.1f dB · 8 kHz %+.1f dB   %s\n",
+                     "muelle el tanque suena a tanque", dM, dS, dM - dS, gM, aM, ok ? "OK" : zatiFalla());
+    }
+
     std::printf ("\n%-34s %d FALLA\n", "motor", zatiFallos);
     return zatiFallos > 0 ? 1 : 0;
 }

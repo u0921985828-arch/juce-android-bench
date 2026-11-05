@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include "Analogico.h"   // muelle#: Svf para la banda del tanque y tanhR para el transductor
 
 //  UNA REVERB DE RED DE RETARDOS REALIMENTADA (FDN).
 //
@@ -86,11 +87,64 @@ public:
         { { 18.0f, 0.45f, -0.6f }, { 31.0f, 0.40f, 0.7f }, { 47.0f, 0.36f, -0.8f }, { 63.0f, 0.32f, 0.5f },
           { 79.0f, 0.28f, -0.4f }, { 94.0f, 0.25f, 0.8f }, { 107.0f, 0.22f, -0.7f }, { 118.0f, 0.19f, 0.3f } },
     };
-    //  efectos#muelle: dos muelles de largo distinto, uno por lado; la cadena de allpass hace el «boing».
-    static constexpr int   kMuelleAp = 32;
+    //  ========================================================================
+    //  muelle# - POR QUE EL MUELLE NO SONABA A MUELLE, MEDIDO
+    //  ========================================================================
+    //
+    //  «El spring reverb me deja mucho que desear.» El banco lo convirtio en
+    //  dos cifras y las dos decian lo mismo:
+    //
+    //    · DISPERSION 3 kHz contra 300 Hz: **-0.1 ms**. En un tanque de verdad
+    //      los agudos viajan MAS DESPACIO por el muelle, asi que un golpe sale
+    //      como un «boing» que baja de tono: decenas de milisegundos de retraso
+    //      de los agudos. Cero dispersion no es un muelle, es una placa.
+    //    · 8 kHz a **+6.0 dB** de 1 kHz. Un tanque de muelles no pasa agudos
+    //      -ni graves-; lo que sonaba era una cola brillante y fina, que es
+    //      exactamente «metalico y roto» en vez de «calido».
+    //
+    //  Y la causa de lo primero estaba en un SIGNO. La cadena era de allpass de
+    //  primer orden con `a = -0.70`, y un allpass de primer orden con a
+    //  NEGATIVO retrasa los GRAVES (retardo de grupo (1+|a|)/(1-|a|) en
+    //  continua y (1-|a|)/(1+|a|) en Nyquist): justo al reves que un muelle.
+    //
+    //  LO QUE HAY AHORA:
+    //    · Allpass ESTIRADOS: `(a + z^-K)/(1 + a z^-K)` con K = 4 y a = +0.80.
+    //      Un estirado cuesta lo mismo que uno de primer orden -una multiplica
+    //      y una suma por etapa- y da K veces su retardo, que es como se
+    //      llega a veinte milisegundos sin cien etapas. Con a positivo el
+    //      retraso se lo llevan los AGUDOS, que es el boing.
+    //    · El TANQUE tiene banda: paso alto de dos polos en 90 Hz y paso bajo
+    //      de dos polos en 4.2 kHz dentro del lazo. Eso es lo que quita el
+    //      brillo de placa y deja el cuerpo de muelle.
+    //    · Y el transductor SATURA: la entrada al muelle pasa por `tanhR`, que
+    //      es la calidez de verdad -armonicos de orden bajo- y no un filtro.
+    //  Y EL ALLPASS NO HACE EL BOING, QUE ES LO QUE DIJO LA MEDIDA.
+    //
+    //  El retardo de grupo de un allpass estirado K veces es un PICO ESTRECHO
+    //  en fs/(2K), no una rampa: con K = 8 el pico cae justo en 3 kHz y aun asi
+    //  la banda de 3 kHz -Q 4, o sea 750 Hz de ancho- solo se movio 4.1 ms,
+    //  porque a los lados del pico el retardo es casi cero. Treinta etapas mas
+    //  no arreglan eso; lo que hace falta es que los agudos RECORRAN mas muelle.
+    //
+    //  ASI QUE LA DISPERSION ES POR TOMAS. El muelle se lee en TRES sitios y
+    //  cada banda sale del suyo: los graves de la toma mas corta, los agudos de
+    //  la mas larga. Eso es literalmente la relacion de dispersion de un
+    //  muelle -la onda de flexion viaja mas despacio cuanto mas alta es la
+    //  frecuencia- y cuesta dos lecturas y dos filtros mas por muestra. La
+    //  cadena de allpass se queda, mas corta, para el frote metalico que
+    //  acompana al boing.
+    static constexpr int   kMuelleAp = 8;       // etapas de dispersion por muelle
+    static constexpr int   kMuelleK  = 8;       // el estiron de cada etapa
+    //  Cuanto ANTES sale cada banda respecto de la mas alta, en ms.
+    static constexpr float kMuelleAntesMs[2] = { 28.0f, 14.0f };   // graves, medios
+    static constexpr float kMuelleCorte[2]   = { 700.0f, 2200.0f };
     static constexpr int   kMuelle44[2] = { 1631, 1897 };
-    static constexpr float kMuelleA[2]  = { -0.70f, -0.72f };
+    static constexpr float kMuelleA[2]  = { 0.86f, 0.84f };
     static constexpr float kMuelleSal = 0.6f, kMuelleCruce = 0.3f;
+    static constexpr float kMuelleHz  = 90.0f, kMuelleTope = 3800.0f;
+    //  Lo que entra al muelle antes de saturar: con el tanque a nivel de
+    //  trabajo, la rodilla del tanh cae donde los golpes la encuentran.
+    static constexpr float kMuelleDrive = 1.6f;
 
     //  LOS DOS NUMEROS QUE MANDAN EN LA COLA, por la misma razon. 0.72 a 0.94:
     //  por debajo no es una sala y por encima de 0.95 una FDN
@@ -146,7 +200,22 @@ public:
         for (int s = 0; s < 2; ++s)
         {
             muLen[s] = juce::jmax (16, (int) std::lround (kMuelle44[s] * fs / 44100.0));
-            mu[s].setSize (1, muLen[s], false, true, true);
+            //  muelle#: la banda del tanque no depende de ningun mando: es el
+            //  aparato. El DAMP sigue mandando sobre `dampC`, que es la cola.
+            muLp2[s].pon (fs, kMuelleTope, 0.707);
+            muHp[s].pon (fs, kMuelleHz, 0.707);
+            muLp2[s].limpia(); muHp[s].limpia();
+            //  muelle#: el buffer lleva el lazo MAS lo que se adelantan las
+            //  tomas graves: leer «antes» es leer una muestra que entro mas
+            //  tarde, asi que hace falta sitio por delante del indice.
+            muBaja[s].pon   (fs, kMuelleCorte[0], 0.707);
+            muBajaM[s].pon  (fs, kMuelleCorte[0], 0.707);
+            muMedia[s].pon  (fs, kMuelleCorte[1], 0.707);
+            muMediaA[s].pon (fs, kMuelleCorte[1], 0.707);
+            muBaja[s].limpia(); muBajaM[s].limpia(); muMedia[s].limpia(); muMediaA[s].limpia();
+            muAntes[0] = juce::jmax (1, (int) std::lround (kMuelleAntesMs[0] * 0.001 * fs));
+            muAntes[1] = juce::jmax (1, (int) std::lround (kMuelleAntesMs[1] * 0.001 * fs));
+            mu[s].setSize (1, muLen[s] + muAntes[0] + 4, false, true, true);
         }
         aplicaForma (tipoPedido);
         for (int i = 0; i < kDiff; ++i)
@@ -171,8 +240,11 @@ public:
         for (int s = 0; s < 2; ++s)
         {
             muIdx[s] = 0; muLp[s] = 0.0f;
-            for (auto& v : muAp[s]) v = 0.0f;
+            for (auto& etapa : muV[s]) for (auto& v : etapa) v = 0.0f;
+            muLp2[s].limpia(); muHp[s].limpia();
+            muBaja[s].limpia(); muBajaM[s].limpia(); muMedia[s].limpia(); muMediaA[s].limpia();
         }
+        muJ = 0;
         for (auto& d : damp) d = 0.0f;
         for (auto& i : lineIdx) i = 0;
         for (auto& i : difIdx)  i = 0;
@@ -361,19 +433,67 @@ public:
             if (muelle)
             {
                 float o[2];
+                const int j = muJ;
                 for (int sm = 0; sm < 2; ++sm)
                 {
-                    float v = mp[sm][muIdx[sm]];
+                    //  muelle#: TRES TOMAS. La mas larga -el indice de escritura,
+                    //  o sea una vuelta entera- lleva los agudos; las otras dos
+                    //  se adelantan y llevan medios y graves. El reparto es con
+                    //  dos cortes de dos polos, que suman plano.
+                    const int largo = muLen[sm] + muAntes[0] + 4;
+                    auto toma = [&] (int antes) noexcept
+                    { return mp[sm][(muIdx[sm] + antes) % largo]; };
+                    //  Y UN FILTRO POR TOMA, no uno compartido: `medios` restaba
+                    //  el grave de OTRA toma, asi que el grave se cancelaba
+                    //  consigo mismo -la banda de 300 Hz desaparecia del todo-.
+                    const float tB = toma (muAntes[0]), tM = toma (muAntes[1]), tA = toma (0);
+                    float lp = 0.0f, bp = 0.0f;
+                    muBaja[sm].paso   (tB, 0, lp, bp);  const float graves = lp;
+                    muBajaM[sm].paso  (tM, 0, lp, bp);  const float bajoM  = lp;
+                    muMedia[sm].paso  (tM, 0, lp, bp);  const float medios = lp - bajoM;
+                    muMediaA[sm].paso (tA, 0, lp, bp);  const float agudos = tA - lp;
+                    float v = graves + medios + agudos;
                     const float a = kMuelleA[sm];
-                    for (int k = 0; k < kMuelleAp; ++k) { const float y = a * v + muAp[sm][k]; muAp[sm][k] = v - a * y; v = y; }
+                    //  muelle#: la cadena de allpass ESTIRADOS. Cada etapa es
+                    //  `(a + z^-K)/(1 + a z^-K)`: una multiplica y una suma como
+                    //  la de primer orden, y K veces su retardo. Con a positivo
+                    //  el retardo se lo llevan los agudos: ese es el boing.
+                    for (int k = 0; k < kMuelleAp; ++k)
+                    {
+                        float& ranura = muV[sm][k][j];
+                        const float vieja = ranura;              // v[n-K]
+                        const float nueva = v - a * vieja;       // v[n]
+                        ranura = nueva;
+                        v = a * nueva + vieja;
+                    }
+                    //  La banda del tanque, dentro del lazo: sin ella la cola
+                    //  sale con 8 kHz por encima de 1 kHz, o sea a placa fina.
+                    muLp2[sm].paso (v, 0, lp, bp);
+                    v = lp;
+                    //  Y EL PASO ALTO ES `x - k*bp - lp`, la salida alta del
+                    //  SVF, no `x - lp`: restar solo el paso bajo deja dentro la
+                    //  banda y la primera corrida salio con 60 Hz **+13.8 dB**
+                    //  sobre 1 kHz, o sea un realce de graves donde tenia que
+                    //  haber un corte.
+                    muHp[sm].paso (v, 0, lp, bp);
+                    v = v - muHp[sm].k * bp - lp;
                     muLp[sm] += dampC * (v - muLp[sm]);
-                    const float e = x + fb * muLp[sm];
+                    //  Y EL TRANSDUCTOR, que es de donde sale la calidez: lo que
+                    //  entra al muelle pasa por una rodilla suave, no por un
+                    //  limitador. Armonicos de orden bajo, que es lo que el oido
+                    //  llama «analogico».
+                    const float e = Analogico::tanhR (kMuelleDrive * (x + fb * muLp[sm])) * (1.0f / kMuelleDrive);
                     const float eb = std::abs (e) <= std::numeric_limits<float>::max() ? e : 0.0f;
                     mp[sm][muIdx[sm]] = eb;
                     muPico = juce::jmax (muPico, std::abs (eb));
-                    if (++muIdx[sm] >= muLen[sm]) muIdx[sm] = 0;
+                    //  muelle#: la vuelta es el buffer ENTERO, porque las tomas
+                    //  leen por delante del indice: dando la vuelta en `muLen`
+                    //  esas muestras no existen todavia y la toma grave leia
+                    //  ceros -dispersion medida: -0.1 ms, o sea ninguna-.
+                    if (++muIdx[sm] >= largo) muIdx[sm] = 0;
                     o[sm] = muLp[sm];
                 }
+                if (++muJ >= kMuelleK) muJ = 0;
                 const float oL = kMuelleSal * (o[0] + kMuelleCruce * o[1]);
                 const float oR = kMuelleSal * (o[1] + kMuelleCruce * o[0]);
                 if (ch > 1) { w[0][n] = oL; w[1][n] = oR; } else w[0][n] = 0.5f * (oL + oR);
@@ -632,7 +752,20 @@ private:
     float ecoD[kEcos] {}, ecoL[kEcos] {}, ecoR[kEcos] {};
     juce::AudioBuffer<float> mu[2];
     int muLen[2] {}, muIdx[2] {};
-    float muLp[2] {}, muAp[2][kMuelleAp] {}, muPico = 0.0f;
+    float muLp[2] {}, muPico = 0.0f;
+    //  muelle#: el estado de los allpass estirados. `muJ` es el indice comun:
+    //  todas las etapas usan el mismo estiron, asi que una vuelta por muestra.
+    float muV[2][kMuelleAp][kMuelleK] {};
+    int   muJ = 0;
+    //  muelle#: la banda del tanque, un filtro por muelle y por lado.
+    Analogico::Svf muHp[2], muLp2[2];
+    //  muelle#: los dos cortes que reparten las tres tomas, y lo que cada toma
+    //  se adelanta en muestras.
+    //  Cuatro y no dos: cada banda sale de SU toma, asi que el corte de 700 Hz
+    //  hace falta en la toma grave y en la media, y el de 2200 en la media y en
+    //  la aguda.
+    Analogico::Svf muBaja[2], muBajaM[2], muMedia[2], muMediaA[2];
+    int muAntes[2] {};
 
     float fb    = 0.85f;
     float ultSize = -1.0f, ultDamp = -1.0f;

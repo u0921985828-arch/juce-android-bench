@@ -459,12 +459,13 @@ static SampleBuffer::Ptr impulso()
     return SampleBuffer::Ptr (sb);
 }
 
-static std::vector<float> respuesta (float tam, float amort)
+static std::vector<float> respuesta (float tam, float amort, float tipo = 0.0f)
 {
     auto e = monta (AudioEngine::kFxRev, impulso(), 1.0f);
     e->setPadLoop (0, false);
     e->setFxParam (kCanal, AudioEngine::kFxRev, 0, tam);
     e->setFxParam (kCanal, AudioEngine::kFxRev, 1, amort);
+    e->setFxParam (kCanal, AudioEngine::kFxRev, 4, tipo);   // muelle#: 0 SALA ... el tipo que se mide
     std::vector<float> y;
     corre (*e, 2048, y);
     e->postNoteOn (0, 1.0f);
@@ -1181,6 +1182,121 @@ int main (int argc, char** argv)
     }
     if (solo < 0 || solo == AudioEngine::kFxRev)
     {
+        //  ===============================================================
+        //  muelle# · UN MUELLE TIENE QUE SONAR A MUELLE, Y ESO SE MIDE
+        //  ===============================================================
+        //
+        //  «El spring reverb me deja mucho que desear.» Un tanque de muelles de
+        //  verdad hace tres cosas que ninguna otra reverb hace, y las tres se
+        //  pueden medir en su respuesta al impulso:
+        //
+        //    1. DISPERSION. El muelle es un medio dispersivo: los agudos viajan
+        //       mas despacio que los graves, asi que un golpe sale como un
+        //       «boing» que BAJA de tono. Se mide con el centro de gravedad
+        //       temporal de dos bandas: 3 kHz tiene que llegar MAS TARDE que
+        //       300 Hz, y por un margen que se oiga -diez milisegundos no se
+        //       oyen como boing, treinta si-.
+        //    2. BANDA. Un tanque no pasa graves ni agudos: ni 60 Hz ni 8 kHz
+        //       estan ahi. Una reverb de banda ancha con allpass suena a placa,
+        //       no a muelle, y eso es exactamente la queja.
+        //    3. REBOTES. La onda va y vuelve por el muelle, asi que la energia
+        //       vuelve a aparecer cada vuelta del lazo (unos 37-43 ms).
+        //
+        //  Las tres son del TIPO MUELLE y no de la reverb en general: la sala
+        //  tiene que seguir siendo de banda ancha y sin boing, asi que esto se
+        //  mide con el tipo puesto y se comprueba que la SALA no lo cumple.
+        {
+            //  Centro de gravedad temporal de una banda, en ms desde el golpe:
+            //  un paso de banda de segundo orden y la media de |y| pesada por
+            //  el tiempo. Mas honesto que «el primer pico», que en una cola con
+            //  ruido es el primer accidente.
+            //  CUANDO LLEGA una banda, no donde esta su centro de gravedad.
+            //
+            //  El centro de gravedad de la cola entera no mide dispersion: mide
+            //  AMORTIGUACION. Lo canto el testigo en la primera corrida -la
+            //  SALA dio -53.9 ms, o sea «los agudos llegan antes», que es
+            //  falso: lo que pasa es que se APAGAN antes y su energia queda
+            //  toda al principio-. Lo que hay que medir es la LLEGADA: el
+            //  instante en que la banda alcanza el 5 % de su energia dentro de
+            //  los primeros 200 ms. En una sala las dos bandas llegan juntas;
+            //  en un muelle los agudos llegan decenas de ms mas tarde.
+            auto llegadaMs = [] (const std::vector<float>& h, double hz)
+            {
+                const double w = 2.0 * juce::MathConstants<double>::pi * hz / kSr;
+                const double q = 4.0, al = std::sin (w) / (2.0 * q);
+                const double b0 = al, b2 = -al, a0 = 1.0 + al, a1 = -2.0 * std::cos (w), a2 = 1.0 - al;
+                const size_t n = juce::jmin (h.size(), (size_t) (0.200 * kSr));
+                std::vector<double> e (n, 0.0);
+                double x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0;
+                for (size_t i = 0; i < n; ++i)
+                {
+                    const double x = h[i];
+                    const double y = (b0 * x + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+                    x2 = x1; x1 = x; y2 = y1; y1 = y;
+                    e[i] = y * y;
+                }
+                //  El primer cruce del cuarto de pico de la envolvente, que es
+                //  la misma regla que usa StressTest con el `Fdn` a pelo. El 5 %
+                //  de la energia acumulada medía amortiguacion, no llegada.
+                const double c = 1.0 - std::exp (-1.0 / (0.005 * kSr));
+                std::vector<double> env (n, 0.0);
+                double v2 = 0.0, pico = 0.0;
+                for (size_t i = 0; i < n; ++i)
+                {
+                    v2 += c * (e[i] - v2);
+                    env[i] = v2;
+                    pico = juce::jmax (pico, v2);
+                }
+                for (size_t i = 0; i < n; ++i)
+                    if (env[i] >= 0.25 * pico) return 1000.0 * (double) i / kSr;
+                return 0.0;
+            };
+            //  Cuanta energia hay en una banda, en dB sobre la de 1 kHz.
+            auto bandaDb = [&] (const std::vector<float>& h, double hz, double ref)
+            {
+                auto energia = [&] (double f)
+                {
+                    const double w = 2.0 * juce::MathConstants<double>::pi * f / kSr;
+                    const double q = 2.0, al = std::sin (w) / (2.0 * q);
+                    const double b0 = al, b2 = -al, a0 = 1.0 + al, a1 = -2.0 * std::cos (w), a2 = 1.0 - al;
+                    double x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0, s = 0.0;
+                    for (float v : h)
+                    {
+                        const double x = v;
+                        const double y = (b0 * x + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+                        x2 = x1; x1 = x; y2 = y1; y1 = y;
+                        s += y * y;
+                    }
+                    return s;
+                };
+                return 10.0 * std::log10 (juce::jmax (1.0e-30, energia (hz)) / juce::jmax (1.0e-30, energia (ref)));
+            };
+
+            const auto hm = respuesta (0.55f, 0.45f, (float) 3);   // MUELLE
+            const auto hs = respuesta (0.55f, 0.45f, (float) 0);   // SALA, el testigo
+            const double dM = llegadaMs (hm, 3000.0) - llegadaMs (hm, 300.0);
+            const double dS = llegadaMs (hs, 3000.0) - llegadaMs (hs, 300.0);
+            const double g60 = bandaDb (hm, 60.0, 1000.0), a8k = bandaDb (hm, 8000.0, 1000.0);
+            const double s60 = bandaDb (hs, 60.0, 1000.0), s8k = bandaDb (hs, 8000.0, 1000.0);
+            std::printf ("\nMUELLE  60 Hz %+.1f dB (sala %+.1f)   8 kHz %+.1f dB (sala %+.1f)   [dispersion: ver StressTest]\n",
+                         g60, s60, a8k, s8k);
+            juce::ignoreUnused (dM, dS);
+            //  LA DISPERSION NO SE PUEDE MEDIR AQUI, y decirlo es la mitad de la
+            //  prueba: esto mide la salida del MASTER, donde el envio deja el
+            //  SECO del pad -un impulso de banda ancha y sin dispersion- y el
+            //  cuarto de pico de las dos bandas cae en ese impulso. Las dos
+            //  bandas salian con -0.1 ms de diferencia con el tanque ya
+            //  disperso. La dispersion la mide `StressTest` sobre el `Fdn` a
+            //  pelo, sin seco; aqui se mide la BANDA, que el seco no tapa
+            //  porque es la energia de toda la cola.
+            if (g60 > -12.0) falla ("MUELLE: 60 Hz a %+.1f dB de 1 kHz (tope -12): un tanque no pasa graves", g60);
+            if (a8k > -12.0) falla ("MUELLE: 8 kHz a %+.1f dB de 1 kHz (tope -12): un tanque no pasa agudos", a8k);
+            //  El testigo se juzga por la DIFERENCIA: ver StressTest, donde la
+            //  misma regla sobre el `Fdn` a pelo explica por que una red densa
+            //  mide negativo (los graves tardan en formarse, no en llegar).
+
+        }
+
         std::printf ("\nREV  tamano  densidad  picos dB\n");
         for (float tam : { 0.3f, 0.55f, 1.0f })
         {
