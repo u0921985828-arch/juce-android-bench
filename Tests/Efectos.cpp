@@ -1611,6 +1611,55 @@ int main (int argc, char** argv)
         std::printf ("CLP  drive 18 forma 0 con ruido: pico %.2f dBFS\n", cRuido);
         if (cRuido > -0.29) falla ("CLP: con ruido el pico pasa el techo (%.2f dBFS)", cRuido);
 
+        //  PITIDO: UN MOTOR QUE TOCA PLAY CON EL PROYECTO VACIO TIENE QUE CALLAR.
+        //
+        //  Del telefono: «hay un pitido cuando le doy al play». Un pitido es un
+        //  TONO sostenido, y un proyecto sin notas no tiene de donde sacarlo:
+        //  si sale, lo esta generando el motor solo -un lazo que se engancha,
+        //  un filtro que se queda sonando, el clic retriggereado-. Se mide el
+        //  pico y las tres rayas mas altas del espectro de diez segundos con el
+        //  transporte RODANDO y nada tocado.
+        {
+            auto suelta = [&] (bool conFx)
+            {
+                auto e = std::make_unique<AudioEngine>();
+                e->prepareToPlay (kSr, kBs);
+                e->setPolyphony (8, 2);
+                if (conFx)
+                    for (int f = 0; f < AudioEngine::kNumFx; ++f)
+                    {
+                        e->setCanalSend (kCanal, f, 1.0f);
+                        e->setFxParam (kCanal, f, 2, kMandos[f].onMix);
+                    }
+                e->setPlaying (true);
+                std::vector<float> y;
+                corre (*e, (int) (kSr * 10), y);
+                double pk = 0.0;
+                for (size_t i = (size_t) (kSr * 2); i < y.size(); ++i) pk = juce::jmax (pk, (double) std::abs (y[i]));
+                const int orden = 15, n = 1 << orden;
+                const auto pp = espectro (y.data() + (size_t) (kSr * 5), orden);
+                int k1 = 1, k2 = 1, k3 = 1;
+                for (int k = 2; k < n / 2; ++k)
+                {
+                    if (pp[(size_t) k] > pp[(size_t) k1]) { k3 = k2; k2 = k1; k1 = k; }
+                    else if (pp[(size_t) k] > pp[(size_t) k2]) { k3 = k2; k2 = k; }
+                    else if (pp[(size_t) k] > pp[(size_t) k3]) k3 = k;
+                }
+                std::printf ("PITIDO %-12s pico %8.1f dBFS   rayas %6.0f %6.0f %6.0f Hz\n",
+                             conFx ? "con los 39" : "sin efectos",
+                             20.0 * std::log10 (juce::jmax (1.0e-12, pk)),
+                             k1 * kSr / n, k2 * kSr / n, k3 * kSr / n);
+                return pk;
+            };
+            std::printf ("\n");
+            const double pkSin = suelta (false), pkCon = suelta (true);
+            //  -90 dBFS es el ruido de la cuenta; un tono audible esta 60 dB por encima.
+            if (pkSin > 1.0e-4) falla ("con PLAY y el proyecto vacio el motor saca %.1f dBFS (tope -80)",
+                                       20.0 * std::log10 (pkSin));
+            if (pkCon > 1.0e-4) falla ("con PLAY, vacio y los 39 efectos puestos, el motor saca %.1f dBFS (tope -80)",
+                                       20.0 * std::log10 (pkCon));
+        }
+
         //  MODULACION: cuanta mugre mete el color analogico de CHO, FLA y PHA
         //  a nivel de trabajo, y que en DIGITAL no mete NINGUNA.
         //
