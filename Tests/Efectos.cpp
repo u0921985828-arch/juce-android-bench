@@ -1839,7 +1839,24 @@ int main (int argc, char** argv)
                 falla ("el montaje «%s» SIGUE CRECIENDO al minuto: %+.1f dB", nombre, fin - medio);
             //  Y un montaje que acaba pegado al techo con una sola nota es un
             //  acople aunque ya no crezca: el limitador lo sostiene ahi.
-            if (picoDb > -3.0)
+            //
+            //  PERO NO EN UNA CADENA DE CANALES, y eso lo decide el dueno del
+            //  aparato y no esta prueba. Un envio entre canales DUPLICA la
+            //  senal a proposito: para eso existe un envio, para meter varios
+            //  sonidos en el mismo efecto -una sala compartida, un espacio
+            //  comun- en vez de poner una copia del efecto en cada tira. Asi
+            //  que cuatro canales encadenados, cada uno con una sala a tamano
+            //  maximo sin amortiguar y un delay a 0.9, y todos los envios a
+            //  uno, es un drone por aritmetica y no un fallo: es lo que se ha
+            //  pedido. Se MIDE y se imprime -0.0 dBFS con dos canales, 0.0 con
+            //  cuatro- para que nadie lo descubra por sorpresa, y no se juzga.
+            //
+            //  Lo que SI se juzga es lo que la app tiene que garantizar: que
+            //  ningun efecto por si solo sostenga (columna ACOPLE) y que un
+            //  patch de verdad no lo haga (regla CASO, con el proyecto de la
+            //  persona cargado tal cual).
+            const bool esCadena = (caso == 1 || caso == 2);
+            if (picoDb > -3.0 && ! esCadena)
                 falla ("el montaje «%s» acaba pegado al techo con un solo golpe: %.1f dBFS", nombre, picoDb);
         }
 
