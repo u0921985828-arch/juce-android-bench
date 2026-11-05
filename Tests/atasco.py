@@ -102,10 +102,26 @@ def corre (casa, ticks=40, atasco=0, plazo=0, estado=False, tapas=False, revive=
     env = dict (os.environ, HOME=casa, ZATI_AUDIT="1", ZATI_LANG="es",
                 ZATI_SIZE="412x915", DISPLAY=PANTALLA,
                 XDG_DATA_HOME=os.path.join (casa, ".local", "share"))
+    #  Y LA SONDA LA ELIGE ESTA PRUEBA, NO EL QUE LA LLAMA.
+    #
+    #  El entorno se HEREDA, asi que una variable puesta en la linea de
+    #  ordenes se colaba en los CINCO arranques y no solo en el suyo. Medido:
+    #  con `ZATI_TAPAS=1 python3 Tests/atasco.py` salen cuatro FALLA que no son
+    #  de la app -«ATASCO 227544 ms en banco/espera-fabrica», «se apunta un
+    #  atasco que no existe», «la sonda ZATI_REVIVE no contesto»- porque el
+    #  arranque de REVIVE tambien apretaba las 2768 tapas, que son diez minutos
+    #  contra su plazo de 600 s. La misma prueba a secas da 0 FALLA.
+    #
+    #  Se BORRAN las cuatro de la herencia y cada llamada pone la suya. El valor
+    #  del que llama se respeta donde SI significa algo: `ZATI_TAPAS=rack` sigue
+    #  acotando la regla 4 a esa ficha, que es para lo que esta documentado.
+    tapasPedidas = os.environ.get ("ZATI_TAPAS", "1") or "1"
+    for k in ("ZATI_TAPAS", "ZATI_ESTADO", "ZATI_ARRANQUE", "ZATI_REVIVE"):
+        env.pop (k, None)
     if   revive:
         env["ZATI_REVIVE"] = "1"
         env["ZATI_SALIDA_PREVIA"] = MUESTRA_ANR
-    elif tapas:  env["ZATI_TAPAS"]  = "1"
+    elif tapas:  env["ZATI_TAPAS"]  = tapasPedidas
     elif estado: env["ZATI_ESTADO"] = "1"
     else:        env["ZATI_ARRANQUE"] = str (ticks)
     if atasco: env["ZATI_ATASCO"]    = str (atasco)
