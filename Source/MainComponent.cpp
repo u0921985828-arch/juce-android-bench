@@ -19712,6 +19712,14 @@ void MainComponent::aplicaMonitor (bool avisa)
 
     if (avisa)
         status.setText (! monitorOn      ? T ("Monitor apagado")
+                        //  Y SE DICE CUAL DE LAS DOS COSAS ES. «Hacen falta
+                        //  cascos» con unos cascos Bluetooth puestos se lee
+                        //  como que la app esta rota, y desde que
+                        //  `RutaAudio::esEscuchaPersonal` no se cree A2DP -que
+                        //  es el mismo tipo para unos cascos y para un altavoz
+                        //  Bluetooth- ese caso existe de verdad.
+                        : (altavoz && RutaAudio::porBluetooth())
+                                         ? T ("Monitor: por radio no, puede acoplar")
                         : altavoz        ? T ("Monitor: hacen falta cascos")
                                          : T ("Monitor encendido"),
                         juce::dontSendNotification);

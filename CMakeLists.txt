@@ -152,7 +152,12 @@ option(ZATI_BENCH "Build the engine stress bench" OFF)
 if(ZATI_BENCH)
     juce_add_console_app(StressTest PRODUCT_NAME "StressTest")
     juce_generate_juce_header(StressTest)
-    target_sources(StressTest PRIVATE Tests/StressTest.cpp Source/AudioEngine.cpp Source/Sintes.cpp)
+    #  monitor#: y `AudioFocus.cpp`, por `RutaAudio::esEscuchaPersonal`. Es la
+    #  guarda del monitor directo -lo unico que impide que el microfono salga
+    #  por un altavoz y vuelva-, y una guarda que el banco no puede mirar es una
+    #  guarda que un dia deja de guardar.
+    target_sources(StressTest PRIVATE Tests/StressTest.cpp Source/AudioEngine.cpp Source/Sintes.cpp
+                                      Source/AudioFocus.cpp)
     target_compile_definitions(StressTest PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STRICT_REFCOUNTEDPOINTER=1)
     target_link_libraries(StressTest PRIVATE

@@ -70,6 +70,12 @@
 // ============================================================================
 namespace RutaAudio
 {
+    //  Si un `AudioDeviceInfo.getType` es una salida que SOLO existe puesta en
+    //  una cabeza. Es la guarda del monitor directo y vive aparte para que el
+    //  banco pueda mirarla: ver `AudioFocus.cpp`, donde esta razonada, y la
+    //  regla «el monitor no se abre por radio» de StressTest.
+    bool esEscuchaPersonal (int tipo) noexcept;
+
     //  true cuando NO hay ninguna salida de escucha personal enchufada, o sea
     //  cuando lo que suene va a ir al aire.
     bool porAltavoz();

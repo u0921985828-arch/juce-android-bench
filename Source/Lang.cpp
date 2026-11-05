@@ -125,6 +125,12 @@ namespace
         //  responde.
         { "Monitor: hacen falta cascos", "",  "Monitor needs headphones",
                                      "监听需要耳机", "المراقبة تحتاج سماعات" },
+        //  Y con unos cascos BLUETOOTH puestos, «hacen falta cascos» se lee
+        //  como que la app esta rota: Android da el mismo tipo para unos cascos
+        //  y para un altavoz Bluetooth, asi que el monitor no se abre por radio
+        //  y hay que decir eso y no lo otro. Ver RutaAudio::esEscuchaPersonal.
+        { "Monitor: por radio no, puede acoplar", "", "Monitor off over wireless: feedback risk",
+                                     "无线下不开监听：可能啸叫", "لا مراقبة عبر اللاسلكي: خطر صفير" },
         { "La cara se mueve",   "",  "The face moves", "界面会动",
                                      "الواجهة تتحرك" },
         { "La cara esta quieta","La cara está quieta",  "The face is still", "界面静止",

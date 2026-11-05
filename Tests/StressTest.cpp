@@ -25,6 +25,7 @@
 #include <functional>
 #include "../Source/Calidad.h"
 #include "../Source/AudioEngine.h"
+#include "../Source/AudioFocus.h"   // monitor#: la guarda del monitor directo
 #include "../Source/Denoise.h"
 #include "../Source/MidiIo.h"
 #include "../Source/Kits.h"
@@ -10619,6 +10620,44 @@ int main()
                          (reservas == 0 && finita) ? "OK" : zatiFalla());
         }
 #endif
+    }
+
+    //  ===================================================================
+    //  monitor# · EL MONITOR NO SE ABRE POR RADIO
+    //  ===================================================================
+    //
+    //  `RutaAudio::esEscuchaPersonal` es la guarda del monitor directo: lo
+    //  unico que impide que el microfono salga por un altavoz y vuelva al
+    //  microfono. Llevaba dentro BLUETOOTH_A2DP (8), BLUETOOTH_SCO (7) y
+    //  USB_DEVICE (11), y los tres pueden ser un ALTAVOZ -A2DP es el mismo
+    //  `getType` para unos cascos Bluetooth y para un altavoz Bluetooth, SCO es
+    //  un manos libres de coche y USB_DEVICE es cualquier cosa enchufada-.
+    //
+    //  Se mide la lista entera y no los tres que se cayeron: una guarda que
+    //  solo prueba el fallo de ayer no impide el de manana. De los 41 tipos que
+    //  Android tiene hoy, los UNICOS que solo existen puestos en una cabeza son
+    //  cinco; cualquier otro que entre en la lista es un acople esperando.
+    {
+        static constexpr int kCabeza[] = { 3,    // WIRED_HEADSET
+                                           4,    // WIRED_HEADPHONES
+                                           22,   // USB_HEADSET
+                                           23,   // HEARING_AID
+                                           26 }; // BLE_HEADSET
+        int faltan = 0, sobran = 0;
+        juce::String cuales;
+        for (int t = 0; t <= 40; ++t)
+        {
+            const bool enLista = RutaAudio::esEscuchaPersonal (t);
+            bool deCabeza = false;
+            for (int c : kCabeza) if (c == t) deCabeza = true;
+            if (deCabeza && ! enLista) { ++faltan; cuales << " -" << t; }
+            if (! deCabeza && enLista) { ++sobran; cuales << " +" << t; }
+        }
+        std::printf ("%-34s %d de cabeza, %d de mas, %d de menos%s   %s\n",
+                     "monitor la guarda no se cree la radio",
+                     (int) (sizeof (kCabeza) / sizeof (kCabeza[0])), sobran, faltan,
+                     cuales.isEmpty() ? "" : cuales.toRawUTF8(),
+                     (sobran == 0 && faltan == 0) ? "OK" : zatiFalla());
     }
 
     //  EL SWING AL MAXIMO deja el golpe impar al 75 % del par (audio-dsp#5),

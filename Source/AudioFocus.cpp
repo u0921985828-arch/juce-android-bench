@@ -8,6 +8,43 @@
 
 #include "AudioFocus.h"
 
+//  LOS TIPOS QUE SON ESCUCHA PERSONAL, y por que TRES se cayeron de la lista.
+//
+//  Esta lista es la guarda del monitor directo, o sea lo unico que impide que
+//  el microfono salga por un altavoz y vuelva al microfono. Llevaba dentro
+//  BLUETOOTH_A2DP (8), BLUETOOTH_SCO (7) y USB_DEVICE (11), y los tres pueden
+//  ser perfectamente un ALTAVOZ: A2DP es el perfil de unos cascos Bluetooth y
+//  tambien el de un altavoz Bluetooth -Android los da con el mismo `getType`,
+//  no hay forma de distinguirlos-, SCO es un manos libres de coche y
+//  USB_DEVICE es cualquier cosa enchufada al USB, interfaz con monitores
+//  incluida. Con el monitor encendido y cualquiera de los tres, acople.
+//
+//  Se cae hacia el lado seguro, que es lo que el comentario de abajo ya decia
+//  antes de que esta lista lo contradijera: «equivocarse hacia el lado de no
+//  monitorizar cuesta una linea de aviso, al contrario cuesta un pitido». Lo
+//  que queda son los tipos que SOLO existen puestos en una cabeza.
+//
+//  Cuesta el monitor a quien use cascos Bluetooth, y por eso la cara lo DICE
+//  en vez de callarse: ver `MainComponent::aplicaMonitor`.
+bool RutaAudio::esEscuchaPersonal (int tipo) noexcept
+{
+    switch (tipo)
+    {
+        case 3:    // TYPE_WIRED_HEADSET
+        case 4:    // TYPE_WIRED_HEADPHONES
+        case 22:   // TYPE_USB_HEADSET
+        case 23:   // TYPE_HEARING_AID
+        case 26:   // TYPE_BLE_HEADSET
+            return true;
+        default:
+            return false;
+    }
+}
+
+//  Lo de arriba es logica pura y vale en las dos plataformas A PROPOSITO:
+//  es lo que deja que el banco de escritorio mida la guarda del monitor.
+//  Lo que necesita JNI empieza aqui.
+
 #if JUCE_ANDROID
 
 //  Los trozos de android.media.AudioManager que hacen falta. juce_core declara
@@ -177,26 +214,10 @@ namespace
 
 bool RutaAudio::porAltavoz()
 {
-    //  Los tipos de AudioDeviceInfo que son escucha PERSONAL. Lo que no este
-    //  en esta lista -el altavoz, el HDMI, el auricular de llamada- va al aire
-    //  o no es una salida de monitorizacion.
-    const auto hay = algunaSalida ([] (int tipo)
-    {
-        switch (tipo)
-        {
-            case 3:    // TYPE_WIRED_HEADSET
-            case 4:    // TYPE_WIRED_HEADPHONES
-            case 7:    // TYPE_BLUETOOTH_SCO
-            case 8:    // TYPE_BLUETOOTH_A2DP
-            case 11:   // TYPE_USB_DEVICE
-            case 22:   // TYPE_USB_HEADSET
-            case 23:   // TYPE_HEARING_AID
-            case 26:   // TYPE_BLE_HEADSET
-                return true;
-            default:
-                return false;
-        }
-    });
+    //  Lo que no sea escucha personal -el altavoz, el HDMI, el auricular de
+    //  llamada, un altavoz Bluetooth- va al aire o no es una salida de
+    //  monitorizacion. Ver `esEscuchaPersonal`.
+    const auto hay = algunaSalida ([] (int tipo) { return esEscuchaPersonal (tipo); });
 
     //  Sin poder preguntar, lo prudente es el altavoz: la guarda del monitor
     //  existe para no montar un acople, y equivocarse hacia el lado de no
