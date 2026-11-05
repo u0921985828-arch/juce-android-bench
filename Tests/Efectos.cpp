@@ -1874,6 +1874,52 @@ int main (int argc, char** argv)
                 }
             if (cuantas == 0) std::printf ("    ninguna\n");
         }
+
+        //  NI UNA PAREJA, asi que hacen falta TRES o la cadena de canales. Las
+        //  dos cosas se acotan aqui: el numero de eslabones que hace falta.
+        {
+            static constexpr int kLazo[] = { AudioEngine::kFxDly, AudioEngine::kFxPng, AudioEngine::kFxRev,
+                                             AudioEngine::kFxAmb, AudioEngine::kFxFla, AudioEngine::kFxRep };
+            auto resonante = [] (AudioEngine& e, int c, int f)
+            {
+                e.setCanalSend (c, f, 1.0f);
+                e.setFxParam (c, f, 2, 1.0f);
+                if (f == AudioEngine::kFxDly || f == AudioEngine::kFxPng)
+                { e.setFxParam (c, f, 0, 1000.0f); e.setFxParam (c, f, 1, 0.95f); }
+                if (f == AudioEngine::kFxRev) { e.setFxParam (c, f, 0, 1.0f); e.setFxParam (c, f, 1, 0.0f); }
+                if (f == AudioEngine::kFxAmb) e.setFxParam (c, f, 0, 1.0f);
+                if (f == AudioEngine::kFxFla) e.setFxParam (c, f, 1, 1.0f);
+            };
+            auto picoFinal = [] (const std::vector<float>& y)
+            {
+                double pico = 0.0;
+                for (size_t k = (size_t) (kSr * 40.0); k < y.size(); ++k) pico = juce::jmax (pico, (double) std::abs (y[k]));
+                return 20.0 * std::log10 (juce::jmax (1.0e-12, pico));
+            };
+            std::printf ("  cuantos eslabones hacen falta:\n");
+            for (int n = 1; n <= 6; ++n)
+            {
+                auto e = montaUnGolpe (golpe (220.0, 0.5f));
+                for (int i = 0; i < n; ++i) resonante (*e, kCanal, kLazo[i]);
+                e->postNoteOn (0, 1.0f);
+                std::vector<float> y; corre (*e, (int) (kSr * 60.0), y);
+                std::printf ("    %d en el mismo canal        %7.1f dBFS\n", n, picoFinal (y));
+            }
+            static constexpr int kCad[] = { kCanal, 5, 9, 13 };
+            for (int n = 2; n <= 4; ++n)
+            {
+                auto e = montaUnGolpe (golpe (220.0, 0.5f));
+                for (int i = 0; i < n; ++i)
+                {
+                    resonante (*e, kCad[i], AudioEngine::kFxRev);
+                    resonante (*e, kCad[i], AudioEngine::kFxDly);
+                    if (i > 0) e->setCanalEnvio (kCad[i - 1], kCad[i], 1.0f);
+                }
+                e->postNoteOn (0, 1.0f);
+                std::vector<float> y; corre (*e, (int) (kSr * 60.0), y);
+                std::printf ("    %d canales encadenados      %7.1f dBFS\n", n, picoFinal (y));
+            }
+        }
     }
 
     if (solo < 0 || solo >= AudioEngine::kFxSmp)
