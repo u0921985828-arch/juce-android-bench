@@ -189,7 +189,27 @@ public:
     //  el primero que deja de crecer y no el mas bajo: con 0.80 la cola de la
     //  esquina mas larga sigue acabando a -16 dB a los treinta segundos -con
     //  0.70 a -18-, o sea que la perdida quita el enganche y no el muelle.
-    static constexpr float kMuelleLazoDef = 0.80f;
+    //  CINCO DECIMAS, y el 0.80 anterior estaba MAL ELEGIDO. El barrido de
+    //  entonces juzgaba si la cola CRECIA, y un tanque que se engancha no
+    //  crece: SOSTIENE, porque el transductor lo sujeta y el limitador del
+    //  master lo remata. Con 0.80 el tipo MUELLE acababa a -16 dB cuarenta
+    //  segundos despues de UNA nota y yo lo di por bueno porque no subia.
+    //
+    //  El proyecto de la persona lo canto: con sus valores -tamano 0.85,
+    //  amortiguacion 0.87, mezcla 1.00 en un retorno- un solo golpe acaba a
+    //  **-0.0 dBFS**, pegado al techo, y sigue ahi al minuto. Medido con su
+    //  patch cargado tal cual (`Tests/proyectos/caso-acople.inc`):
+    //
+    //      lazo 0.80  -0.0 dBFS   sostiene
+    //      lazo 0.65  -6.7 dBFS   sostiene
+    //      lazo 0.62 -11.1 dBFS   sostiene
+    //      lazo 0.58            se apaga
+    //      lazo 0.50            se apaga
+    //
+    //  Y en el peor caso del mando -tamano 1- con 0.58 la cola todavia acaba a
+    //  -37 dB con un rastro de subida; con 0.50 se apagan las cuatro esquinas.
+    //  Se queda 0.50: el escalon esta en 0.60 y el tope del mando pide margen.
+    static constexpr float kMuelleLazoDef = 0.50f;
 
     //  LOS DOS NUMEROS QUE MANDAN EN LA COLA, por la misma razon. 0.72 a 0.94:
     //  por debajo no es una sala y por encima de 0.95 una FDN
