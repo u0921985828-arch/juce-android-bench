@@ -1589,7 +1589,7 @@ int main (int argc, char** argv)
     //  la resonancia -la realimentacion del delay, el signo del flanger,
     //  la sala sin amortiguar-.
     {
-        std::printf ("\nACOPLE  golpe y 60 s: lo mas alto de 50-60 s contra lo mas alto de 20-30 s\n");
+        std::printf ("\nACOPLE  golpe y 60 s: lo mas alto de 40-60 s contra lo mas alto de 10-30 s\n");
         double peorTodos = -999.0; int peorF = -1;
         //  LA MAS ALTA DE SUS VENTANAS DE UN SEGUNDO, y no la energia del
         //  tramo entero. Dos arreglos en una cuenta, los dos cantados por
@@ -1629,6 +1629,14 @@ int main (int argc, char** argv)
         //  que haberse asentado, asi que la tirada dura un minuto y se compara
         //  50-60 s con 20-30 s.
         constexpr double kLargo = 60.0;
+        //  Y LAS DOS VENTANAS SON DE VEINTE SEGUNDOS, que es UN PERIODO entero
+        //  del modulador mas lento de la casa: ROT, DUC y STP bajan a 0.05 Hz,
+        //  o sea una vuelta cada veinte segundos. Con ventanas de diez, los dos
+        //  tramos caian en fases distintas del vaiven y los tres salian
+        //  «creciendo» -ROT +2.5 dB, DUC +2.5, STP +1.5- con la cola plana.
+        //  Es el mismo sesgo que ya se cazo en TRM, y la cura es la misma:
+        //  medir un periodo entero y no un trozo.
+        constexpr double kVentana = 20.0;
         for (int f = 0; f < AudioEngine::kNumFx; ++f)
         {
             if (solo >= 0 && f != solo) continue;   // para perseguir una cifra sin correr los 39
@@ -1643,8 +1651,8 @@ int main (int argc, char** argv)
                 e->postNoteOn (0, 1.0f);
                 std::vector<float> y;
                 corre (*e, (int) (kSr * kLargo), y);
-                const double fin = energia (y, 50.0, 60.0);
-                if (fin > kOido) peor = juce::jmax (peor, fin - energia (y, 20.0, 30.0));
+                const double fin = energia (y, kLargo - kVentana, kLargo);
+                if (fin > kOido) peor = juce::jmax (peor, fin - energia (y, 10.0, 10.0 + kVentana));
             }
             //  Y LOS TIPOS, que es donde estaba el agujero.
             //
@@ -1673,9 +1681,9 @@ int main (int argc, char** argv)
                             e->postNoteOn (0, 1.0f);
                             std::vector<float> y;
                             corre (*e, (int) (kSr * kLargo), y);
-                            const double fin = energia (y, 50.0, 60.0);
+                            const double fin = energia (y, kLargo - kVentana, kLargo);
                             if (fin <= kOido) continue;          // se apago: nada que juzgar
-                            const double cr = fin - energia (y, 20.0, 30.0);
+                            const double cr = fin - energia (y, 10.0, 10.0 + kVentana);
                             if (cr > -6.0)
                                 std::printf ("  %-4s tipo %d caso %d  %+7.1f dB  (final %.0f dB)\n",
                                              m.nombre, t, caso, cr, fin);
