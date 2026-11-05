@@ -21,7 +21,11 @@ import json, os, subprocess, sys, tempfile
 from kits import PANTALLA                                          # noqa: E402
 
 ROOT = os.path.dirname (os.path.dirname (os.path.abspath (__file__)))
-APP  = os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati")
+#  Como `flechas.py`: la ruta del binario se puede pasar, que es lo que permite
+#  medir un arreglo con su propio directorio de compilacion mientras el banco de
+#  interfaz esta corriendo con el de siempre.
+APP  = (sys.argv[1] if len (sys.argv) > 1
+        else os.path.join (ROOT, "build", "Zati_artefacts", "Release", "Zati"))
 
 
 def corre():
